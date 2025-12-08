@@ -7,6 +7,12 @@ Creates usernames based on names (lowercase, no spaces).
 
 Usage:
     python migrate_to_db.py
+
+This will:
+1. Delete existing database (if any)
+2. Create fresh tables
+3. Import all persons as regular users
+4. Create a separate admin account
 """
 
 import json
@@ -16,7 +22,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.database.database import create_tables, SessionLocal, User, UserRole
+from app.database.database import engine, Base, SessionLocal, User, UserRole
 from app.auth.auth import get_password_hash
 
 
@@ -33,6 +39,46 @@ def load_persons_json():
     with open(persons_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+try:
+    persons = load_persons_json()
+    print(f"   ✓ Found {len(persons)} persons")
+except FileNotFoundError as e:
+    print(f"   ✗ Error: {e}")
+
+ADMIN_ACCOUNT = {
+    "username": "admin",
+    "name": "Administrator",
+    "wage": 0,
+}
+
+DEFAULT_PASSWORD = "London1"  # ÄNDRA DETTA I PRODUKTION
+
+def delete_existing_db():
+    """Delete existing database"""
+    db_path = Path("app/database/schedule.db")
+    if db_path.exists():
+        db_path.unlink()
+        print(f" Deleted existing database: {db_path}")
+    else:
+        print(f" No existing database to delete")
+
+def create_tables():
+    """Create tables"""
+    Base.metadata.create_all(bind=engine)
+    print("Created tables")
+
+def load_vacation_from_json() -> dict:
+    """Läs semester från persons.json om den finns."""
+    persons_path = Path("data/persons.json")
+    if not persons_path.exists():
+        return {}
+    
+    try:
+        data = json.loads(persons_path.read_text(encoding="utf-8"))
+        return {p["id"]: p.get("vacation", {}) for p in data}
+    except Exception as e:
+        print(f"  Varning: Kunde inte läsa semester från persons.json: {e}")
+        return {}
 
 def create_username(name: str) -> str:
     """Create a username from a name."""
@@ -43,24 +89,18 @@ def create_username(name: str) -> str:
 
 def migrate():
     """Run the migration."""
-    print("=" * 50)
-    print("Migration: persons.json → SQLite database")
-    print("=" * 50)
+    print("\n" + "=" * 50)
+    print("MIGRERING: persons.json → SQLite")
+    print("=" * 50 + "\n")
+
+    delete_existing_db()
     
     # Create tables
     print("\n1. Creating database tables...")
     create_tables()
     print("   ✓ Tables created")
     
-    # Load persons
-    print("\n2. Loading persons.json...")
-    try:
-        persons = load_persons_json()
-        print(f"   ✓ Found {len(persons)} persons")
-    except FileNotFoundError as e:
-        print(f"   ✗ Error: {e}")
-        return False
-    
+    vacation_data = load_vacation_from_json()
     # Create database session
     db = SessionLocal()
     
@@ -79,26 +119,36 @@ def migrate():
         
         # Import persons
         print("\n3. Importing users...")
-        default_password = "London1"  # ÄNDRA DETTA I PRODUKTION
         
         created_users = []
         for person in persons:
-            username = create_username(person["name"])
+            vacation = vacation_data.get(person["id"])
             
-            # First person (id=1) becomes admin
-            role = UserRole.ADMIN if person["id"] == 6 else UserRole.USER
             
             user = User(
                 id=person["id"],
-                username=username,
-                password_hash=get_password_hash(default_password),
+                username=person["username"],
+                password_hash=get_password_hash(DEFAULT_PASSWORD),
                 name=person["name"],
-                role=role,
+                role=UserRole.USER,
                 wage=person["wage"],
-                vacation=person.get("vacation", {}),
+                vacation=vacation,
             )
+            created_users.append(user)
             db.add(user)
-            created_users.append((username, person["name"], role.value))
+            print(f"  + User {person['id']:2d}: {person['username']:10s} ({person['name']})")
+        
+        admin = User(
+            id=0,
+            username=ADMIN_ACCOUNT["username"],
+            password_hash=get_password_hash("Banan1"),
+            name=ADMIN_ACCOUNT["name"],
+            role=UserRole.ADMIN,
+            wage=ADMIN_ACCOUNT["wage"],
+            vacation={},
+        )
+        db.add(admin)
+        print(f"  + Admin  : {ADMIN_ACCOUNT['username']:10s} ({ADMIN_ACCOUNT['name']}) ★")
         
         db.commit()
         print(f"   ✓ Created {len(created_users)} users")
@@ -107,15 +157,7 @@ def migrate():
         print("\n" + "=" * 50)
         print("MIGRATION COMPLETE")
         print("=" * 50)
-        print("\nCreated users:")
-        print("-" * 50)
-        print(f"{'Username':<15} {'Name':<20} {'Role':<10}")
-        print("-" * 50)
-        for username, name, role in created_users:
-            print(f"{username:<15} {name:<20} {role:<10}")
-        
-        print("\n" + "=" * 50)
-        print(f"DEFAULT PASSWORD FOR ALL USERS: {default_password}")
+        print(f"DEFAULT PASSWORD FOR ALL USERS: {DEFAULT_PASSWORD}")
         print("⚠  CHANGE PASSWORDS AFTER FIRST LOGIN!")
         print("=" * 50)
         

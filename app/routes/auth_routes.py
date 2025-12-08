@@ -3,11 +3,12 @@
 Authentication routes: login, logout, registration.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from urllib.parse import urlparse
 
 from app.database.database import get_db, User, UserRole
 from app.auth.auth import (
@@ -46,18 +47,30 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
 
+def is_safe_redirect(url: str) -> bool:
+    """Check if redirect URL is safe (local path only)."""
+    if not url:
+        return False
+    parsed = urlparse(url)
+    # Only allow relative paths (no scheme or netloc)
+    return not parsed.scheme and not parsed.netloc and url.startswith("/")
+
 
 # ============ HTML Routes ============
 
 @router.get("/login", response_class=HTMLResponse, name="login_page")
 async def login_page(
     request: Request,
+    next: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional)
 ):
     """Show login form."""
     if current_user:
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(
+        "login.html", 
+        {"request": request, "next": next if is_safe_redirect(next) else None}
+    )
 
 
 @router.post("/login", name="login")
@@ -66,6 +79,7 @@ async def login(
     response: Response,
     username: str = Form(...),
     password: str = Form(...),
+    next: str = Form(None),
     db: Session = Depends(get_db)
 ):
     """Process login form."""
@@ -73,12 +87,15 @@ async def login(
     if not user:
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Fel användarnamn eller lösenord"},
+            {"request": request, "error": "Fel användarnamn eller lösenord", "next": next},
             status_code=401
         )
     
+    # Redirect to next URL if safe, otherwise home
+    redirect_url = next if is_safe_redirect(next) else "/"
+    
     access_token = create_access_token(data={"sub": str(user.id)})
-    redirect = RedirectResponse(url="/", status_code=302)
+    redirect = RedirectResponse(url=redirect_url, status_code=302)
     set_auth_cookie(redirect, access_token)
     return redirect
 

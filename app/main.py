@@ -100,8 +100,10 @@ def render_template_response(
     ctx.update(context)
     return templates.TemplateResponse(template_name, ctx)
 
-def can_see_salary(current_user: User, target_person_id: int) -> bool:
+def can_see_salary(current_user: User | None, target_person_id: int) -> bool:
     """Check if current user can see salary data for target person."""
+    if current_user is None:
+        return False
     if current_user.role == UserRole.ADMIN:
         return True
     return current_user.id == target_person_id
@@ -134,8 +136,12 @@ async def show_day_for_person(
     year: int,
     month: int,
     day: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
+    # Kräv inloggning - redirect till login om ej autentiserad
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
     # Validera person och datum
     person_id = validate_person_id(person_id)
 
@@ -222,8 +228,12 @@ async def show_week_for_person(
     person_id: int,
     year: int = None,
     week: int = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
+    # Kräv inloggning - redirect till login om ej autentiserad
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
     # Validera person
     person_id = validate_person_id(person_id)
 
@@ -270,7 +280,7 @@ async def show_week_all(
     request: Request,
     year: int = None,
     week: int = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_optional),
 ):
     safe_today = get_safe_today(rotation_start_date)
     
@@ -307,8 +317,12 @@ async def show_month_for_person(
     person_id: int,
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
+    # Kräv inloggning - redirect till login om ej autentiserad
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+        
     # Validera person
     person_id = validate_person_id(person_id)
 
@@ -355,7 +369,7 @@ async def show_month_all(
     request: Request,
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_optional),
 ):
     safe_today = get_safe_today(rotation_start_date)
 
@@ -373,6 +387,9 @@ async def show_month_all(
             summary = _strip_salary_data(summary)
         persons.append(summary)
 
+    # show_salary är True om admin, annars False (för OB-rad i header)
+    show_salary = current_user is not None and current_user.role == UserRole.ADMIN
+
     return render_template_response(
         templates,
         "month_all.html",
@@ -381,7 +398,7 @@ async def show_month_all(
             "year": year,
             "month": month,
             "persons": persons,
-            "show_salary": current_user.role == UserRole.ADMIN,
+            "show_salary": show_salary,
         },
         user=current_user,
     )
@@ -393,8 +410,12 @@ async def year_view(
     person_id: int,
     year: int = Query(None),
     with_person_id: int | None = Query(None, alias="with_person_id"),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
+    # Kräv inloggning - redirect till login om ej autentiserad
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+        
     # Validera personparametrar
     person_id = validate_person_id(person_id)
     
@@ -464,7 +485,7 @@ async def year_view(
 async def show_year_all(
     request: Request,
     year: int = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_optional),
 ):
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
@@ -484,6 +505,9 @@ async def show_year_all(
         else:
             person_ob_totals.append(None)
 
+    # show_salary är True om admin
+    show_salary = current_user is not None and current_user.role == UserRole.ADMIN
+
     return render_template_response(
         templates,
         "year_all.html",
@@ -492,7 +516,7 @@ async def show_year_all(
             "year": year,
             "days": days_in_year,
             "person_ob_totals": person_ob_totals,
-            "show_salary": current_user.role == UserRole.ADMIN,
+            "show_salary": show_salary,
         },
         user=current_user,
     )

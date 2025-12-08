@@ -1,6 +1,7 @@
 [
     {
         "id": 1,
+        "username": "age007",
         "name": "Inhouse",
         "wage": 37000,
         "vacation": {
@@ -11,6 +12,7 @@
     },
     {
         "id": 2,
+        "username": "jqu453",
         "name": "Adriana",
         "wage": 31500,
         "vacation": {
@@ -21,7 +23,8 @@
     },
     {
         "id": 3,
-        "name": "Christopher",
+        "username": "gjc023",
+        "name":  "Christopher",
         "wage": 47000,
         "vacation": {
             "2026": [],
@@ -31,21 +34,19 @@
     },
     {
         "id": 4,
-        "name": "Ahmed",
+        "username": "tbz193",
+        "name":  "Ahmed",
         "wage": 27000,
         "vacation": {
-            "2026": [
-                1,
-                2,
-                3
-            ],
+            "2026": [],
             "2027": [],
             "2028": []
         }
     },
     {
         "id": 5,
-        "name": "Isak",
+        "username": "isa082",
+        "name":  "Isak",
         "wage": 44000,
         "vacation": {
             "2026": [],
@@ -55,7 +56,8 @@
     },
     {
         "id": 6,
-        "name": "Kalle",
+        "username": "ddf412",
+        "name":  "Kalle",
         "wage": 37000,
         "vacation": {
             "2026": [],
@@ -65,7 +67,8 @@
     },
     {
         "id": 7,
-        "name": "Marcus",
+        "username": "pnf956",
+        "name":  "Marcus",
         "wage": 27000,
         "vacation": {
             "2026": [],
@@ -75,7 +78,8 @@
     },
     {
         "id": 8,
-        "name": "Okan",
+        "username": "yzt114",
+        "name":  "Okan",
         "wage": 39500,
         "vacation": {
             "2026": [],
@@ -85,7 +89,8 @@
     },
     {
         "id": 9,
-        "name": "Pierre",
+        "username": "uyr674",
+        "name":  "Pierre",
         "wage": 37000,
         "vacation": {
             "2026": [],
@@ -95,7 +100,8 @@
     },
     {
         "id": 10,
-        "name": "Robin",
+        "username": "mgu229",
+        "name":  "Robin",
         "wage": 37000,
         "vacation": {
             "2026": [],

@@ -2,11 +2,13 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core.schedule import settings, persons, tax_brackets
+from app.database.database import User
+from app.auth.auth import get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -33,11 +35,15 @@ def write_json_safely(file_path: Path, data: dict | list) -> None:
 
 
 @router.get("/settings", response_class=HTMLResponse, name="admin_settings")
-async def admin_settings(request: Request):
+async def admin_settings(
+    request: Request,
+    current_user: User = Depends(get_admin_user), 
+    ):
     return templates.TemplateResponse(
         "admin_settings.html",
         {
             "request": request,
+            "user": current_user,
             "settings": settings,
             "persons": persons,
             "tax_brackets": tax_brackets,
@@ -49,7 +55,8 @@ async def admin_settings(request: Request):
 async def admin_settings_update(
     request: Request,
     monthly_salary: int = Form(...),
-    person_wages: str = Form(...)  # JSON string of {person_id: wage}
+    person_wages: str = Form(...),
+    current_user: User = Depends(get_admin_user),
 ):
     """
     Update settings and person wages.
