@@ -28,7 +28,12 @@
                 <th style="min-width:140px">Date</th>
                 {% if days and days|length > 0 %}
                     {% for p in days[0].persons %}
-                        <th class="person-header">Person {{ p.person_id }}</th>
+                        <th class="person-header">
+                            <a href="/week/{{ p.person_id }}?year={{ year }}&week={{ week }}">
+                                {{ p.person_name }}<br>
+                                <small>(#{{ p.person_id }})</small>
+                            </a>
+                        </th>
                     {% endfor %}
                 {% endif %}
             </tr>
@@ -43,10 +48,18 @@
                             {% if person.shift %}
                                 <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                    style="text-decoration:none;">
-                                    <span class="badge"
-                                          style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                        {{ person.shift.code }}
-                                    </span>
+                                    {% if person.shift.code == 'SEM' %}
+                                        <span class="badge badge-sem"
+                                              title="Semester"
+                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                            SEM
+                                        </span>
+                                    {% else %}
+                                        <span class="badge"
+                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                            {{ person.shift.code }}
+                                        </span>
+                                    {% endif %}
                                 </a>
                             {% else %}
                                 <span class="badge badge-off">OFF</span>

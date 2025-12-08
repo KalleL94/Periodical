@@ -26,17 +26,10 @@
                     {% set max_ob = person_ob_totals | max %}
                     {% set min_ob = person_ob_totals | min %}
                     <tr>
-                        <th>Max OB</th>
-                        <th>Difference</th>
+                        <th></th>
+                        <th></th>
                         {% for tot in person_ob_totals %}
                             <th class="num">{{ "%.2f"|format(tot) }}</th>
-                        {% endfor %}
-                    </tr>
-                    <tr>
-                        <th>{{ "%.2f"|format(max_ob) }}</th>
-                        <th>{{ "%.2f"|format(max_ob - min_ob) }}</th>
-                        {% for _ in person_ob_totals %}
-                            <th></th>
                         {% endfor %}
                     </tr>
                 {% endif %}
@@ -65,10 +58,18 @@
                                 {% if person.shift %}
                                     <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                        style="text-decoration:none;">
-                                        <span class="badge"
-                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                            {{ person.shift.code }}
-                                        </span>
+                                        {% if person.shift.code == 'SEM' %}
+                                            <span class="badge badge-sem"
+                                                  title="Semester"
+                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                                SEM
+                                            </span>
+                                        {% else %}
+                                            <span class="badge"
+                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                                {{ person.shift.code }}
+                                            </span>
+                                        {% endif %}
                                     </a>
                                 {% else %}
                                     <span class="badge badge-off">OFF</span>

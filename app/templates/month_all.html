@@ -83,10 +83,19 @@
                                 {% if d.shift %}
                                     <a href="/day/{{ p.person_id }}/{{ d.date.year }}/{{ d.date.month }}/{{ d.date.day }}"
                                        style="text-decoration:none;">
-                                        <span class="badge"
-                                              style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
-                                            {{ d.shift.code }}
-                                        </span>
+                                       {% if d.shift.code == 'SEM' %}
+                                            {# Semester: own badge so it cannot be confused with OFF #}
+                                            <span class="badge badge-sem"
+                                                  title="Semester"
+                                                  style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
+                                                SEM
+                                            </span>
+                                        {% else %}
+                                            <span class="badge"
+                                                  style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
+                                                {{ d.shift.code }}
+                                            </span>
+                                        {% endif %}
                                     </a>
                                 {% else %}
                                     <span class="badge badge-off">OFF</span>

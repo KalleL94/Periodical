@@ -297,17 +297,23 @@ def _ob_rule_priority(r) -> int:
     return 1
 
 def _vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
-    per_person = {p.id: set() for p in persons}
+    per_person: dict[int, set[datetime.date]] = {p.id: set() for p in persons}
     
     for p in persons:
-        vac = p.vacation or {}
-        weeks = vac[str(year)]
-        if not weeks:
+        vac_by_year = p.vacation or {}
+
+        weeks_for_year = vac_by_year.get(str(year), []) or []
+
+        if not weeks_for_year:
             continue
         
-        for week in weeks:
+        for week in weeks_for_year:
             for day in range(1, 8):
-                d = datetime.date.fromisocalendar(year, week, day)
+                try:
+                    d = datetime.date.fromisocalendar(year, week, day)
+                except:
+                    # If week is invalid for that year, ignore it instead of crashing
+                    continue
                 per_person[p.id].add(d)
                 
     return per_person
@@ -529,6 +535,60 @@ def summarize_month_for_person(
         'netto_pay': netto_pay,
         'days': days_out
     }
+
+def summarize_year_for_person(
+    year: int,
+    person_id: int,
+) -> dict:
+    """
+    Bygger årsöversikt för en person.
+
+    Returnerar:
+      - months: lista med 12 månadsdictar (summarize_month_for_person)
+        med extra fält 'total_ob'
+      - year_summary: totals och snitt för hela året
+    """
+    months: list[dict] = []
+
+    # Bygg månadslistan och räkna total OB per månad
+    for month in range(1, 13):
+        m = summarize_month_for_person(year, month, person_id)
+        ob_pay: dict[str, float] = m.get("ob_pay", {}) or {}
+
+        total_ob = 0.0
+        for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
+            total_ob += float(ob_pay.get(code, 0.0) or 0.0)
+
+        m["total_ob"] = total_ob
+        months.append(m)
+    
+    month_count = len(months) or 1
+
+    total_netto = sum(m.get("netto_pay", 0.0) for m in months)
+    total_brutto = sum(m.get("brutto_pay", 0.0) for m in months)
+    total_shifts = sum(m.get("num_shifts", 0) for m in months)
+    total_hours = sum(m.get("total_hours", 0.0) for m in months)
+    total_ob_year = sum(m.get("total_ob", 0.0) for m in months)
+
+    year_summary = {
+        "total_netto": total_netto,
+        "total_brutto": total_brutto,
+        "total_shifts": total_shifts,
+        "total_hours": total_hours,
+        "total_ob": total_ob_year,
+        "avg_netto": total_netto / month_count,
+        "avg_brutto": total_brutto / month_count,
+        "avg_shifts": total_shifts / month_count,
+        "avg_hours": total_hours / month_count,
+        "avg_ob": total_ob_year / month_count,
+    }
+
+    return {
+        "months": months,
+        "year_summary": year_summary,
+    }
+
+
 
 def calculate_ob_hours(
     start_dt: datetime.datetime,

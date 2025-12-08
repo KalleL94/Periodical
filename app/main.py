@@ -1,13 +1,15 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from typing import *
 import datetime
 from app.core.schedule import (
     determine_shift_for_date,
     build_week_data,
     rotation_start_date,
     summarize_month_for_person,
+    summarize_year_for_person,
     generate_year_data,
     calculate_shift_hours,
     build_special_ob_rules_for_year,
@@ -15,6 +17,7 @@ from app.core.schedule import (
     calculate_ob_hours,
     calculate_ob_pay,
     _cached_special_rules,
+    _select_ob_rules_for_date,
     settings,
     weekday_names,
     person_wages,
@@ -80,32 +83,39 @@ async def show_day_for_person(
     next_date = date + datetime.timedelta(days=1)
     iso_year, iso_week, _ = date.isocalendar()
 
+    # Shift / hours
     shift, rotation_week = determine_shift_for_date(date, start_week=person_id)
-    hours = 0.0
-    start_dt = None
-    end_dt = None
+    hours: float = 0.0
+    start_dt: datetime.datetime | None = None
+    end_dt: datetime.datetime | None = None
 
     if shift and shift.code != "OFF":
         hours, start_dt, end_dt = calculate_shift_hours(date, shift)
 
-    special_rules = build_special_ob_rules_for_year(year)
+    # Special OB rules for this year (cached)
+    special_rules = _cached_special_rules(year)
     combined_rules = ob_rules + special_rules
 
+    # OB hours and pay
     person = person_list[person_id - 1]
     monthly_salary = person_wages.get(person_id, settings.monthly_salary)
 
     if start_dt and end_dt:
         ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-        ob_pay = calculate_ob_pay(
-            start_dt, end_dt, combined_rules, monthly_salary
-        )
+        ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary)
     else:
+        # No worked hours; keep base codes at zero
         ob_hours = {r.code: 0.0 for r in ob_rules}
         ob_pay = {r.code: 0.0 for r in ob_rules}
 
     ob_codes = sorted(ob_hours.keys())
 
+    # Active special OB rules for this calendar day
+    midnight = datetime.datetime.combine(date, datetime.time(0, 0))
+    active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
+
     weekday_name = weekday_names[date.weekday()]
+
     return templates.TemplateResponse(
         "day.html",
         {
@@ -120,6 +130,7 @@ async def show_day_for_person(
             "ob_hours": ob_hours,
             "ob_pay": ob_pay,
             "ob_codes": ob_codes,
+            "active_special_rules": active_special_rules,
             "prev_year": prev_date.year,
             "prev_month": prev_date.month,
             "prev_day": prev_date.day,
@@ -267,33 +278,35 @@ async def show_month_all(
 
 
 @app.get("/year/{person_id}", response_class=HTMLResponse, name="year_person")
-async def show_year_for_person(
+async def year_view(
     request: Request,
     person_id: int,
-    year: int = None,
-    with_person_id: int | None = None,
+    year: int = Query(None),
+    with_person_id: int | None = Query(None, alias="with_person_id"),
 ):
     today = datetime.date.today()
-
     if today < rotation_start_date:
         today = rotation_start_date
+    if year is None:
+        year = today.year
 
-    year = year or today.year
+    person = person_list[person_id - 1]
 
-    months = []
-    for m in range(1, 13):
-        months.append(summarize_month_for_person(year, m, person_id))
-        
+    # Cowork data
     cowork_rows = build_cowork_stats(year, person_id)
-    
-    cowork_details: List[Dict] = []
-    selected_other_name: str | None = None
-    
+    selected_other_id = None
+    selected_other_name = None
+    cowork_details: list[dict] = []
+
     if with_person_id:
+        selected_other_id = with_person_id
+        selected_other_name = persons[with_person_id - 1].name
         cowork_details = build_cowork_details(year, person_id, with_person_id)
-        selected_other_name = person_list[with_person_id - 1].name
-        
-    person_name = person_list[person_id - 1].name
+
+    # Year summary and per month data
+    year_data = summarize_year_for_person(year, person_id)
+    months = year_data["months"]
+    year_summary = year_data["year_summary"]
 
     return templates.TemplateResponse(
         "year.html",
@@ -301,14 +314,57 @@ async def show_year_for_person(
             "request": request,
             "year": year,
             "person_id": person_id,
-            "person_name": person_name,
+            "person_name": person.name,
             "months": months,
+            "year_summary": year_summary,
             "cowork_rows": cowork_rows,
-            "cowork_details": cowork_details,
-            "selected_other_id": with_person_id,
+            "selected_other_id": selected_other_id,
             "selected_other_name": selected_other_name,
+            "cowork_details": cowork_details,
         },
     )
+# async def show_year_for_person(
+#     request: Request,
+#     person_id: int,
+#     year: int = None,
+#     with_person_id: int | None = None,
+# ):
+#     today = datetime.date.today()
+
+#     if today < rotation_start_date:
+#         today = rotation_start_date
+
+#     year = year or today.year
+
+#     months = []
+#     for m in range(1, 13):
+#         months.append(summarize_month_for_person(year, m, person_id))
+        
+#     cowork_rows = build_cowork_stats(year, person_id)
+    
+#     cowork_details: List[Dict] = []
+#     selected_other_name: str | None = None
+    
+#     if with_person_id:
+#         cowork_details = build_cowork_details(year, person_id, with_person_id)
+#         selected_other_name = person_list[with_person_id - 1].name
+        
+#     person_name = person_list[person_id - 1].name
+
+#     return templates.TemplateResponse(
+#         "year.html",
+#         {
+#             "request": request,
+#             "year": year,
+#             "person_id": person_id,
+#             "person_name": person_name,
+#             "months": months,
+#             "cowork_rows": cowork_rows,
+#             "cowork_details": cowork_details,
+#             "selected_other_id": with_person_id,
+#             "selected_other_name": selected_other_name,
+#         },
+#     )
 
 
 @app.get("/year", response_class=HTMLResponse, name="year_all")

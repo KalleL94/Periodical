@@ -21,7 +21,7 @@
         </div>
 
         <div class="day-buttons-right">
-            {% for i in range(1, 11) %}
+            {% for i in range(1, 10 + 1) %}
                 <a href="/day/{{ i }}/{{ date.year }}/{{ date.month }}/{{ date.day }}"
                    class="btn secondary btn-person {% if i == person_id %}btn-person-active{% endif %}">
                     {{ i }}
@@ -32,7 +32,12 @@
 
     <!-- Header -->
     <div class="day-header">
-        <h2>{{ weekday_name }} {{ date }} - {{ person_name }} ({{ person_id }})</h2>
+        <h2>
+            {{ weekday_name }} {{ date }} - {{ person_name }} ({{ person_id }})
+            {% if ob_hours.get("OB5", 0) > 0 %}
+                <span class="badge-ob5">Storhelg</span>
+            {% endif %}
+        </h2>
     </div>
 
     <div class="day-layout">
@@ -87,6 +92,7 @@
         <section class="day-section">
             <h3>OB hours</h3>
             {% if ob_codes %}
+                {% set total_ob_hours = ob_hours.values() | sum %}
                 <table>
                     <thead>
                         <tr>
@@ -102,6 +108,12 @@
                             </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total OB hours</th>
+                            <th>{{ "%.2f"|format(total_ob_hours) }}</th>
+                        </tr>
+                    </tfoot>
                 </table>
             {% else %}
                 <p>No OB hours this day.</p>
@@ -109,6 +121,7 @@
 
             <h3>OB pay</h3>
             {% if ob_codes %}
+                {% set total_ob_pay = ob_pay.values() | sum %}
                 <table>
                     <thead>
                         <tr>
@@ -124,9 +137,41 @@
                             </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total OB pay</th>
+                            <th>{{ "%.2f"|format(total_ob_pay) }}</th>
+                        </tr>
+                    </tfoot>
                 </table>
             {% else %}
                 <p>No OB compensation this day.</p>
+            {% endif %}
+
+            <h3>Active OB rules</h3>
+            {% if active_special_rules and active_special_rules|length > 0 %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Label</th>
+                            <th>Time</th>
+                            <th>Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rule in active_special_rules %}
+                            <tr>
+                                <td>{{ rule.code }}</td>
+                                <td>{{ rule.label }}</td>
+                                <td>{{ rule.start_time }} to {{ rule.end_time }}</td>
+                                <td>{{ rule.rate }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No special OB rules active this day.</p>
             {% endif %}
         </section>
     </div>
