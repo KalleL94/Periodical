@@ -1,15 +1,18 @@
 {% extends "base.html" %}
 
 {% block page_content %}
-    <a href="/week/{{ person_id }}?year={{ year }}&week={{ week - 1 }}" class="btn btn-primary">Previous week</a>
-    <a href="/week/{{ person_id }}?year={{ year }}&week={{ week + 1 }}" class="btn btn-primary">Next week</a>    <table>
+    <a href="/week?year={{ year }}&week={{ week - 1 }}" class="btn btn-primary">Previous week</a>
+    <a href="/week?year={{ year }}&week={{ week + 1 }}" class="btn btn-primary">Next week</a>
+    <h2>Vecka {{ week }} {{ year }}</h2>
+
+    <table>
         <thead>
             <tr>
                 <th>Dag</th>
                 <th>Datum</th>
-                <th>Rotation</th>
-                <th>Pass</th>
-                <th>Tid</th>
+                {% for person in days.0.persons %}
+                    <th>Person {{ person.person_id }}</th>
+                {% endfor %}
             </tr>
         </thead>
         <tbody>
@@ -26,10 +29,11 @@
                         {% if day.weekday_index == 6 %}Söndag{% endif %}
                     </td>
                     <td>{{ day.date }}</td>
-                    <td>{{ day.rotation_week }}</td>
-                    <td>{{ day.shift.code }}</td>
-                    {% if day.shift.start_time is not none %} <td>{{ day.shift.start_time }} till {{ day.shift.end_time }}</td>
-                    {% else %} <td>Inget pass</td> {% endif %}
+                    {% for person in day.persons %}
+                        <td>
+                            {{ person.shift.code }}
+                        </td>
+                    {% endfor %}
                 </tr>
             {% endfor %}
         </tbody>

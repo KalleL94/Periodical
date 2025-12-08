@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block page_content %}
+    <h2>Dagens pass</h2>
+    <p>Datum: {{ today }}</p>
+
+    {% if shifts %}
+        <p>--------------------</p>
+        {% for shift in shifts %}
+            <p>Startvecka: {{ shift.start_week }}</p>
+            <p>Vecka: {{ shift.rotation_week }}</p>
+            <p>Kod: {{ shift.shift.code }}</p>
+            <p>Namn: {{ shift.shift.label }}</p>
+            <p>Tid: {{ shift.shift.start_time }} till {{ shift.shift.end_time }}</p>
+            <p>--------------------</p>
+        {% endfor %}
+    {% else %}
+        <p>Inga pass hittades.</p>
+    {% endif %}
+
+{% endblock %}
