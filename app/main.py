@@ -1,13 +1,18 @@
-from fastapi import FastAPI, Request, Query
+# main.py
+"""
+FastAPI application entry point with authentication.
+"""
+
+from fastapi import FastAPI, Request, Query, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from typing import Any
 from datetime import date, datetime, timedelta, time
 
-
-from app.routes import admin
+from app.routes.auth_routes import router as auth_router
+from app.routes.admin import router as admin_router
 from app.core.schedule import (
     determine_shift_for_date,
     build_week_data,
@@ -36,14 +41,22 @@ from app.core.utils import (
     get_navigation_dates,
     render_template_response,
 )
+
 from app.core.types import PersonId, Year, Month, Day, Week, DayInfo
 
-app = FastAPI()
+# Import auth dependencies
+from app.auth.auth import get_current_user_optional, get_current_user
+from app.database.database import create_tables, User, UserRole
+
+# Create database tables on startup
+create_tables()
+
+app = FastAPI(title="ICA Schedule")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-app.include_router(admin.router)
+app.include_router(auth_router)
+app.include_router(admin_router)
 
 templates = Jinja2Templates(directory="app/templates")
-
 
 def _contrast_color(hex_color: str) -> str:
     """Return '#000' for light backgrounds, '#fff' for dark backgrounds."""
@@ -77,13 +90,44 @@ def get_prev_next_week(year: int, week: int):
     return (prev_year, prev_week), (next_year, next_week)
 
 
+def render_template_response(
+    templates: Jinja2Templates,
+    template_name: str,
+    request: Request,
+    context: dict,
+    user: User | None = None,
+):
+    """Render template with user context."""
+    ctx = {"request": request, "user": user}
+    ctx.update(context)
+    return templates.TemplateResponse(template_name, ctx)
+
+
+def can_see_salary(current_user: User, target_person_id: int) -> bool:
+    """Check if current user can see salary data for target person."""
+    if current_user.role == UserRole.ADMIN:
+        return True
+    return current_user.id == target_person_id
+
+
+# ============ Public routes (no login required for schedule view) ============
+
+
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
+async def read_root(
+    request: Request,
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    # Om inte inloggad, redirect till login
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=302)
+
     return render_template_response(
         templates,
         "index.html",
         request,
         {},
+        user=current_user,
     )
 
 @app.get("/day/{person_id}/{year}/{month}/{day}", response_class=HTMLResponse, name="day_person")
@@ -93,6 +137,7 @@ async def show_day_for_person(
     year: int,
     month: int,
     day: int,
+    current_user: User = Depends(get_current_user),
 ):
     # Validera person och datum
     person_id = validate_person_id(person_id)
@@ -138,6 +183,9 @@ async def show_day_for_person(
     midnight = datetime.combine(date, time(0, 0))
     active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
 
+    # Behörighetskontroll för lön/OB
+    show_salary = can_see_salary(current_user, person_id)
+
 
     return render_template_response(
         templates,
@@ -146,19 +194,21 @@ async def show_day_for_person(
         {
             "person_id": person_id,
             "person_name": person.name,
-            "date": date,
+            "date": target_date,
             "weekday_name": weekday_name,
             "rotation_week": rotation_week,
             "shift": shift,
             "hours": hours,
-            "ob_hours": ob_hours,
-            "ob_pay": ob_pay,
-            "ob_codes": ob_codes,
+            "ob_hours": ob_hours if show_salary else {},
+            "ob_pay": ob_pay if show_salary else {},
+            "ob_codes": ob_codes if show_salary else [],
             "active_special_rules": active_special_rules,
             "iso_year": iso_year,
             "iso_week": iso_week,
+            "show_salary": show_salary,
             **nav,
         },
+        user=current_user,
     )
 
 @app.get("/week/{person_id}", response_class=HTMLResponse, name="week_person")
@@ -167,6 +217,7 @@ async def show_week_for_person(
     person_id: int,
     year: int = None,
     week: int = None,
+    current_user: User = Depends(get_current_user),
 ):
     # Validera person
     person_id = validate_person_id(person_id)
@@ -199,6 +250,7 @@ async def show_week_for_person(
             "today": real_today,
             **nav,
         },
+        user=current_user,
     )
 
 @app.get("/week", response_class=HTMLResponse, name="week_all")
@@ -206,6 +258,7 @@ async def show_week_all(
     request: Request,
     year: int = None,
     week: int = None,
+    current_user: User = Depends(get_current_user),
 ):
     safe_today = get_safe_today(rotation_start_date)
     
@@ -233,6 +286,7 @@ async def show_week_all(
             "today": real_today,
             **nav,
         },
+        user=current_user,
     )
 
 @app.get("/month/{person_id}", response_class=HTMLResponse, name="month_person")

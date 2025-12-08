@@ -1,0 +1,50 @@
+{# app/templates/admin_users.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <h2 class="page-title" style="margin: 0;">Användare</h2>
+    </div>
+    <div class="page-header-right">
+        <a href="/admin/users/create" class="btn">Skapa ny användare</a>
+    </div>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Användarnamn</th>
+                <th>Namn</th>
+                <th>Roll</th>
+                <th>Lön</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td data-label="ID">{{ u.id }}</td>
+                <td data-label="Användarnamn">{{ u.username }}</td>
+                <td data-label="Namn">{{ u.name }}</td>
+                <td data-label="Roll">
+                    {% if u.role.value == 'admin' %}
+                        <span class="badge" style="background: var(--danger);">Admin</span>
+                    {% else %}
+                        <span class="badge badge-off">User</span>
+                    {% endif %}
+                </td>
+                <td data-label="Lön" class="num">{{ "{:,}".format(u.wage) }} SEK</td>
+                <td>
+                    <a href="/admin/users/{{ u.id }}" class="btn secondary" style="padding: 4px 12px; font-size: 0.85rem;">Redigera</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

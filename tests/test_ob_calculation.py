@@ -8,7 +8,6 @@ according to the Swedish labor rules defined in the project.
 
 import datetime
 import sys
-from prettyprint import *
 from pathlib import Path
 
 # Add the app directory to the path so we can import schedule, models, etc.

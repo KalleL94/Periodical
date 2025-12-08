@@ -1,0 +1,56 @@
+{# app/templates/admin_user_create.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/admin/users" class="btn secondary">← Tillbaka</a>
+    </div>
+</div>
+
+<h2 class="page-title">Skapa ny användare</h2>
+
+<div style="max-width: 500px;">
+    <div class="card">
+        {% if error %}
+            <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+                {{ error }}
+            </div>
+        {% endif %}
+        
+        <form method="POST" action="/admin/users/create">
+            <div style="margin-bottom: 16px;">
+                <label for="username" style="display: block; margin-bottom: 6px; color: var(--muted);">Användarnamn</label>
+                <input type="text" id="username" name="username" required style="width: 100%; box-sizing: border-box;">
+            </div>
+            
+            <div style="margin-bottom: 16px;">
+                <label for="password" style="display: block; margin-bottom: 6px; color: var(--muted);">Lösenord</label>
+                <input type="password" id="password" name="password" required minlength="6" style="width: 100%; box-sizing: border-box;">
+            </div>
+            
+            <div style="margin-bottom: 16px;">
+                <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">Namn</label>
+                <input type="text" id="name" name="name" required style="width: 100%; box-sizing: border-box;">
+            </div>
+            
+            <div style="margin-bottom: 16px;">
+                <label for="wage" style="display: block; margin-bottom: 6px; color: var(--muted);">Månadslön (SEK)</label>
+                <input type="number" id="wage" name="wage" required min="0" step="500" value="37000" style="width: 100%; box-sizing: border-box;">
+            </div>
+            
+            <div style="margin-bottom: 24px;">
+                <label for="role" style="display: block; margin-bottom: 6px; color: var(--muted);">Roll</label>
+                <select id="role" name="role" style="width: 100%; box-sizing: border-box;">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn">Skapa användare</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

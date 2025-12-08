@@ -1,4 +1,16 @@
 fastapi
 uvicorn[standard]
 jinja2
-python-multipart
+
+# Database
+sqlalchemy>=2.0.0
+
+# Password hashing
+passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
+
+# JWT tokens
+python-jose[cryptography]>=3.3.0
+
+# Already required for FastAPI forms
+python-multipart>=0.0.6

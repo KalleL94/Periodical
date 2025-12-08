@@ -1,0 +1,46 @@
+{# app/templates/login.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<div style="max-width: 400px; margin: 60px auto;">
+    <div class="card">
+        <h2 style="margin-top: 0;">Logga in</h2>
+        
+        {% if error %}
+            <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+                {{ error }}
+            </div>
+        {% endif %}
+        
+        <form method="POST" action="/login">
+            <div style="margin-bottom: 16px;">
+                <label for="username" style="display: block; margin-bottom: 6px; color: var(--muted);">Användarnamn</label>
+                <input 
+                    type="text" 
+                    id="username" 
+                    name="username" 
+                    required 
+                    autocomplete="username"
+                    style="width: 100%; box-sizing: border-box;"
+                >
+            </div>
+            
+            <div style="margin-bottom: 24px;">
+                <label for="password" style="display: block; margin-bottom: 6px; color: var(--muted);">Lösenord</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    required 
+                    autocomplete="current-password"
+                    style="width: 100%; box-sizing: border-box;"
+                >
+            </div>
+            
+            <button type="submit" class="btn" style="width: 100%;">Logga in</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
