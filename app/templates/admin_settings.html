@@ -1,1 +1,131 @@
-{# Todo: #}
+{# app/templates/admin_settings.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<h2 class="page-title">Settings</h2>
+
+<form method="POST" action="/admin/settings" id="settings-form" onsubmit="return prepareFormSubmit()">
+    <div class="card" style="margin-bottom: 24px;">
+        <h3>Global Configuration</h3>
+        <table style="width: auto;">
+            <tbody>
+                <tr>
+                    <td style="font-weight: 600; color: var(--muted);">Rotation Start Date</td>
+                    <td>{{ settings.rotation_start_date }} <span style="color: var(--muted); font-size: 0.85rem;">(read-only)</span></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600; color: var(--muted);">Default Monthly Salary</td>
+                    <td>
+                        <input
+                            type="number"
+                            name="monthly_salary"
+                            value="{{ settings.monthly_salary }}"
+                            min="0"
+                            step="1000"
+                            required
+                            style="width: 150px;"
+                        /> SEK
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card" style="margin-bottom: 24px;">
+        <h3>Persons</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th class="num">Wage (SEK)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for person in persons %}
+                <tr>
+                    <td data-label="ID">{{ person.id }}</td>
+                    <td data-label="Namn">{{ person.name }}</td>
+                    <td class="num" data-label="Lön">
+                        <input
+                            type="number"
+                            class="person-wage"
+                            data-person-id="{{ person.id }}"
+                            value="{{ person.wage }}"
+                            min="0"
+                            step="500"
+                            required
+                            style="width: 120px; text-align: right;"
+                        />
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {# Submit button #}
+    <div style="margin-top: 24px; padding: 0 8px;">
+        <button type="submit" class="btn" style="padding: 10px 24px;">
+            Save Changes
+        </button>
+        <a href="/admin/settings" class="btn secondary" style="margin-left: 12px;">
+            Cancel
+        </a>
+    </div>
+
+    <div class="card" style="margin-bottom: 24px;">
+        <h3>Tax Brackets <span style="color: var(--muted); font-size: 0.85rem; font-weight: normal;">(read-only)</span></h3>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 12px;">
+            Preliminary tax (prel_skatt) based on monthly income brackets.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th class="num">Income From (SEK)</th>
+                    <th class="num">Income To (SEK)</th>
+                    <th class="num">Tax (SEK)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bracket in tax_brackets %}
+                <tr>
+                    <td class="num" data-label="Från">{{ "{:,}".format(bracket.lon_fran | int) }}</td>
+                    <td class="num" data-label="Till">
+                        {% if bracket.lon_till %}
+                            {{ "{:,}".format(bracket.lon_till | int) }}
+                        {% else %}
+                            &infin;
+                        {% endif %}
+                    </td>
+                    <td class="num" data-label="Skatt">{{ "{:,}".format(bracket.prel_skatt | int) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {# Hidden field to store person wages as JSON #}
+    <input type="hidden" name="person_wages" id="person_wages" value="">
+
+    
+</form>
+
+<script>
+function prepareFormSubmit() {
+    // Collect all person wage inputs
+    const wages = {};
+    document.querySelectorAll('.person-wage').forEach(input => {
+        const personId = input.getAttribute('data-person-id');
+        const wage = parseInt(input.value, 10);
+        wages[personId] = wage;
+    });
+
+    // Store as JSON in hidden field
+    document.getElementById('person_wages').value = JSON.stringify(wages);
+
+    return true; // Allow form submission
+}
+</script>
+
+{% endblock %}

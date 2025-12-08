@@ -6,7 +6,9 @@
 <div class="page-header">
     <div class="page-header-left">
         <a href="/week?year={{ year - 1 }}&week={{ week }}" class="btn btn-primary">Previous year</a>
+        <a href="/week?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">Prev week</a>
         <a href="/week" class="btn btn-primary">Today</a>
+        <a href="/week?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">Next week</a>
         <a href="/week?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">Next year</a>
     </div>
 
@@ -41,10 +43,10 @@
         <tbody>
             {% for day in days %}
                 <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
-                    <td class="day-cell">{{ day.weekday_name }}</td>
-                    <td class="date-cell">{{ day.date }}</td>
+                    <td class="day-cell" data-label="Dag">{{ day.weekday_name }}</td>
+                    <td class="date-cell" data-label="Datum">{{ day.date }}</td>
                     {% for person in day.persons %}
-                        <td style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
+                        <td data-label="{{ person.person_name }}" style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                             {% if person.shift %}
                                 <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                    style="text-decoration:none;">

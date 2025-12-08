@@ -61,15 +61,15 @@
                               + days.ob_pay.get('OB3',0) + days.ob_pay.get('OB4',0)
                               + days.ob_pay.get('OB5',0) %}
             <tr>
-                <td>{{ "%.0f"|format(days.netto_pay) }}</td>
-                <td>{{ "%.0f"|format(days.brutto_pay) }}</td>
-                <td>{{ days.num_shifts }}</td>
-                <td>{{ "%.2f"|format(days.total_hours) }}</td>
-                <td>{{ "%.2f"|format(total_ob) }}</td>
-                <td>{{ "%.2f"|format(days.ob_hours.get('OB1',0)) }}</td>
-                <td>{{ "%.2f"|format(days.ob_hours.get('OB2',0)) }}</td>
-                <td>{{ "%.2f"|format(days.ob_hours.get('OB3',0) + days.ob_hours.get('OB4',0)) }}</td>
-                <td>{{ "%.2f"|format(days.ob_hours.get('OB5',0)) }}</td>
+                <td data-label="Netto">{{ "%.0f"|format(days.netto_pay) }}</td>
+                <td data-label="Brutto">{{ "%.0f"|format(days.brutto_pay) }}</td>
+                <td data-label="Antal pass">{{ days.num_shifts }}</td>
+                <td data-label="Timmar">{{ "%.2f"|format(days.total_hours) }}</td>
+                <td data-label="Total OB">{{ "%.2f"|format(total_ob) }}</td>
+                <td data-label="OB1 Kväll">{{ "%.2f"|format(days.ob_hours.get('OB1',0)) }}</td>
+                <td data-label="OB2 Natt">{{ "%.2f"|format(days.ob_hours.get('OB2',0)) }}</td>
+                <td data-label="OB3+4 Helg">{{ "%.2f"|format(days.ob_hours.get('OB3',0) + days.ob_hours.get('OB4',0)) }}</td>
+                <td data-label="OB5 Storhelg">{{ "%.2f"|format(days.ob_hours.get('OB5',0)) }}</td>
             </tr>
         </tbody>
     </table>
@@ -94,14 +94,14 @@
             {% for d in days.days %}
                 <tr class="shift-row {% if today is defined and d.date == today %}today-row{% endif %}"
                     style="border-left:6px solid {% if d.shift %}{{ d.shift.color }}{% else %}transparent{% endif %};">
-                    <td>{{ d.weekday_name }}</td>
-                    <td>
+                    <td data-label="Dag">{{ d.weekday_name }}</td>
+                    <td data-label="Datum">
                         <a href="/day/{{ person_id }}/{{ d.date.year }}/{{ d.date.month }}/{{ d.date.day }}">
                             {{ d.date }}
                         </a>
                     </td>
-                    <td>{{ d.rotation_week }}</td>
-                    <td>
+                    <td data-label="Vecka">{{ d.rotation_week }}</td>
+                    <td data-label="Pass">
                         {% if d.shift %}
                             <span class="badge"
                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
@@ -115,15 +115,19 @@
                         {% set day_ob = d.ob_pay.get('OB1',0) + d.ob_pay.get('OB2',0)
                                         + d.ob_pay.get('OB3',0) + d.ob_pay.get('OB4',0)
                                         + d.ob_pay.get('OB5',0) %}
-                        <td>{{ d.shift.start_time }} to {{ d.shift.end_time }}</td>
-                        <td>{{ "%.2f"|format(day_ob) }}</td>
-                        <td>{{ "%.2f"|format(d.ob_hours.get('OB1',0)) }}</td>
-                        <td>{{ "%.2f"|format(d.ob_hours.get('OB2',0)) }}</td>
-                        <td>{{ "%.2f"|format(d.ob_hours.get('OB3',0) + d.ob_hours.get('OB4',0)) }}</td>
-                        <td>{{ "%.2f"|format(d.ob_hours.get('OB5',0)) }}</td>
+                        <td data-label="Tid">{{ d.shift.start_time }} to {{ d.shift.end_time }}</td>
+                        <td data-label="OB">{{ "%.2f"|format(day_ob) }}</td>
+                        <td data-label="OB1">{{ "%.2f"|format(d.ob_hours.get('OB1',0)) }}</td>
+                        <td data-label="OB2">{{ "%.2f"|format(d.ob_hours.get('OB2',0)) }}</td>
+                        <td data-label="OB3+4">{{ "%.2f"|format(d.ob_hours.get('OB3',0) + d.ob_hours.get('OB4',0)) }}</td>
+                        <td data-label="OB5">{{ "%.2f"|format(d.ob_hours.get('OB5',0)) }}</td>
                     {% else %}
-                        <td>No shift</td>
-                        <td>0</td><td>0</td><td>0</td><td>0</td>
+                        <td data-label="Tid">-</td>
+                        <td data-label="OB">0</td>
+                        <td data-label="OB1">0</td>
+                        <td data-label="OB2">0</td>
+                        <td data-label="OB3+4">0</td>
+                        <td data-label="OB5">0</td>
                     {% endif %}
                 </tr>
             {% endfor %}

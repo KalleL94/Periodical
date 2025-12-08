@@ -21,10 +21,10 @@
 
 <h2 class="page-title">Year {{ year }} - {{ person_name }}</h2>
 
-<div class="row" style="align-items:flex-start; gap: 24px; flex-wrap: wrap;">
+<div class="row year-layout" style="align-items:flex-start; gap: 24px; flex-wrap: wrap;">
 
     <!-- Vänster kolumn: cowork -->
-    <div class="col" style="min-width: 420px; flex: 1 1 0;">
+    <div class="col year-cowork" style="min-width: 420px; flex: 1 1 0;">
         <h2 class="page-title">Cowork stats {{ year }} - {{ person_name }}</h2>
 
         <table class="summary">
@@ -40,15 +40,15 @@
             <tbody>
                 {% for r in cowork_rows %}
                 <tr class="shift-row">
-                    <td>
+                    <td data-label="Person">
                         <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
                             {{ r.other_name }} (#{{ r.other_id }})
                         </a>
                     </td>
-                    <td class="num">{{ r.total }}</td>
-                    <td class="num">{{ r.by_shift["N1"] }}</td>
-                    <td class="num">{{ r.by_shift["N2"] }}</td>
-                    <td class="num">{{ r.by_shift["N3"] }}</td>
+                    <td class="num" data-label="Totalt">{{ r.total }}</td>
+                    <td class="num" data-label="N1">{{ r.by_shift["N1"] }}</td>
+                    <td class="num" data-label="N2">{{ r.by_shift["N2"] }}</td>
+                    <td class="num" data-label="N3">{{ r.by_shift["N3"] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -56,7 +56,7 @@
     </div>
 
     <!-- Höger kolumn: årssammanställning -->
-    <div class="col" style="min-width: 500px; flex: 1 1 0;">
+    <div class="col year-summary" style="min-width: 500px; flex: 1 1 0;">
         <h2 class="page-title">Monthly summary {{ year }} - {{ person_name }}</h2>
 
         <table class="summary">
@@ -74,31 +74,59 @@
                 {% for m in months_list %}
                 {% set mnum = loop.index %}
                 <tr class="shift-row">
-                    <td><a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a></td>
-                    <td class="num">{{ "%.0f"|format(m.netto_pay) }}</td>
-                    <td class="num">{{ "%.0f"|format(m.brutto_pay) }}</td>
-                    <td class="num">{{ m.num_shifts }}</td>
-                    <td class="num">{{ "%.0f"|format(m.total_hours or 0) }}</td>
-                    <td class="num">{{ "%.0f"|format(m.total_ob or 0) }}</td>
+                    <td data-label="Månad"><a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a></td>
+                    <td class="num" data-label="Netto">{{ "%.0f"|format(m.netto_pay) }}</td>
+                    <td class="num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay) }}</td>
+                    <td class="num" data-label="Pass">{{ m.num_shifts }}</td>
+                    <td class="num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
+                    <td class="num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tr>
-                <td>Total</td>
-                <td class="num">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                <td data-label="Typ">Total</td>
+                <td class="num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
+                <td class="num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
+                <td class="num" data-label="Pass">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
+                <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
+                <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
             </tr>
             <tr>
-                <td>Snitt</td>
-                <td class="num">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
-                <td class="num">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
+                <td data-label="Typ">Snitt</td>
+                <td class="num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
+                <td class="num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
+                <td class="num" data-label="Pass">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
+                <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
+                <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
             </tr>
+        </table>
+
+        {# OB summering i foten - per kod och total #}
+        <h3 class="page-title">Yearly OB breakdown</h3>
+        <table class="summary">
+            <thead>
+                <tr>
+                    <th>OB code</th>
+                    <th>OB hours</th>
+                    <th>OB pay (SEK)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for code, hours in year_summary.ob_hours_by_code.items() %}
+                <tr class="shift-row">
+                    <td data-label="OB-kod">{{ code }}</td>
+                    <td class="num" data-label="Timmar">{{ "%.2f"|format(hours or 0) }}</td>
+                    <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td data-label="Typ">Total</td>
+                    <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_ob_hours or 0) }}</td>
+                    <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                </tr>
+            </tfoot>
         </table>
     </div>
 

@@ -5,7 +5,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>ICA Schedule</title>
-        <link rel="stylesheet" href="/static/style.css">
+        <link rel="stylesheet" href="/static/style.css?v=5">
     </head>
     <body>
         <header>
@@ -17,15 +17,40 @@
                     </div>
                 </div>
 
-                <nav class="row" style="gap: 14px;">
+                <button class="hamburger" id="hamburger" aria-label="Menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+
+                <nav class="row main-nav" id="main-nav">
                     <a href="/" class="nav-link">Overview</a>
                     <a href="/year" class="nav-link">Year</a>
                     <a href="/month" class="nav-link">Month</a>
                     <a href="/week" class="nav-link">Week</a>
                     <a href="/day/1/2026/1/2" class="nav-link">Day</a>
+                    <a href="/admin/settings" class="nav-link">Settings</a>
                 </nav>
             </div>
         </header>
+
+        <script>
+            const hamburger = document.getElementById('hamburger');
+            const nav = document.getElementById('main-nav');
+
+            hamburger.addEventListener('click', () => {
+                hamburger.classList.toggle('active');
+                nav.classList.toggle('active');
+            });
+
+            // Close menu when clicking a link
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    hamburger.classList.remove('active');
+                    nav.classList.remove('active');
+                });
+            });
+        </script>
 
         <main>
             {% block page_content %}

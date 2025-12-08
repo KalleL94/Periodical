@@ -13,6 +13,21 @@ from .storage import (
 )
 from .holidays import *
 from .models import ObRule
+from .constants import (
+    PERSON_IDS,
+    WEEKDAY_NAMES,
+    VACATION_CODE,
+    OB_CODES,
+    OB_PRIORITY_BY_CODE,
+    OB_PRIORITY_DEFAULT,
+)
+from .config import (
+    DATE_FORMAT_ISO,
+    TIME_FORMAT_HM,
+    TIME_END_OF_DAY_STRING,
+    OB_RATE_DIVISOR_OB4,
+    OB_RATE_DIVISOR_OB5,
+)
 
 shift_types = load_shift_types()
 rotation = load_rotation()
@@ -20,23 +35,20 @@ settings = load_settings()
 ob_rules = load_ob_rules()
 tax_brackets = load_tax_brackets()
 persons = load_persons()
+
+# Rotationens startdatum läses från settings med centralt datumformat.
 rotation_start_date: datetime.date = datetime.datetime.strptime(
-    settings.rotation_start_date, "%Y-%m-%d"
+    settings.rotation_start_date,
+    DATE_FORMAT_ISO,
 ).date()
 
-weekday_names = [
-    "Måndag",
-    "Tisdag",
-    "Onsdag",
-    "Torsdag",
-    "Fredag",
-    "Lördag",
-    "Söndag",
-]
+# Använd centrala veckodagsnamn, men exponera samma namn som tidigare modulvariabel.
+weekday_names = list(WEEKDAY_NAMES)
 
+# Månadslön per person, med fallback till global settings-lön.
 person_wages = {p.id: getattr(p, "wage", settings.monthly_salary) for p in persons}
 
-VACATION_CODE = "SEM"
+# Semester representeras med central VACATION_CODE.
 VACATION_SHIFT = next((s for s in shift_types if s.code == VACATION_CODE), None)
 
 
@@ -93,7 +105,7 @@ def build_week_data(
     monday = datetime.date.fromisocalendar(year, week, 1)
     days_in_week = []
 
-    person_ids = [person_id] if person_id is not None else list(range(1, 11))
+    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
 
     for offset in range(7):
         current_date = monday + datetime.timedelta(days=offset)
@@ -137,6 +149,7 @@ def build_week_data(
 
     return days_in_week
 
+@lru_cache(maxsize=128)
 def generate_year_data(
     year: int,
     person_id: int | None = None,
@@ -146,6 +159,10 @@ def generate_year_data(
 
     - Om person_id är None: days_in_year med persons-listor
     - Om person_id är satt: varje dag innehåller shift, timmar, start, slut och ev. OB
+
+    Caching: Safe because inputs (year, person_id) are hashable and function depends
+    only on module-level data (rotation, persons, etc.) loaded at import time.
+    Cache is automatically cleared on module reload (e.g., after settings updates).
     """
     special_ob_rules = _cached_special_rules(year)
     combined_ob_rules = ob_rules + special_ob_rules
@@ -156,7 +173,7 @@ def generate_year_data(
     current_day = start_date
     if start_date < rotation_start_date:
         current_day = rotation_start_date
-    person_ids = [person_id] if person_id is not None else list(range(1, 11))
+    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
 
     while current_day <= end_date:
         weekday_index = current_day.weekday()
@@ -288,13 +305,12 @@ def _select_ob_rules_for_date(
 def _ob_rule_priority(r) -> int:
     """
     Prioritet för att fördela tid mellan överlappande regler.
-    OB5 > OB4 > övriga.
+
+    Själva prioritetsordningen (vilken kod som är "viktigare") ligger
+    i OB_PRIORITY_BY_CODE i constants, så att vi slipper hårdkoda
+    både koder och siffror här.
     """
-    if r.code == "OB5":
-        return 3
-    if r.code == "OB4":
-        return 2
-    return 1
+    return OB_PRIORITY_BY_CODE.get(r.code, OB_PRIORITY_DEFAULT)
 
 def _vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
     per_person: dict[int, set[datetime.date]] = {p.id: set() for p in persons}
@@ -546,7 +562,8 @@ def summarize_year_for_person(
     Returnerar:
       - months: lista med 12 månadsdictar (summarize_month_for_person)
         med extra fält 'total_ob'
-      - year_summary: totals och snitt för hela året
+      - year_summary: totals och snitt för hela året,
+        inklusive OB per kod och totalt.
     """
     months: list[dict] = []
 
@@ -569,6 +586,20 @@ def summarize_year_for_person(
     total_shifts = sum(m.get("num_shifts", 0) for m in months)
     total_hours = sum(m.get("total_hours", 0.0) for m in months)
     total_ob_year = sum(m.get("total_ob", 0.0) for m in months)
+    
+    # OB summering per kod för hela året
+    ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
+    ob_hours_by_code: dict[str, float] = {code: 0.0 for code in ob_codes}
+    ob_pay_by_code: dict[str, float] = {code: 0.0 for code in ob_codes}
+    
+    for m in months:
+        m_ob_hours: dict[str, float] = m.get("ob_hours", {}) or {}
+        m_ob_pay: dict[str, float] = m.get("ob_pay", {}) or {}
+        for code in ob_codes:
+            ob_hours_by_code[code] += float(m_ob_hours.get(code, 0.0) or 0.0)
+            ob_pay_by_code[code] += float(m_ob_pay.get(code, 0.0) or 0.0)
+            
+    total_ob_hours_year = sum(ob_hours_by_code.values())
 
     year_summary = {
         "total_netto": total_netto,
@@ -581,6 +612,9 @@ def summarize_year_for_person(
         "avg_shifts": total_shifts / month_count,
         "avg_hours": total_hours / month_count,
         "avg_ob": total_ob_year / month_count,
+        "ob_hours_by_code": ob_hours_by_code,
+        "ob_pay_by_code": ob_pay_by_code,
+        "total_ob_hours": total_ob_hours_year,
     }
 
     return {
@@ -867,7 +901,7 @@ def build_cowork_stats(year: int, target_person_id: int):
     days_in_year = generate_year_data(year, person_id=None)
     
     stats: dict[int, dict] = {}
-    for pid in range(1, 11):
+    for pid in PERSON_IDS:
         if pid == target_person_id:
             continue
         
