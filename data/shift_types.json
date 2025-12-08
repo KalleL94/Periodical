@@ -7,11 +7,18 @@
         "color": "#888888"
     },
     {
+        "code": "SEM",
+        "label": "Semester",
+        "start_time": null,
+        "end_time": null,
+        "color": "#c7c700"
+    },
+    {
         "code": "N1",
         "label": "Dagpass",
         "start_time": "06:00",
         "end_time": "14:30",
-        "color": "#ff9800"
+        "color": "#f2bd72"
     },
     {
         "code": "N2",

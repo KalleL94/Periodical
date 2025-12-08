@@ -1,49 +1,71 @@
+{# app/templates/week.html #}
 {% extends "base.html" %}
 
 {% block page_content %}
-    <a href="/week/{{ person_id }}?year={{ year }}&week={{ week - 1 }}" class="btn btn-primary">Previous week</a>
-    <a href="/week/{{ person_id }}?year={{ year }}&week={{ week + 1 }}" class="btn btn-primary">Next week</a>
-    <h2>Vecka {{ week }} {{ year }}</h2>
-    <a href="/week?year={{ year }}&week={{ week }}" class="btn">All persons</a>
-    <a href="/week/1?year={{ year }}&week={{ week }}" class="btn">1</a>
-    <a href="/week/2?year={{ year }}&week={{ week }}" class="btn">2</a>
-    <a href="/week/3?year={{ year }}&week={{ week }}" class="btn">3</a>
-    <a href="/week/4?year={{ year }}&week={{ week }}" class="btn">4</a>
-    <a href="/week/5?year={{ year }}&week={{ week }}" class="btn">5</a>
-    <a href="/week/6?year={{ year }}&week={{ week }}" class="btn">6</a>
-    <a href="/week/7?year={{ year }}&week={{ week }}" class="btn">7</a>
-    <a href="/week/8?year={{ year }}&week={{ week }}" class="btn">8</a>
-    <a href="/week/9?year={{ year }}&week={{ week }}" class="btn">9</a>
-    <a href="/week/10?year={{ year }}&week={{ week }}" class="btn">10</a>
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/week/{{ person_id }}?year={{ year - 1 }}&week={{ week }}" class="btn btn-primary">Prev year</a>
+        <a href="/week/{{ person_id }}?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">Prev week</a>
+        <a href="/week/{{ person_id }}" class="btn btn-primary">Today</a>
+        <a href="/week/{{ person_id }}?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">Next week</a>
+        <a href="/week/{{ person_id }}?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">Next year</a>
+    </div>
+
+    <div class="page-header-right">
+        <a href="/week?year={{ year }}&week={{ week }}" class="btn secondary">All</a>
+        {% for i in range(1, 11) %}
+            <a href="/week/{{ i }}?year={{ year }}&week={{ week }}"
+               class="btn secondary {% if i == person_id %}btn-person-active{% endif %}">
+                {{ i }}
+            </a>
+        {% endfor %}
+    </div>
+</div>
+
+<h2 class="page-title">Week {{ week }} {{ year }} - Person {{ person_id }}</h2>
+
     <table>
         <thead>
             <tr>
-                <th>Dag</th>
-                <th>Datum</th>
-                <th>Rotation</th>
-                <th>Pass</th>
-                <th>Tid</th>
+                <th>Day</th>
+                <th>Date</th>
+                <th>Rotation week</th>
+                <th>Shift</th>
+                <th>Time</th>
             </tr>
         </thead>
         <tbody>
             {% for day in days %}
-                <tr class="shift-row" style="border-left:6px solid {% if day.shift %}{{ day.shift.color }}{% else %}transparent{% endif %};">
-                    <td>
-                        {{ day.weekday_name }}
+                <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}"
+                    style="border-left:6px solid {% if day.shift %}{{ day.shift.color }}{% else %}transparent{% endif %};">
+                    <td class="day-cell">{{ day.weekday_name }}</td>
+                    <td class="date-cell">
+                        <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}">
+                            {{ day.date }}
+                        </a>
                     </td>
-                    <td>{{ day.date }}</td>
                     <td>{{ day.rotation_week }}</td>
                     <td>
                         {% if day.shift %}
-                            <span class="badge" style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">{{ day.shift.code }}</span>
+                            <span class="badge"
+                                  style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">
+                                {{ day.shift.code }}
+                            </span>
                         {% else %}
-                            OFF
+                            <span class="badge badge-off">OFF</span>
                         {% endif %}
                     </td>
-                    {% if day.shift and day.shift.start_time is not none %} <td>{{ day.shift.start_time }} till {{ day.shift.end_time }}</td>
-                    {% else %} <td>Inget pass</td> {% endif %}
+                    {% if day.shift and day.shift.start_time is not none %}
+                        <td>{{ day.shift.start_time }} to {{ day.shift.end_time }}</td>
+                    {% else %}
+                        <td>No shift</td>
+                    {% endif %}
                 </tr>
             {% endfor %}
         </tbody>
     </table>
+
+{{ super() }}
+
 {% endblock %}

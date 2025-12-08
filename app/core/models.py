@@ -29,7 +29,9 @@ class TaxBracket(BaseModel):
     lon_fran: float
     lon_till: Optional[float]
     prel_skatt: float
-    
+
 class Person(BaseModel):
     id: int
     name: str
+    wage: int
+    vacation: Dict[str, List[int]] | None = None # key is year and value is list of weeks

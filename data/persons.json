@@ -1,12 +1,102 @@
 [
-    { "id": 1, "name": "Person 1" },
-    { "id": 2, "name": "Person 2" },
-    { "id": 3, "name": "Person 3" },
-    { "id": 4, "name": "Person 4" },
-    { "id": 5, "name": "Person 5" },
-    { "id": 6, "name": "Person 6" },
-    { "id": 7, "name": "Person 7" },
-    { "id": 8, "name": "Person 8" },
-    { "id": 9, "name": "Person 9" },
-    { "id": 10, "name": "Person 10" }
+    {
+        "id": 1,
+        "name": "Inhouse",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 2,
+        "name": "Adriana",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 3,
+        "name": "Christopher",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 4,
+        "name": "Ahmed",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 5,
+        "name": "Isak",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 6,
+        "name": "Kalle",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 7,
+        "name": "Marcus",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 8,
+        "name": "Okan",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 9,
+        "name": "Pierre",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    },
+    {
+        "id": 10,
+        "name": "Robin",
+        "wage": 37000,
+        "vacation": {
+            "2026": [],
+            "2027": [],
+            "2028": []
+        }
+    }
 ]

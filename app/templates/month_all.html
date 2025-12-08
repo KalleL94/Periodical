@@ -1,97 +1,104 @@
+{# app/templates/month_all.html #}
 {% extends "base.html" %}
 
 {% block page_content %}
-    <div class="month-nav">
-        {% if month == 1 %}
-            {% set prev_month = 12 %}
-            {% set prev_year = year - 1 %}
-        {% else %}
-            {% set prev_month = month - 1 %}
-            {% set prev_year = year %}
-        {% endif %}
-        <a href="/month?year={{ prev_year }}&month={{ prev_month }}" class="btn">Previous month</a>
-        {% if month == 12 %}
-            {% set next_month = 1 %}
-            {% set next_year = year + 1 %}
-        {% else %}
-            {% set next_month = month + 1 %}
-            {% set next_year = year %}
-        {% endif %}
-        <a href="/month?year={{ next_year }}&month={{ next_month }}" class="btn">Next month</a>
-        
-        <h2>Månadsschema - {{ year }}-{{ "%02d"|format(month) }}</h2>
-            <a href="/month/1?year={{ year }}&month={{ month }}" class="btn">1</a>
-            <a href="/month/2?year={{ year }}&month={{ month }}" class="btn">2</a>
-            <a href="/month/3?year={{ year }}&month={{ month }}" class="btn">3</a>
-            <a href="/month/4?year={{ year }}&month={{ month }}" class="btn">4</a>
-            <a href="/month/5?year={{ year }}&month={{ month }}" class="btn">5</a>
-            <a href="/month/6?year={{ year }}&month={{ month }}" class="btn">6</a>
-            <a href="/month/7?year={{ year }}&month={{ month }}" class="btn">7</a>
-            <a href="/month/8?year={{ year }}&month={{ month }}" class="btn">8</a>
-            <a href="/month/9?year={{ year }}&month={{ month }}" class="btn">9</a>
-            <a href="/month/10?year={{ year }}&month={{ month }}" class="btn">10</a>
+
+    {# Compute prev/next month + year here #}
+    {% if month == 1 %}
+        {% set prev_month = 12 %}
+        {% set prev_year = year - 1 %}
+    {% else %}
+        {% set prev_month = month - 1 %}
+        {% set prev_year = year %}
+    {% endif %}
+
+    {% if month == 12 %}
+        {% set next_month = 1 %}
+        {% set next_year = year + 1 %}
+    {% else %}
+        {% set next_month = month + 1 %}
+        {% set next_year = year %}
+    {% endif %}
+
+    <div class="page-header">
+        <div class="page-header-left">
+            <a href="/month?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-primary">Previous month</a>
+            <a href="/month" class="btn btn-primary">Today</a>
+            <a href="/month?year={{ next_year }}&month={{ next_month }}" class="btn btn-primary">Next month</a>
+        </div>
+
+        {# <div class="page-header-right">
+            {% for p in persons %}
+                <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}"
+                   class="btn secondary">
+                    {{ p.person_id }}
+                </a>
+            {% endfor %}
+        </div> #}
     </div>
 
-    {# Use the days from the first person's summary to build the header - defensive check if no persons passed #}
+<h2 class="page-title">Monthly schedule - {{ year }}-{{ "%02d"|format(month) }}</h2>
+
+
     {% set header_days = persons[0].days if persons and persons|length > 0 else [] %}
 
     <div class="month-grid">
-        <table class="month-schedule">
+        <table class="month-schedule table-sticky">
             <thead>
                 <tr>
                     <th></th>
-                    <th>Total OB:</th>
+                    <th>Total OB</th>
                     {% for p in persons %}
-                        <th>{{ "%.2f"|format((p.ob_pay.get('OB1',0) + p.ob_pay.get('OB2',0) + p.ob_pay.get('OB3',0) + p.ob_pay.get('OB4',0) + p.ob_pay.get('OB5',0))) }}</th>
+                        {% set total_ob = p.ob_pay.get('OB1',0) + p.ob_pay.get('OB2',0)
+                                          + p.ob_pay.get('OB3',0) + p.ob_pay.get('OB4',0)
+                                          + p.ob_pay.get('OB5',0) %}
+                        <th>{{ "%.2f"|format(total_ob) }}</th>
                     {% endfor %}
                 </tr>
                 <tr>
-                    <th style="min-width:60px">Dag</th>
-                    <th style="min-width:120px">Datum</th>
+                    <th style="min-width:60px">Day</th>
+                    <th style="min-width:120px">Date</th>
                     {% for p in persons %}
-                        <th class="person-header">Person {{ p.person_id }}</th>
+                        <th class="person-header">
+                            <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}">
+                                {{ p.person_name }}<br>
+                                <small>(#{{ p.person_id }})</small>
+                            </a>
+                        </th>
                     {% endfor %}
                 </tr>
             </thead>
             <tbody>
                 {% set ndays = header_days|length %}
                 {% for i in range(ndays) %}
-                {% set day = header_days[i] %}
-                <tr>
-                    <td class="day-cell">{{ day.weekday_name }}</td>
-                    <td class="date-cell">
-                        <div class="day-month small">{{ day.date }}</div>
-                    </td>
-                    {% for p in persons %}
-                        {% set d = p.days[i] %}
-                        <td class="day-cell" title="{{ d.date.isoformat() }}" style="border-left:6px solid {% if d.shift %}{{ d.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
-                            {% if d.shift %}
-                                <span class="badge" style="background: {{ d.shift.color }}; color: {{ d.shift.color|contrast }};">{{ d.shift.code }}</span>
-                            {% else %}
-                                OFF
-                            {% endif %}
-                        </td>
-                    {% endfor %}
-                </tr>
+                    {% set day = header_days[i] %}
+                    <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
+                        <td class="day-cell">{{ day.weekday_name }}</td>
+                        <td class="date-cell">{{ day.date }}</td>
+                        {% for p in persons %}
+                            {% set d = p.days[i] %}
+                            <td class="day-cell"
+                                title="{{ d.date.isoformat() }}"
+                                style="border-left:6px solid {% if d.shift %}{{ d.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
+                                {% if d.shift %}
+                                    <a href="/day/{{ p.person_id }}/{{ d.date.year }}/{{ d.date.month }}/{{ d.date.day }}"
+                                       style="text-decoration:none;">
+                                        <span class="badge"
+                                              style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
+                                            {{ d.shift.code }}
+                                        </span>
+                                    </a>
+                                {% else %}
+                                    <span class="badge badge-off">OFF</span>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
                 {% endfor %}
             </tbody>
-            <thead>
-                <tr>
-                    <th style="min-width:60px">Dag</th>
-                    <th style="min-width:120px">Datum</th>
-                    {% for p in persons %}
-                        <th class="person-header">Person {{ p.person_id }}</th>
-                    {% endfor %}
-                </tr>
-                <tr>
-                    <th></th>
-                    <th>Total OB:</th>
-                    {% for p in persons %}
-                        <th>{{ "%.2f"|format((p.ob_pay.get('OB1',0) + p.ob_pay.get('OB2',0) + p.ob_pay.get('OB3',0) + p.ob_pay.get('OB4',0) + p.ob_pay.get('OB5',0))) }}</th>
-                    {% endfor %}
-                </tr>
-            </thead>
         </table>
     </div>
+
+{{ super() }}
 
 {% endblock %}

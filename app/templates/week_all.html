@@ -1,44 +1,55 @@
+{# app/templates/week_all.html #}
 {% extends "base.html" %}
 
 {% block page_content %}
-    <a href="/week?year={{ year }}&week={{ week - 1 }}" class="btn btn-primary">Previous week</a>
-    <a href="/week?year={{ year }}&week={{ week + 1 }}" class="btn btn-primary">Next week</a>
 
-    <h2>Vecka {{ week }} {{ year }}</h2>
-    <a href="/week/1?year={{ year }}&week={{ week }}" class="btn">1</a>
-    <a href="/week/2?year={{ year }}&week={{ week }}" class="btn">2</a>
-    <a href="/week/3?year={{ year }}&week={{ week }}" class="btn">3</a>
-    <a href="/week/4?year={{ year }}&week={{ week }}" class="btn">4</a>
-    <a href="/week/5?year={{ year }}&week={{ week }}" class="btn">5</a>
-    <a href="/week/6?year={{ year }}&week={{ week }}" class="btn">6</a>
-    <a href="/week/7?year={{ year }}&week={{ week }}" class="btn">7</a>
-    <a href="/week/8?year={{ year }}&week={{ week }}" class="btn">8</a>
-    <a href="/week/9?year={{ year }}&week={{ week }}" class="btn">9</a>
-    <a href="/week/10?year={{ year }}&week={{ week }}" class="btn">10</a>
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/week?year={{ year - 1 }}&week={{ week }}" class="btn btn-primary">Previous year</a>
+        <a href="/week" class="btn btn-primary">Today</a>
+        <a href="/week?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">Next year</a>
+    </div>
 
-    <table>
+    <div class="page-header-right">
+        {% for i in range(1, 11) %}
+            <a href="/week/{{ i }}?year={{ year }}&week={{ week }}" class="btn secondary">
+                {{ i }}
+            </a>
+        {% endfor %}
+    </div>
+</div>
+
+<h2 class="page-title">Week {{ week }} {{ year }} - All persons</h2>
+
+<table class="month-schedule table-sticky">
         <thead>
             <tr>
-                <th>Dag</th>
-                <th>Datum</th>
-                {% for person in days.0.persons %}
-                    <th>Person {{ person.person_id }}</th>
-                {% endfor %}
+                <th style="min-width:120px">Day</th>
+                <th style="min-width:140px">Date</th>
+                {% if days and days|length > 0 %}
+                    {% for p in days[0].persons %}
+                        <th class="person-header">Person {{ p.person_id }}</th>
+                    {% endfor %}
+                {% endif %}
             </tr>
         </thead>
         <tbody>
             {% for day in days %}
-                <tr>
-                    <td>
-                        {{ day.weekday_name }}
-                    </td>
-                    <td>{{ day.date }}</td>
+                <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
+                    <td class="day-cell">{{ day.weekday_name }}</td>
+                    <td class="date-cell">{{ day.date }}</td>
                     {% for person in day.persons %}
                         <td style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                             {% if person.shift %}
-                                <span class="badge" style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">{{ person.shift.code }}</span>
+                                <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                                   style="text-decoration:none;">
+                                    <span class="badge"
+                                          style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                        {{ person.shift.code }}
+                                    </span>
+                                </a>
                             {% else %}
-                                OFF
+                                <span class="badge badge-off">OFF</span>
                             {% endif %}
                         </td>
                     {% endfor %}
@@ -46,4 +57,5 @@
             {% endfor %}
         </tbody>
     </table>
+
 {% endblock %}

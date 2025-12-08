@@ -1,0 +1,134 @@
+{# app/templates/day.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+    <!-- Top button bar: navigation on the left, persons on the right -->
+    <div class="day-buttons-bar">
+        <div class="day-buttons-left">
+            <a href="/day/{{ person_id }}/{{ prev_year }}/{{ prev_month }}/{{ prev_day }}"
+               class="btn btn-primary">
+                Previous day
+            </a>
+            <a href="/week/{{ person_id }}?year={{ iso_year }}&week={{ iso_week }}"
+               class="btn btn-primary">
+                Back to week
+            </a>
+            <a href="/day/{{ person_id }}/{{ next_year }}/{{ next_month }}/{{ next_day }}"
+               class="btn btn-primary">
+                Next day
+            </a>
+        </div>
+
+        <div class="day-buttons-right">
+            {% for i in range(1, 11) %}
+                <a href="/day/{{ i }}/{{ date.year }}/{{ date.month }}/{{ date.day }}"
+                   class="btn secondary btn-person {% if i == person_id %}btn-person-active{% endif %}">
+                    {{ i }}
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="day-header">
+        <h2>{{ weekday_name }} {{ date }} - {{ person_name }} ({{ person_id }})</h2>
+    </div>
+
+    <div class="day-layout">
+        <!-- Left column: shift summary -->
+        <section class="day-section">
+            <h3>Shift</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rotation week</th>
+                        <th>Shift code</th>
+                        <th>Name</th>
+                        <th>Time</th>
+                        <th>Total hours</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="shift-row"
+                        style="border-left:6px solid {% if shift %}{{ shift.color }}{% else %}transparent{% endif %};">
+                        <td>{{ rotation_week if rotation_week else "-" }}</td>
+                        <td>
+                            {% if shift %}
+                                <span class="badge"
+                                      style="background: {{ shift.color }}; color: {{ shift.color | contrast }};">
+                                    {{ shift.code }}
+                                </span>
+                            {% else %}
+                                <span class="badge badge-off">OFF</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if shift %}
+                                {{ shift.label }}
+                            {% else %}
+                                No shift
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if shift and shift.start_time %}
+                                {{ shift.start_time }} to {{ shift.end_time }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ "%.2f"|format(hours) if hours else "0.00" }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Right column: OB details -->
+        <section class="day-section">
+            <h3>OB hours</h3>
+            {% if ob_codes %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>OB code</th>
+                            <th>Hours</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for code in ob_codes %}
+                            <tr>
+                                <td>{{ code }}</td>
+                                <td>{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No OB hours this day.</p>
+            {% endif %}
+
+            <h3>OB pay</h3>
+            {% if ob_codes %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>OB code</th>
+                            <th>Amount (SEK)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for code in ob_codes %}
+                            <tr>
+                                <td>{{ code }}</td>
+                                <td>{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No OB compensation this day.</p>
+            {% endif %}
+        </section>
+    </div>
+
+{% endblock %}

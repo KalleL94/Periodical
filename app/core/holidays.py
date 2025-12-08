@@ -1,3 +1,4 @@
+# app\core\holidays.py
 import datetime
 
 def easter_sunday(year: int) -> datetime.date:
@@ -63,6 +64,10 @@ def kristi_himmelsfardsdag(year: int) -> datetime.date:
 def skartorsdagen(year: int) -> datetime.date:
     """Maundy Thursday: Thursday before Easter Sunday."""
     return easter_sunday(year) - datetime.timedelta(days=3)
+
+def annandagpask(year: int) -> datetime.date:
+    """Easter Monday"""
+    return easter_sunday(year) + datetime.timedelta(days=1)
 
 
 def pingstafton(year: int) -> datetime.date:

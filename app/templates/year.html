@@ -1,67 +1,176 @@
+{# app/templates/year.html #}
 {% extends "base.html" %}
 
 {% block page_content %}
-    <div class="month-nav">
+
+    {% set months_list = months or [] %}
+
+<div class="page-header">
+    <div class="page-header-left">
         <a href="/year/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
+        <a href="/year/{{ person_id }}" class="btn btn-primary">Today</a>
         <a href="/year/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">Next year</a>
-        <h2>År {{ year }}</h2>
-        <a href="/year?year={{ year }}" class="btn">All persons</a>
-        <a href="/year/1?year={{ year }}" class="btn">1</a>
-        <a href="/year/2?year={{ year }}" class="btn">2</a>
-        <a href="/year/3?year={{ year }}" class="btn">3</a>
-        <a href="/year/4?year={{ year }}" class="btn">4</a>
-        <a href="/year/5?year={{ year }}" class="btn">5</a>
-        <a href="/year/6?year={{ year }}" class="btn">6</a>
-        <a href="/year/7?year={{ year }}" class="btn">7</a>
-        <a href="/year/8?year={{ year }}" class="btn">8</a>
-        <a href="/year/9?year={{ year }}" class="btn">9</a>
-        <a href="/year/10?year={{ year }}" class="btn">10</a>
     </div>
+
+    <div class="page-header-right">
+        <a href="/year/{{ person_id - 1 if person_id != 1 else 10 }}?year={{ year }}" class="btn secondary">&lt-</a>
+        <a href="/year?year={{ year }}" class="btn secondary">All</a>
+        <a href="/year/{{ person_id + 1 if person_id != 10 else 1 }}?year={{ year }}" class="btn secondary">-&gt</a>
+    </div>
+</div>
+
+<h2 class="page-title">Year {{ year }} - {{ person_name }}</h2>
+
+<div class="row" style="align-items:flex-start; gap: 24px; flex-wrap: wrap;">
+
+    <!-- Vänster kolumn: cowork -->
+    <div class="col" style="min-width: 420px; flex: 1 1 0;">
+        <h2 class="page-title">Cowork stats {{ year }} - {{ person_name }}</h2>
+
+        <table class="summary">
+            <thead>
+                <tr>
+                    <th>Person</th>
+                    <th>Total</th>
+                    <th>N1</th>
+                    <th>N2</th>
+                    <th>N3</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in cowork_rows %}
+                <tr class="shift-row">
+                    <td>
+                        <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
+                            {{ r.other_name }} (#{{ r.other_id }})
+                        </a>
+                    </td>
+                    <td class="num">{{ r.total }}</td>
+                    <td class="num">{{ r.by_shift["N1"] }}</td>
+                    <td class="num">{{ r.by_shift["N2"] }}</td>
+                    <td class="num">{{ r.by_shift["N3"] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Höger kolumn: årssammanställning -->
+    <div class="col" style="min-width: 500px; flex: 1 1 0;">
+        <h2 class="page-title">Monthly summary {{ year }} - {{ person_name }}</h2>
+
+        <table class="summary">
+            <thead>
+            <tr>
+                <th>Month</th>
+                <th>Net</th>
+                <th>Gross</th>
+                <th>Shifts</th>
+                <th>Hours</th>
+                <th>OB total</th>
+            </tr>
+            </thead>
+            <tbody>
+                {% for m in months_list %}
+                {% set mnum = loop.index %}
+                {% set total_ob = m.ob_pay.get('OB1', 0)
+                                    + m.ob_pay.get('OB2', 0)
+                                    + m.ob_pay.get('OB3', 0)
+                                    + m.ob_pay.get('OB4', 0)
+                                    + m.ob_pay.get('OB5', 0) %}
+                <tr class="shift-row">
+                    <td><a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a></td>
+                    <td class="num">{{ "%.0f"|format(m.netto_pay) }}</td>
+                    <td class="num">{{ "%.0f"|format(m.brutto_pay) }}</td>
+                    <td class="num">{{ m.num_shifts }}</td>
+                    <td class="num">{{ "%.0f"|format(m.total_hours or 0) }}</td>
+                    <td class="num">{{ "%.0f"|format(total_ob) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tr>
+                <td>Total</td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='netto_pay') | sum | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='brutto_pay') | sum | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ months_list | map(attribute='num_shifts') | sum | default(0, true) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='total_hours') | sum | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(
+                        (months_list | map(attribute='ob_pay') | map(attribute='OB1') | sum | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB2') | sum | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB3') | sum | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB4') | sum | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB5') | sum | default(0, true))
+                    ) }}
+                </td>
+            </tr>
+            <tr>
+                <td>Snitt</td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='netto_pay') | sum / months_list | length | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='brutto_pay') | sum / months_list | length | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='num_shifts') | sum / months_list | length | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(months_list | map(attribute='total_hours') | sum / months_list | length | default(0, true)) }}
+                </td>
+                <td class="num">
+                    {{ "%.0f"|format(
+                        (months_list | map(attribute='ob_pay') | map(attribute='OB1') | sum / months_list | length | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB2') | sum / months_list | length | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB3') | sum / months_list | length | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB4') | sum / months_list | length | default(0, true))
+                        + (months_list | map(attribute='ob_pay') | map(attribute='OB5') | sum / months_list | length | default(0, true))
+                    ) }}
+                </td>
+            </tr>
+        </table>
+    </div>
+
+</div>
+
+{# Detaljvy: lista alla pass med vald kollega #}
+{% if selected_other_id and cowork_details %}
+    <h2 class="page-title">
+        Shared shifts with {{ selected_other_name }} (#{{ selected_other_id }}) in {{ year }}
+    </h2>
 
     <table class="summary">
         <thead>
             <tr>
-                <th>Månad</th>
-                <th>Netto lön</th>
-                <th>Brutto lön</th>
-                <th>Antal pass</th>
-                <th>Totalt timmar</th>
-                <th>Totalt OB-lön</th>
-                <th>Vardagkväll</th>
-                <th>Vardagnatt</th>
-                <th>Helg</th>
-                <th>Storhelg</th>
-                <th>Visa månad</th>
+                <th>Date</th>
+                <th>Weekday</th>
+                <th>Rotation week</th>
+                <th>Shift</th>
             </tr>
         </thead>
         <tbody>
-            {# If a `months` list is provided use it; otherwise iterate 1..12 defensively #}
-            {% set months_list = months if months is defined else [] %}
-            {% for mnum in range(1,13) %}
-                {% set m = months_list[mnum-1] if months_list and months_list|length >= mnum else None %}
-                <tr class="shift-row">
-                    <td>{{ mnum }}</td>
-                    <td class="num">{{ "%.2f"|format(m.netto_pay) if m else "0.00" }}</td>
-                    <td class="num">{{ "%.2f"|format(m.brutto_pay) if m else "0.00" }}</td>
-                    <td class="num">{{ m.num_shifts if m else 0 }}</td>
-                    <td class="num">{{ "%.2f"|format(m.total_hours) if m and m.total_hours is not none else "0.00" }}</td>
-                    <td class="num">{{ "%.2f"|format((m.ob_pay.get('OB1',0) + m.ob_pay.get('OB2',0) + m.ob_pay.get('OB3',0) + m.ob_pay.get('OB4',0) + m.ob_pay.get('OB5',0))) if m else "0.00" }}</td>
-                    <td class="num">{{ "%.2f"|format(m.ob_hours.get('OB1',0)) if m else "0.00" }}</td>
-                    <td class="num">{{ "%.2f"|format(m.ob_hours.get('OB2',0)) if m else "0.00" }}</td>
-                    <td class="num">{{ "%.2f"|format((m.ob_hours.get('OB3',0) + m.ob_hours.get('OB4',0))) if m else "0.00" }}</td>
-                    <td class="num">{{ "%.2f"|format(m.ob_hours.get('OB5',0)) if m else "0.00" }}</td>
-                    <td><a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}" class="badge">{{ m.num_shifts if m else 0 }} / {{ "%.1f"|format(m.total_hours) if m and m.total_hours is not none else "0.0" }}h</a></td>
-                </tr>
-            {% endfor %}
-            <tr>
-                <td colspan="1">Totalt</td>
-                {# Sum the netto_pay for all months #}
-                <td class="num">{{ "%.2f"|format(months_list | map(attribute='netto_pay') | sum | default(0, true)) }}</td>
-                <td class="num">{{ "%.2f"|format(months_list | map(attribute='brutto_pay') | sum | default(0, true)) }}</td>
-                <td class="num">{{ months_list | map(attribute='num_shifts') | sum | default(0, true) }}</td>
-                <td class="num">{{ "%.2f"|format(months_list | map(attribute='total_hours') | sum | default(0, true)) }}</td>
-                <td></td>
+            {% for d in cowork_details %}
+            <tr class="shift-row">
+                <td>
+                    <a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">
+                        {{ d.date }}
+                    </a>
+                </td>
+                <td>{{ d.weekday_name }}</td>
+                <td>{{ d.rotation_week }}</td>
+                <td>{{ d.target_shift.code }} {{ d.target_shift.label }}</td>
             </tr>
+            {% endfor %}
         </tbody>
     </table>
+{% endif %}
+
 {% endblock %}

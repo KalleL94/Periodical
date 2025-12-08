@@ -1,6 +1,6 @@
-/* ===== app/static/style.css — Dark theme ===== */
+/* ===== app/static/style.css - Dark theme ===== */
 :root{
-  /* Core colors — tweak these */
+  /* Core colors - tweak these */
   --bg: #0b0f13;           /* page background */
   --panel: #0f1720;        /* panels / cards */
   --muted: #9aa5b1;        /* secondary text */
@@ -130,4 +130,268 @@ footer{ margin-top:28px;color:var(--muted); font-size:0.9rem; padding:16px}
   thead{display:none}
   tbody td{display:block; width:100%}
   tbody tr{margin:8px 0; display:block; border-bottom:1px solid var(--table-border)}
+}
+
+/* Navigation links */
+.nav-link {
+    color: var(--muted);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    border: 1px solid transparent;
+}
+
+.nav-link:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.03);
+}
+
+/* Sticky tabeller (år/månad alla personer) */
+.table-sticky {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-sticky thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--panel);
+}
+
+/* Sticky första kolumnen (Dag) */
+.table-sticky .sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: var(--panel);
+}
+
+/* Radmarkering för "idag" */
+.today-row {
+    background: rgba(64, 169, 255, 0.08);
+}
+
+.today-row:hover {
+    background: rgba(64, 169, 255, 0.14);
+}
+
+/* OFF-badge separat klass */
+.badge-off {
+    background: #4b5563 !important;
+    color: #e5e7eb !important;
+}
+
+/* Day view layout */
+.day-header {
+    margin-top: 18px;
+    margin-bottom: 10px;
+}
+
+.day-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.4fr);
+    gap: 24px;
+    margin-top: 16px;
+}
+
+.day-section h3 {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+/* Make it stack nicely on smaller screens */
+@media (max-width: 900px) {
+    .day-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* Unified button group styling for day view */
+.day-button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.day-button-row .btn {
+    margin: 0;
+}
+
+.day-button-row.person-select {
+    margin-top: 10px;
+}
+
+.day-button-row nav-btns {
+    margin-top: 4px;
+}
+
+/* Extra spacing before main header */
+.day-header {
+    margin-top: 12px;
+    margin-bottom: 18px;
+}
+
+/* Day view top button bar */
+.day-buttons-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.day-buttons-left,
+.day-buttons-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Person selector buttons: smaller, secondary style */
+.btn-person {
+    padding: 5px 9px;
+    font-size: 0.8rem;
+    border-radius: 999px;
+}
+
+.btn-person-active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+}
+
+/* On narrow screens stack the groups */
+@media (max-width: 700px) {
+    .day-buttons-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* Top nav links */
+.nav-link {
+    color: var(--muted);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    border: 1px solid transparent;
+    text-decoration: none;
+}
+.nav-link:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.03);
+}
+
+/* Sticky tables for large views */
+.table-sticky {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+.table-sticky thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--panel);
+}
+.table-sticky .sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: var(--panel);
+}
+
+/* Highlight today row */
+.today-row {
+    background: rgba(64, 169, 255, 0.08);
+}
+.today-row:hover {
+    background: rgba(64, 169, 255, 0.14);
+}
+
+/* OFF badge */
+.badge-off {
+    background: #4b5563 !important;
+    color: #e5e7eb !important;
+}
+
+/* Day view layout and buttons */
+.day-header {
+    margin-top: 12px;
+    margin-bottom: 18px;
+}
+.day-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.4fr);
+    gap: 24px;
+    margin-top: 16px;
+}
+.day-section h3 {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+@media (max-width: 900px) {
+    .day-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.day-buttons-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+.day-buttons-left,
+.day-buttons-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Person selector buttons */
+.btn-person {
+    padding: 5px 9px;
+    font-size: 0.8rem;
+    border-radius: 999px;
+}
+.btn-person-active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+}
+@media (max-width: 700px) {
+    .day-buttons-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* Standardized header for all views */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.page-header-left,
+.page-header-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.page-title {
+    margin: 10px 0 18px 0;
+    font-size: 20px;
 }

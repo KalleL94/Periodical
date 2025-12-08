@@ -9,6 +9,18 @@ from app.core.schedule import (
     rotation_start_date,
     summarize_month_for_person,
     generate_year_data,
+    calculate_shift_hours,
+    build_special_ob_rules_for_year,
+    ob_rules,
+    calculate_ob_hours,
+    calculate_ob_pay,
+    _cached_special_rules,
+    settings,
+    weekday_names,
+    person_wages,
+    build_cowork_stats,
+    build_cowork_details,
+    persons as person_list,
 )
 
 
@@ -38,31 +50,84 @@ def _contrast_color(hex_color: str) -> str:
 # Register a Jinja filter so templates can call `|contrast`
 templates.env.filters["contrast"] = _contrast_color
 
+def get_prev_next_week(year: int, week: int):
+    monday = datetime.date.fromisocalendar(year, week, 1)
+
+    prev_monday = monday - datetime.timedelta(weeks=1)
+    next_monday = monday + datetime.timedelta(weeks=1)
+
+    prev_year, prev_week, _ = prev_monday.isocalendar()
+    next_year, next_week, _ = next_monday.isocalendar()
+
+    return (prev_year, prev_week), (next_year, next_week)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/today")
-async def show_today(request: Request):
-    #set day to 6/3/2026
-    today = datetime.date(2026, 3, 6)
-    shifts = []
-    for i in range(10):
-        shift, rotation_week = determine_shift_for_date(today, start_week=i+1)
-        data = {
-            "start_week": i + 1,
-            "shift": shift,
-            "rotation_week": rotation_week,
-        }
-        shifts.append(data)
+@app.get("/day/{person_id}/{year}/{month}/{day}", response_class=HTMLResponse, name="day_person")
+async def show_day_for_person(
+    request: Request,
+    person_id: int,
+    year: int,
+    month: int,
+    day: int,
+):
+    date = datetime.date(year, month, day)
 
+    prev_date = date - datetime.timedelta(days=1)
+    next_date = date + datetime.timedelta(days=1)
+    iso_year, iso_week, _ = date.isocalendar()
+
+    shift, rotation_week = determine_shift_for_date(date, start_week=person_id)
+    hours = 0.0
+    start_dt = None
+    end_dt = None
+
+    if shift and shift.code != "OFF":
+        hours, start_dt, end_dt = calculate_shift_hours(date, shift)
+
+    special_rules = build_special_ob_rules_for_year(year)
+    combined_rules = ob_rules + special_rules
+
+    person = person_list[person_id - 1]
+    monthly_salary = person_wages.get(person_id, settings.monthly_salary)
+
+    if start_dt and end_dt:
+        ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
+        ob_pay = calculate_ob_pay(
+            start_dt, end_dt, combined_rules, monthly_salary
+        )
+    else:
+        ob_hours = {r.code: 0.0 for r in ob_rules}
+        ob_pay = {r.code: 0.0 for r in ob_rules}
+
+    ob_codes = sorted(ob_hours.keys())
+
+    weekday_name = weekday_names[date.weekday()]
     return templates.TemplateResponse(
-        "test_today.html",
+        "day.html",
         {
             "request": request,
-            "today": today,
-            "shifts": shifts
+            "person_id": person_id,
+            "person_name": person.name,
+            "date": date,
+            "weekday_name": weekday_name,
+            "rotation_week": rotation_week,
+            "shift": shift,
+            "hours": hours,
+            "ob_hours": ob_hours,
+            "ob_pay": ob_pay,
+            "ob_codes": ob_codes,
+            "prev_year": prev_date.year,
+            "prev_month": prev_date.month,
+            "prev_day": prev_date.day,
+            "next_year": next_date.year,
+            "next_month": next_date.month,
+            "next_day": next_date.day,
+            "iso_year": iso_year,
+            "iso_week": iso_week,
         },
     )
 
@@ -84,7 +149,10 @@ async def show_week_for_person(
     week = week or iso_week
     
     days_in_week = build_week_data(year, week, person_id=person_id)
+
+    (prev_year, prev_week), (next_year, next_week) = get_prev_next_week(year, week)
         
+    today = datetime.date.today()
     return templates.TemplateResponse(
         "week.html",
         {
@@ -93,6 +161,11 @@ async def show_week_for_person(
             "week": week,
             "days": days_in_week,
             "person_id": person_id,
+            "prev_year": prev_year,
+            "prev_week": prev_week,
+            "next_year": next_year,
+            "next_week": next_week,
+            "today": today,
         },
     )
 
@@ -113,7 +186,10 @@ async def show_week_all(
     week = week or iso_week
     
     days_in_week = build_week_data(year, week)
-        
+
+    (prev_year, prev_week), (next_year, next_week) = get_prev_next_week(year, week)
+    
+    today = datetime.date.today()
     return templates.TemplateResponse(
         "week_all.html",
         {
@@ -121,6 +197,11 @@ async def show_week_all(
             "year": year,
             "week": week,
             "days": days_in_week,
+            "prev_year": prev_year,
+            "prev_week": prev_week,
+            "next_year": next_year,
+            "next_week": next_week,
+            "today": today,
         },
     )
 
@@ -148,6 +229,7 @@ async def show_month_for_person(
             "year": year,
             "month": month,
             "person_id": person_id,
+            "person_name": person_list[person_id - 1].name,
             "days": days_in_month,
         },
     )
@@ -189,6 +271,7 @@ async def show_year_for_person(
     request: Request,
     person_id: int,
     year: int = None,
+    with_person_id: int | None = None,
 ):
     today = datetime.date.today()
 
@@ -200,6 +283,17 @@ async def show_year_for_person(
     months = []
     for m in range(1, 13):
         months.append(summarize_month_for_person(year, m, person_id))
+        
+    cowork_rows = build_cowork_stats(year, person_id)
+    
+    cowork_details: List[Dict] = []
+    selected_other_name: str | None = None
+    
+    if with_person_id:
+        cowork_details = build_cowork_details(year, person_id, with_person_id)
+        selected_other_name = person_list[with_person_id - 1].name
+        
+    person_name = person_list[person_id - 1].name
 
     return templates.TemplateResponse(
         "year.html",
@@ -207,7 +301,12 @@ async def show_year_for_person(
             "request": request,
             "year": year,
             "person_id": person_id,
+            "person_name": person_name,
             "months": months,
+            "cowork_rows": cowork_rows,
+            "cowork_details": cowork_details,
+            "selected_other_id": with_person_id,
+            "selected_other_name": selected_other_name,
         },
     )
 
