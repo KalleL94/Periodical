@@ -19,14 +19,7 @@
             {% for day in days %}
                 <tr>
                     <td>
-                        {# Enkel mappning av weekday_index till namn #}
-                        {% if day.weekday_index == 0 %}Måndag{% endif %}
-                        {% if day.weekday_index == 1 %}Tisdag{% endif %}
-                        {% if day.weekday_index == 2 %}Onsdag{% endif %}
-                        {% if day.weekday_index == 3 %}Torsdag{% endif %}
-                        {% if day.weekday_index == 4 %}Fredag{% endif %}
-                        {% if day.weekday_index == 5 %}Lördag{% endif %}
-                        {% if day.weekday_index == 6 %}Söndag{% endif %}
+                        {{ day.weekday_name }}
                     </td>
                     <td>{{ day.date }}</td>
                     {% for person in day.persons %}

@@ -38,7 +38,7 @@ async def show_today(request: Request):
     )
 
 @app.get("/week/{person_id}", response_class=HTMLResponse, name="week_person")
-async def show_week_person(
+async def show_week_for_person(
     request: Request,
     person_id: int,
     year: int = None,
@@ -68,7 +68,7 @@ async def show_week_person(
     )
 
 @app.get("/week", response_class=HTMLResponse, name="week_all")
-async def show_week(
+async def show_week_all(
     request: Request,
     year: int = None,
     week: int = None,

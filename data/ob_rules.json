@@ -1,0 +1,34 @@
+[
+    {
+        "code": "OB1",
+        "label": "OB kväll måndag–fredag",
+        "days": [0, 1, 2, 3, 4],
+        "start_time": "18:00",
+        "end_time": "24:00",
+        "rate": 600
+    },
+    {
+        "code": "OB2",
+        "label": "OB natt måndag–lördag",
+        "days": [0, 1, 2, 3, 4, 5],
+        "start_time": "00:00",
+        "end_time": "07:00",
+        "rate": 400
+    },
+    {
+        "code": "OB3",
+        "label": "OB helg lördag",
+        "days": [5],
+        "start_time": "07:00",
+        "end_time": "24:00",
+        "rate": 300
+    },
+    {
+        "code": "OB3",
+        "label": "OB helg söndag",
+        "days": [6],
+        "start_time": "00:00",
+        "end_time": "24:00",
+        "rate": 300
+    }
+]
