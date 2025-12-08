@@ -41,9 +41,9 @@ def load_persons_json():
 
 try:
     persons = load_persons_json()
-    print(f"   ✓ Found {len(persons)} persons")
+    print(f"   [OK] Found {len(persons)} persons")
 except FileNotFoundError as e:
-    print(f"   ✗ Error: {e}")
+    print(f"   [ERROR] {e}")
 
 ADMIN_ACCOUNT = {
     "username": "admin",
@@ -90,7 +90,7 @@ def create_username(name: str) -> str:
 def migrate():
     """Run the migration."""
     print("\n" + "=" * 50)
-    print("MIGRERING: persons.json → SQLite")
+    print("MIGRATION: persons.json -> SQLite")
     print("=" * 50 + "\n")
 
     delete_existing_db()
@@ -98,7 +98,7 @@ def migrate():
     # Create tables
     print("\n1. Creating database tables...")
     create_tables()
-    print("   ✓ Tables created")
+    print("   [OK] Tables created")
     
     vacation_data = load_vacation_from_json()
     # Create database session
@@ -108,14 +108,14 @@ def migrate():
         # Check if users already exist
         existing_count = db.query(User).count()
         if existing_count > 0:
-            print(f"\n   ⚠ Database already has {existing_count} users.")
+            print(f"\n   [WARNING] Database already has {existing_count} users.")
             response = input("   Delete existing users and re-import? (y/N): ")
             if response.lower() != 'y':
                 print("   Migration cancelled.")
                 return False
             db.query(User).delete()
             db.commit()
-            print("   ✓ Existing users deleted")
+            print("   [OK] Existing users deleted")
         
         # Import persons
         print("\n3. Importing users...")
@@ -148,23 +148,23 @@ def migrate():
             vacation={},
         )
         db.add(admin)
-        print(f"  + Admin  : {ADMIN_ACCOUNT['username']:10s} ({ADMIN_ACCOUNT['name']}) ★")
-        
+        print(f"  + Admin  : {ADMIN_ACCOUNT['username']:10s} ({ADMIN_ACCOUNT['name']}) [ADMIN]")
+
         db.commit()
-        print(f"   ✓ Created {len(created_users)} users")
+        print(f"   [OK] Created {len(created_users)} users")
         
         # Print summary
         print("\n" + "=" * 50)
         print("MIGRATION COMPLETE")
         print("=" * 50)
         print(f"DEFAULT PASSWORD FOR ALL USERS: {DEFAULT_PASSWORD}")
-        print("⚠  CHANGE PASSWORDS AFTER FIRST LOGIN!")
+        print("[WARNING] CHANGE PASSWORDS AFTER FIRST LOGIN!")
         print("=" * 50)
         
         return True
         
     except Exception as e:
-        print(f"\n   ✗ Error during migration: {e}")
+        print(f"\n   [ERROR] Error during migration: {e}")
         db.rollback()
         raise
     finally:
