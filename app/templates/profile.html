@@ -1,0 +1,78 @@
+{# app/templates/profile.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<h2 class="page-title">Min profil</h2>
+
+<div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+    
+    <!-- Profil info -->
+    <div class="col" style="min-width: 300px; flex: 1;">
+        <div class="card">
+            <h3 style="margin-top: 0;">Personuppgifter</h3>
+            
+            {% if error %}
+                <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+                    {{ error }}
+                </div>
+            {% endif %}
+            
+            <form method="POST" action="/profile">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">Användarnamn</label>
+                    <input type="text" value="{{ user.username }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
+                    <small style="color: var(--muted);">Kan inte ändras</small>
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">Namn</label>
+                    <input type="text" id="name" name="name" value="{{ user.name }}" required style="width: 100%; box-sizing: border-box;">
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label for="wage" style="display: block; margin-bottom: 6px; color: var(--muted);">Månadslön (SEK)</label>
+                    <input type="number" id="wage" name="wage" value="{{ user.wage }}" required min="0" step="500" style="width: 100%; box-sizing: border-box;">
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">Roll</label>
+                    <input type="text" value="{{ user.role.value }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
+                </div>
+                
+                <button type="submit" class="btn">Spara ändringar</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Byt lösenord -->
+    <div class="col" style="min-width: 300px; flex: 1;">
+        <div class="card">
+            <h3 style="margin-top: 0;">Byt lösenord</h3>
+            
+            <form method="POST" action="/profile/password">
+                <div style="margin-bottom: 16px;">
+                    <label for="current_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nuvarande lösenord</label>
+                    <input type="password" id="current_password" name="current_password" required style="width: 100%; box-sizing: border-box;">
+                </div>
+                
+                <div style="margin-bottom: 24px;">
+                    <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nytt lösenord</label>
+                    <input type="password" id="new_password" name="new_password" required minlength="6" style="width: 100%; box-sizing: border-box;">
+                </div>
+                
+                <button type="submit" class="btn secondary">Byt lösenord</button>
+            </form>
+        </div>
+        
+        <!-- Semester länk -->
+        <div class="card" style="margin-top: 16px;">
+            <h3 style="margin-top: 0;">Semester</h3>
+            <p style="color: var(--muted);">Hantera dina semesterveckor.</p>
+            <a href="/profile/vacation" class="btn">Hantera semester</a>
+        </div>
+    </div>
+    
+</div>
+
+{% endblock %}

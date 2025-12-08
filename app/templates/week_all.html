@@ -13,11 +13,16 @@
     </div>
 
     <div class="page-header-right">
-        {% for i in range(1, 11) %}
-            <a href="/week/{{ i }}?year={{ year }}&week={{ week }}" class="btn secondary">
-                {{ i }}
-            </a>
-        {% endfor %}
+        {# Visa bara länk till egen week-sida, eller alla om admin #}
+        {% if user and user.role.value == 'admin' %}
+            {% for i in range(1, 11) %}
+                <a href="/week/{{ i }}?year={{ year }}&week={{ week }}" class="btn secondary">
+                    {{ i }}
+                </a>
+            {% endfor %}
+        {% elif user %}
+            <a href="/week/{{ user.id }}?year={{ year }}&week={{ week }}" class="btn secondary">Min vecka</a>
+        {% endif %}
     </div>
 </div>
 
@@ -31,10 +36,16 @@
                 {% if days and days|length > 0 %}
                     {% for p in days[0].persons %}
                         <th class="person-header">
-                            <a href="/week/{{ p.person_id }}?year={{ year }}&week={{ week }}">
+                            {# Länka bara till egen sida eller om admin #}
+                            {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
+                                <a href="/week/{{ p.person_id }}?year={{ year }}&week={{ week }}">
+                                    {{ p.person_name }}<br>
+                                    <small>(#{{ p.person_id }})</small>
+                                </a>
+                            {% else %}
                                 {{ p.person_name }}<br>
                                 <small>(#{{ p.person_id }})</small>
-                            </a>
+                            {% endif %}
                         </th>
                     {% endfor %}
                 {% endif %}
@@ -48,8 +59,11 @@
                     {% for person in day.persons %}
                         <td data-label="{{ person.person_name }}" style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                             {% if person.shift %}
-                                <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
-                                   style="text-decoration:none;">
+                                {# Länka till day-sida bara om admin eller egen #}
+                                {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
+                                    <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                                       style="text-decoration:none;">
+                                {% endif %}
                                     {% if person.shift.code == 'SEM' %}
                                         <span class="badge badge-sem"
                                               title="Semester"
@@ -62,7 +76,9 @@
                                             {{ person.shift.code }}
                                         </span>
                                     {% endif %}
-                                </a>
+                                {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
+                                    </a>
+                                {% endif %}
                             {% else %}
                                 <span class="badge badge-off">OFF</span>
                             {% endif %}

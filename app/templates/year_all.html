@@ -11,9 +11,14 @@
     </div>
 
     <div class="page-header-right">
-        {% for i in range(1, 11) %}
-            <a href="/year/{{ i }}?year={{ year }}" class="btn secondary">{{ i }}</a>
-        {% endfor %}
+        {# Visa bara länk till egen year-sida, eller alla om admin #}
+        {% if user and user.role.value == 'admin' %}
+            {% for i in range(1, 11) %}
+                <a href="/year/{{ i }}?year={{ year }}" class="btn secondary">{{ i }}</a>
+            {% endfor %}
+        {% elif user %}
+            <a href="/year/{{ user.id }}?year={{ year }}" class="btn secondary">Mitt år</a>
+        {% endif %}
     </div>
 </div>
 
@@ -22,14 +27,20 @@
     <div class="month-grid">
         <table class="month-schedule table-sticky">
             <thead>
-                {% if person_ob_totals is defined and person_ob_totals %}
-                    {% set max_ob = person_ob_totals | max %}
-                    {% set min_ob = person_ob_totals | min %}
+                {# Visa OB-totaler endast om admin #}
+                {% if user and user.role.value == 'admin' and person_ob_totals is defined and person_ob_totals %}
+                    {% set valid_totals = person_ob_totals | select('number') | list %}
                     <tr>
                         <th></th>
                         <th></th>
                         {% for tot in person_ob_totals %}
-                            <th class="num">{{ "%.2f"|format(tot) }}</th>
+                            <th class="num">
+                                {% if tot is not none %}
+                                    {{ "%.2f"|format(tot) }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </th>
                         {% endfor %}
                     </tr>
                 {% endif %}
@@ -39,10 +50,16 @@
                     {% if days and days|length > 0 %}
                         {% for p in days[0].persons %}
                             <th class="person-header">
-                                <a href="/year/{{ p.person_id }}">
-                                {{ p.person_name }}<br>
-                                <small>(#{{ p.person_id }})</small>
-                                </a>
+                                {# Länka bara till egen sida eller om admin #}
+                                {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
+                                    <a href="/year/{{ p.person_id }}?year={{ year }}">
+                                        {{ p.person_name }}<br>
+                                        <small>(#{{ p.person_id }})</small>
+                                    </a>
+                                {% else %}
+                                    {{ p.person_name }}<br>
+                                    <small>(#{{ p.person_id }})</small>
+                                {% endif %}
                             </th>
                         {% endfor %}
                     {% endif %}
@@ -56,8 +73,11 @@
                         {% for person in day.persons %}
                             <td style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                                 {% if person.shift %}
-                                    <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
-                                       style="text-decoration:none;">
+                                    {# Länka till day-sida bara om admin eller egen #}
+                                    {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
+                                        <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                                           style="text-decoration:none;">
+                                    {% endif %}
                                         {% if person.shift.code == 'SEM' %}
                                             <span class="badge badge-sem"
                                                   title="Semester"
@@ -70,7 +90,9 @@
                                                 {{ person.shift.code }}
                                             </span>
                                         {% endif %}
-                                    </a>
+                                    {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
+                                        </a>
+                                    {% endif %}
                                 {% else %}
                                     <span class="badge badge-off">OFF</span>
                                 {% endif %}
@@ -80,19 +102,6 @@
                 {% endfor %}
             </tbody>
         </table>
-
-        <div class="month-nav">
-            <a href="/year?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
-            <a href="/year?year={{ year + 1 }}" class="btn btn-primary">Next year</a>
-
-            <h2>Year {{ year }}</h2>
-
-            {% for i in range(1, 11) %}
-                <a href="/year/{{ i }}?year={{ year }}" class="btn">{{ i }}</a>
-            {% endfor %}
-        </div>
     </div>
-
-{{ super() }}
 
 {% endblock %}

@@ -39,7 +39,6 @@ from app.core.constants import PERSON_IDS
 from app.core.utils import (
     get_safe_today,
     get_navigation_dates,
-    render_template_response,
 )
 
 from app.core.types import PersonId, Year, Month, Day, Week, DayInfo
@@ -89,7 +88,6 @@ def get_prev_next_week(year: int, week: int):
 
     return (prev_year, prev_week), (next_year, next_week)
 
-
 def render_template_response(
     templates: Jinja2Templates,
     template_name: str,
@@ -101,7 +99,6 @@ def render_template_response(
     ctx = {"request": request, "user": user}
     ctx.update(context)
     return templates.TemplateResponse(template_name, ctx)
-
 
 def can_see_salary(current_user: User, target_person_id: int) -> bool:
     """Check if current user can see salary data for target person."""
@@ -141,6 +138,14 @@ async def show_day_for_person(
 ):
     # Validera person och datum
     person_id = validate_person_id(person_id)
+
+    if current_user.role != UserRole.ADMIN and current_user.id != person_id:
+        return RedirectResponse(
+            url=f"/day/{current_user.id}/{year}/{month}/{day}",
+            status_code=302,
+        )
+
+   # Validera datum
     date = validate_date_params(year, month, day)
 
     nav = get_navigation_dates("day", date)
@@ -194,7 +199,7 @@ async def show_day_for_person(
         {
             "person_id": person_id,
             "person_name": person.name,
-            "date": target_date,
+            "date": date,
             "weekday_name": weekday_name,
             "rotation_week": rotation_week,
             "shift": shift,
@@ -228,6 +233,13 @@ async def show_week_for_person(
     
     year = year or iso_year
     week = week or iso_week
+    
+    # Blockera access till andras sidor om inte admin
+    if current_user.role != UserRole.ADMIN and current_user.id != person_id:
+        return RedirectResponse(
+            url=f"/week/{current_user.id}?year={year}&week={week}", 
+            status_code=302
+        )
     
     days_in_week = build_week_data(year, week, person_id=person_id)
 
@@ -295,22 +307,33 @@ async def show_month_for_person(
     person_id: int,
     year: int = None,
     month: int = None,
+    current_user: User = Depends(get_current_user),
 ):
     # Validera person
     person_id = validate_person_id(person_id)
 
     safe_today = get_safe_today(rotation_start_date)
     
-
-        
     year = year or safe_today.year
     month = month or safe_today.month
+    
+    # Blockera access till andras sidor om inte admin
+    if current_user.role != UserRole.ADMIN and current_user.id != person_id:
+        return RedirectResponse(
+            url=f"/month/{current_user.id}?year={year}&month={month}", 
+            status_code=302
+        )
 
     # Validera år/månad
     validate_date_params(year, month, None)
     
     days_in_month = summarize_month_for_person(year, month, person_id=person_id)
-        
+
+    show_salary = can_see_salary(current_user, person_id)
+
+    if not show_salary:
+        days_in_month = _strip_salary_data(days_in_month)
+
     return render_template_response(
         templates,
         "month.html",
@@ -321,7 +344,9 @@ async def show_month_for_person(
             "person_id": person_id,
             "person_name": person_list[person_id - 1].name,
             "days": days_in_month,
+            "show_salary": show_salary,
         },
+        user=current_user,
     )
 
 
@@ -330,10 +355,9 @@ async def show_month_all(
     request: Request,
     year: int = None,
     month: int = None,
+    current_user: User = Depends(get_current_user),
 ):
     safe_today = get_safe_today(rotation_start_date)
-
-    
 
     year = year or safe_today.year
     month = month or safe_today.month
@@ -345,6 +369,8 @@ async def show_month_all(
     persons = []
     for pid in range(1, 11):
         summary = summarize_month_for_person(year, month, pid)
+        if not can_see_salary(current_user, pid):
+            summary = _strip_salary_data(summary)
         persons.append(summary)
 
     return render_template_response(
@@ -355,7 +381,9 @@ async def show_month_all(
             "year": year,
             "month": month,
             "persons": persons,
+            "show_salary": current_user.role == UserRole.ADMIN,
         },
+        user=current_user,
     )
 
 
@@ -365,18 +393,28 @@ async def year_view(
     person_id: int,
     year: int = Query(None),
     with_person_id: int | None = Query(None, alias="with_person_id"),
+    current_user: User = Depends(get_current_user),
 ):
     # Validera personparametrar
     person_id = validate_person_id(person_id)
+    
+    # Blockera access till andras sidor om inte admin
+    if current_user.role != UserRole.ADMIN and current_user.id != person_id:
+        # Redirect till egen sida istället för 403
+        return RedirectResponse(
+            url=f"/year/{current_user.id}?year={year or ''}",
+            status_code=302
+        )
+    
     if with_person_id is not None:
         with_person_id = validate_person_id(with_person_id)
-    
+
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
 
-    months: list[dict] = []
-    for m in range(1,13):
-        months.append(summarize_month_for_person(year, m, person_id))
+    # months: list[dict] = []
+    # for m in range(1,13):
+    #     months.append(summarize_month_for_person(year, m, person_id))
 
     person = person_list[person_id - 1]
 
@@ -396,6 +434,12 @@ async def year_view(
     months = year_data["months"]
     year_summary = year_data["year_summary"]
 
+    show_salary = can_see_salary(current_user, person_id)
+
+    if not show_salary:
+        months = [_strip_salary_data(m) for m in months]
+        year_summary = _strip_salary_data(year_summary)
+
     return render_template_response(
         templates,
         "year.html",
@@ -410,7 +454,9 @@ async def year_view(
             "cowork_details": cowork_details,
             "selected_other_id": selected_other_id,
             "selected_other_name": selected_other_name,
+            "show_salary": show_salary,
         },
+        user=current_user,
     )
 
 
@@ -418,6 +464,7 @@ async def year_view(
 async def show_year_all(
     request: Request,
     year: int = None,
+    current_user: User = Depends(get_current_user),
 ):
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
@@ -428,11 +475,14 @@ async def show_year_all(
     # Compute total OB pay per person for the year by summing monthly summaries
     person_ob_totals: list[float] = []
     for pid in PERSON_IDS:
-        total_pay = 0.0
-        for m in range(1, 13):
-            msum = summarize_month_for_person(year, m, pid)
-            total_pay += sum(msum.get("ob_pay", {}).values())
-        person_ob_totals.append(total_pay)
+        if can_see_salary(current_user, pid):
+            total_pay = 0.0
+            for m in range(1, 13):
+                msum = summarize_month_for_person(year, m, pid)
+                total_pay += sum(msum.get("ob_pay", {}).values())
+            person_ob_totals.append(total_pay)
+        else:
+            person_ob_totals.append(None)
 
     return render_template_response(
         templates,
@@ -442,5 +492,43 @@ async def show_year_all(
             "year": year,
             "days": days_in_year,
             "person_ob_totals": person_ob_totals,
+            "show_salary": current_user.role == UserRole.ADMIN,
         },
+        user=current_user,
     )
+
+# ============ Helper functions för att ta bort lönedata ============
+
+def _strip_salary_data(data: dict) -> dict:
+    """Remove salary data from a dictionary."""
+    result = data.copy()
+    result["brutto_pay"] = None
+    result["netto_pay"] = None
+    result["ob_pay"] = {}
+    result["ob_hours"] = {}
+    result["total_ob"] = None
+
+    if "days" in result and result["days"]:
+        stripped_days = []
+        for day in result["days"]:
+            day_copy = day.copy()
+            day_copy["ob_pay"] = {}
+            day_copy["ob_hours"] = {}
+            stripped_days.append(day_copy)
+        result["days"] = stripped_days
+
+    return result
+
+def _strip_year_summary(summary: dict) -> dict:
+    """Remove sensitive salary data from year summary."""
+    result = summary.copy()
+    result["total_netto"] = None
+    result["total_brutto"] = None
+    result["total_ob"] = None
+    result["avg_netto"] = None
+    result["avg_brutto"] = None
+    result["avg_ob"] = None
+    result["ob_hours_by_code"] = {}
+    result["ob_pay_by_code"] = {}
+    result["total_ob_hours"] = None
+    return result

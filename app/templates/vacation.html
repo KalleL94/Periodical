@@ -1,0 +1,127 @@
+{# app/templates/vacation.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/profile/vacation?year={{ year - 1 }}" class="btn secondary">{{ year - 1 }}</a>
+        <span style="padding: 8px 16px; font-weight: 600;">{{ year }}</span>
+        <a href="/profile/vacation?year={{ year + 1 }}" class="btn secondary">{{ year + 1 }}</a>
+    </div>
+    <div class="page-header-right">
+        <a href="/profile" class="btn secondary">Tillbaka till profil</a>
+    </div>
+</div>
+
+<h2 class="page-title">Semester {{ year }} - {{ user.name }}</h2>
+
+<div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+    
+    <!-- Välj veckor -->
+    <div class="col" style="min-width: 400px; flex: 2;">
+        <div class="card">
+            <h3 style="margin-top: 0;">Välj semesterveckor</h3>
+            <p style="color: var(--muted); margin-bottom: 16px;">Klicka på veckor för att markera/avmarkera semester.</p>
+            
+            <form method="POST" action="/profile/vacation" id="vacation-form">
+                <input type="hidden" name="year" value="{{ year }}">
+                <input type="hidden" name="weeks" id="weeks-input" value="{{ vacation_weeks | join(',') }}">
+                
+                <div class="week-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px; margin-bottom: 24px;">
+                    {% for week in range(1, 53) %}
+                        <button 
+                            type="button" 
+                            class="week-btn {% if week in vacation_weeks %}selected{% endif %}"
+                            data-week="{{ week }}"
+                            style="
+                                padding: 12px 8px;
+                                border-radius: var(--radius);
+                                border: 1px solid var(--table-border);
+                                background: {% if week in vacation_weeks %}var(--accent){% else %}var(--panel){% endif %};
+                                color: {% if week in vacation_weeks %}var(--bg){% else %}var(--text){% endif %};
+                                cursor: pointer;
+                                font-weight: {% if week in vacation_weeks %}600{% else %}400{% endif %};
+                                transition: all 0.15s;
+                            "
+                        >
+                            v{{ week }}
+                        </button>
+                    {% endfor %}
+                </div>
+                
+                <button type="submit" class="btn">Spara semester</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Sammanfattning -->
+    <div class="col" style="min-width: 250px; flex: 1;">
+        <div class="card">
+            <h3 style="margin-top: 0;">Vald semester</h3>
+            <div id="selected-summary">
+                {% if vacation_weeks %}
+                    <p><strong>{{ vacation_weeks | length }}</strong> veckor valda:</p>
+                    <p style="color: var(--muted);">{{ vacation_weeks | join(', ') }}</p>
+                {% else %}
+                    <p style="color: var(--muted);">Ingen semester vald för {{ year }}.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const weeksInput = document.getElementById('weeks-input');
+    const buttons = document.querySelectorAll('.week-btn');
+    const summary = document.getElementById('selected-summary');
+    
+    // Parse initial weeks
+    let selectedWeeks = weeksInput.value 
+        ? weeksInput.value.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w))
+        : [];
+    
+    function updateSummary() {
+        selectedWeeks.sort((a, b) => a - b);
+        weeksInput.value = selectedWeeks.join(',');
+        
+        if (selectedWeeks.length > 0) {
+            summary.innerHTML = `
+                <p><strong>${selectedWeeks.length}</strong> veckor valda:</p>
+                <p style="color: var(--muted);">${selectedWeeks.join(', ')}</p>
+            `;
+        } else {
+            summary.innerHTML = '<p style="color: var(--muted);">Ingen semester vald.</p>';
+        }
+    }
+    
+    buttons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const week = parseInt(this.dataset.week);
+            const index = selectedWeeks.indexOf(week);
+            
+            if (index > -1) {
+                // Remove
+                selectedWeeks.splice(index, 1);
+                this.classList.remove('selected');
+                this.style.background = 'var(--panel)';
+                this.style.color = 'var(--text)';
+                this.style.fontWeight = '400';
+            } else {
+                // Add
+                selectedWeeks.push(week);
+                this.classList.add('selected');
+                this.style.background = 'var(--accent)';
+                this.style.color = 'var(--bg)';
+                this.style.fontWeight = '600';
+            }
+            
+            updateSummary();
+        });
+    });
+});
+</script>
+
+{% endblock %}

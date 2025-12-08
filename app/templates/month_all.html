@@ -27,14 +27,19 @@
             <a href="/month?year={{ next_year }}&month={{ next_month }}" class="btn btn-primary">Next month</a>
         </div>
 
-        {# <div class="page-header-right">
-            {% for p in persons %}
-                <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}"
-                   class="btn secondary">
-                    {{ p.person_id }}
-                </a>
-            {% endfor %}
-        </div> #}
+        <div class="page-header-right">
+            {# Visa bara länk till egen month-sida, eller alla om admin #}
+            {% if user and user.role.value == 'admin' %}
+                {% for p in persons %}
+                    <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}"
+                       class="btn secondary">
+                        {{ p.person_id }}
+                    </a>
+                {% endfor %}
+            {% elif user %}
+                <a href="/month/{{ user.id }}?year={{ year }}&month={{ month }}" class="btn secondary">Min månad</a>
+            {% endif %}
+        </div>
     </div>
 
 <h2 class="page-title">Monthly schedule - {{ year }}-{{ "%02d"|format(month) }}</h2>
@@ -45,25 +50,34 @@
     <div class="month-grid">
         <table class="month-schedule table-sticky">
             <thead>
+                {# Visa OB-totaler endast om admin #}
+                {% if user and user.role.value == 'admin' %}
                 <tr>
                     <th></th>
                     <th>Total OB</th>
                     {% for p in persons %}
-                        {% set total_ob = p.ob_pay.get('OB1',0) + p.ob_pay.get('OB2',0)
-                                          + p.ob_pay.get('OB3',0) + p.ob_pay.get('OB4',0)
-                                          + p.ob_pay.get('OB5',0) %}
+                        {% set total_ob = (p.ob_pay.get('OB1',0) or 0) + (p.ob_pay.get('OB2',0) or 0)
+                                          + (p.ob_pay.get('OB3',0) or 0) + (p.ob_pay.get('OB4',0) or 0)
+                                          + (p.ob_pay.get('OB5',0) or 0) %}
                         <th>{{ "%.2f"|format(total_ob) }}</th>
                     {% endfor %}
                 </tr>
+                {% endif %}
                 <tr>
                     <th style="min-width:60px">Day</th>
                     <th style="min-width:120px">Date</th>
                     {% for p in persons %}
                         <th class="person-header">
-                            <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}">
+                            {# Länka bara till egen sida eller om admin #}
+                            {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
+                                <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}">
+                                    {{ p.person_name }}<br>
+                                    <small>(#{{ p.person_id }})</small>
+                                </a>
+                            {% else %}
                                 {{ p.person_name }}<br>
                                 <small>(#{{ p.person_id }})</small>
-                            </a>
+                            {% endif %}
                         </th>
                     {% endfor %}
                 </tr>
@@ -81,10 +95,12 @@
                                 title="{{ d.date.isoformat() }}"
                                 style="border-left:6px solid {% if d.shift %}{{ d.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                                 {% if d.shift %}
-                                    <a href="/day/{{ p.person_id }}/{{ d.date.year }}/{{ d.date.month }}/{{ d.date.day }}"
-                                       style="text-decoration:none;">
-                                       {% if d.shift.code == 'SEM' %}
-                                            {# Semester: own badge so it cannot be confused with OFF #}
+                                    {# Länka till day-sida bara om admin eller egen #}
+                                    {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
+                                        <a href="/day/{{ p.person_id }}/{{ d.date.year }}/{{ d.date.month }}/{{ d.date.day }}"
+                                           style="text-decoration:none;">
+                                    {% endif %}
+                                        {% if d.shift.code == 'SEM' %}
                                             <span class="badge badge-sem"
                                                   title="Semester"
                                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
@@ -96,7 +112,9 @@
                                                 {{ d.shift.code }}
                                             </span>
                                         {% endif %}
-                                    </a>
+                                    {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
+                                        </a>
+                                    {% endif %}
                                 {% else %}
                                     <span class="badge badge-off">OFF</span>
                                 {% endif %}
@@ -107,7 +125,5 @@
             </tbody>
         </table>
     </div>
-
-{{ super() }}
 
 {% endblock %}

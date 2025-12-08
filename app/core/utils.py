@@ -6,6 +6,7 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from starlette.responses import Response
 
+
 ViewType = Literal["day", "week", "month", "year"]
 
 def get_safe_today(rotation_start_date: datetime.date) -> datetime.date:
@@ -96,19 +97,4 @@ def get_navigation_dates(
 
     raise ValueError(f"Unsupported view_type: {view_type}")
 
-def render_template_response(
-    templates: Jinja2Templates,
-    template_name: str,
-    request: Request,
-    context: Dict[str, Any],
-) -> Response:
-    """
-    Wrapper runt templates.TemplateResponse som alltid injicerar request
-    och ger ett konsekvent render-anrop.
-    """
-    ctx: Dict[str, Any] = {"request": request}
-    ctx.update(context)
-    return templates.TemplateResponse(template_name, ctx)
 
-
-    

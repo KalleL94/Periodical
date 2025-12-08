@@ -32,44 +32,57 @@
         </div>
 
         <div class="page-header-right">
-            <a href="/month/{{ person_id - 1 if person_id != 1 else 10 }}?year={{ year }}&month={{ month }}" class="btn secondary">&lt-</a>
+            {# Navigering mellan personer - endast för admin #}
+            {% if user and user.role.value == 'admin' %}
+                <a href="/month/{{ person_id - 1 if person_id != 1 else 10 }}?year={{ year }}&month={{ month }}" class="btn secondary">&lt-</a>
+            {% endif %}
             <a href="/month?year={{ year }}&month={{ month }}" class="btn secondary">All</a>
-            <a href="/month/{{ person_id + 1 if person_id != 10 else 1 }}?year={{ year }}&month={{ month }}" class="btn secondary">-&gt</a>
+            {% if user and user.role.value == 'admin' %}
+                <a href="/month/{{ person_id + 1 if person_id != 10 else 1 }}?year={{ year }}&month={{ month }}" class="btn secondary">-&gt</a>
+            {% endif %}
         </div>
     </div>
 
 <h2 class="page-title">Month {{ month }} {{ year }} - {{ person_name }}</h2>
 
 
-    {# Summary row #}
+    {# Summary row - visa bara lönedata om show_salary #}
     <table class="summary">
         <thead>
             <tr>
+                {% if show_salary %}
                 <th>Net salary</th>
                 <th>Gross salary</th>
+                {% endif %}
                 <th>Number of shifts</th>
                 <th>Total hours</th>
+                {% if show_salary %}
                 <th>Total OB pay</th>
                 <th>Evening (OB1)</th>
                 <th>Night (OB2)</th>
                 <th>Weekend (OB3+OB4)</th>
                 <th>Holiday (OB5)</th>
+                {% endif %}
             </tr>
         </thead>
         <tbody>
-            {% set total_ob = days.ob_pay.get('OB1',0) + days.ob_pay.get('OB2',0)
-                              + days.ob_pay.get('OB3',0) + days.ob_pay.get('OB4',0)
-                              + days.ob_pay.get('OB5',0) %}
+            {% set total_ob = (days.ob_pay.get('OB1',0) or 0) + (days.ob_pay.get('OB2',0) or 0)
+                              + (days.ob_pay.get('OB3',0) or 0) + (days.ob_pay.get('OB4',0) or 0)
+                              + (days.ob_pay.get('OB5',0) or 0) %}
             <tr>
-                <td data-label="Netto">{{ "%.0f"|format(days.netto_pay) }}</td>
-                <td data-label="Brutto">{{ "%.0f"|format(days.brutto_pay) }}</td>
+                {% if show_salary %}
+                <td data-label="Netto">{{ "%.0f"|format(days.netto_pay or 0) }}</td>
+                <td data-label="Brutto">{{ "%.0f"|format(days.brutto_pay or 0) }}</td>
+                {% endif %}
                 <td data-label="Antal pass">{{ days.num_shifts }}</td>
-                <td data-label="Timmar">{{ "%.2f"|format(days.total_hours) }}</td>
+                <td data-label="Timmar">{{ "%.2f"|format(days.total_hours or 0) }}</td>
+                {% if show_salary %}
                 <td data-label="Total OB">{{ "%.2f"|format(total_ob) }}</td>
-                <td data-label="OB1 Kväll">{{ "%.2f"|format(days.ob_hours.get('OB1',0)) }}</td>
-                <td data-label="OB2 Natt">{{ "%.2f"|format(days.ob_hours.get('OB2',0)) }}</td>
-                <td data-label="OB3+4 Helg">{{ "%.2f"|format(days.ob_hours.get('OB3',0) + days.ob_hours.get('OB4',0)) }}</td>
-                <td data-label="OB5 Storhelg">{{ "%.2f"|format(days.ob_hours.get('OB5',0)) }}</td>
+                <td data-label="OB1 Kväll">{{ "%.2f"|format(days.ob_hours.get('OB1',0) or 0) }}</td>
+                <td data-label="OB2 Natt">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
+                <td data-label="OB3+4 Helg">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
+                <td data-label="OB5 Storhelg">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
+                {% endif %}
             </tr>
         </tbody>
     </table>

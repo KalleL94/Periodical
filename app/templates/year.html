@@ -13,9 +13,14 @@
     </div>
 
     <div class="page-header-right">
-        <a href="/year/{{ person_id - 1 if person_id != 1 else 10 }}?year={{ year }}" class="btn secondary">&lt-</a>
-        <a href="/year?year={{ year }}" class="btn secondary">All</a>
-        <a href="/year/{{ person_id + 1 if person_id != 10 else 1 }}?year={{ year }}" class="btn secondary">-&gt</a>
+        {# Navigering mellan personer - endast för admin #}
+        {% if user and user.role.value == 'admin' %}
+            <a href="/year/{{ person_id - 1 if person_id != 1 else 10 }}?year={{ year }}" class="btn secondary">&lt-</a>
+            <a href="/year?year={{ year }}" class="btn secondary">All</a>
+            <a href="/year/{{ person_id + 1 if person_id != 10 else 1 }}?year={{ year }}" class="btn secondary">-&gt</a>
+        {% else %}
+            <a href="/year?year={{ year }}" class="btn secondary">All</a>
+        {% endif %}
     </div>
 </div>
 
@@ -41,9 +46,14 @@
                 {% for r in cowork_rows %}
                 <tr class="shift-row">
                     <td data-label="Person">
-                        <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
+                        {# Länka till cowork-detaljer endast om det är ens egen sida #}
+                        {% if show_salary %}
+                            <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
+                                {{ r.other_name }} (#{{ r.other_id }})
+                            </a>
+                        {% else %}
                             {{ r.other_name }} (#{{ r.other_id }})
-                        </a>
+                        {% endif %}
                     </td>
                     <td class="num" data-label="Totalt">{{ r.total }}</td>
                     <td class="num" data-label="N1">{{ r.by_shift["N1"] }}</td>
@@ -63,45 +73,71 @@
             <thead>
             <tr>
                 <th>Month</th>
+                {% if show_salary %}
                 <th>Net</th>
                 <th>Gross</th>
+                {% endif %}
                 <th>Shifts</th>
                 <th>Hours</th>
+                {% if show_salary %}
                 <th>OB total</th>
+                {% endif %}
             </tr>
             </thead>
             <tbody>
                 {% for m in months_list %}
                 {% set mnum = loop.index %}
                 <tr class="shift-row">
-                    <td data-label="Månad"><a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a></td>
-                    <td class="num" data-label="Netto">{{ "%.0f"|format(m.netto_pay) }}</td>
-                    <td class="num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay) }}</td>
+                    <td data-label="Månad">
+                        {# Länka till month endast om behörighet #}
+                        {% if show_salary %}
+                            <a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a>
+                        {% else %}
+                            {{ mnum }}
+                        {% endif %}
+                    </td>
+                    {% if show_salary %}
+                    <td class="num" data-label="Netto">{{ "%.0f"|format(m.netto_pay or 0) }}</td>
+                    <td class="num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay or 0) }}</td>
+                    {% endif %}
                     <td class="num" data-label="Pass">{{ m.num_shifts }}</td>
                     <td class="num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
+                    {% if show_salary %}
                     <td class="num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
+            <tfoot>
             <tr>
-                <td data-label="Typ">Total</td>
+                <td data-label="Typ"><strong>Total</strong></td>
+                {% if show_salary %}
                 <td class="num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
                 <td class="num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
+                {% endif %}
                 <td class="num" data-label="Pass">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
                 <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
+                {% if show_salary %}
                 <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                {% endif %}
             </tr>
             <tr>
-                <td data-label="Typ">Snitt</td>
+                <td data-label="Typ"><strong>Snitt</strong></td>
+                {% if show_salary %}
                 <td class="num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
                 <td class="num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
+                {% endif %}
                 <td class="num" data-label="Pass">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
                 <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
+                {% if show_salary %}
                 <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
+                {% endif %}
             </tr>
+            </tfoot>
         </table>
 
-        {# OB summering i foten - per kod och total #}
+        {# OB summering - endast om användaren har behörighet #}
+        {% if show_salary %}
         <h3 class="page-title">Yearly OB breakdown</h3>
         <table class="summary">
             <thead>
@@ -122,18 +158,19 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td data-label="Typ">Total</td>
+                    <td data-label="Typ"><strong>Total</strong></td>
                     <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_ob_hours or 0) }}</td>
                     <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
                 </tr>
             </tfoot>
         </table>
+        {% endif %}
     </div>
 
 </div>
 
-{# Detaljvy: lista alla pass med vald kollega #}
-{% if selected_other_id and cowork_details %}
+{# Detaljvy: lista alla pass med vald kollega - endast om show_salary #}
+{% if show_salary and selected_other_id and cowork_details %}
     <h2 class="page-title">
         Shared shifts with {{ selected_other_name }} (#{{ selected_other_id }}) in {{ year }}
     </h2>
