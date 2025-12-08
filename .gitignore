@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env.local
+.env.production
+
+# Logs
+*.log
+
+# Test/temp
+*.tmp
+*_copy.py
+*_copy.html
+
+# Excluded directories
+AoC/
+backups/
+testauth/
+alla/
+archive/
+
+# Excluded files
+tree.txt
+venv.bat
+ICA schedule.xlsx

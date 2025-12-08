@@ -1,0 +1,30 @@
+[
+    {
+        "code": "OFF",
+        "label": "Ledig",
+        "start_time": null,
+        "end_time": null,
+        "color": "#888888"
+    },
+    {
+        "code": "N1",
+        "label": "Dagpass",
+        "start_time": "06:00",
+        "end_time": "14:30",
+        "color": "#4caf50"
+    },
+    {
+        "code": "N2",
+        "label": "Kvällspass",
+        "start_time": "14:00",
+        "end_time": "22:30",
+        "color": "#ff9800"
+    },
+    {
+        "code": "N3",
+        "label": "Nattpass",
+        "start_time": "22:00",
+        "end_time": "06:30",
+        "color": "#3f51b5"
+    }
+]
