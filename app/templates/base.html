@@ -4,12 +4,19 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Ica Schedule</title>
+            <meta name="theme-color" content="#0b0f13">
+            <link rel="stylesheet" href="/static/style.css">
     </head>
     <body>
         <header>
             <h1>Welcome to Ica Schedule</h1>
+            <a href="/year" class="btn">Year view</a>
+            <a href="/month" class="btn">Month view</a>
+            <a href="/week" class="btn">Week view</a>
         </header>
-        {% block page_content %}
-        {% endblock %}
+            <main>
+            {% block page_content %}
+            {% endblock %}
+            </main>
     </body>
 </html>

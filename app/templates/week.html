@@ -4,7 +4,17 @@
     <a href="/week/{{ person_id }}?year={{ year }}&week={{ week - 1 }}" class="btn btn-primary">Previous week</a>
     <a href="/week/{{ person_id }}?year={{ year }}&week={{ week + 1 }}" class="btn btn-primary">Next week</a>
     <h2>Vecka {{ week }} {{ year }}</h2>
-    
+    <a href="/week?year={{ year }}&week={{ week }}" class="btn">All persons</a>
+    <a href="/week/1?year={{ year }}&week={{ week }}" class="btn">1</a>
+    <a href="/week/2?year={{ year }}&week={{ week }}" class="btn">2</a>
+    <a href="/week/3?year={{ year }}&week={{ week }}" class="btn">3</a>
+    <a href="/week/4?year={{ year }}&week={{ week }}" class="btn">4</a>
+    <a href="/week/5?year={{ year }}&week={{ week }}" class="btn">5</a>
+    <a href="/week/6?year={{ year }}&week={{ week }}" class="btn">6</a>
+    <a href="/week/7?year={{ year }}&week={{ week }}" class="btn">7</a>
+    <a href="/week/8?year={{ year }}&week={{ week }}" class="btn">8</a>
+    <a href="/week/9?year={{ year }}&week={{ week }}" class="btn">9</a>
+    <a href="/week/10?year={{ year }}&week={{ week }}" class="btn">10</a>
     <table>
         <thead>
             <tr>
@@ -17,14 +27,20 @@
         </thead>
         <tbody>
             {% for day in days %}
-                <tr>
+                <tr class="shift-row" style="border-left:6px solid {% if day.shift %}{{ day.shift.color }}{% else %}transparent{% endif %};">
                     <td>
                         {{ day.weekday_name }}
                     </td>
                     <td>{{ day.date }}</td>
                     <td>{{ day.rotation_week }}</td>
-                    <td>{{ day.shift.code }}</td>
-                    {% if day.shift.start_time is not none %} <td>{{ day.shift.start_time }} till {{ day.shift.end_time }}</td>
+                    <td>
+                        {% if day.shift %}
+                            <span class="badge" style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">{{ day.shift.code }}</span>
+                        {% else %}
+                            OFF
+                        {% endif %}
+                    </td>
+                    {% if day.shift and day.shift.start_time is not none %} <td>{{ day.shift.start_time }} till {{ day.shift.end_time }}</td>
                     {% else %} <td>Inget pass</td> {% endif %}
                 </tr>
             {% endfor %}

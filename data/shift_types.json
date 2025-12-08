@@ -11,14 +11,14 @@
         "label": "Dagpass",
         "start_time": "06:00",
         "end_time": "14:30",
-        "color": "#4caf50"
+        "color": "#ff9800"
     },
     {
         "code": "N2",
         "label": "Kvällspass",
         "start_time": "14:00",
         "end_time": "22:30",
-        "color": "#ff9800"
+        "color": "#4caf50"
     },
     {
         "code": "N3",

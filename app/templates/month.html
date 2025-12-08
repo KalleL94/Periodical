@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block page_content %}
+    {% if month == 1 %}
+        {% set prev_month = 12 %}
+        {% set prev_year = year - 1 %}
+    {% else %}
+        {% set prev_month = month - 1 %}
+        {% set prev_year = year %}
+    {% endif %}
+    <a href="/month/{{ person_id }}?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-primary">Previous month</a>
+    {% if month == 12 %}
+        {% set next_month = 1 %}
+        {% set next_year = year + 1 %}
+    {% else %}
+        {% set next_month = month + 1 %}
+        {% set next_year = year %}
+    {% endif %}
+    <a href="/month/{{ person_id }}?year={{ next_year }}&month={{ next_month }}" class="btn btn-primary">Next month</a>
+    
+    <h2>Månad {{ month }} {{ year }}</h2>
+    <a href="/month?year={{ year }}&month={{ month }}" class="btn">All persons</a>
+            <a href="/month/1?year={{ year }}&month={{ month }}" class="btn">1</a>
+            <a href="/month/2?year={{ year }}&month={{ month }}" class="btn">2</a>
+            <a href="/month/3?year={{ year }}&month={{ month }}" class="btn">3</a>
+            <a href="/month/4?year={{ year }}&month={{ month }}" class="btn">4</a>
+            <a href="/month/5?year={{ year }}&month={{ month }}" class="btn">5</a>
+            <a href="/month/6?year={{ year }}&month={{ month }}" class="btn">6</a>
+            <a href="/month/7?year={{ year }}&month={{ month }}" class="btn">7</a>
+            <a href="/month/8?year={{ year }}&month={{ month }}" class="btn">8</a>
+            <a href="/month/9?year={{ year }}&month={{ month }}" class="btn">9</a>
+            <a href="/month/10?year={{ year }}&month={{ month }}" class="btn">10</a>
+    <table>
+        <thead>
+            <tr>
+                <th colspan="1"></th>
+                <th>Netto lön</th>
+                <th>Brutto lön</th>
+                <th>Antal pass</th>
+                <th>Totalt timmar</th>
+                <th>Totalt OB-lön</th>
+                <th>Vardagkväll</th>
+                <th>Vardagnatt</th>
+                <th>Helg</th>
+                <th>Storhelg</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td colspan="1"></td>
+                <td>{{ "%.0f"|format(days.netto_pay) }}</td>
+                <td>{{ "%.0f"|format(days.brutto_pay) }}</td>
+                <td>{{ days.num_shifts }}</td>
+                <td>{{ "%.2f"|format(days.total_hours) }}</td>
+                <td>{{ "%.2f"|format((days.ob_pay.get('OB1',0) + days.ob_pay.get('OB2',0) + days.ob_pay.get('OB3',0) + days.ob_pay.get('OB4',0) + days.ob_pay.get('OB5',0))) }}</td>
+                <td>{{ "%.2f"|format(days.ob_hours.get('OB1', 0)) }}</td>
+                <td>{{ "%.2f"|format(days.ob_hours.get('OB2', 0)) }}</td>
+                <td>{{ "%.2f"|format(days.ob_hours.get('OB3', 0) + days.ob_hours.get('OB4', 0)) }}</td>
+                <td>{{ "%.2f"|format(days.ob_hours.get('OB5', 0)) }}</td>
+            </tr>
+        </tbody>
+        <thead>
+            <tr>
+                <th>Dag</th>
+                <th>Datum</th>
+                <th>Rotation</th>
+                <th>Pass</th>
+                <th>Tid</th>
+                <th>OB-lön</th>
+                <th colspan="4">OB-timmar</th>
+            </tr>
+            <tr>
+                <th colspan="6"></th>
+                <th>Vardagkväll</th>
+                <th>Vardagnatt</th>
+                <th>Helg</th>
+                <th>Storhelg</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for day in days.days %}
+                <tr class="shift-row" style="border-left:6px solid {% if day.shift %}{{ day.shift.color }}{% else %}transparent{% endif %};">
+                    <td>
+                        {{ day.weekday_name }}
+                    </td>
+                    <td>{{ day.date }}</td>
+                    <td>{{ day.rotation_week }}</td>
+                    <td>
+                        {% if day.shift %}
+                            <span class="badge" style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">{{ day.shift.code }}</span>
+                        {% else %}
+                            OFF
+                        {% endif %}
+                    </td>
+                    {% if day.shift and day.shift.start_time is not none %}
+                        <td>{{ day.shift.start_time }} till {{ day.shift.end_time }}</td>
+                        <td>{{ "%.2f"|format((day.ob_pay.get('OB1',0) + day.ob_pay.get('OB2',0) + day.ob_pay.get('OB3',0) + day.ob_pay.get('OB4',0) + day.ob_pay.get('OB5',0))) }}</td>
+                        <td>{{ "%.2f"|format(day.ob_hours.get('OB1',0)) }}</td>
+                        <td>{{ "%.2f"|format(day.ob_hours.get('OB2',0)) }}</td>
+                        <td>{{ "%.2f"|format(day.ob_hours.get('OB3',0) + day.ob_hours.get('OB4',0)) }}</td>
+                        <td>{{ "%.2f"|format(day.ob_hours.get('OB5',0)) }}</td>
+                    {% else %}
+                        <td>Inget pass</td>
+                        <td>0.00</td>
+                        <td>0.00</td>
+                        <td>0.00</td>
+                        <td>0.00</td>
+                        <td>0.00</td>
+                    {% endif %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

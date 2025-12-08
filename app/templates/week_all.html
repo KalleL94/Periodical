@@ -3,7 +3,18 @@
 {% block page_content %}
     <a href="/week?year={{ year }}&week={{ week - 1 }}" class="btn btn-primary">Previous week</a>
     <a href="/week?year={{ year }}&week={{ week + 1 }}" class="btn btn-primary">Next week</a>
+
     <h2>Vecka {{ week }} {{ year }}</h2>
+    <a href="/week/1?year={{ year }}&week={{ week }}" class="btn">1</a>
+    <a href="/week/2?year={{ year }}&week={{ week }}" class="btn">2</a>
+    <a href="/week/3?year={{ year }}&week={{ week }}" class="btn">3</a>
+    <a href="/week/4?year={{ year }}&week={{ week }}" class="btn">4</a>
+    <a href="/week/5?year={{ year }}&week={{ week }}" class="btn">5</a>
+    <a href="/week/6?year={{ year }}&week={{ week }}" class="btn">6</a>
+    <a href="/week/7?year={{ year }}&week={{ week }}" class="btn">7</a>
+    <a href="/week/8?year={{ year }}&week={{ week }}" class="btn">8</a>
+    <a href="/week/9?year={{ year }}&week={{ week }}" class="btn">9</a>
+    <a href="/week/10?year={{ year }}&week={{ week }}" class="btn">10</a>
 
     <table>
         <thead>
@@ -23,8 +34,12 @@
                     </td>
                     <td>{{ day.date }}</td>
                     {% for person in day.persons %}
-                        <td>
-                            {{ person.shift.code }}
+                        <td style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
+                            {% if person.shift %}
+                                <span class="badge" style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">{{ person.shift.code }}</span>
+                            {% else %}
+                                OFF
+                            {% endif %}
                         </td>
                     {% endfor %}
                 </tr>

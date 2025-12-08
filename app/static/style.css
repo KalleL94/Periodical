@@ -1,0 +1,133 @@
+/* ===== app/static/style.css — Dark theme ===== */
+:root{
+  /* Core colors — tweak these */
+  --bg: #0b0f13;           /* page background */
+  --panel: #0f1720;        /* panels / cards */
+  --muted: #9aa5b1;        /* secondary text */
+  --text: #e6eef6;         /* primary text */
+  --accent: #40a9ff;       /* accent color (links/buttons) */
+  --accent-2: #7bd389;     /* secondary accent */
+  --danger: #ff6b6b;
+  --table-border: rgba(255,255,255,0.06);
+  --glass: rgba(255,255,255,0.03);
+  --radius: 8px;
+}
+
+/* Global */
+*{box-sizing:border-box}
+html,body{
+  height:100%;
+  margin:0;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  background: linear-gradient(180deg,var(--bg), #071018 120%);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  line-height:1.45;
+  font-size:16px;
+}
+
+/* Page container */
+header{
+  padding:18px 24px;
+  border-bottom:1px solid var(--table-border);
+  background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+}
+main{
+  max-width:1100px;
+  margin:24px auto;
+  padding:20px;
+}
+
+/* Card */
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  border:1px solid var(--table-border);
+  border-radius:var(--radius);
+  padding:16px;
+  box-shadow: 0 6px 18px rgba(2,8,23,0.5);
+}
+
+/* Headings */
+h1,h2,h3{color:var(--text); margin:0 0 12px 0}
+h1{font-size:24px}
+h2{font-size:20px}
+h3{font-size:16px}
+
+/* Links & accents */
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Tables */
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:12px 0;
+  font-size:0.95rem;
+}
+thead th{
+  text-align:left;
+  padding:10px 12px;
+  color:var(--muted);
+  font-weight:600;
+  font-size:0.85rem;
+  border-bottom:1px solid var(--table-border);
+}
+tbody td{
+  padding:10px 12px;
+  border-bottom:1px solid rgba(255,255,255,0.03);
+  vertical-align:middle;
+  color:var(--text);
+}
+tr:hover td{ background: rgba(255,255,255,0.01) }
+
+/* Small labels */
+.badge{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:0.78rem;
+  color:var(--bg);
+  background:var(--accent);
+  font-weight:600;
+}
+
+/* Buttons & inputs */
+button, .btn{
+  background:var(--accent);
+  color:var(--bg);
+  border:0;
+  padding:8px 12px;
+  border-radius:6px;
+  cursor:pointer;
+}
+button.secondary, .btn.secondary{
+  background:transparent;
+  color:var(--text);
+  border:1px solid var(--table-border);
+}
+input,select{
+  background:var(--panel);
+  color:var(--text);
+  border:1px solid var(--table-border);
+  padding:8px 10px;
+  border-radius:6px;
+}
+
+/* Table numeric alignment */
+td.num, th.num{ text-align:right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Utility */
+.row{display:flex;gap:12px;align-items:center}
+.col{flex:1}
+
+/* Footer */
+footer{ margin-top:28px;color:var(--muted); font-size:0.9rem; padding:16px}
+
+/* Responsiveness */
+@media (max-width:800px){
+  main{padding:12px}
+  thead{display:none}
+  tbody td{display:block; width:100%}
+  tbody tr{margin:8px 0; display:block; border-bottom:1px solid var(--table-border)}
+}

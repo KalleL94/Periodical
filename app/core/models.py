@@ -15,3 +15,21 @@ class Rotation(BaseModel):
 class Settings(BaseModel):
     rotation_start_date: str
     monthly_salary: Optional[int]
+    
+class ObRule(BaseModel):
+    code: str
+    label: str
+    days: Optional[List[int]] = None
+    specific_dates: Optional[List[str]] = None
+    start_time: str
+    end_time: str
+    rate: int
+
+class TaxBracket(BaseModel):
+    lon_fran: float
+    lon_till: Optional[float]
+    prel_skatt: float
+    
+class Person(BaseModel):
+    id: int
+    name: str

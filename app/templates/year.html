@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block page_content %}
+    <div class="month-nav">
+        <a href="/year/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
+        <a href="/year/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">Next year</a>
+        <h2>År {{ year }}</h2>
+        <a href="/year?year={{ year }}" class="btn">All persons</a>
+        <a href="/year/1?year={{ year }}" class="btn">1</a>
+        <a href="/year/2?year={{ year }}" class="btn">2</a>
+        <a href="/year/3?year={{ year }}" class="btn">3</a>
+        <a href="/year/4?year={{ year }}" class="btn">4</a>
+        <a href="/year/5?year={{ year }}" class="btn">5</a>
+        <a href="/year/6?year={{ year }}" class="btn">6</a>
+        <a href="/year/7?year={{ year }}" class="btn">7</a>
+        <a href="/year/8?year={{ year }}" class="btn">8</a>
+        <a href="/year/9?year={{ year }}" class="btn">9</a>
+        <a href="/year/10?year={{ year }}" class="btn">10</a>
+    </div>
+
+    <table class="summary">
+        <thead>
+            <tr>
+                <th>Månad</th>
+                <th>Netto lön</th>
+                <th>Brutto lön</th>
+                <th>Antal pass</th>
+                <th>Totalt timmar</th>
+                <th>Totalt OB-lön</th>
+                <th>Vardagkväll</th>
+                <th>Vardagnatt</th>
+                <th>Helg</th>
+                <th>Storhelg</th>
+                <th>Visa månad</th>
+            </tr>
+        </thead>
+        <tbody>
+            {# If a `months` list is provided use it; otherwise iterate 1..12 defensively #}
+            {% set months_list = months if months is defined else [] %}
+            {% for mnum in range(1,13) %}
+                {% set m = months_list[mnum-1] if months_list and months_list|length >= mnum else None %}
+                <tr class="shift-row">
+                    <td>{{ mnum }}</td>
+                    <td class="num">{{ "%.2f"|format(m.netto_pay) if m else "0.00" }}</td>
+                    <td class="num">{{ "%.2f"|format(m.brutto_pay) if m else "0.00" }}</td>
+                    <td class="num">{{ m.num_shifts if m else 0 }}</td>
+                    <td class="num">{{ "%.2f"|format(m.total_hours) if m and m.total_hours is not none else "0.00" }}</td>
+                    <td class="num">{{ "%.2f"|format((m.ob_pay.get('OB1',0) + m.ob_pay.get('OB2',0) + m.ob_pay.get('OB3',0) + m.ob_pay.get('OB4',0) + m.ob_pay.get('OB5',0))) if m else "0.00" }}</td>
+                    <td class="num">{{ "%.2f"|format(m.ob_hours.get('OB1',0)) if m else "0.00" }}</td>
+                    <td class="num">{{ "%.2f"|format(m.ob_hours.get('OB2',0)) if m else "0.00" }}</td>
+                    <td class="num">{{ "%.2f"|format((m.ob_hours.get('OB3',0) + m.ob_hours.get('OB4',0))) if m else "0.00" }}</td>
+                    <td class="num">{{ "%.2f"|format(m.ob_hours.get('OB5',0)) if m else "0.00" }}</td>
+                    <td><a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}" class="badge">{{ m.num_shifts if m else 0 }} / {{ "%.1f"|format(m.total_hours) if m and m.total_hours is not none else "0.0" }}h</a></td>
+                </tr>
+            {% endfor %}
+            <tr>
+                <td colspan="1">Totalt</td>
+                {# Sum the netto_pay for all months #}
+                <td class="num">{{ "%.2f"|format(months_list | map(attribute='netto_pay') | sum | default(0, true)) }}</td>
+                <td class="num">{{ "%.2f"|format(months_list | map(attribute='brutto_pay') | sum | default(0, true)) }}</td>
+                <td class="num">{{ months_list | map(attribute='num_shifts') | sum | default(0, true) }}</td>
+                <td class="num">{{ "%.2f"|format(months_list | map(attribute='total_hours') | sum | default(0, true)) }}</td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+{% endblock %}
