@@ -28,6 +28,7 @@ from .config import (
     OB_RATE_DIVISOR_OB4,
     OB_RATE_DIVISOR_OB5,
 )
+from app.database.database import SessionLocal, User
 
 shift_types = load_shift_types()
 rotation = load_rotation()
@@ -315,24 +316,37 @@ def _ob_rule_priority(r) -> int:
 def _vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
     per_person: dict[int, set[datetime.date]] = {p.id: set() for p in persons}
     
-    for p in persons:
-        vac_by_year = p.vacation or {}
+    db = SessionLocal()
 
-        weeks_for_year = vac_by_year.get(str(year), []) or []
+    try:
+        users = db.query(User).filter(User.id.in_(PERSON_IDS)).all()
+    
+        for user in users:
+            vac_by_year = user.vacation or {}
+            weeks_for_year = vac_by_year.get(str(year), []) or []
 
-        if not weeks_for_year:
-            continue
+            if not weeks_for_year:
+                continue
         
-        for week in weeks_for_year:
-            for day in range(1, 8):
-                try:
-                    d = datetime.date.fromisocalendar(year, week, day)
-                except:
-                    # If week is invalid for that year, ignore it instead of crashing
-                    continue
-                per_person[p.id].add(d)
+            for week in weeks_for_year:
+                for day in range(1, 8):
+                    try:
+                        d = datetime.date.fromisocalendar(year, week, day)
+                    except:
+                        # If week is invalid for that year, ignore it instead of crashing
+                        continue
+                    per_person[user.id].add(d)
+    finally:
+        db.close()
                 
     return per_person
+
+def clear_schedule_cache():
+    """Rensar alla cachade schemaberäkningar."""
+    generate_year_data.cache_clear()
+    _cached_special_rules.cache_clear()
+    _cached_shift_hours.cache_clear()
+    determine_shift_for_date.cache_clear()
 
 def _rule_interval_for_day(
     rule,

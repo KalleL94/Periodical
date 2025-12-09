@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from urllib.parse import urlparse
 
+from app.core.schedule import clear_schedule_cache
 from app.database.database import get_db, User, UserRole
 from app.auth.auth import (
     authenticate_user,
@@ -218,6 +219,7 @@ async def update_vacation(
     flag_modified(current_user, "vacation")
     
     db.commit()
+    clear_schedule_cache()
     
     return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
 

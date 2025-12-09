@@ -1,4 +1,4 @@
-# ICA Schedule
+# Periodical
 
 Rotationsschema och OB-beräkning för 10-personers team.
 

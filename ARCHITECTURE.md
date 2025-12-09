@@ -1,4 +1,4 @@
-# ICA Schedule - Architecture Documentation
+# Periodical - Architecture Documentation
 
 ## Project Overview
 
@@ -138,26 +138,43 @@ Current versions in this repository:
 
 ### Core Components
 
-1. **Schedule Engine** (`app/core/schedule.py`)
+1. **Application Entry** (`app/main.py`)
+   - FastAPI app initialization
+   - Static file mounting
+   - Router registration
+   - Database table creation
+
+2. **Route Handlers** (`app/routes/`)
+   - `public.py` - All schedule views (week, day, month, year)
+   - `auth_routes.py` - Login/logout endpoints
+   - `admin.py` - Admin settings management
+
+3. **Schedule Engine** (`app/core/schedule.py`)
    - Rotation calculation algorithm
    - OB hours/pay calculation
    - Holiday handling
    - Vacation override logic
 
-2. **Data Models** (`app/core/models.py`)
+4. **Helper Functions** (`app/core/helpers.py`)
+   - Permission checks (`can_see_salary`)
+   - Salary data sanitization (`strip_salary_data`, `strip_year_summary`)
+   - Template rendering helper (`render_template`)
+   - Badge contrast color calculation (`contrast_color`)
+
+5. **Data Models** (`app/core/models.py`)
    - Pydantic models for type safety
    - Person, ShiftType, Rotation, ObRule, Settings
 
-3. **Data Storage** (`app/core/storage.py`)
+6. **Data Storage** (`app/core/storage.py`)
    - JSON file loaders
    - All configuration stored in `data/` directory
 
-4. **Authentication** (`app/auth/auth.py`)
+7. **Authentication** (`app/auth/auth.py`)
    - JWT token generation/validation
    - Password hashing (bcrypt)
    - Role-based access control
 
-5. **Database** (`app/database/database.py`)
+8. **Database** (`app/database/database.py`)
    - SQLAlchemy + SQLite
    - User authentication persistence
 
