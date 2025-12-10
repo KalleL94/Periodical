@@ -30,6 +30,19 @@ class ObRule(BaseModel):
     end_time: str
     rate: int
 
+class OnCallRule(BaseModel):
+    """On-call compensation rule definition."""
+    code: str
+    label: str
+    days: list[int] | None = None
+    specific_dates: list[str] | None = None
+    start_time: str
+    end_time: str
+    rate: int  # Divisor: monthly_salary / rate = daily compensation
+    priority: int = 1  # Higher priority replaces lower priority
+    spans_to_next_day: bool = False
+    generated: bool = False
+
 class TaxBracket(BaseModel):
     """Tax bracket definition for income ranges."""
     lon_fran: float

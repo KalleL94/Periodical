@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# migrate_to_db.py
 """
 Migration script: Import persons from JSON to SQLite database.
 

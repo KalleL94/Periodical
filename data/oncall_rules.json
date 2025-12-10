@@ -1,0 +1,74 @@
+[
+    {
+        "code": "OC_DEFAULT",
+        "label": "Beredskap standard",
+        "description": "Grundersättning för jour vardagar",
+        "days": [0, 1, 2, 3, 4, 5, 6],
+        "start_time": "00:00",
+        "end_time": "24:00",
+        "rate": 1000,
+        "priority": 1,
+        "spans_to_next_day": false,
+        "generated": false
+    },
+    {
+        "code": "OC_FRIDAY_NIGHT",
+        "label": "Beredskap fredag kväll",
+        "description": "Förhöjd ersättning fredag 18:00 till lördag 07:00",
+        "days": [4],
+        "start_time": "18:00",
+        "end_time": "07:00",
+        "rate": 700,
+        "priority": 2,
+        "spans_to_next_day": true,
+        "generated": false
+    },
+    {
+        "code": "OC_WEEKEND",
+        "label": "Beredskap helg",
+        "description": "Förhöjd ersättning lördag 07:00 till söndag 24:00",
+        "days": [5, 6],
+        "start_time": "07:00",
+        "end_time": "24:00",
+        "rate": 500,
+        "priority": 3,
+        "spans_to_next_day": false,
+        "generated": false
+    },
+    {
+        "code": "OC_HOLIDAY_EVE",
+        "label": "Beredskap helgdagsafton",
+        "description": "Afton före röd dag (från 18:00)",
+        "specific_dates": [],
+        "start_time": "18:00",
+        "end_time": "24:00",
+        "rate": 700,
+        "priority": 4,
+        "spans_to_next_day": false,
+        "generated": true
+    },
+    {
+        "code": "OC_HOLIDAY",
+        "label": "Beredskap helgdag",
+        "description": "Röd dag hela dagen",
+        "specific_dates": [],
+        "start_time": "00:00",
+        "end_time": "24:00",
+        "rate": 500,
+        "priority": 5,
+        "spans_to_next_day": false,
+        "generated": true
+    },
+    {
+        "code": "OC_SPECIAL",
+        "label": "Beredskap storhelg",
+        "description": "Storhelger (jul, nyår, påsk, midsommar) - förlängs till första vardag",
+        "specific_dates": [],
+        "start_time": "00:00",
+        "end_time": "24:00",
+        "rate": 250,
+        "priority": 6,
+        "spans_to_next_day": false,
+        "generated": true
+    }
+]

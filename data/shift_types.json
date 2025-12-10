@@ -14,6 +14,13 @@
         "color": "#c7c700"
     },
     {
+        "code": "OC",
+        "label": "Beredskap",
+        "start_time": "06:00",
+        "end_time": "06:00",
+        "color": "#e91e63"
+    },
+    {
         "code": "N1",
         "label": "Dagpass",
         "start_time": "06:00",

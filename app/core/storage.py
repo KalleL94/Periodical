@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.core.models import ShiftType, Rotation, Settings, ObRule, TaxBracket, Person
+from app.core.models import ShiftType, Rotation, Settings, ObRule, OnCallRule, TaxBracket, Person
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,28 @@ def load_ob_rules() -> list[ObRule]:
         logger.exception("Failed to parse OB rules from %s", file_path)
         raise StorageError(f"Could not parse OB rules from {file_path}: {e}") from e
     return ob_rules
+
+
+def load_oncall_rules() -> list[OnCallRule]:
+    """
+    Load on-call compensation rules from data file.
+    Returns:
+        List of on-call rules
+    Raises:
+        StorageError: If file cannot be loaded or parsed
+    """
+    file_path = Path("data/oncall_rules.json")
+    data = _load_json(file_path)
+    try:
+        if not isinstance(data, list):
+            raise TypeError("Expected list of on-call rules")
+        oncall_rules = [OnCallRule(**item) for item in data]
+    except (TypeError, ValidationError) as e:
+        logger.exception("Failed to parse on-call rules from %s", file_path)
+        raise StorageError(f"Could not parse on-call rules from {file_path}: {e}") from e
+    return oncall_rules
+
+
 
 
 def load_tax_brackets() -> list[TaxBracket]:

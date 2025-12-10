@@ -12,6 +12,7 @@ from .storage import (
     load_persons,
 )
 from .holidays import *
+from .oncall import calculate_oncall_pay, _cached_oncall_rules
 from .models import ObRule
 from .constants import (
     PERSON_IDS,
@@ -244,10 +245,24 @@ def generate_year_data(
                 else:
                     shift, rotation_week = result
                     hours, start, end = _cached_shift_hours(current_day, shift.code)
-                    if start is not None:
+                    if start is not None and shift.code != "OC":
                         ob = calculate_ob_hours(start, end, combined_ob_rules)
                     else:
                         ob = {}
+
+            # Callculate on-call pay if this is an on-call shift
+            oncall_pay = 0.0
+            oncall_details = {}
+            if shift and shift.code == "OC":
+                oncall_rules = _cached_oncall_rules(current_day.year)
+                oncall_calc = calculate_oncall_pay(
+                    current_day,
+                    person_wages.get(person_id, settings.monthly_salary),
+                    oncall_rules
+                )
+                oncall_pay = oncall_calc["total_pay"]
+                oncall_details = oncall_calc
+
 
             day_info["person_id"] = person_id
             day_info["person_name"] = persons[person_id - 1].name
@@ -257,6 +272,8 @@ def generate_year_data(
             day_info["start"] = start
             day_info["end"] = end
             day_info["ob"] = ob
+            day_info["oncall_pay"] = oncall_pay
+            day_info["oncall_details"] = oncall_details
 
         days_in_year.append(day_info)
         current_day = current_day + datetime.timedelta(days=1)
@@ -506,6 +523,7 @@ def summarize_month_for_person(
         "ob_hours": {},
         "ob_pay": {},
         "brutto_pay": base_salary,
+        "oncall_pay": 0.0,
     }
     days_out: list[dict] = []
     for day in days:
@@ -518,8 +536,8 @@ def summarize_month_for_person(
         
         ob_hours: dict[str, float]
         ob_pay: dict[str, float]
-    
-        if shift and shift.code != "OFF" and start and end:
+
+        if shift and shift.code != "OFF" and shift.code != "OC" and start and end:
             ob_hours = calculate_ob_hours(start, end, combined_rules)
             ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary)
         else:
@@ -536,6 +554,12 @@ def summarize_month_for_person(
             totals["ob_pay"][code] = totals["ob_pay"].get(code, 0.0) + p
             totals["brutto_pay"] += p
 
+        # Add on-call pay if present
+        if 'oncall_pay' in day:
+            oncall_pay = day.get('oncall_pay', 0.0)
+            totals['brutto_pay'] += oncall_pay
+            totals['oncall_pay'] = totals.get('oncall_pay', 0.0) + oncall_pay
+
         days_out.append({
             "date": day["date"],
             "weekday_name": day["weekday_name"],
@@ -544,6 +568,8 @@ def summarize_month_for_person(
             "hours": hours,
             "ob_hours": ob_hours,
             "ob_pay": ob_pay,
+            "oncall_pay": day.get('oncall_pay', 0.0),
+            "oncall_details": day.get('oncall_details', {}),
             "start": start,
             "end": end,
         })
@@ -600,7 +626,8 @@ def summarize_year_for_person(
     total_shifts = sum(m.get("num_shifts", 0) for m in months)
     total_hours = sum(m.get("total_hours", 0.0) for m in months)
     total_ob_year = sum(m.get("total_ob", 0.0) for m in months)
-    
+    total_oncall_year = sum(m.get('oncall_pay', 0.0) for m in months)
+
     # OB summering per kod för hela året
     ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
     ob_hours_by_code: dict[str, float] = {code: 0.0 for code in ob_codes}
@@ -621,11 +648,13 @@ def summarize_year_for_person(
         "total_shifts": total_shifts,
         "total_hours": total_hours,
         "total_ob": total_ob_year,
+        "total_oncall": total_oncall_year,
         "avg_netto": total_netto / month_count,
         "avg_brutto": total_brutto / month_count,
         "avg_shifts": total_shifts / month_count,
         "avg_hours": total_hours / month_count,
         "avg_ob": total_ob_year / month_count,
+        "avg_oncall": total_oncall_year / month_count,
         "ob_hours_by_code": ob_hours_by_code,
         "ob_pay_by_code": ob_pay_by_code,
         "total_ob_hours": total_ob_hours_year,

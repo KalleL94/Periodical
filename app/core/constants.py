@@ -34,6 +34,9 @@ SHIFT_CODE_OFF: Final[str] = "OFF"
 #: Kod för semester (används både som OB-logik och som "syntetiskt" skift).
 SHIFT_CODE_SEMESTER: Final[str] = "SEM"
 
+#: Kod för jour/on-call (24-timmarspass).
+SHIFT_CODE_ONCALL: Final[str] = "OC"
+
 #: Samlingslista över skiftkoder som används i logik (till exempel jämförelser).
 SHIFT_CODES: Final[Tuple[str, ...]] = (
     SHIFT_CODE_N1,
@@ -41,9 +44,11 @@ SHIFT_CODES: Final[Tuple[str, ...]] = (
     SHIFT_CODE_N3,
     SHIFT_CODE_OFF,
     SHIFT_CODE_SEMESTER,
+    SHIFT_CODE_ONCALL,
 )
 
 #: Skiftkoder som räknas som "riktiga arbetspass" i cowork-logiken.
+#: OC (Beredskap) exkluderas medvetet - Beredskap räknas inte i samarbetsstatistik.
 WORK_SHIFT_CODES: Final[Tuple[str, ...]] = (
     SHIFT_CODE_N1,
     SHIFT_CODE_N2,
