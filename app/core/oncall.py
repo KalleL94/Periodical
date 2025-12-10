@@ -453,9 +453,9 @@ def calculate_oncall_pay(
                 
                 if hours > 0:
                     # Calculate pay for this segment
-                    # On-call pay: (monthly_salary / rate) for 24h
-                    # For partial hours: (monthly_salary / rate) * (hours / 24.0)
-                    segment_pay = (monthly_salary / rule.rate) * (hours / 24.0)
+                    # On-call pay: (monthly_salary / rate) gives hourly rate
+                    # For any number of hours: (monthly_salary / rate) * hours
+                    segment_pay = (monthly_salary / rule.rate) * hours
                     
                     # Track in breakdown
                     if rule.code not in breakdown:

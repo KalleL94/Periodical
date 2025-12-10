@@ -81,6 +81,7 @@
                 <th>Hours</th>
                 {% if show_salary %}
                 <th>OB total</th>
+                <th>On-call</th>
                 {% endif %}
             </tr>
             </thead>
@@ -104,6 +105,7 @@
                     <td class="num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
                     {% if show_salary %}
                     <td class="num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
+                    <td class="num" data-label="Beredskap">{{ "%.0f"|format(m.oncall_pay or 0) }}</td>
                     {% endif %}
                 </tr>
                 {% endfor %}
@@ -119,6 +121,7 @@
                 <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
                 {% if show_salary %}
                 <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                <td class="num" data-label="Beredskap">{{ "%.0f"|format(year_summary.total_oncall or 0) }}</td>
                 {% endif %}
             </tr>
             <tr>
@@ -131,6 +134,7 @@
                 <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
                 {% if show_salary %}
                 <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
+                <td class="num" data-label="Beredskap">{{ "%.0f"|format(year_summary.avg_oncall or 0) }}</td>
                 {% endif %}
             </tr>
             </tfoot>
@@ -163,6 +167,26 @@
                     <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
                 </tr>
             </tfoot>
+        </table>
+
+        <h3 class="page-title">Yearly on-call summary</h3>
+        <table class="summary">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Amount (SEK)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="shift-row">
+                    <td data-label="Typ">Total beredskapslön</td>
+                    <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.total_oncall or 0) }} kr</td>
+                </tr>
+                <tr class="shift-row">
+                    <td data-label="Typ">Snitt beredskapslön/månad</td>
+                    <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.avg_oncall or 0) }} kr</td>
+                </tr>
+            </tbody>
         </table>
         {% endif %}
     </div>

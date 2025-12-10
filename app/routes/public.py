@@ -28,6 +28,7 @@ from app.core.schedule import (
     build_cowork_details,
     persons as person_list,
 )
+from app.core.oncall import calculate_oncall_pay, _cached_oncall_rules
 from app.core.validators import validate_person_id, validate_date_params
 from app.core.constants import PERSON_IDS
 from app.core.utils import get_safe_today, get_navigation_dates
@@ -119,6 +120,15 @@ async def show_day_for_person(
     midnight = datetime.combine(date_obj, time(0, 0))
     active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
 
+    # Calculate on-call pay if this is an on-call shift
+    oncall_pay = 0.0
+    oncall_details = {}
+    if shift and shift.code == "OC":
+        oncall_rules = _cached_oncall_rules(year)
+        oncall_calc = calculate_oncall_pay(date_obj, monthly_salary, oncall_rules)
+        oncall_pay = oncall_calc['total_pay']
+        oncall_details = oncall_calc
+
     show_salary = can_see_salary(current_user, person_id)
 
     return render_template(
@@ -137,6 +147,9 @@ async def show_day_for_person(
             "ob_pay": ob_pay if show_salary else {},
             "ob_codes": ob_codes if show_salary else [],
             "active_special_rules": active_special_rules,
+            "oncall_pay": oncall_pay if show_salary else 0.0,
+            "oncall_details": oncall_details if show_salary else {},
+            "monthly_salary": monthly_salary,
             "iso_year": iso_year,
             "iso_week": iso_week,
             "show_salary": show_salary,

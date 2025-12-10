@@ -587,6 +587,7 @@ def summarize_month_for_person(
         'num_shifts': totals['num_shifts'],
         'ob_hours': totals['ob_hours'],
         'ob_pay': totals['ob_pay'],
+        'oncall_pay': totals['oncall_pay'],
         'brutto_pay': totals['brutto_pay'],
         'netto_pay': netto_pay,
         'days': days_out

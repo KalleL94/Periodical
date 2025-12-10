@@ -91,8 +91,48 @@
             </table>
         </section>
 
-        <!-- Right column: OB details - endast om show_salary -->
+        <!-- Right column: OB details or On-call details - endast om show_salary -->
         {% if show_salary %}
+        {% if shift and shift.code == 'OC' %}
+        {# On-call compensation section - only for OC shifts #}
+        <section class="day-section">
+            <h3>Beredskapslön</h3>
+            {% set oncall = oncall_details %}
+            {% if oncall and oncall.breakdown %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Beredskapstyp</th>
+                            <th>Timmar</th>
+                            <th>Ersättning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for code, details in oncall.breakdown.items() %}
+                        <tr>
+                            <td>{{ details.label }}</td>
+                            <td>{{ "%.2f"|format(details.hours) }}</td>
+                            <td>{{ "%.2f"|format(details.pay) }} kr</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total</th>
+                            <th>{{ "%.2f"|format(oncall.total_hours) }}</th>
+                            <th>{{ "%.2f"|format(oncall_pay) }} kr</th>
+                        </tr>
+                    </tfoot>
+                </table>
+                <p class="info-text">
+                    Effektiv divisor: {{ "%.0f"|format(oncall.effective_rate) }}
+                </p>
+            {% else %}
+                <p>No on-call compensation details available.</p>
+            {% endif %}
+        </section>
+        {% else %}
+        {# Regular OB section for non-OC shifts #}
         <section class="day-section">
             <h3>OB hours</h3>
             {% if ob_codes %}
@@ -178,6 +218,7 @@
                 <p>No special OB rules active this day.</p>
             {% endif %}
         </section>
+        {% endif %}
         {% endif %}
     </div>
 
