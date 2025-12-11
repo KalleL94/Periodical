@@ -12,7 +12,11 @@ from .storage import (
     load_persons,
 )
 from .holidays import *
-from .oncall import calculate_oncall_pay, _cached_oncall_rules
+from .oncall import (
+    calculate_oncall_pay, 
+    calculate_oncall_pay_for_period, 
+    _cached_oncall_rules
+)
 from .models import ObRule
 from .constants import (
     PERSON_IDS,
@@ -53,7 +57,72 @@ person_wages = {p.id: getattr(p, "wage", settings.monthly_salary) for p in perso
 # Semester representeras med central VACATION_CODE.
 VACATION_SHIFT = next((s for s in shift_types if s.code == VACATION_CODE), None)
 
+def calculate_overtime_pay(monthly_salary: int, hours: float) -> float:
+    """
+    Calculate overtime pay based on monthly salary and hours worked.
 
+    Formula: (monthly_salary / 72) * hours
+
+    Args:
+        monthly_salary: Employee's monthly salary in SEK
+        hours: Number of overtime hours worked
+
+    Returns:
+        Overtime compensation in SEK
+
+    Example:
+        >>> calculate_overtime_pay(30000, 8.5)
+        3541.67  # (30000/72) * 8.5
+    """
+    hourly_rate = monthly_salary / 72
+    return hourly_rate * hours
+
+def get_overtime_shift_for_date(session, user_id: int, date: datetime.date):
+    """
+    Get overtime shift for a specific user and date.
+
+    Args:
+        session: SQLAlchemy database session
+        user_id: User ID
+        date: Date to check
+
+    Returns:
+        OvertimeShift object or None
+    """
+    from app.database.database import OvertimeShift
+
+    return session.query(OvertimeShift).filter(
+        OvertimeShift.user_id == user_id,
+        OvertimeShift.date == date
+    ).first()
+
+def get_overtime_shifts_for_month(session, user_id: int, year: int, month: int):
+    """
+    Get all overtime shifts for a user in a specific month.
+
+    Args:
+        session: SQLAlchemy database session
+        user_id: User ID
+        year: Year
+        month: Month (1-12)
+
+    Returns:
+        List of OvertimeShift objects
+    """
+    from app.database.database import OvertimeShift
+    import datetime as dt_module
+
+    start_date = dt_module.date(year, month, 1)
+    if month == 12:
+        end_date = dt_module.date(year + 1, 1, 1)
+    else:
+        end_date = dt_module.date(year, month + 1, 1)
+
+    return session.query(OvertimeShift).filter(
+        OvertimeShift.user_id == user_id,
+        OvertimeShift.date >= start_date,
+        OvertimeShift.date < end_date
+    ).all()
 
 @lru_cache(maxsize=None)
 def determine_shift_for_date(
@@ -151,20 +220,16 @@ def build_week_data(
 
     return days_in_week
 
-@lru_cache(maxsize=128)
 def generate_year_data(
     year: int,
     person_id: int | None = None,
+    session=None,
 ) -> list[dict]:
     """
     Genererar dagsdata för ett helt år.
 
     - Om person_id är None: days_in_year med persons-listor
     - Om person_id är satt: varje dag innehåller shift, timmar, start, slut och ev. OB
-
-    Caching: Safe because inputs (year, person_id) are hashable and function depends
-    only on module-level data (rotation, persons, etc.) loaded at import time.
-    Cache is automatically cleared on module reload (e.g., after settings updates).
     """
     special_ob_rules = _cached_special_rules(year)
     combined_ob_rules = ob_rules + special_ob_rules
@@ -212,6 +277,33 @@ def generate_year_data(
                     else:
                         shift, rotation_week = result
                         hours, start, end = _cached_shift_hours(current_day, shift.code)
+
+                # Check for overtime shift - if exists, show OT instead of scheduled shift
+                if session:
+                    ot_shift = get_overtime_shift_for_date(session, pid, current_day)
+                    if ot_shift:
+                        # Replace with OT shift
+                        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+                        if ot_shift_type:
+                            shift = ot_shift_type
+                            hours = ot_shift.hours
+                            # Parse start/end times from OT shift
+                            ot_start_str = str(ot_shift.start_time)
+                            ot_end_str = str(ot_shift.end_time)
+                            if len(ot_start_str.split(":")) == 2:
+                                ot_start_str += ":00"
+                            if len(ot_end_str.split(":")) == 2:
+                                ot_end_str += ":00"
+                            try:
+                                start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
+                                end_time_obj = datetime.datetime.strptime(ot_end_str, "%H:%M:%S").time()
+                                start = datetime.datetime.combine(current_day, start_time_obj)
+                                end = datetime.datetime.combine(current_day, end_time_obj)
+                                if end <= start:
+                                    end = end + datetime.timedelta(days=1)
+                            except:
+                                pass
+
                 person_data = {
                     "person_id": pid,
                     "person_name": persons[pid - 1].name,
@@ -262,7 +354,61 @@ def generate_year_data(
                 )
                 oncall_pay = oncall_calc["total_pay"]
                 oncall_details = oncall_calc
+            
+            # Check for overtime shift on this date
+            ot_shift = get_overtime_shift_for_date(session, person_id, current_day) if session else None
+            ot_pay = 0.0
+            ot_hours = 0.0
+            ot_details = {}
 
+            if ot_shift:
+                # If this is an OC shift, recalculate OC pay for shortened period
+                if shift and shift.code == "OC":
+                    from datetime import time as dt_time
+
+                    # OC shift runs 06:00 to 06:00
+                    oc_start = datetime.datetime.combine(current_day, dt_time(6, 0))
+
+                    # OT starts at ot_shift.start_time
+                    # Handle both time object and string representation
+                    ot_start_str = str(ot_shift.start_time)
+                    if len(ot_start_str.split(":")) == 2:
+                        ot_start_str += ":00"
+                    
+                    try:
+                        ot_start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
+                    except ValueError:
+                         # Fallback if format is weird or already time object
+                         if isinstance(ot_shift.start_time, datetime.time):
+                             ot_start_time_obj = ot_shift.start_time
+                         else:
+                             # Default fallback, should rarely happen if DB is correct
+                             ot_start_time_obj = dt_time(0,0)
+                             
+                    oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
+
+                    # Recalculate OC pay for shortened period (06:00 to OT start)
+                    if oc_end > oc_start:
+                        oncall_rules = _cached_oncall_rules(current_day.year)
+                        oncall_calc = calculate_oncall_pay_for_period(
+                            oc_start,
+                            oc_end,
+                            person_wages.get(person_id, settings.monthly_salary),
+                            oncall_rules
+                        )
+                        oncall_pay = oncall_calc["total_pay"]
+                        oncall_details = oncall_calc
+
+                # Calculate OT pay
+                ot_pay = ot_shift.ot_pay
+                ot_hours = ot_shift.hours
+                ot_details = {
+                    "start_time": str(ot_shift.start_time),
+                    "end_time": str(ot_shift.end_time),
+                    "hours": ot_hours,
+                    "pay": ot_pay,
+                    "hourly_rate": person_wages.get(person_id, settings.monthly_salary) / 72
+                }
 
             day_info["person_id"] = person_id
             day_info["person_name"] = persons[person_id - 1].name
@@ -274,6 +420,9 @@ def generate_year_data(
             day_info["ob"] = ob
             day_info["oncall_pay"] = oncall_pay
             day_info["oncall_details"] = oncall_details
+            day_info["ot_pay"] = ot_pay
+            day_info["ot_hours"] = ot_hours
+            day_info["ot_details"] = ot_details
 
         days_in_year.append(day_info)
         current_day = current_day + datetime.timedelta(days=1)
@@ -497,6 +646,7 @@ def summarize_month_for_person(
     year: int,
     month: int,
     person_id: int,
+    session=None,
 ) -> dict:
     """
     Detaljerad månadsöversikt för en person.
@@ -506,7 +656,7 @@ def summarize_month_for_person(
     - brutto/netto-lön
     - days: lista med per-dag-detaljer
     """
-    days = generate_year_data(year, person_id)
+    days = generate_year_data(year, person_id, session=session)
     special_rules = _cached_special_rules(year)
     combined_rules = ob_rules + special_rules
 
@@ -524,6 +674,7 @@ def summarize_month_for_person(
         "ob_pay": {},
         "brutto_pay": base_salary,
         "oncall_pay": 0.0,
+        "ot_pay": 0.0,
     }
     days_out: list[dict] = []
     for day in days:
@@ -560,6 +711,12 @@ def summarize_month_for_person(
             totals['brutto_pay'] += oncall_pay
             totals['oncall_pay'] = totals.get('oncall_pay', 0.0) + oncall_pay
 
+        # Add OT pay if present
+        if 'ot_pay' in day:
+            ot_pay = day.get('ot_pay', 0.0)
+            totals['brutto_pay'] += ot_pay
+            totals['ot_pay'] = totals.get('ot_pay', 0.0) + ot_pay
+
         days_out.append({
             "date": day["date"],
             "weekday_name": day["weekday_name"],
@@ -570,6 +727,9 @@ def summarize_month_for_person(
             "ob_pay": ob_pay,
             "oncall_pay": day.get('oncall_pay', 0.0),
             "oncall_details": day.get('oncall_details', {}),
+            "ot_pay": day.get('ot_pay', 0.0),
+            "ot_hours": day.get('ot_hours', 0.0),
+            "ot_details": day.get('ot_details', {}),
             "start": start,
             "end": end,
         })
@@ -588,6 +748,7 @@ def summarize_month_for_person(
         'ob_hours': totals['ob_hours'],
         'ob_pay': totals['ob_pay'],
         'oncall_pay': totals['oncall_pay'],
+        'ot_pay': totals['ot_pay'],
         'brutto_pay': totals['brutto_pay'],
         'netto_pay': netto_pay,
         'days': days_out
@@ -596,6 +757,7 @@ def summarize_month_for_person(
 def summarize_year_for_person(
     year: int,
     person_id: int,
+    session=None,
 ) -> dict:
     """
     Bygger årsöversikt för en person.
@@ -610,7 +772,7 @@ def summarize_year_for_person(
 
     # Bygg månadslistan och räkna total OB per månad
     for month in range(1, 13):
-        m = summarize_month_for_person(year, month, person_id)
+        m = summarize_month_for_person(year, month, person_id, session=session)
         ob_pay: dict[str, float] = m.get("ob_pay", {}) or {}
 
         total_ob = 0.0
@@ -628,6 +790,7 @@ def summarize_year_for_person(
     total_hours = sum(m.get("total_hours", 0.0) for m in months)
     total_ob_year = sum(m.get("total_ob", 0.0) for m in months)
     total_oncall_year = sum(m.get('oncall_pay', 0.0) for m in months)
+    total_ot_year = sum(m.get('ot_pay', 0.0) for m in months)
 
     # OB summering per kod för hela året
     ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
@@ -650,12 +813,14 @@ def summarize_year_for_person(
         "total_hours": total_hours,
         "total_ob": total_ob_year,
         "total_oncall": total_oncall_year,
+        "total_ot": total_ot_year,
         "avg_netto": total_netto / month_count,
         "avg_brutto": total_brutto / month_count,
         "avg_shifts": total_shifts / month_count,
         "avg_hours": total_hours / month_count,
         "avg_ob": total_ob_year / month_count,
         "avg_oncall": total_oncall_year / month_count,
+        "avg_ot": total_ot_year / month_count,
         "ob_hours_by_code": ob_hours_by_code,
         "ob_pay_by_code": ob_pay_by_code,
         "total_ob_hours": total_ob_hours_year,

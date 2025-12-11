@@ -1,8 +1,8 @@
 [
     {
         "code": "OC_DEFAULT",
-        "label": "Beredskap standard",
-        "description": "Grundersättning för jour vardagar",
+        "label": "On-call standard",
+        "description": "Base on-call compensation",
         "days": [0, 1, 2, 3, 4, 5, 6],
         "start_time": "00:00",
         "end_time": "24:00",
@@ -13,8 +13,8 @@
     },
     {
         "code": "OC_FRIDAY_NIGHT",
-        "label": "Beredskap fredag kväll",
-        "description": "Förhöjd ersättning fredag 18:00 till lördag 07:00",
+        "label": "On-call friday night",
+        "description": "Increased compensation Friday 18:00 to Saturday 07:00",
         "days": [4],
         "start_time": "18:00",
         "end_time": "07:00",
@@ -25,8 +25,8 @@
     },
     {
         "code": "OC_WEEKEND",
-        "label": "Beredskap helg",
-        "description": "Förhöjd ersättning lördag 07:00 till söndag 24:00",
+        "label": "On-call weekend",
+        "description": "Increased compensation Saturday 07:00 to Sunday 24:00",
         "days": [5, 6],
         "start_time": "07:00",
         "end_time": "24:00",
@@ -37,8 +37,8 @@
     },
     {
         "code": "OC_HOLIDAY_EVE",
-        "label": "Beredskap helgdagsafton",
-        "description": "Afton före röd dag (från 18:00)",
+        "label": "On-call holiday eve",
+        "description": "Eve before public holiday (from 18:00)",
         "specific_dates": [],
         "start_time": "18:00",
         "end_time": "24:00",
@@ -49,8 +49,8 @@
     },
     {
         "code": "OC_HOLIDAY",
-        "label": "Beredskap helgdag",
-        "description": "Röd dag hela dagen",
+        "label": "On-call holiday",
+        "description": "Public holiday all day",
         "specific_dates": [],
         "start_time": "00:00",
         "end_time": "24:00",
@@ -61,8 +61,8 @@
     },
     {
         "code": "OC_SPECIAL",
-        "label": "Beredskap storhelg",
-        "description": "Storhelger (jul, nyår, påsk, midsommar) - förlängs till första vardag",
+        "label": "On-call major holiday",
+        "description": "Major holidays (Christmas, New Year, Easter, Midsummer) - extended to first weekday",
         "specific_dates": [],
         "start_time": "00:00",
         "end_time": "24:00",

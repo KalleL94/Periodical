@@ -1,6 +1,6 @@
 # app/core/oncall.py
 """
-On-call (jour/beredskap) compensation calculations.
+On-call (beredskap) compensation calculations.
 
 This module implements REPLACEMENT logic for on-call pay, which differs from OB's
 ADDITIVE logic:
@@ -185,7 +185,7 @@ def build_oncall_rules_for_year(year: int) -> List[OnCallRule]:
             start_time = "00:00"
         rules.append(OnCallRule(
             code="OC_SPECIAL",
-            label="Beredskap storhelg",
+            label="Oncall major holiday",
             specific_dates=[date.isoformat()],
             start_time=start_time,
             end_time="00:00",
@@ -198,7 +198,7 @@ def build_oncall_rules_for_year(year: int) -> List[OnCallRule]:
     for date in sorted(regular_holidays):
         rules.append(OnCallRule(
             code="OC_HOLIDAY",
-            label="Beredskap helgdag",
+            label="Oncall holiday",
             specific_dates=[date.isoformat()],
             start_time="07:00",
             end_time="24:00",
@@ -211,7 +211,7 @@ def build_oncall_rules_for_year(year: int) -> List[OnCallRule]:
         if eve not in holidays and eve not in storhelg_dates:
             rules.append(OnCallRule(
                 code="OC_HOLIDAY_EVE",
-                label="Beredskap helgdagsafton",
+                label="Oncall holiday eve",
                 specific_dates=[eve.isoformat()],
                 start_time="18:00",
                 end_time="24:00",
@@ -242,7 +242,11 @@ def _select_oncall_rules_for_date(
     Returns list of applicable rules (will be sorted by priority for processing).
     """
     weekday = dt.weekday()
-    date_iso = dt.date.isoformat()
+    # Fixed to handle both date and datetime objects
+    if isinstance(dt, datetime.datetime):
+        date_iso = dt.date().isoformat()
+    else:
+        date_iso = dt.isoformat()
 
     applicable = []
     for rule in oncall_rules:
@@ -500,6 +504,116 @@ def calculate_oncall_pay(
         "effective_rate": round(weighted_rate, 1),
         "breakdown": breakdown,
         "segments": sorted(segments, key=lambda s: s["start"]),
+    }
+
+def calculate_oncall_pay_for_period(
+    start_dt: datetime.datetime,
+    end_dt: datetime.datetime,
+    monthly_salary: int,
+    oncall_rules: List[OnCallRule]
+) -> Dict:
+    """
+    Calculate on-call compensation for a specific time period.
+
+    This is used when an OT shift interrupts an OC shift, so we need to
+    calculate OC pay only for the portion before the OT shift starts.
+
+    Args:
+        start_dt: Period start (e.g., 06:00 on the OC day)
+        end_dt: Period end (e.g., 14:00 when OT begins)
+        monthly_salary: Employee's monthly salary
+        oncall_rules: List of applicable on-call rules
+
+    Returns:
+        Dict with:
+            - total_pay: Total compensation for the period
+            - breakdown: Dict of {code: {hours, rate, pay, label}}
+            - total_hours: Total hours in period
+            - effective_rate: Weighted average divisor
+    """
+    # Calculate total hours in period
+    period_hours = (end_dt - start_dt).total_seconds() / 3600.0
+
+    if period_hours <= 0:
+        return {
+            "total_pay": 0.0,
+            "breakdown": {},
+            "total_hours": 0.0,
+            "effective_rate": 0
+        }
+
+    # Get applicable rules for the dates in this period
+    applicable_rules = []
+    current_date = start_dt.date()
+    end_date = end_dt.date()
+
+    while current_date <= end_date:
+        date_dt = datetime.datetime.combine(current_date, datetime.time(0, 0))
+        rules = _select_oncall_rules_for_date(date_dt, oncall_rules)
+        applicable_rules.extend(rules)
+        current_date += datetime.timedelta(days=1)
+
+    # Remove duplicates
+    unique_rules = []
+    seen_codes = set()
+    for rule in applicable_rules:
+        if rule.code not in seen_codes:
+            unique_rules.append(rule)
+            seen_codes.add(rule.code)
+
+    # Sort by priority (highest first)
+    sorted_rules = sorted(unique_rules, key=lambda r: r.priority, reverse=True)
+
+    # Track which time segments are covered and by which rule
+    breakdown = {}
+    covered_intervals = []
+    total_pay = 0.0
+
+    for rule in sorted_rules:
+        # Get intervals where this rule applies within our period
+        rule_intervals = _get_rule_intervals_for_shift(rule, start_dt, end_dt)
+
+        # Find uncovered portions
+        for interval_start, interval_end in rule_intervals:
+            # Constrain to our period
+            interval_start = max(interval_start, start_dt)
+            interval_end = min(interval_end, end_dt)
+
+            if interval_start >= interval_end:
+                continue
+
+            # Calculate uncovered portions
+            uncovered = _subtract_covered_oncall(interval_start, interval_end, covered_intervals)
+
+            for uncov_start, uncov_end in uncovered:
+                # Calculate hours and pay for this segment
+                segment_hours = (uncov_end - uncov_start).total_seconds() / 3600.0
+                segment_pay = (monthly_salary / rule.rate) * segment_hours
+
+                # Add to breakdown
+                if rule.code not in breakdown:
+                    breakdown[rule.code] = {
+                        "hours": 0.0,
+                        "rate": rule.rate,
+                        "pay": 0.0,
+                        "label": rule.label
+                    }
+
+                breakdown[rule.code]["hours"] += segment_hours
+                breakdown[rule.code]["pay"] += segment_pay
+                total_pay += segment_pay
+
+                # Mark as covered
+                covered_intervals.append((uncov_start, uncov_end))
+
+    # Calculate effective rate
+    effective_rate = (monthly_salary * period_hours / total_pay) if total_pay > 0 else 0
+
+    return {
+        "total_pay": total_pay,
+        "breakdown": breakdown,
+        "total_hours": period_hours,
+        "effective_rate": effective_rate
     }
 
 
