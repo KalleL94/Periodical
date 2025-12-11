@@ -6,7 +6,7 @@
         "days": [0, 1, 2, 3, 4, 5, 6],
         "start_time": "00:00",
         "end_time": "24:00",
-        "rate": 1000,
+        "rate": 1400,
         "priority": 1,
         "spans_to_next_day": false,
         "generated": false
@@ -18,7 +18,7 @@
         "days": [4],
         "start_time": "18:00",
         "end_time": "07:00",
-        "rate": 700,
+        "rate": 1000,
         "priority": 2,
         "spans_to_next_day": true,
         "generated": false
@@ -30,7 +30,7 @@
         "days": [5, 6],
         "start_time": "07:00",
         "end_time": "24:00",
-        "rate": 500,
+        "rate": 700,
         "priority": 3,
         "spans_to_next_day": false,
         "generated": false
@@ -41,10 +41,10 @@
         "description": "Eve before public holiday (from 18:00)",
         "specific_dates": [],
         "start_time": "18:00",
-        "end_time": "24:00",
-        "rate": 700,
+        "end_time": "07:00",
+        "rate": 1000,
         "priority": 4,
-        "spans_to_next_day": false,
+        "spans_to_next_day": true,
         "generated": true
     },
     {
@@ -54,7 +54,7 @@
         "specific_dates": [],
         "start_time": "00:00",
         "end_time": "24:00",
-        "rate": 500,
+        "rate": 700,
         "priority": 5,
         "spans_to_next_day": false,
         "generated": true
@@ -66,7 +66,7 @@
         "specific_dates": [],
         "start_time": "00:00",
         "end_time": "24:00",
-        "rate": 250,
+        "rate": 350,
         "priority": 6,
         "spans_to_next_day": false,
         "generated": true
