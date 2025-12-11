@@ -410,6 +410,12 @@ def generate_year_data(
                     "hourly_rate": person_wages.get(person_id, settings.monthly_salary) / 72
                 }
 
+                # Replace shift with OT type for display (consistent with all-persons view)
+                ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+                if ot_shift_type:
+                    shift = ot_shift_type
+                    hours = ot_shift.hours
+
             day_info["person_id"] = person_id
             day_info["person_name"] = persons[person_id - 1].name
             day_info["shift"] = shift
@@ -688,7 +694,7 @@ def summarize_month_for_person(
         ob_hours: dict[str, float]
         ob_pay: dict[str, float]
 
-        if shift and shift.code != "OFF" and shift.code != "OC" and start and end:
+        if shift and shift.code != "OFF" and shift.code != "OC" and shift.code != "OT" and start and end:
             ob_hours = calculate_ob_hours(start, end, combined_rules)
             ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary)
         else:

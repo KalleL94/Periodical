@@ -48,15 +48,13 @@
 
     {# Summary row - visa bara lönedata om show_salary #}
     <table class="summary">
+        {% if show_salary %}
         <thead>
             <tr>
-                {% if show_salary %}
                 <th>Net salary</th>
                 <th>Gross salary</th>
-                {% endif %}
                 <th>Number of shifts</th>
                 <th>Total hours</th>
-                {% if show_salary %}
                 <th>Total OB pay</th>
                 <th>Evening (OB1)</th>
                 <th>Night (OB2)</th>
@@ -64,9 +62,9 @@
                 <th>Holiday (OB5)</th>
                 <th>On-call</th>
                 <th>OT pay</th>
-                {% endif %}
             </tr>
         </thead>
+        {% endif %}
         <tbody>
             {% set total_ob = (days.ob_pay.get('OB1',0) or 0) + (days.ob_pay.get('OB2',0) or 0)
                               + (days.ob_pay.get('OB3',0) or 0) + (days.ob_pay.get('OB4',0) or 0)
