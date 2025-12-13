@@ -127,12 +127,17 @@ log "Database setup complete"
 # Step 6: Set file permissions
 log "Step 6: Setting file permissions..."
 
-chmod 600 "$APP_DIR/.env"
-chmod 700 "$APP_DIR/scripts"/*.sh
-chmod 755 "$APP_DIR/app/database"
-chmod 644 "$APP_DIR/app/database"/*.db 2>/dev/null || true
-
-log "Permissions set"
+# Run comprehensive permission script
+if [ -f "$APP_DIR/scripts/set_permissions.sh" ]; then
+    bash "$APP_DIR/scripts/set_permissions.sh" "$USER"
+else
+    # Fallback: basic permissions
+    chmod 600 "$APP_DIR/.env" 2>/dev/null || true
+    chmod 700 "$APP_DIR/scripts"/*.sh 2>/dev/null || true
+    chmod 755 "$APP_DIR/app/database" 2>/dev/null || true
+    chmod 644 "$APP_DIR/app/database"/*.db 2>/dev/null || true
+    log "Basic permissions set (run scripts/set_permissions.sh for comprehensive setup)"
+fi
 
 # Step 7: Test application
 log "Step 7: Testing application..."
