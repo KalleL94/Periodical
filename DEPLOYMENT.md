@@ -371,8 +371,33 @@ Redan implementerat: `GET /health`
 - [ ] Alla användare har bytt från standardlösenord
 - [ ] File permissions korrekta (databas läs/skriv endast för app-user)
 - [ ] Rate limiting konfigurerad (i nginx/traefik)
-- [ ] CORS-inställningar restriktiva
+- [ ] CORS-inställningar restriktiva (se docs/CORS.md)
 - [ ] Security headers konfigurerade (X-Frame-Options, CSP, etc.)
+
+### CORS Configuration
+
+Periodical har automatisk CORS-konfiguration baserat på miljö:
+
+**Development (PRODUCTION=false):**
+- Tillåter alla origins för enkel testning
+- Alla metoder och headers tillåtna
+
+**Production (PRODUCTION=true):**
+- Endast specificerade origins tillåtna
+- Endast GET och POST metoder
+- Säker konfiguration
+
+**Konfigurera CORS för produktion:**
+
+```bash
+# Om du använder separerad frontend
+CORS_ORIGINS=https://your-frontend-domain.com,https://www.your-frontend-domain.com
+
+# För server-rendered app (default - mest säkert)
+# Ingen CORS_ORIGINS behövs - all trafik är same-origin
+```
+
+Se `docs/CORS.md` för fullständig guide.
 
 ---
 

@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.public import router as public_router
 from app.routes.auth_routes import router as auth_router
@@ -52,6 +53,42 @@ app = FastAPI(
     description="Employee shift scheduling and OB pay calculation system",
     version="0.0.20",
     lifespan=lifespan
+)
+
+# CORS Configuration
+IS_PRODUCTION = os.getenv("PRODUCTION", "false").lower() == "true"
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+
+if IS_PRODUCTION:
+    # Production: Strict CORS - only allow specified origins
+    if not CORS_ORIGINS:
+        logger.warning(
+            "Production mode but no CORS_ORIGINS set. CORS will block all cross-origin requests. "
+            "Set CORS_ORIGINS environment variable if you need to allow specific origins."
+        )
+
+    allowed_origins = CORS_ORIGINS
+    allow_credentials = True
+    allowed_methods = ["GET", "POST"]  # Only allow methods we use
+    allowed_headers = ["*"]
+
+    logger.info(f"CORS configured for production with origins: {allowed_origins}")
+else:
+    # Development: Permissive CORS for easier testing
+    allowed_origins = ["*"]
+    allow_credentials = True
+    allowed_methods = ["*"]
+    allowed_headers = ["*"]
+
+    logger.info("CORS configured for development (permissive)")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=allowed_methods,
+    allow_headers=allowed_headers,
+    expose_headers=["X-Request-ID"],  # Expose our request ID header
 )
 
 # Add request logging middleware
