@@ -3,6 +3,7 @@
 Authentication and authorization utilities.
 """
 
+import os
 from datetime import datetime, timedelta
 from hashlib import algorithms_available
 from typing import Optional
@@ -14,10 +15,18 @@ from jose import JWTError, jwt
 
 from app.database.database import get_db, User, UserRole
 
-# Configuration - i produktion, lägg detta i environment variables
-SECRET_KEY = "your-secret-key-change-this-in-production"  # ÄNDRA DETTA
+# Configuration - reads from environment variables for security
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 dagar
+
+# Validate SECRET_KEY in production
+if SECRET_KEY == "your-secret-key-change-this-in-production":
+    import warnings
+    warnings.warn(
+        "WARNING: Using default SECRET_KEY! Set SECRET_KEY environment variable for production.",
+        RuntimeWarning
+    )
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -136,13 +145,16 @@ async def get_admin_user(
 
 def set_auth_cookie(response: Response, token: str) -> None:
     """Set authentication cookie."""
+    # Use secure cookies in production (requires HTTPS)
+    is_production = os.getenv("PRODUCTION", "false").lower() == "true"
+
     response.set_cookie(
         key="access_token",
         value=f"Bearer {token}",
         httponly=True,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         samesite="lax",
-        secure=False,  # Sätt till True i produktion med HTTPS
+        secure=is_production,  # True in production with HTTPS
     )
 
 
