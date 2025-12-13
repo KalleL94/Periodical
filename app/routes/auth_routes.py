@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from urllib.parse import urlparse
 
 from app.core.schedule import clear_schedule_cache
+from app.core.logging_config import get_logger
+from app.core.request_logging import log_auth_event
 from app.database.database import get_db, User, UserRole
 from app.auth.auth import (
     authenticate_user,
@@ -23,6 +25,8 @@ from app.auth.auth import (
     clear_auth_cookie,
     get_user_by_username,
 )
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
@@ -86,11 +90,31 @@ async def login(
     """Process login form."""
     user = authenticate_user(db, username, password)
     if not user:
+        # Log failed login attempt
+        log_auth_event(
+            event_type="login",
+            username=username,
+            success=False,
+            details={"ip": request.client.host if request.client else "unknown"}
+        )
+
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "Fel användarnamn eller lösenord", "next": next},
             status_code=401
         )
+
+    # Log successful login
+    log_auth_event(
+        event_type="login",
+        username=user.username,
+        user_id=user.id,
+        success=True,
+        details={
+            "ip": request.client.host if request.client else "unknown",
+            "must_change_password": user.must_change_password == 1
+        }
+    )
 
     # Create access token and set cookie
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -109,8 +133,20 @@ async def login(
 
 
 @router.get("/logout", name="logout")
-async def logout(response: Response):
+async def logout(
+    response: Response,
+    current_user: User | None = Depends(get_current_user_optional)
+):
     """Log out user."""
+    # Log logout
+    if current_user:
+        log_auth_event(
+            event_type="logout",
+            username=current_user.username,
+            user_id=current_user.id,
+            success=True
+        )
+
     redirect = RedirectResponse(url="/login", status_code=302)
     clear_auth_cookie(redirect)
     return redirect
@@ -198,9 +234,19 @@ async def change_password_submit(
 
     # Update password and clear must_change_password flag
     current_user.password_hash = get_password_hash(new_password)
+    was_forced = current_user.must_change_password == 1
     current_user.must_change_password = 0
     db.commit()
     clear_schedule_cache()
+
+    # Log password change
+    log_auth_event(
+        event_type="password_change",
+        username=current_user.username,
+        user_id=current_user.id,
+        success=True,
+        details={"forced": was_forced}
+    )
 
     # Redirect to home page
     return RedirectResponse(url="/", status_code=302)
