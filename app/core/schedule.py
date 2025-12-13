@@ -814,7 +814,7 @@ def _vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
 
 def clear_schedule_cache():
     """Rensar alla cachade schemaberäkningar."""
-    generate_year_data.cache_clear()
+    # generate_year_data no longer has cache (removed during optimization)
     _cached_special_rules.cache_clear()
     _cached_shift_hours.cache_clear()
     determine_shift_for_date.cache_clear()
