@@ -5,9 +5,10 @@ from pathlib import Path
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
 
 from app.core.schedule import settings, persons, tax_brackets
-from app.database.database import User
+from app.database.database import User, get_db
 from app.auth.auth import get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -37,15 +38,27 @@ def write_json_safely(file_path: Path, data: dict | list) -> None:
 @router.get("/settings", response_class=HTMLResponse, name="admin_settings")
 async def admin_settings(
     request: Request,
-    current_user: User = Depends(get_admin_user), 
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
     ):
+    # Get all users with their database wages
+    users = db.query(User).filter(User.id.in_(range(1, 11))).order_by(User.id).all()
+
+    # Create persons-like list for template compatibility
+    persons_with_db_wages = []
+    for user in users:
+        persons_with_db_wages.append({
+            "id": user.id,
+            "name": user.name,
+            "wage": user.wage
+        })
     return templates.TemplateResponse(
         "admin_settings.html",
         {
             "request": request,
             "user": current_user,
             "settings": settings,
-            "persons": persons,
+            "persons": persons_with_db_wages,
             "tax_brackets": tax_brackets,
         },
     )
@@ -57,6 +70,7 @@ async def admin_settings_update(
     monthly_salary: int = Form(...),
     person_wages: str = Form(...),
     current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
 ):
     """
     Update settings and person wages.
@@ -64,32 +78,26 @@ async def admin_settings_update(
     - monthly_salary: int
     - person_wages: JSON string like {"1": 37000, "2": 37000, ...}
     """
-    # Update settings.json
+    # Update settings.json (for default monthly_salary only)
     settings_path = Path("data/settings.json")
     settings_data = json.loads(settings_path.read_text(encoding="utf-8"))
     settings_data["monthly_salary"] = monthly_salary
     write_json_safely(settings_path, settings_data)
 
-    # Update persons.json
-    persons_path = Path("data/persons.json")
-    persons_data = json.loads(persons_path.read_text(encoding="utf-8"))
-
     # Parse wage updates from form
     wage_updates = json.loads(person_wages)
 
-    for person in persons_data:
-        person_id = str(person["id"])
-        if person_id in wage_updates:
-            person["wage"] = int(wage_updates[person_id])
-
-    write_json_safely(persons_path, persons_data)
-
-    # Reload data in memory (force module reload)
-    # Note: This is a simple approach. For production, consider using dependency injection
-    # or a proper state management system
-    import importlib
-    import app.core.schedule as schedule_module
-    importlib.reload(schedule_module)
+    # Update wages in database (single source of truth)
+    for person_id_str, new_wage in wage_updates.items():
+        person_id = int(person_id_str)
+        user = db.query(User).filter(User.id == person_id).first()
+        if user:
+            user.wage = int(new_wage)
+    
+    db.commit()
+    
+    # Clear schedule cache to ensure new wages are used
+    clear_schedule_cache()
 
     # Redirect back to GET (Post-Redirect-Get pattern)
     return RedirectResponse(url="/admin/settings", status_code=303)

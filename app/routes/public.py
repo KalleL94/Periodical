@@ -24,17 +24,19 @@ from app.core.schedule import (
     summarize_month_for_person,
     summarize_year_for_person,
     generate_year_data,
+    generate_month_data,
     calculate_shift_hours,
     ob_rules,
     calculate_ob_hours,
     calculate_ob_pay,
     calculate_overtime_pay,
     get_overtime_shift_for_date,
+    get_user_wage,
+    get_all_user_wages,
     _cached_special_rules,
     _select_ob_rules_for_date,
     settings,
     weekday_names,
-    person_wages,
     build_cowork_stats,
     build_cowork_details,
     persons as person_list,
@@ -118,7 +120,7 @@ async def show_day_for_person(
     combined_rules = ob_rules + special_rules
 
     person = person_list[person_id - 1]
-    monthly_salary = person_wages.get(person_id, settings.monthly_salary)
+    monthly_salary = get_user_wage(db, person_id, settings.monthly_salary)
 
     # OT shifts never have OB pay, so check if this will become an OT shift
     # We need to check this before fetching the OT shift
@@ -361,6 +363,8 @@ async def show_month_for_person(
     db: Session = Depends(get_db),
 ):
     """Month view for a specific person."""
+    start_time = datetime.now()
+
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
@@ -385,6 +389,11 @@ async def show_month_for_person(
 
     if not show_salary:
         days_in_month = strip_salary_data(days_in_month)
+
+    # Calculate and log load time
+    end_time = datetime.now()
+    load_time = (end_time - start_time).total_seconds()
+    print(f"[TIMING] /month/{person_id} (year={year}, month={month}) loaded in {load_time:.3f} seconds")
 
     return render_template(
         templates,
@@ -411,6 +420,8 @@ async def show_month_all(
     db: Session = Depends(get_db),
 ):
     """Month view for all persons."""
+    start_time = datetime.now()
+
     safe_today = get_safe_today(rotation_start_date)
 
     year = year or safe_today.year
@@ -418,14 +429,25 @@ async def show_month_all(
 
     validate_date_params(year, month, None)
 
+    # Pre-load wages once to avoid N+1 queries (10 persons × 1 query each)
+    user_wages = get_all_user_wages(db)
+
     persons = []
     for pid in range(1, 11):
-        summary = summarize_month_for_person(year, month, pid, session=db)
+        # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
+        person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
+
+        summary = summarize_month_for_person(year, month, pid, session=db, user_wages=user_wages, year_days=person_month_days)
         if not can_see_salary(current_user, pid):
             summary = strip_salary_data(summary)
         persons.append(summary)
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
+
+    # Calculate and log load time
+    end_time = datetime.now()
+    load_time = (end_time - start_time).total_seconds()
+    print(f"[TIMING] /month (all persons) (year={year}, month={month}) loaded in {load_time:.3f} seconds")
 
     return render_template(
         templates,
@@ -451,6 +473,8 @@ async def year_view(
     db: Session = Depends(get_db),
 ):
     """Year view for a specific person."""
+    start_time = datetime.now()
+
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
@@ -490,6 +514,11 @@ async def year_view(
         months = [strip_salary_data(m) for m in months]
         year_summary = strip_salary_data(year_summary)
 
+    # Calculate and log load time
+    end_time = datetime.now()
+    load_time = (end_time - start_time).total_seconds()
+    print(f"[TIMING] /year/{person_id} loaded in {load_time:.3f} seconds")
+
     return render_template(
         templates,
         "year.html",
@@ -518,23 +547,26 @@ async def show_year_all(
     db: Session = Depends(get_db),
 ):
     """Year view for all persons."""
+    start_time = datetime.now()
+
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
 
-    days_in_year = generate_year_data(year, session=db)
+    # Pre-load wages once to avoid N+1 queries (10 persons × 12 months = 120 queries → 1 query)
+    user_wages = get_all_user_wages(db)
 
-    person_ob_totals: list[float] = []
-    for pid in PERSON_IDS:
-        if can_see_salary(current_user, pid):
-            total_pay = 0.0
-            for m in range(1, 13):
-                msum = summarize_month_for_person(year, m, pid, session=db)
-                total_pay += sum(msum.get("ob_pay", {}).values())
-            person_ob_totals.append(total_pay)
-        else:
-            person_ob_totals.append(None)
+    days_in_year = generate_year_data(year, session=db, user_wages=user_wages)
+
+    # Skip calculating totals on initial load - will be lazy-loaded via AJAX
+    # This makes initial page load much faster (~0.5s instead of 1-3s)
+    person_ob_totals = None
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
+
+    # Calculate and log load time
+    end_time = datetime.now()
+    load_time = (end_time - start_time).total_seconds()
+    print(f"[TIMING] /year (all persons) loaded in {load_time:.3f} seconds")
 
     return render_template(
         templates,
@@ -548,7 +580,38 @@ async def show_year_all(
         },
         user=current_user,
     )
-    
+
+
+# ============ API Routes ============
+
+@router.get("/api/year/{year}/totals/{person_id}")
+async def get_year_totals(
+    year: int,
+    person_id: int,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """API endpoint to get year OB totals for a specific person (for lazy loading)."""
+    if current_user is None:
+        return {"error": "Not authenticated"}, 401
+
+    person_id = validate_person_id(person_id)
+
+    # Check if user can see salary for this person
+    if not can_see_salary(current_user, person_id):
+        return {"total_ob": None}
+
+    # Calculate year summary for this person
+    year_summary = summarize_year_for_person(year, person_id, session=db)
+    total_ob = year_summary["year_summary"].get("total_ob", 0.0)
+
+    return {
+        "person_id": person_id,
+        "total_ob": total_ob,
+        "year": year
+    }
+
+
 # ============ Overtime Routes ============
 
 @router.post("/overtime/add")
