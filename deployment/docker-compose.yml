@@ -1,0 +1,83 @@
+# Docker Compose configuration for Periodical with Traefik
+version: '3.8'
+
+services:
+  # Traefik reverse proxy with automatic HTTPS
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/acme.json:/acme.json
+      - ./traefik/config.yml:/config.yml:ro
+    environment:
+      - TZ=Europe/Stockholm
+    labels:
+      # Dashboard (optional, comment out in production)
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.your-domain.com`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      # Basic auth for dashboard (username: admin, password: change-me)
+      # Generate: echo $(htpasswd -nb admin your-password) | sed -e s/\\$/\\$\\$/g
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$apr1$$abc123$$xyz"
+
+  # Periodical application
+  ica-schedule:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    container_name: ica-schedule
+    restart: unless-stopped
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-random-secret}
+      - PRODUCTION=true
+      - TZ=Europe/Stockholm
+    volumes:
+      # Persist database
+      - ica-data:/app/app/database
+      # Persist logs
+      - ica-logs:/app/logs
+    labels:
+      - "traefik.enable=true"
+      # HTTP router
+      - "traefik.http.routers.ica-schedule.rule=Host(`your-domain.com`)"
+      - "traefik.http.routers.ica-schedule.entrypoints=web"
+      - "traefik.http.routers.ica-schedule.middlewares=https-redirect"
+      # HTTPS router
+      - "traefik.http.routers.ica-schedule-secure.rule=Host(`your-domain.com`)"
+      - "traefik.http.routers.ica-schedule-secure.entrypoints=websecure"
+      - "traefik.http.routers.ica-schedule-secure.tls=true"
+      - "traefik.http.routers.ica-schedule-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ica-schedule-secure.service=ica-schedule"
+      # Service
+      - "traefik.http.services.ica-schedule.loadbalancer.server.port=8000"
+      # Middleware: HTTPS redirect
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
+      # Security headers
+      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.security-headers.headers.forceSTSHeader=true"
+      - "traefik.http.routers.ica-schedule-secure.middlewares=security-headers"
+    depends_on:
+      - traefik
+
+volumes:
+  ica-data:
+    name: ica-schedule-data
+  ica-logs:
+    name: ica-schedule-logs
+
+networks:
+  default:
+    name: traefik-network

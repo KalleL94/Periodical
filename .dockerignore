@@ -1,0 +1,69 @@
+# Docker ignore file - excludes files from Docker image
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Database (use volumes instead)
+*.db
+*.sqlite3
+app/database/*.db
+
+# Backups
+backups/
+*.db.gz
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (optional)
+*.md
+docs/
+
+# Tests (optional, uncomment if not needed in image)
+# tests/
+# *_test.py
+
+# Excluded directories
+AoC/
+testauth/
+alla/
+archive/
+
+# Deployment files (not needed in image)
+deployment/
+scripts/
+
+# Temp files
+*.tmp
+*_copy.py
+*_copy.html
+tree.txt
