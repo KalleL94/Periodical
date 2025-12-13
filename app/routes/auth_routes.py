@@ -91,11 +91,18 @@ async def login(
             {"request": request, "error": "Fel användarnamn eller lösenord", "next": next},
             status_code=401
         )
-    
+
+    # Create access token and set cookie
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    # Check if user must change password
+    if user.must_change_password == 1:
+        redirect = RedirectResponse(url="/change-password", status_code=302)
+        set_auth_cookie(redirect, access_token)
+        return redirect
+
     # Redirect to next URL if safe, otherwise home
     redirect_url = next if is_safe_redirect(next) else "/"
-    
-    access_token = create_access_token(data={"sub": str(user.id)})
     redirect = RedirectResponse(url=redirect_url, status_code=302)
     set_auth_cookie(redirect, access_token)
     return redirect
@@ -107,6 +114,96 @@ async def logout(response: Response):
     redirect = RedirectResponse(url="/login", status_code=302)
     clear_auth_cookie(redirect)
     return redirect
+
+
+@router.get("/change-password", response_class=HTMLResponse, name="change_password_page")
+async def change_password_page(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Show mandatory password change page for users with must_change_password=1."""
+    return templates.TemplateResponse(
+        "change_password.html",
+        {
+            "request": request,
+            "user": current_user,
+            "must_change": current_user.must_change_password == 1,
+        }
+    )
+
+
+@router.post("/change-password", name="change_password_submit")
+async def change_password_submit(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process mandatory password change."""
+    from app.auth.auth import verify_password
+
+    # Validate current password
+    if not verify_password(current_password, current_user.password_hash):
+        return templates.TemplateResponse(
+            "change_password.html",
+            {
+                "request": request,
+                "user": current_user,
+                "must_change": current_user.must_change_password == 1,
+                "error": "Fel nuvarande lösenord"
+            },
+            status_code=400
+        )
+
+    # Validate new password matches confirmation
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "change_password.html",
+            {
+                "request": request,
+                "user": current_user,
+                "must_change": current_user.must_change_password == 1,
+                "error": "Nya lösenordet matchar inte bekräftelsen"
+            },
+            status_code=400
+        )
+
+    # Validate new password is different from old
+    if verify_password(new_password, current_user.password_hash):
+        return templates.TemplateResponse(
+            "change_password.html",
+            {
+                "request": request,
+                "user": current_user,
+                "must_change": current_user.must_change_password == 1,
+                "error": "Nytt lösenord måste vara annorlunda än det gamla"
+            },
+            status_code=400
+        )
+
+    # Validate new password strength (minimum 8 characters)
+    if len(new_password) < 8:
+        return templates.TemplateResponse(
+            "change_password.html",
+            {
+                "request": request,
+                "user": current_user,
+                "must_change": current_user.must_change_password == 1,
+                "error": "Nytt lösenord måste vara minst 8 tecken"
+            },
+            status_code=400
+        )
+
+    # Update password and clear must_change_password flag
+    current_user.password_hash = get_password_hash(new_password)
+    current_user.must_change_password = 0
+    db.commit()
+    clear_schedule_cache()
+
+    # Redirect to home page
+    return RedirectResponse(url="/", status_code=302)
 
 
 @router.get("/profile", response_class=HTMLResponse, name="profile")
@@ -286,6 +383,7 @@ async def admin_create_user(
         wage=wage,
         role=UserRole(role),
         vacation={},
+        must_change_password=1,  # Force password change on first login
     )
     db.add(new_user)
     db.commit()

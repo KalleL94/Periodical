@@ -133,6 +133,7 @@ def migrate():
                 role=UserRole.USER,
                 wage=person["wage"],
                 vacation=vacation,
+                must_change_password=1,  # Force password change on first login
             )
             created_users.append(user)
             db.add(user)
@@ -146,6 +147,7 @@ def migrate():
             role=UserRole.ADMIN,
             wage=ADMIN_ACCOUNT["wage"],
             vacation={},
+            must_change_password=1,  # Force password change on first login
         )
         db.add(admin)
         print(f"  + Admin  : {ADMIN_ACCOUNT['username']:10s} ({ADMIN_ACCOUNT['name']}) [ADMIN]")
