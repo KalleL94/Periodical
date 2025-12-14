@@ -22,6 +22,10 @@ from app.core.request_logging import RequestLoggingMiddleware
 setup_logging()
 logger = get_logger(__name__)
 
+# Initialize Sentry for error tracking (production only)
+from app.core.sentry_config import init_sentry
+sentry_enabled = init_sentry()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

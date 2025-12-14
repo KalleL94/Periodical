@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from app.core.schedule import clear_schedule_cache
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
+from app.core.sentry_config import set_user_context, clear_user_context, add_breadcrumb
 from app.database.database import get_db, User, UserRole
 from app.auth.auth import (
     authenticate_user,
@@ -116,6 +117,14 @@ async def login(
         }
     )
 
+    # Set Sentry user context for error tracking
+    set_user_context(user_id=user.id, username=user.username)
+    add_breadcrumb(
+        message=f"User {user.username} logged in",
+        category="auth",
+        level="info"
+    )
+
     # Create access token and set cookie
     access_token = create_access_token(data={"sub": str(user.id)})
 
@@ -146,6 +155,8 @@ async def logout(
             user_id=current_user.id,
             success=True
         )
+        # Clear Sentry user context
+        clear_user_context()
 
     redirect = RedirectResponse(url="/login", status_code=302)
     clear_auth_cookie(redirect)

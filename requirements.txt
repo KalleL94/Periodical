@@ -14,3 +14,7 @@ python-jose[cryptography]>=3.3.0
 
 # Already required for FastAPI forms
 python-multipart>=0.0.6
+
+# Error tracking (optional, for production)
+# Install with: pip install sentry-sdk[fastapi]
+# sentry-sdk[fastapi]>=1.40.0
