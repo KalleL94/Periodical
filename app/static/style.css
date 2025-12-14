@@ -610,3 +610,139 @@ td.num, th.num {
     margin-top: 0.5rem;
     font-style: italic;
 }
+
+/* ========== Calendar Grid (month.html) ========== */
+.calendar-grid {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    table-layout: fixed;
+}
+
+.calendar-grid thead th {
+    background: var(--panel);
+    padding: 12px 8px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--table-border);
+}
+
+.calendar-grid tbody td {
+    height: 120px;
+    vertical-align: top;
+    border: 1px solid var(--table-border);
+    background: var(--panel);
+    position: relative;
+}
+
+.calendar-day.empty {
+    background: var(--bg);
+}
+
+.calendar-day.today-cell {
+    background: rgba(64, 169, 255, 0.08);
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.calendar-day-content {
+    padding: 8px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.calendar-day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.day-number {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    text-decoration: none;
+    line-height: 1;
+}
+
+.day-number:hover {
+    color: var(--accent);
+}
+
+.rotation-week-small {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.calendar-day-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.calendar-badge {
+    font-size: 0.75rem;
+    padding: 3px 7px;
+    align-self: flex-start;
+}
+
+.calendar-time {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 2px;
+}
+
+.calendar-hours {
+    font-size: 0.75rem;
+    color: var(--accent-2);
+    font-weight: 600;
+}
+
+.calendar-pay {
+    font-size: 0.75rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin-top: auto;
+}
+
+/* Responsive calendar adjustments */
+@media (max-width: 1024px) {
+    .calendar-grid tbody td {
+        height: 100px;
+    }
+
+    .calendar-time {
+        font-size: 0.65rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .calendar-grid tbody td {
+        height: 80px;
+    }
+
+    .calendar-day-content {
+        padding: 4px;
+    }
+
+    .day-number {
+        font-size: 1rem;
+    }
+
+    .calendar-badge {
+        font-size: 0.65rem;
+        padding: 2px 5px;
+    }
+
+    .calendar-time,
+    .calendar-hours,
+    .calendar-pay {
+        font-size: 0.65rem;
+    }
+}
