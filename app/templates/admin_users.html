@@ -3,6 +3,12 @@
 
 {% block page_content %}
 
+{% if success %}
+<div style="background: rgba(100,255,100,0.2); border: 1px solid #4caf50; padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+    {{ success }}
+</div>
+{% endif %}
+
 <div class="page-header">
     <div class="page-header-left">
         <h2 class="page-title" style="margin: 0;">Användare</h2>
@@ -40,6 +46,9 @@
                 <td data-label="Lön" class="num">{{ "{:,}".format(u.wage) }} SEK</td>
                 <td>
                     <a href="/admin/users/{{ u.id }}" class="btn secondary" style="padding: 4px 12px; font-size: 0.85rem;">Redigera</a>
+                    <form method="POST" action="/admin/users/{{ u.id }}/reset-password" style="display: inline-block; margin-left: 8px;" onsubmit="return confirm('Återställ lösenord för {{ u.name }} till London1?');">
+                        <button type="submit" class="btn" style="padding: 4px 12px; font-size: 0.85rem; background: var(--warning); border-color: var(--warning);">Återställ lösenord</button>
+                    </form>
                 </td>
             </tr>
             {% endfor %}
