@@ -383,6 +383,7 @@ async def update_vacation(
 @router.get("/admin/users", response_class=HTMLResponse, name="admin_users")
 async def admin_users_page(
     request: Request,
+    success: str | None = Query(None),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
@@ -394,6 +395,7 @@ async def admin_users_page(
             "request": request,
             "user": current_user,
             "users": users,
+            "success": success,
         }
     )
 
@@ -489,10 +491,45 @@ async def admin_update_user(
     edit_user.name = name
     edit_user.wage = wage
     edit_user.role = UserRole(role)
-    
+
     if new_password:
         edit_user.password_hash = get_password_hash(new_password)
-    
+        edit_user.must_change_password = 1  # Force password change when admin sets new password
+
     db.commit()
-    
+
     return RedirectResponse(url="/admin/users", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/reset-password", name="admin_reset_password")
+async def admin_reset_password(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Admin: reset user password to default (London1) and force password change."""
+    reset_user = db.query(User).filter(User.id == user_id).first()
+    if not reset_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Reset password to London1
+    default_password = "London1"
+    reset_user.password_hash = get_password_hash(default_password)
+    reset_user.must_change_password = 1
+    db.commit()
+    clear_schedule_cache()
+
+    # Log password reset
+    log_auth_event(
+        event_type="password_reset",
+        username=reset_user.username,
+        user_id=reset_user.id,
+        success=True,
+        details={"reset_by": current_user.username, "reset_by_id": current_user.id}
+    )
+
+    # Redirect with success message
+    from urllib.parse import quote
+    success_msg = f"Lösenordet för {reset_user.name} har återställts till London1"
+    return RedirectResponse(url=f"/admin/users?success={quote(success_msg)}", status_code=302)
