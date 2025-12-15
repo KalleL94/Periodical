@@ -491,9 +491,10 @@ async def admin_update_user(
     edit_user.name = name
     edit_user.wage = wage
     edit_user.role = UserRole(role)
-    
+
     if new_password:
         edit_user.password_hash = get_password_hash(new_password)
+        edit_user.must_change_password = 1  # Force password change when admin sets new password
 
     db.commit()
 
