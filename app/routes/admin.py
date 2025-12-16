@@ -14,6 +14,10 @@ from app.auth.auth import get_admin_user
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
 
+# Add now (today's date) as a global for templates
+from datetime import date
+templates.env.globals["now"] = date.today()
+
 
 def write_json_safely(file_path: Path, data: dict | list) -> None:
     """

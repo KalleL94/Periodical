@@ -23,26 +23,40 @@
                     <span></span>
                 </button>
 
-                <nav class="row main-nav" id="main-nav">
-                    <a href="/" class="nav-link">Overview</a>
-                    <a href="/year" class="nav-link">Year</a>
-                    <a href="/month" class="nav-link">Month</a>
-                    <a href="/week" class="nav-link">Week</a>
-                    <a href="/day/1/2026/1/2" class="nav-link">Day</a>
-                    
+                <nav class="main-nav" id="main-nav">
+                    <!-- General Views -->
+                    <div class="nav-row">
+                        <a href="/year" class="nav-link">Year</a>
+                        <a href="/month" class="nav-link">Month</a>
+                        <a href="/week" class="nav-link">Week</a>
+                    </div>
+
                     {% if user %}
-                        {# Inloggad #}
-                        <span class="nav-divider" style="border-left: 1px solid var(--table-border); height: 20px; margin: 0 8px;"></span>
-                        <a href="/profile" class="nav-link">{{ user.name }}</a>
-                        {% if user.role.value == 'admin' %}
-                            <a href="/admin/users" class="nav-link">Users</a>
-                            <a href="/admin/settings" class="nav-link">Settings</a>
-                        {% endif %}
-                        <a href="/logout" class="nav-link" style="color: var(--muted);">Logga ut</a>
+                        <!-- Personal Views -->
+                        <div class="nav-row">
+                            <a href="/year/{{ user.id }}" class="nav-link">My Year</a>
+                            <a href="/month/{{ user.id }}" class="nav-link">My Month</a>
+                            <a href="/week/{{ user.id }}" class="nav-link">My Week</a>
+                            <a href="/day/{{ user.id }}/{{ now.year }}/{{ now.month }}/{{ now.day }}" class="nav-link">My Day</a>
+                        </div>
+
+                        <!-- User Menu -->
+                        <div class="nav-row">
+                            {# <span class="nav-divider"></span> #}
+                            <a href="/" class="nav-link">Overview</a>
+                            <a href="/profile" class="nav-link">{{ user.name }}</a>
+                            {% if user.role.value == 'admin' %}
+                                <a href="/admin/users" class="nav-link">Users</a>
+                                <a href="/admin/settings" class="nav-link">Settings</a>
+                            {% endif %}
+                            <a href="/logout" class="nav-link" style="color: var(--muted);">Log out</a>
+                        </div>
                     {% else %}
-                        {# Ej inloggad #}
-                        <span class="nav-divider" style="border-left: 1px solid var(--table-border); height: 20px; margin: 0 8px;"></span>
-                        <a href="/login" class="nav-link">Logga in</a>
+                        <!-- Login Link -->
+                        <div class="nav-row">
+                            <span class="nav-divider"></span>
+                            <a href="/login" class="nav-link">Log in</a>
+                        </div>
                     {% endif %}
                 </nav>
             </div>

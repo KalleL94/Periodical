@@ -94,6 +94,7 @@ def render_template(
     """
     Render template with user context automatically included.
     """
-    ctx = {"request": request, "user": user}
+    from datetime import date
+    ctx = {"request": request, "user": user, "now": date.today()}
     ctx.update(context)
     return templates.TemplateResponse(template_name, ctx)
