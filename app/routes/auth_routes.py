@@ -32,6 +32,10 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
 
+# Add now (today's date) as a global callable for templates
+from datetime import date
+templates.env.globals["now"] = date.today()
+
 
 # ============ Pydantic schemas ============
 

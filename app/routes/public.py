@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from datetime import date, datetime, time
+import datetime as dt
 
 from app.core.schedule import (
     determine_shift_for_date,
@@ -60,6 +61,9 @@ templates = Jinja2Templates(directory="app/templates")
 # Register Jinja filter for contrast color on badges
 templates.env.filters["contrast"] = contrast_color
 
+# Add now (today's date) as a global for templates
+templates.env.globals["now"] = date.today()
+
 
 # ============ Routes ============
 
@@ -67,16 +71,144 @@ templates.env.filters["contrast"] = contrast_color
 async def read_root(
     request: Request,
     current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
 ):
-    """Home page - redirect to login if not authenticated."""
+    """Home page - personalized dashboard for authenticated users."""
     if not current_user:
         return RedirectResponse(url="/login", status_code=302)
 
+    # Get current date and week (use safe_today to handle dates before rotation start)
+    today = date.today()
+    safe_today = get_safe_today(rotation_start_date)
+    iso_year, iso_week, _ = safe_today.isocalendar()
+
+    # Build this week's data for the user
+    week_data = build_week_data(iso_year, iso_week, person_id=current_user.id)
+
+    # Find next upcoming shift (use actual today for countdown, but safe_today for comparison)
+    next_shift = None
+    for day in week_data:
+        if day["date"] >= safe_today and day["shift"] and day["shift"].code not in ["OFF", "OC"]:
+            days_until = (day["date"] - today).days
+            shift = day["shift"]
+            time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
+            next_shift = {
+                "date": day["date"],
+                "shift_type": shift.label or shift.code,
+                "color": shift.color or "#666",
+                "time_range": time_range,
+                "days_until": days_until,
+            }
+            break
+
+    # Calculate week summary
+    week_summary = None
+    if week_data:
+        total_hours = 0.0
+        ob_hours = 0.0
+        total_pay = 0.0
+
+        # Get OB rules for the year
+        special_rules = _cached_special_rules(safe_today.year)
+        combined_rules = ob_rules + special_rules
+
+        for day in week_data:
+            if day["shift"] and day["shift"].code not in ["OFF", "OC"]:
+                # Calculate shift hours
+                hours, start_dt, end_dt = calculate_shift_hours(day["date"], day["shift"])
+                total_hours += hours
+
+                # Calculate OB hours and pay if we have valid datetimes
+                if start_dt and end_dt:
+                    ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                    ob_hours += sum(ob_hours_dict.values())
+
+                    if can_see_salary(current_user, current_user.id):
+                        wage = get_user_wage(db, current_user.id)
+                        ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, wage)
+                        total_pay += sum(ob_pay_dict.values())
+
+        week_summary = {
+            "total_hours": total_hours,
+            "ob_hours": ob_hours,
+            "total_pay": total_pay,
+        }
+
+    # Calculate month summary
+    month_summary = None
+    current_month_start = safe_today.replace(day=1)
+    if safe_today.month == 12:
+        current_month_end = safe_today.replace(day=31)
+    else:
+        next_month = safe_today.replace(month=safe_today.month + 1, day=1)
+        current_month_end = next_month - dt.timedelta(days=1)
+
+    month_total_hours = 0.0
+    month_ob_hours = 0.0
+    month_total_pay = 0.0
+
+    current_date = current_month_start
+    while current_date <= current_month_end:
+        result = determine_shift_for_date(current_date, start_week=current_user.id)
+        if result:
+            shift, rotation_week = result
+            if shift and shift.code not in ["OFF", "OC"]:
+                hours, start_dt, end_dt = calculate_shift_hours(current_date, shift)
+                month_total_hours += hours
+
+                if start_dt and end_dt:
+                    ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                    month_ob_hours += sum(ob_hours_dict.values())
+
+                    if can_see_salary(current_user, current_user.id):
+                        wage = get_user_wage(db, current_user.id)
+                        ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, wage)
+                        month_total_pay += sum(ob_pay_dict.values())
+
+        current_date += dt.timedelta(days=1)
+
+    month_summary = {
+        "total_hours": month_total_hours,
+        "ob_hours": month_ob_hours,
+        "total_pay": month_total_pay,
+        "month_name": safe_today.strftime("%B"),
+    }
+
+    # Check for upcoming vacation (within next 30 days, using safe_today for comparison)
+    upcoming_vacation = None
+    if current_user.vacation:
+        current_year = safe_today.year
+        next_year = current_year + 1
+
+        for year_str in [str(current_year), str(next_year)]:
+            if year_str in current_user.vacation:
+                vacation_weeks = current_user.vacation[year_str]
+                for week_num in vacation_weeks:
+                    week_date = date.fromisocalendar(int(year_str), week_num, 1)
+                    days_until_vacation = (week_date - safe_today).days
+
+                    if 0 <= days_until_vacation <= 30:
+                        week_end = week_date + dt.timedelta(days=6)
+                        upcoming_vacation = {
+                            "week": week_num,
+                            "year": year_str,
+                            "date_range": f"{week_date.strftime('%b %d')} - {week_end.strftime('%b %d')}",
+                        }
+                        break
+            if upcoming_vacation:
+                break
+
     return render_template(
         templates,
-        "index.html",
+        "dashboard.html",
         request,
-        {},
+        {
+            "next_shift": next_shift,
+            "week_summary": week_summary,
+            "month_summary": month_summary,
+            "upcoming_vacation": upcoming_vacation,
+            "can_see_salary": can_see_salary(current_user, current_user.id),
+        },
         user=current_user,
     )
 
