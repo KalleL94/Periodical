@@ -210,6 +210,7 @@ def build_week_data(
     year: int,
     week: int,
     person_id: int | None = None,
+    session=None,
 ) -> list[dict]:
     """
     Bygger veckodata för ett år/vecka.
@@ -239,13 +240,44 @@ def build_week_data(
                 if result is None:
                     shift = None
                     rotation_week = None
+                    start = None
+                    end = None
                 else:
                     shift, rotation_week = result
+                    hours, start, end = _cached_shift_hours(current_date, shift.code) if shift else (0.0, None, None)
+
+                # Check for overtime shift - replaces regular shift
+                if session:
+                    ot_shift = get_overtime_shift_for_date(session, pid, current_date)
+                    if ot_shift:
+                        # Replace with OT shift
+                        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+                        if ot_shift_type:
+                            shift = ot_shift_type
+                            # Parse start/end times from OT shift
+                            ot_start_str = str(ot_shift.start_time)
+                            ot_end_str = str(ot_shift.end_time)
+                            if len(ot_start_str.split(":")) == 2:
+                                ot_start_str += ":00"
+                            if len(ot_end_str.split(":")) == 2:
+                                ot_end_str += ":00"
+                            try:
+                                start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
+                                end_time_obj = datetime.datetime.strptime(ot_end_str, "%H:%M:%S").time()
+                                start = datetime.datetime.combine(current_date, start_time_obj)
+                                end = datetime.datetime.combine(current_date, end_time_obj)
+                                if end <= start:
+                                    end = end + datetime.timedelta(days=1)
+                            except:
+                                pass
+
                 person_data = {
                     "person_id": pid,
                     "person_name": persons[pid - 1].name,
                     "shift": shift,
                     "rotation_week": rotation_week,
+                    "start": start,
+                    "end": end,
                 }
                 day_info["persons"].append(person_data)
         else:
@@ -417,19 +449,18 @@ def generate_year_data(
             ot_details = {}
 
             if ot_shift:
-                # If this is an OC shift, recalculate OC pay for shortened period
+                # If this is an OC shift, recalculate OC pay only for period BEFORE OT starts
                 if shift and shift.code == "OC":
                     from datetime import time as dt_time
 
-                    # OC shift runs 06:00 to 06:00
+                    # OC shift runs 06:00 to 06:00 next day
                     oc_start = datetime.datetime.combine(current_day, dt_time(6, 0))
 
-                    # OT starts at ot_shift.start_time
-                    # Handle both time object and string representation
+                    # Parse OT start time
                     ot_start_str = str(ot_shift.start_time)
                     if len(ot_start_str.split(":")) == 2:
                         ot_start_str += ":00"
-                    
+
                     try:
                         ot_start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
                     except ValueError:
@@ -437,14 +468,13 @@ def generate_year_data(
                          if isinstance(ot_shift.start_time, datetime.time):
                              ot_start_time_obj = ot_shift.start_time
                          else:
-                             # Default fallback, should rarely happen if DB is correct
                              ot_start_time_obj = dt_time(0,0)
-                             
+
                     oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
 
-                    # Recalculate OC pay for shortened period (06:00 to OT start)
+                    # Calculate OC pay only for period before OT starts (06:00 to OT start)
+                    oncall_rules = _cached_oncall_rules(current_day.year)
                     if oc_end > oc_start:
-                        oncall_rules = _cached_oncall_rules(current_day.year)
                         oncall_calc = calculate_oncall_pay_for_period(
                             oc_start,
                             oc_end,
@@ -453,6 +483,10 @@ def generate_year_data(
                         )
                         oncall_pay = oncall_calc["total_pay"]
                         oncall_details = oncall_calc
+                    else:
+                        # OT starts at or before OC start, no OC pay
+                        oncall_pay = 0.0
+                        oncall_details = {"note": "OT starts at or before OC start", "total_pay": 0.0}
 
                 # Calculate OT pay
                 ot_pay = ot_shift.ot_pay
@@ -470,6 +504,24 @@ def generate_year_data(
                 if ot_shift_type:
                     shift = ot_shift_type
                     hours = ot_shift.hours
+
+                    # Parse OT shift times and set start/end datetimes
+                    ot_start_str = str(ot_shift.start_time)
+                    ot_end_str = str(ot_shift.end_time)
+                    if len(ot_start_str.split(":")) == 2:
+                        ot_start_str += ":00"
+                    if len(ot_end_str.split(":")) == 2:
+                        ot_end_str += ":00"
+                    try:
+                        start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
+                        end_time_obj = datetime.datetime.strptime(ot_end_str, "%H:%M:%S").time()
+                        start = datetime.datetime.combine(current_day, start_time_obj)
+                        end = datetime.datetime.combine(current_day, end_time_obj)
+                        if end <= start:
+                            end = end + datetime.timedelta(days=1)
+                    except Exception as e:
+                        # If parsing fails, leave start/end as they were
+                        pass
 
             day_info["person_id"] = person_id
             day_info["person_name"] = persons[person_id - 1].name
@@ -659,15 +711,14 @@ def generate_month_data(
             ot_details = {}
 
             if ot_shift:
-                # If this is an OC shift, recalculate OC pay for shortened period
+                # If this is an OC shift, recalculate OC pay only for period BEFORE OT starts
                 if shift and shift.code == "OC":
                     from datetime import time as dt_time
 
-                    # OC shift runs 06:00 to 06:00
+                    # OC shift runs 06:00 to 06:00 next day
                     oc_start = datetime.datetime.combine(current_day, dt_time(6, 0))
 
-                    # OT starts at ot_shift.start_time
-                    # Handle both time object and string representation
+                    # Parse OT start time
                     ot_start_str = str(ot_shift.start_time)
                     if len(ot_start_str.split(":")) == 2:
                         ot_start_str += ":00"
@@ -679,14 +730,13 @@ def generate_month_data(
                          if isinstance(ot_shift.start_time, datetime.time):
                              ot_start_time_obj = ot_shift.start_time
                          else:
-                             # Default fallback, should rarely happen if DB is correct
                              ot_start_time_obj = dt_time(0,0)
 
                     oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
 
-                    # Recalculate OC pay for shortened period (06:00 to OT start)
+                    # Calculate OC pay only for period before OT starts (06:00 to OT start)
+                    oncall_rules = _cached_oncall_rules(current_day.year)
                     if oc_end > oc_start:
-                        oncall_rules = _cached_oncall_rules(current_day.year)
                         oncall_calc = calculate_oncall_pay_for_period(
                             oc_start,
                             oc_end,
@@ -695,6 +745,10 @@ def generate_month_data(
                         )
                         oncall_pay = oncall_calc["total_pay"]
                         oncall_details = oncall_calc
+                    else:
+                        # OT starts at or before OC start, no OC pay
+                        oncall_pay = 0.0
+                        oncall_details = {"note": "OT starts at or before OC start", "total_pay": 0.0}
 
                 # Calculate OT pay
                 ot_pay = ot_shift.ot_pay
@@ -712,6 +766,24 @@ def generate_month_data(
                 if ot_shift_type:
                     shift = ot_shift_type
                     hours = ot_shift.hours
+
+                    # Parse OT shift times and set start/end datetimes
+                    ot_start_str = str(ot_shift.start_time)
+                    ot_end_str = str(ot_shift.end_time)
+                    if len(ot_start_str.split(":")) == 2:
+                        ot_start_str += ":00"
+                    if len(ot_end_str.split(":")) == 2:
+                        ot_end_str += ":00"
+                    try:
+                        start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
+                        end_time_obj = datetime.datetime.strptime(ot_end_str, "%H:%M:%S").time()
+                        start = datetime.datetime.combine(current_day, start_time_obj)
+                        end = datetime.datetime.combine(current_day, end_time_obj)
+                        if end <= start:
+                            end = end + datetime.timedelta(days=1)
+                    except Exception as e:
+                        # If parsing fails, leave start/end as they were
+                        pass
 
             day_info["person_id"] = person_id
             day_info["person_name"] = persons[person_id - 1].name

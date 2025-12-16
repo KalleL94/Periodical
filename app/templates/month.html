@@ -156,8 +156,12 @@
                                                 <span class="badge badge-off calendar-badge">OFF</span>
                                             {% endif %}
 
-                                            {% if ns.d.shift and ns.d.shift.start_time is not none and ns.d.shift.code != 'OC' %}
-                                                <div class="calendar-time">{{ ns.d.shift.start_time }} - {{ ns.d.shift.end_time }}</div>
+                                            {% if ns.d.shift and ns.d.shift.code != 'OC' %}
+                                                {% if ns.d.shift.code == 'OT' and ns.d.start and ns.d.end %}
+                                                    <div class="calendar-time">{{ ns.d.start.strftime('%H:%M') }} - {{ ns.d.end.strftime('%H:%M') }}</div>
+                                                {% elif ns.d.shift.start_time is not none %}
+                                                    <div class="calendar-time">{{ ns.d.shift.start_time }} - {{ ns.d.shift.end_time }}</div>
+                                                {% endif %}
                                             {% endif %}
                                         </div>
                                     </div>

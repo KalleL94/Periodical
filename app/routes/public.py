@@ -15,7 +15,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import datetime as dt
 
 from app.core.schedule import (
@@ -140,31 +140,67 @@ async def read_root(
         total_hours = 0.0
         ob_hours = 0.0
         total_pay = 0.0
+        oc_pay = 0.0
+        ot_pay = 0.0
 
         # Get OB rules for the year
         special_rules = _cached_special_rules(safe_today.year)
         combined_rules = ob_rules + special_rules
 
+        # Get on-call rules for the year
+        oncall_rules = _cached_oncall_rules(safe_today.year)
+
         for day in week_data:
-            if day["shift"] and day["shift"].code not in ["OFF", "OC"]:
-                # Calculate shift hours
-                hours, start_dt, end_dt = calculate_shift_hours(day["date"], day["shift"])
-                total_hours += hours
+            # Check for overtime shift first
+            ot_shift = get_overtime_shift_for_date(db, current_user.id, day["date"])
 
-                # Calculate OB hours and pay if we have valid datetimes
-                if start_dt and end_dt:
-                    ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                    ob_hours += sum(ob_hours_dict.values())
+            if ot_shift:
+                # Calculate OT hours and pay
+                ot_start = datetime.combine(day["date"], ot_shift.start_time)
+                ot_end = datetime.combine(day["date"], ot_shift.end_time)
 
+                # Handle shifts that cross midnight
+                if ot_shift.end_time < ot_shift.start_time:
+                    ot_end += dt.timedelta(days=1)
+
+                ot_hours = (ot_end - ot_start).total_seconds() / 3600.0
+                total_hours += ot_hours
+
+                if can_see_salary(current_user, current_user.id):
+                    wage = get_user_wage(db, current_user.id)
+                    ot_ob_pay = calculate_overtime_pay(wage, ot_hours)
+                    ot_pay += ot_ob_pay
+
+            # Handle regular rotation shifts
+            if day["shift"]:
+                if day["shift"].code == "OC":
+                    # Calculate on-call pay
                     if can_see_salary(current_user, current_user.id):
                         wage = get_user_wage(db, current_user.id)
-                        ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, wage)
-                        total_pay += sum(ob_pay_dict.values())
+                        oc_result = calculate_oncall_pay(day["date"], wage, oncall_rules)
+                        oc_pay += oc_result["total_pay"]
+
+                elif day["shift"].code != "OFF":
+                    # Calculate regular shift hours
+                    hours, start_dt, end_dt = calculate_shift_hours(day["date"], day["shift"])
+                    total_hours += hours
+
+                    # Calculate OB hours and pay if we have valid datetimes
+                    if start_dt and end_dt:
+                        ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                        ob_hours += sum(ob_hours_dict.values())
+
+                        if can_see_salary(current_user, current_user.id):
+                            wage = get_user_wage(db, current_user.id)
+                            ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, wage)
+                            total_pay += sum(ob_pay_dict.values())
 
         week_summary = {
             "total_hours": total_hours,
             "ob_hours": ob_hours,
             "total_pay": total_pay,
+            "oc_pay": oc_pay,
+            "ot_pay": ot_pay,
         }
 
     # Calculate month summary
@@ -179,24 +215,55 @@ async def read_root(
     month_total_hours = 0.0
     month_ob_hours = 0.0
     month_total_pay = 0.0
+    month_oc_pay = 0.0
+    month_ot_pay = 0.0
 
     current_date = current_month_start
     while current_date <= current_month_end:
+        # Check for overtime shift first
+        ot_shift = get_overtime_shift_for_date(db, current_user.id, current_date)
+
+        if ot_shift:
+            # Calculate OT hours and pay
+            ot_start = datetime.combine(current_date, ot_shift.start_time)
+            ot_end = datetime.combine(current_date, ot_shift.end_time)
+
+            # Handle shifts that cross midnight
+            if ot_shift.end_time < ot_shift.start_time:
+                ot_end += dt.timedelta(days=1)
+
+            ot_hours = (ot_end - ot_start).total_seconds() / 3600.0
+            month_total_hours += ot_hours
+
+            if can_see_salary(current_user, current_user.id):
+                wage = get_user_wage(db, current_user.id)
+                ot_ob_pay = calculate_overtime_pay(wage, ot_hours)
+                month_ot_pay += ot_ob_pay
+
+        # Handle regular rotation shifts
         result = determine_shift_for_date(current_date, start_week=current_user.id)
         if result:
             shift, rotation_week = result
-            if shift and shift.code not in ["OFF", "OC"]:
-                hours, start_dt, end_dt = calculate_shift_hours(current_date, shift)
-                month_total_hours += hours
-
-                if start_dt and end_dt:
-                    ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                    month_ob_hours += sum(ob_hours_dict.values())
-
+            if shift:
+                if shift.code == "OC":
+                    # Calculate on-call pay
                     if can_see_salary(current_user, current_user.id):
                         wage = get_user_wage(db, current_user.id)
-                        ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, wage)
-                        month_total_pay += sum(ob_pay_dict.values())
+                        oc_result = calculate_oncall_pay(current_date, wage, oncall_rules)
+                        month_oc_pay += oc_result["total_pay"]
+
+                elif shift.code != "OFF":
+                    hours, start_dt, end_dt = calculate_shift_hours(current_date, shift)
+                    month_total_hours += hours
+
+                    if start_dt and end_dt:
+                        ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                        month_ob_hours += sum(ob_hours_dict.values())
+
+                        if can_see_salary(current_user, current_user.id):
+                            wage = get_user_wage(db, current_user.id)
+                            ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, wage)
+                            month_total_pay += sum(ob_pay_dict.values())
 
         current_date += dt.timedelta(days=1)
 
@@ -204,6 +271,8 @@ async def read_root(
         "total_hours": month_total_hours,
         "ob_hours": month_ob_hours,
         "total_pay": month_total_pay,
+        "oc_pay": month_oc_pay,
+        "ot_pay": month_ot_pay,
         "month_name": safe_today.strftime("%B"),
     }
 
@@ -371,14 +440,15 @@ async def show_day_for_person(
         # Default: Full 24h calculation
         oc_calc = calculate_oncall_pay(date_obj, monthly_salary, oncall_rules)
 
-        # If OT exists, we might need to recalculate if it interrupts the OC shift
+        # If OT exists, recalculate OC pay only for period BEFORE OT starts
         if ot_shift:
-            # OC starts 06:00
+            # OC shift runs 06:00 to 06:00 next day
             oc_start = datetime.combine(date_obj, time(6, 0))
 
-            # Determine OT start time safely
+            # Parse OT start time
             ot_start_time_val = ot_shift.start_time
-            # Ensure we have a time object
+
+            # Ensure we have time object
             if isinstance(ot_start_time_val, str):
                 try:
                     ot_start_time_val = datetime.strptime(ot_start_time_val, "%H:%M:%S").time()
@@ -387,16 +457,22 @@ async def show_day_for_person(
 
             oc_end = datetime.combine(date_obj, ot_start_time_val)
 
-            # If OT starts after OC starts, calculate partial
+            # Calculate OC pay only for period before OT starts (06:00 to OT start)
             if oc_end > oc_start:
                 oc_calc = calculate_oncall_pay_for_period(
-                    oc_start, 
-                    oc_end, 
-                    monthly_salary, 
+                    oc_start,
+                    oc_end,
+                    monthly_salary,
                     oncall_rules
                 )
+                oncall_pay = oc_calc["total_pay"]
+            else:
+                # OT starts at or before OC start, no OC pay
+                oncall_pay = 0.0
+                oc_calc = {"total_pay": 0.0, "breakdown": {}, "total_hours": 0.0}
+        else:
+            oncall_pay = oc_calc['total_pay']
 
-        oncall_pay = oc_calc['total_pay']
         oncall_details = oc_calc
 
     show_salary = can_see_salary(current_user, person_id)
@@ -487,6 +563,7 @@ async def show_week_all(
     year: int = None,
     week: int = None,
     current_user: User = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
 ):
     """Week view for all persons."""
     safe_today = get_safe_today(rotation_start_date)
@@ -496,7 +573,7 @@ async def show_week_all(
     year = year or iso_year
     week = week or iso_week
 
-    days_in_week = build_week_data(year, week)
+    days_in_week = build_week_data(year, week, session=db)
 
     monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)

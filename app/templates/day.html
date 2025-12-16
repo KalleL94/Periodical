@@ -231,8 +231,8 @@
                         </thead>
                         <tbody>
                             <tr>
-                                <td>{{ ot_shift.start }}</td>
-                                <td>{{ ot_shift.end }}</td>
+                                <td>{{ ot_shift.start_time }}</td>
+                                <td>{{ ot_shift.end_time }}</td>
                                 <td>{{ "%.2f"|format(ot_shift.hours) }}</td>
                                 <td>{{ "%.2f"|format(monthly_salary / 72) }} kr/h</td>
                                 <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
@@ -247,7 +247,7 @@
 
                     {% if original_shift and original_shift.code == 'OC' %}
                     <p class="info-text">
-                        <strong>OC-pass splittrat:</strong> OC-lön 06:00-{{ ot_shift.start }}, sedan OT-lön {{ ot_shift.start }}-{{ ot_shift.end }}
+                        <strong>OC-pass avslutas:</strong> OC-lön 06:00-{{ ot_shift.start_time }}, sedan OT-lön {{ ot_shift.start_time }}-{{ ot_shift.end_time }}
                     </p>
                     {% endif %}
                 </div>

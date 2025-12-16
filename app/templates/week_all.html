@@ -70,6 +70,12 @@
                                               style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
                                             SEM
                                         </span>
+                                    {% elif person.shift.code == 'OT' %}
+                                        <span class="badge"
+                                              title="{% if person.start and person.end %}Övertid: {{ person.start.strftime('%H:%M') }} - {{ person.end.strftime('%H:%M') }}{% else %}Övertid (tider saknas){% endif %}"
+                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                            OT
+                                        </span>
                                     {% else %}
                                         <span class="badge"
                                               style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">

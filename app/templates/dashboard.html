@@ -47,6 +47,14 @@
                         <div class="summary-label">Estimated OB Pay</div>
                         <div class="summary-value">{{ "{:,.0f}".format(week_summary.total_pay) }} kr</div>
                     </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Estimated OC Pay</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.oc_pay) }} kr</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Estimated OT Pay</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.ot_pay) }} kr</div>
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -69,6 +77,14 @@
                     <div class="summary-item">
                         <div class="summary-label">Estimated OB Pay</div>
                         <div class="summary-value">{{ "{:,.0f}".format(month_summary.total_pay) }} kr</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Estimated OC Pay</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.oc_pay) }} kr</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Estimated OT Pay</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.ot_pay) }} kr</div>
                     </div>
                     {% endif %}
                 </div>

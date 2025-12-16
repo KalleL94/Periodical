@@ -81,6 +81,12 @@
                                                   style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
                                                 SEM
                                             </span>
+                                        {% elif person.shift.code == 'OT' %}
+                                            <span class="badge"
+                                                  {% if person.start and person.end %}title="Övertid: {{ person.start.strftime('%H:%M') }} - {{ person.end.strftime('%H:%M') }}"{% endif %}
+                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
+                                                OT
+                                            </span>
                                         {% else %}
                                             <span class="badge"
                                                   style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">

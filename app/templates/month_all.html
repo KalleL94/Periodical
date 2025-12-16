@@ -106,6 +106,12 @@
                                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
                                                 SEM
                                             </span>
+                                        {% elif d.shift.code == 'OT' %}
+                                            <span class="badge"
+                                                  {% if d.start and d.end %}title="Övertid: {{ d.start.strftime('%H:%M') }} - {{ d.end.strftime('%H:%M') }}"{% endif %}
+                                                  style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
+                                                OT
+                                            </span>
                                         {% else %}
                                             <span class="badge"
                                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
