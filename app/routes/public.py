@@ -85,21 +85,54 @@ async def read_root(
     # Build this week's data for the user
     week_data = build_week_data(iso_year, iso_week, person_id=current_user.id)
 
-    # Find next upcoming shift (use actual today for countdown, but safe_today for comparison)
+    # Find next upcoming shift (including overtime shifts)
     next_shift = None
-    for day in week_data:
-        if day["date"] >= safe_today and day["shift"] and day["shift"].code not in ["OFF", "OC"]:
-            days_until = (day["date"] - today).days
-            shift = day["shift"]
-            time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
-            next_shift = {
-                "date": day["date"],
-                "shift_type": shift.label or shift.code,
-                "color": shift.color or "#666",
-                "time_range": time_range,
-                "days_until": days_until,
-            }
+
+    # Check this week and next week for upcoming shifts
+    weeks_to_check = [
+        (iso_year, iso_week),
+        # Calculate next week
+        ((safe_today + dt.timedelta(days=7)).isocalendar()[0],
+         (safe_today + dt.timedelta(days=7)).isocalendar()[1])
+    ]
+
+    for check_year, check_week in weeks_to_check:
+        if next_shift:
             break
+
+        check_week_data = build_week_data(check_year, check_week, person_id=current_user.id)
+
+        for day in check_week_data:
+            if day["date"] < safe_today:
+                continue
+
+            # Check for overtime shift first
+            ot_shift = get_overtime_shift_for_date(db, current_user.id, day["date"])
+
+            if ot_shift:
+                # Show OT shift as next shift
+                days_until = (day["date"] - today).days
+                next_shift = {
+                    "date": day["date"],
+                    "shift_type": "OT (Overtime)",
+                    "color": "#ff9800",  # Orange color for OT
+                    "time_range": f"{ot_shift.start_time.strftime('%H:%M')} - {ot_shift.end_time.strftime('%H:%M')}",
+                    "days_until": days_until,
+                }
+                break
+            # Check for regular rotation shift (including on-call)
+            elif day["shift"] and day["shift"].code != "OFF":
+                days_until = (day["date"] - today).days
+                shift = day["shift"]
+                time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
+                next_shift = {
+                    "date": day["date"],
+                    "shift_type": shift.label or shift.code,
+                    "color": shift.color or "#666",
+                    "time_range": time_range,
+                    "days_until": days_until,
+                }
+                break
 
     # Calculate week summary
     week_summary = None

@@ -32,13 +32,15 @@
                     </div>
 
                     {% if user %}
-                        <!-- Personal Views -->
-                        <div class="nav-row">
-                            <a href="/year/{{ user.id }}" class="nav-link">My Year</a>
-                            <a href="/month/{{ user.id }}" class="nav-link">My Month</a>
-                            <a href="/week/{{ user.id }}" class="nav-link">My Week</a>
-                            <a href="/day/{{ user.id }}/{{ now.year }}/{{ now.month }}/{{ now.day }}" class="nav-link">My Day</a>
-                        </div>
+                        {% if user.role.value != 'admin' %}
+                            <!-- Personal Views -->
+                            <div class="nav-row">
+                                <a href="/year/{{ user.id }}" class="nav-link">My Year</a>
+                                <a href="/month/{{ user.id }}" class="nav-link">My Month</a>
+                                <a href="/week/{{ user.id }}" class="nav-link">My Week</a>
+                                <a href="/day/{{ user.id }}/{{ now.year }}/{{ now.month }}/{{ now.day }}" class="nav-link">My Day</a>
+                            </div>
+                        {% endif %}
 
                         <!-- User Menu -->
                         <div class="nav-row">
