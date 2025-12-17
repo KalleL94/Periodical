@@ -118,3 +118,19 @@ WEEKDAY_NAMES: Final[tuple[str, ...]] = (
 
 #: Standardkod för semester i persons.json och i schemalogiken.
 VACATION_CODE: Final[str] = SHIFT_CODE_SEMESTER
+
+# ==========================
+# Löneberäkningar
+# ==========================
+
+#: Antal timmar per månad för timlönsberäkning vid övertid.
+#: Formel: månadslön / OT_RATE_DIVISOR = timlön för OT-beräkning
+OT_RATE_DIVISOR: Final[int] = 72
+
+# ==========================
+# Säkerhet / Autentisering
+# ==========================
+
+#: Standardlösenord vid lösenordsåterställning.
+#: VARNING: Ändra detta i produktionsmiljö!
+DEFAULT_PASSWORD: Final[str] = "London1"

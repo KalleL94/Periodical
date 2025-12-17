@@ -23,6 +23,7 @@ from app.auth.auth import (
     get_user_by_username,
     set_auth_cookie,
 )
+from app.core.constants import DEFAULT_PASSWORD
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
@@ -146,9 +147,7 @@ async def login(
 
 
 @router.get("/logout", name="logout")
-async def logout(
-    response: Response, current_user: User | None = Depends(get_current_user_optional)
-):
+async def logout(response: Response, current_user: User | None = Depends(get_current_user_optional)):
     """Log out user."""
     # Log logout
     if current_user:
@@ -267,9 +266,7 @@ async def change_password_submit(
 
 
 @router.get("/profile", response_class=HTMLResponse, name="profile")
-async def profile_page(
-    request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
-):
+async def profile_page(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Show user profile page."""
     return templates.TemplateResponse(
         "profile.html",
@@ -518,7 +515,7 @@ async def admin_reset_password(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Reset password to London1
-    default_password = "London1"
+    default_password = DEFAULT_PASSWORD
     reset_user.password_hash = get_password_hash(default_password)
     reset_user.must_change_password = 1
     db.commit()
@@ -536,5 +533,5 @@ async def admin_reset_password(
     # Redirect with success message
     from urllib.parse import quote
 
-    success_msg = f"Lösenordet för {reset_user.name} har återställts till London1"
+    success_msg = f"Lösenordet för {reset_user.name} har återställts till {default_password}"
     return RedirectResponse(url=f"/admin/users?success={quote(success_msg)}", status_code=302)
