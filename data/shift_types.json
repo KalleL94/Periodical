@@ -16,8 +16,8 @@
     {
         "code": "OC",
         "label": "Beredskap",
-        "start_time": "06:00",
-        "end_time": "06:00",
+        "start_time": "00:00",
+        "end_time": "00:00",
         "color": "#e91e63"
     },
     {

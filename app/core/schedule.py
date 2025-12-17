@@ -453,8 +453,8 @@ def generate_year_data(
                 if shift and shift.code == "OC":
                     from datetime import time as dt_time
 
-                    # OC shift runs 06:00 to 06:00 next day
-                    oc_start = datetime.datetime.combine(current_day, dt_time(6, 0))
+                    # OC shift runs 00:00 to 00:00 next day
+                    oc_start = datetime.datetime.combine(current_day, dt_time(0, 0))
 
                     # Parse OT start time
                     ot_start_str = str(ot_shift.start_time)
@@ -472,7 +472,7 @@ def generate_year_data(
 
                     oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
 
-                    # Calculate OC pay only for period before OT starts (06:00 to OT start)
+                    # Calculate OC pay only for period before OT starts (00:00 to OT start)
                     oncall_rules = _cached_oncall_rules(current_day.year)
                     if oc_end > oc_start:
                         oncall_calc = calculate_oncall_pay_for_period(
@@ -715,8 +715,8 @@ def generate_month_data(
                 if shift and shift.code == "OC":
                     from datetime import time as dt_time
 
-                    # OC shift runs 06:00 to 06:00 next day
-                    oc_start = datetime.datetime.combine(current_day, dt_time(6, 0))
+                    # OC shift runs 00:00 to 00:00 next day
+                    oc_start = datetime.datetime.combine(current_day, dt_time(0, 0))
 
                     # Parse OT start time
                     ot_start_str = str(ot_shift.start_time)
@@ -734,7 +734,7 @@ def generate_month_data(
 
                     oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
 
-                    # Calculate OC pay only for period before OT starts (06:00 to OT start)
+                    # Calculate OC pay only for period before OT starts (00:00 to OT start)
                     oncall_rules = _cached_oncall_rules(current_day.year)
                     if oc_end > oc_start:
                         oncall_calc = calculate_oncall_pay_for_period(

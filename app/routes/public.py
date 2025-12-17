@@ -442,8 +442,8 @@ async def show_day_for_person(
 
         # If OT exists, recalculate OC pay only for period BEFORE OT starts
         if ot_shift:
-            # OC shift runs 06:00 to 06:00 next day
-            oc_start = datetime.combine(date_obj, time(6, 0))
+            # OC shift runs 00:00 to 00:00 next day
+            oc_start = datetime.combine(date_obj, time(0, 0))
 
             # Parse OT start time
             ot_start_time_val = ot_shift.start_time
@@ -457,7 +457,7 @@ async def show_day_for_person(
 
             oc_end = datetime.combine(date_obj, ot_start_time_val)
 
-            # Calculate OC pay only for period before OT starts (06:00 to OT start)
+            # Calculate OC pay only for period before OT starts (00:00 to OT start)
             if oc_end > oc_start:
                 oc_calc = calculate_oncall_pay_for_period(
                     oc_start,

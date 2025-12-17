@@ -408,11 +408,11 @@ def calculate_oncall_pay(
 ) -> Dict:
     """
     Calculate on-call compensation for a 24-hour shift.
-    
-    On-call shifts run from 06:00 on the given date to 06:00 the next day.
-    
+
+    On-call shifts run from 00:00 on the given date to 00:00 the next day.
+
     Args:
-        date: Date when on-call shift starts (at 06:00)
+        date: Date when on-call shift starts (at 00:00)
         monthly_salary: Employee's monthly salary for rate calculation
         oncall_rules: Optional list of rules (if None, uses cached rules for year)
     
@@ -424,11 +424,11 @@ def calculate_oncall_pay(
         - effective_rate: Weighted average rate divisor
         - segments: List of time segments with their applied rules
     """
-    # Define shift period: 06:00 to 06:00 next day
-    shift_start = datetime.datetime.combine(date, datetime.time(6, 0))
+    # Define shift period: 00:00 to 00:00 next day
+    shift_start = datetime.datetime.combine(date, datetime.time(0, 0))
     shift_end = datetime.datetime.combine(
         date + datetime.timedelta(days=1),
-        datetime.time(6, 0)
+        datetime.time(0, 0)
     )
     
     # Get rules if not provided
@@ -519,7 +519,7 @@ def calculate_oncall_pay_for_period(
     calculate OC pay only for the portion before the OT shift starts.
 
     Args:
-        start_dt: Period start (e.g., 06:00 on the OC day)
+        start_dt: Period start (e.g., 00:00 on the OC day)
         end_dt: Period end (e.g., 14:00 when OT begins)
         monthly_salary: Employee's monthly salary
         oncall_rules: List of applicable on-call rules
