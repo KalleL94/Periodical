@@ -28,3 +28,14 @@ testpaths = ["tests"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = ["B008"]  # Allow Depends() in function defaults (FastAPI pattern)
+
+[tool.ruff.format]
+quote-style = "double"

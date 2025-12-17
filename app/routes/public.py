@@ -3,57 +3,55 @@
 Public routes for schedule views.
 """
 
-from fastapi import (
-    APIRouter,
-    Request,
-    Query,
-    Depends,
-    Form,
-    HTTPException,
-    status
-)
+import datetime as dt
+from datetime import date, datetime, time, timedelta
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from datetime import date, datetime, time, timedelta
-import datetime as dt
 
+from app.auth.auth import get_current_user, get_current_user_optional
+from app.core.helpers import (
+    can_see_salary,
+    contrast_color,
+    render_template,
+    strip_salary_data,
+)
+from app.core.oncall import (
+    _cached_oncall_rules,
+    calculate_oncall_pay,
+    calculate_oncall_pay_for_period,
+)
 from app.core.schedule import (
-    determine_shift_for_date,
+    _cached_special_rules,
+    _select_ob_rules_for_date,
+    build_cowork_details,
+    build_cowork_stats,
     build_week_data,
-    rotation_start_date,
-    summarize_month_for_person,
-    summarize_year_for_person,
-    generate_year_data,
-    generate_month_data,
-    calculate_shift_hours,
-    ob_rules,
     calculate_ob_hours,
     calculate_ob_pay,
     calculate_overtime_pay,
+    calculate_shift_hours,
+    determine_shift_for_date,
+    generate_month_data,
+    generate_year_data,
+    get_all_user_wages,
     get_overtime_shift_for_date,
     get_user_wage,
-    get_all_user_wages,
-    _cached_special_rules,
-    _select_ob_rules_for_date,
+    ob_rules,
+    rotation_start_date,
     settings,
+    summarize_month_for_person,
+    summarize_year_for_person,
     weekday_names,
-    build_cowork_stats,
-    build_cowork_details,
+)
+from app.core.schedule import (
     persons as person_list,
 )
-from app.core.oncall import calculate_oncall_pay, calculate_oncall_pay_for_period, _cached_oncall_rules
-from app.core.validators import validate_person_id, validate_date_params
-from app.core.constants import PERSON_IDS
-from app.core.utils import get_safe_today, get_navigation_dates
-from app.core.helpers import (
-    contrast_color,
-    can_see_salary,
-    strip_salary_data,
-    render_template,
-)
-from app.auth.auth import get_current_user_optional, get_current_user
-from app.database.database import User, UserRole, OvertimeShift, get_db
+from app.core.utils import get_navigation_dates, get_safe_today
+from app.core.validators import validate_date_params, validate_person_id
+from app.database.database import OvertimeShift, User, UserRole, get_db
 
 router = APIRouter(tags=["public"])
 templates = Jinja2Templates(directory="app/templates")
@@ -66,6 +64,7 @@ templates.env.globals["now"] = date.today()
 
 
 # ============ Routes ============
+
 
 @router.get("/", response_class=HTMLResponse)
 async def read_root(
@@ -92,8 +91,10 @@ async def read_root(
     weeks_to_check = [
         (iso_year, iso_week),
         # Calculate next week
-        ((safe_today + dt.timedelta(days=7)).isocalendar()[0],
-         (safe_today + dt.timedelta(days=7)).isocalendar()[1])
+        (
+            (safe_today + dt.timedelta(days=7)).isocalendar()[0],
+            (safe_today + dt.timedelta(days=7)).isocalendar()[1],
+        ),
     ]
 
     for check_year, check_week in weeks_to_check:
@@ -112,11 +113,13 @@ async def read_root(
             if ot_shift:
                 # Show OT shift as next shift
                 days_until = (day["date"] - today).days
+                start_str = ot_shift.start_time.strftime('%H:%M')
+                end_str = ot_shift.end_time.strftime('%H:%M')
                 next_shift = {
                     "date": day["date"],
                     "shift_type": "OT (Overtime)",
                     "color": "#ff9800",  # Orange color for OT
-                    "time_range": f"{ot_shift.start_time.strftime('%H:%M')} - {ot_shift.end_time.strftime('%H:%M')}",
+                    "time_range": f"{start_str} - {end_str}",
                     "days_until": days_until,
                 }
                 break
@@ -124,7 +127,11 @@ async def read_root(
             elif day["shift"] and day["shift"].code != "OFF":
                 days_until = (day["date"] - today).days
                 shift = day["shift"]
-                time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
+                time_range = (
+                    f"{shift.start_time} - {shift.end_time}"
+                    if shift.start_time and shift.end_time
+                    else ""
+                )
                 next_shift = {
                     "date": day["date"],
                     "shift_type": shift.label or shift.code,
@@ -291,10 +298,12 @@ async def read_root(
 
                     if 0 <= days_until_vacation <= 30:
                         week_end = week_date + dt.timedelta(days=6)
+                        start_fmt = week_date.strftime('%b %d')
+                        end_fmt = week_end.strftime('%b %d')
                         upcoming_vacation = {
                             "week": week_num,
                             "year": year_str,
-                            "date_range": f"{week_date.strftime('%b %d')} - {week_end.strftime('%b %d')}",
+                            "date_range": f"{start_fmt} - {end_fmt}",
                         }
                         break
             if upcoming_vacation:
@@ -382,8 +391,9 @@ async def show_day_for_person(
 
     if ot_shift:
         # Replace shift display with OT shift
-        from app.core.storage import load_shift_types
         from app.core.models import ShiftType
+        from app.core.storage import load_shift_types
+
         all_shifts = load_shift_types()
         ot_shift_type = next((s for s in all_shifts if s.code == "OT"), None)
         if ot_shift_type:
@@ -403,23 +413,26 @@ async def show_day_for_person(
                 label=ot_shift_type.label,
                 start_time=ot_start_str,
                 end_time=ot_end_str,
-                color=ot_shift_type.color
+                color=ot_shift_type.color,
             )
             hours = ot_shift.hours
 
             # Parse OT shift times for calculations
-            ot_start_full = ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
+            ot_start_full = (
+                ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
+            )
             ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
 
             try:
                 from datetime import datetime as dt
+
                 start_time_obj = dt.strptime(ot_start_full, "%H:%M:%S").time()
                 end_time_obj = dt.strptime(ot_end_full, "%H:%M:%S").time()
                 start_dt = datetime.combine(date_obj, start_time_obj)
                 end_dt = datetime.combine(date_obj, end_time_obj)
                 if end_dt <= start_dt:
                     end_dt = end_dt + timedelta(days=1)
-            except:
+            except ValueError:
                 pass
 
         ot_details = {
@@ -427,7 +440,7 @@ async def show_day_for_person(
             "end_time": ot_shift.end_time,
             "hours": ot_shift.hours,
             "pay": ot_shift.ot_pay,
-            "hourly_rate": monthly_salary / 72
+            "hourly_rate": monthly_salary / 72,
         }
 
     # Calculate on-call pay if this is an on-call shift (use original_shift to check)
@@ -460,10 +473,7 @@ async def show_day_for_person(
             # Calculate OC pay only for period before OT starts (00:00 to OT start)
             if oc_end > oc_start:
                 oc_calc = calculate_oncall_pay_for_period(
-                    oc_start,
-                    oc_end,
-                    monthly_salary,
-                    oncall_rules
+                    oc_start, oc_end, monthly_salary, oncall_rules
                 )
                 oncall_pay = oc_calc["total_pay"]
             else:
@@ -471,7 +481,7 @@ async def show_day_for_person(
                 oncall_pay = 0.0
                 oc_calc = {"total_pay": 0.0, "breakdown": {}, "total_hours": 0.0}
         else:
-            oncall_pay = oc_calc['total_pay']
+            oncall_pay = oc_calc["total_pay"]
 
         oncall_details = oc_calc
 
@@ -635,7 +645,10 @@ async def show_month_for_person(
     # Calculate and log load time
     end_time = datetime.now()
     load_time = (end_time - start_time).total_seconds()
-    print(f"[TIMING] /month/{person_id} (year={year}, month={month}) loaded in {load_time:.3f} seconds")
+    print(
+        f"[TIMING] /month/{person_id} (year={year}, month={month}) "
+        f"loaded in {load_time:.3f} seconds"
+    )
 
     return render_template(
         templates,
@@ -679,7 +692,9 @@ async def show_month_all(
         # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
         person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
 
-        summary = summarize_month_for_person(year, month, pid, session=db, user_wages=user_wages, year_days=person_month_days)
+        summary = summarize_month_for_person(
+            year, month, pid, session=db, user_wages=user_wages, year_days=person_month_days
+        )
         if not can_see_salary(current_user, pid):
             summary = strip_salary_data(summary)
         persons.append(summary)
@@ -689,7 +704,10 @@ async def show_month_all(
     # Calculate and log load time
     end_time = datetime.now()
     load_time = (end_time - start_time).total_seconds()
-    print(f"[TIMING] /month (all persons) (year={year}, month={month}) loaded in {load_time:.3f} seconds")
+    print(
+        f"[TIMING] /month (all persons) (year={year}, month={month}) "
+        f"loaded in {load_time:.3f} seconds"
+    )
 
     return render_template(
         templates,
@@ -826,6 +844,7 @@ async def show_year_all(
 
 # ============ API Routes ============
 
+
 @router.get("/api/year/{year}/totals/{person_id}")
 async def get_year_totals(
     year: int,
@@ -847,14 +866,11 @@ async def get_year_totals(
     year_summary = summarize_year_for_person(year, person_id, session=db)
     total_ob = year_summary["year_summary"].get("total_ob", 0.0)
 
-    return {
-        "person_id": person_id,
-        "total_ob": total_ob,
-        "year": year
-    }
+    return {"person_id": person_id, "total_ob": total_ob, "year": year}
 
 
 # ============ Overtime Routes ============
+
 
 @router.post("/overtime/add")
 async def add_overtime_shift(
@@ -864,7 +880,7 @@ async def add_overtime_shift(
     end_time: str = Form(...),
     hours: float = Form(8.5),
     session: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Add an overtime shift.
@@ -875,7 +891,9 @@ async def add_overtime_shift(
     """
     # Permission check
     if current_user.role != UserRole.ADMIN and user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to add overtime for other users")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to add overtime for other users"
+        )
 
     # Get user's wage
     user = session.query(User).filter_by(id=user_id).first()
@@ -902,20 +920,20 @@ async def add_overtime_shift(
         end_time=end_t,
         hours=hours,
         ot_pay=ot_pay,
-        created_by=current_user.id
+        created_by=current_user.id,
     )
 
     session.add(ot_shift)
     session.commit()
 
-    return RedirectResponse(url=f"/day/{user_id}/{ot_date.year}/{ot_date.month}/{ot_date.day}", status_code=303)
+    return RedirectResponse(
+        url=f"/day/{user_id}/{ot_date.year}/{ot_date.month}/{ot_date.day}", status_code=303
+    )
 
 
 @router.post("/overtime/{ot_id}/delete")
 async def delete_overtime_shift(
-    ot_id: int,
-    session: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    ot_id: int, session: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """
     Delete an overtime shift.
@@ -941,4 +959,6 @@ async def delete_overtime_shift(
     session.delete(ot_shift)
     session.commit()
 
-    return RedirectResponse(url=f"/day/{user_id}/{date.year}/{date.month}/{date.day}", status_code=303)
+    return RedirectResponse(
+        url=f"/day/{user_id}/{date.year}/{date.month}/{date.day}", status_code=303
+    )

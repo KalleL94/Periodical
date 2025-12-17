@@ -5,7 +5,9 @@ Shared helper functions for templates and route handlers.
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+
 from app.database.database import User, UserRole
+
 
 def contrast_color(hex_color: str) -> str:
     """
@@ -30,7 +32,7 @@ def contrast_color(hex_color: str) -> str:
 def can_see_salary(current_user: User | None, target_person_id: int) -> bool:
     """
     Check if current user can see salary data for target person.
-    
+
     Rules:
     - Not logged in: No access
     - Admin: Full access to all
@@ -95,6 +97,7 @@ def render_template(
     Render template with user context automatically included.
     """
     from datetime import date
+
     ctx = {"request": request, "user": user, "now": date.today()}
     ctx.update(context)
     return templates.TemplateResponse(template_name, ctx)

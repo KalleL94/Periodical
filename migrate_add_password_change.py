@@ -15,6 +15,7 @@ from pathlib import Path
 
 DB_PATH = Path("app/database/schedule.db")
 
+
 def migrate():
     """Lägg till must_change_password kolumn."""
     if not DB_PATH.exists():
@@ -51,11 +52,13 @@ def migrate():
 
         conn.commit()
 
-        print(f"[OK] Kolumn tillagd!")
+        print("[OK] Kolumn tillagd!")
         print(f"[OK] {affected_rows} användare uppdaterade (must_change_password=1)")
 
         # Visa status
-        cursor.execute("SELECT id, username, name, role, must_change_password FROM users ORDER BY id")
+        cursor.execute(
+            "SELECT id, username, name, role, must_change_password FROM users ORDER BY id"
+        )
         users = cursor.fetchall()
 
         print("\nAnvändare i databasen:")

@@ -6,15 +6,13 @@ Provides structured logging with file rotation and different levels
 for development and production environments.
 """
 
+import json
 import logging
 import logging.handlers
 import os
 import sys
-import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
 
 # Determine if running in production
 IS_PRODUCTION = os.getenv("PRODUCTION", "false").lower() == "true"
@@ -88,20 +86,18 @@ class ColoredFormatter(logging.Formatter):
     """
 
     COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Green
-        'WARNING': '\033[33m',    # Yellow
-        'ERROR': '\033[31m',      # Red
-        'CRITICAL': '\033[35m',   # Magenta
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
-    RESET = '\033[0m'
+    RESET = "\033[0m"
 
     def format(self, record: logging.LogRecord) -> str:
         # Add color to level name
         if record.levelname in self.COLORS:
-            record.levelname = (
-                f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
-            )
+            record.levelname = f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
         return super().format(record)
 
 
@@ -136,7 +132,7 @@ def setup_logging() -> None:
             APP_LOG_FILE,
             maxBytes=10_000_000,  # 10MB
             backupCount=5,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         app_handler.setLevel(logging.INFO)
         app_handler.setFormatter(JSONFormatter())
@@ -147,7 +143,7 @@ def setup_logging() -> None:
             ERROR_LOG_FILE,
             maxBytes=10_000_000,  # 10MB
             backupCount=10,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(JSONFormatter())
@@ -165,8 +161,7 @@ def setup_logging() -> None:
         console_handler.setLevel(logging.DEBUG)
 
         formatter = ColoredFormatter(
-            fmt='%(levelname)-8s %(asctime)s [%(name)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            fmt="%(levelname)-8s %(asctime)s [%(name)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
@@ -176,12 +171,12 @@ def setup_logging() -> None:
             APP_LOG_FILE,
             maxBytes=5_000_000,  # 5MB
             backupCount=2,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(logging.Formatter(
-            '%(levelname)s %(asctime)s [%(name)s:%(lineno)d] %(message)s'
-        ))
+        file_handler.setFormatter(
+            logging.Formatter("%(levelname)s %(asctime)s [%(name)s:%(lineno)d] %(message)s")
+        )
         root_logger.addHandler(file_handler)
 
     # Configure uvicorn loggers
@@ -196,12 +191,7 @@ def setup_logging() -> None:
     logger = logging.getLogger(__name__)
     logger.info(
         f"Logging configured (production={IS_PRODUCTION})",
-        extra={
-            "extra_fields": {
-                "log_dir": str(LOG_DIR.absolute()),
-                "production": IS_PRODUCTION
-            }
-        }
+        extra={"extra_fields": {"log_dir": str(LOG_DIR.absolute()), "production": IS_PRODUCTION}},
     )
 
 

@@ -7,23 +7,24 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.routes.public import router as public_router
-from app.routes.auth_routes import router as auth_router
-from app.routes.admin import router as admin_router
-from app.database.database import create_tables
-from app.core.logging_config import setup_logging, get_logger
+from app.core.logging_config import get_logger, setup_logging
 from app.core.request_logging import RequestLoggingMiddleware
+from app.core.sentry_config import init_sentry
+from app.database.database import create_tables
+from app.routes.admin import router as admin_router
+from app.routes.auth_routes import router as auth_router
+from app.routes.public import router as public_router
 
 # Setup logging FIRST (before any other imports that might log)
 setup_logging()
 logger = get_logger(__name__)
 
 # Initialize Sentry for error tracking (production only)
-from app.core.sentry_config import init_sentry
+
 sentry_enabled = init_sentry()
 
 
@@ -31,12 +32,15 @@ sentry_enabled = init_sentry()
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    logger.info("Application starting up", extra={
-        "extra_fields": {
-            "production": os.getenv("PRODUCTION", "false").lower() == "true",
-            "python_version": os.sys.version
-        }
-    })
+    logger.info(
+        "Application starting up",
+        extra={
+            "extra_fields": {
+                "production": os.getenv("PRODUCTION", "false").lower() == "true",
+                "python_version": os.sys.version,
+            }
+        },
+    )
 
     # Create database tables
     try:
@@ -56,7 +60,7 @@ app = FastAPI(
     title="Periodical",
     description="Employee shift scheduling and OB pay calculation system",
     version="0.0.20",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS Configuration
@@ -115,10 +119,5 @@ async def health_check():
     Returns 200 OK if application is running.
     """
     return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "service": "periodical",
-            "version": "0.0.20"
-        }
+        status_code=200, content={"status": "healthy", "service": "periodical", "version": "0.0.20"}
     )
