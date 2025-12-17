@@ -1,7 +1,6 @@
 # app/core/config.py
 
-from typing import Final, Dict
-
+from typing import Final
 
 # ==========================
 # OB-divisorer (hur OB räknas)
@@ -22,7 +21,7 @@ OB_RATE_DIVISOR_OB5: Final[int] = 150
 
 #: Hjälpstruktur om du vill slå upp defaultdivisor per OB-kod.
 #: Används idag framför allt för specialregler som skapas i Python.
-OB_RATE_DIVISOR_BY_CODE: Final[Dict[str, int]] = {
+OB_RATE_DIVISOR_BY_CODE: Final[dict[str, int]] = {
     "OB4": OB_RATE_DIVISOR_OB4,
     "OB5": OB_RATE_DIVISOR_OB5,
     # OB1–OB3 använder normalt rate från JSON-konfigurationen.

@@ -3,29 +3,31 @@
 Authentication routes: login, logout, registration.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Form, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from datetime import date
 from urllib.parse import urlparse
 
-from app.core.schedule import clear_schedule_cache
-from app.core.logging_config import get_logger
-from app.core.request_logging import log_auth_event
-from app.core.sentry_config import set_user_context, clear_user_context, add_breadcrumb
-from app.database.database import get_db, User, UserRole
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from app.auth.auth import (
     authenticate_user,
+    clear_auth_cookie,
     create_access_token,
-    get_password_hash,
+    get_admin_user,
     get_current_user,
     get_current_user_optional,
-    get_admin_user,
-    set_auth_cookie,
-    clear_auth_cookie,
+    get_password_hash,
     get_user_by_username,
+    set_auth_cookie,
 )
+from app.core.logging_config import get_logger
+from app.core.request_logging import log_auth_event
+from app.core.schedule import clear_schedule_cache
+from app.core.sentry_config import add_breadcrumb, clear_user_context, set_user_context
+from app.database.database import User, UserRole, get_db
 
 logger = get_logger(__name__)
 
@@ -33,11 +35,12 @@ router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
 
 # Add now (today's date) as a global callable for templates
-from datetime import date
+
 templates.env.globals["now"] = date.today()
 
 
 # ============ Pydantic schemas ============
+
 
 class UserCreate(BaseModel):
     username: str
@@ -57,6 +60,7 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
 
+
 def is_safe_redirect(url: str) -> bool:
     """Check if redirect URL is safe (local path only)."""
     if not url:
@@ -68,18 +72,18 @@ def is_safe_redirect(url: str) -> bool:
 
 # ============ HTML Routes ============
 
+
 @router.get("/login", response_class=HTMLResponse, name="login_page")
 async def login_page(
     request: Request,
     next: str | None = Query(None),
-    current_user: User | None = Depends(get_current_user_optional)
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """Show login form."""
     if current_user:
         return RedirectResponse(url="/", status_code=302)
     return templates.TemplateResponse(
-        "login.html", 
-        {"request": request, "next": next if is_safe_redirect(next) else None}
+        "login.html", {"request": request, "next": next if is_safe_redirect(next) else None}
     )
 
 
@@ -90,7 +94,7 @@ async def login(
     username: str = Form(...),
     password: str = Form(...),
     next: str = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Process login form."""
     user = authenticate_user(db, username, password)
@@ -100,13 +104,13 @@ async def login(
             event_type="login",
             username=username,
             success=False,
-            details={"ip": request.client.host if request.client else "unknown"}
+            details={"ip": request.client.host if request.client else "unknown"},
         )
 
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "Fel användarnamn eller lösenord", "next": next},
-            status_code=401
+            status_code=401,
         )
 
     # Log successful login
@@ -117,17 +121,13 @@ async def login(
         success=True,
         details={
             "ip": request.client.host if request.client else "unknown",
-            "must_change_password": user.must_change_password == 1
-        }
+            "must_change_password": user.must_change_password == 1,
+        },
     )
 
     # Set Sentry user context for error tracking
     set_user_context(user_id=user.id, username=user.username)
-    add_breadcrumb(
-        message=f"User {user.username} logged in",
-        category="auth",
-        level="info"
-    )
+    add_breadcrumb(message=f"User {user.username} logged in", category="auth", level="info")
 
     # Create access token and set cookie
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -147,8 +147,7 @@ async def login(
 
 @router.get("/logout", name="logout")
 async def logout(
-    response: Response,
-    current_user: User | None = Depends(get_current_user_optional)
+    response: Response, current_user: User | None = Depends(get_current_user_optional)
 ):
     """Log out user."""
     # Log logout
@@ -157,7 +156,7 @@ async def logout(
             event_type="logout",
             username=current_user.username,
             user_id=current_user.id,
-            success=True
+            success=True,
         )
         # Clear Sentry user context
         clear_user_context()
@@ -179,7 +178,7 @@ async def change_password_page(
             "request": request,
             "user": current_user,
             "must_change": current_user.must_change_password == 1,
-        }
+        },
     )
 
 
@@ -190,7 +189,7 @@ async def change_password_submit(
     new_password: str = Form(...),
     confirm_password: str = Form(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Process mandatory password change."""
     from app.auth.auth import verify_password
@@ -203,9 +202,9 @@ async def change_password_submit(
                 "request": request,
                 "user": current_user,
                 "must_change": current_user.must_change_password == 1,
-                "error": "Fel nuvarande lösenord"
+                "error": "Fel nuvarande lösenord",
             },
-            status_code=400
+            status_code=400,
         )
 
     # Validate new password matches confirmation
@@ -216,9 +215,9 @@ async def change_password_submit(
                 "request": request,
                 "user": current_user,
                 "must_change": current_user.must_change_password == 1,
-                "error": "Nya lösenordet matchar inte bekräftelsen"
+                "error": "Nya lösenordet matchar inte bekräftelsen",
             },
-            status_code=400
+            status_code=400,
         )
 
     # Validate new password is different from old
@@ -229,9 +228,9 @@ async def change_password_submit(
                 "request": request,
                 "user": current_user,
                 "must_change": current_user.must_change_password == 1,
-                "error": "Nytt lösenord måste vara annorlunda än det gamla"
+                "error": "Nytt lösenord måste vara annorlunda än det gamla",
             },
-            status_code=400
+            status_code=400,
         )
 
     # Validate new password strength (minimum 8 characters)
@@ -242,9 +241,9 @@ async def change_password_submit(
                 "request": request,
                 "user": current_user,
                 "must_change": current_user.must_change_password == 1,
-                "error": "Nytt lösenord måste vara minst 8 tecken"
+                "error": "Nytt lösenord måste vara minst 8 tecken",
             },
-            status_code=400
+            status_code=400,
         )
 
     # Update password and clear must_change_password flag
@@ -260,7 +259,7 @@ async def change_password_submit(
         username=current_user.username,
         user_id=current_user.id,
         success=True,
-        details={"forced": was_forced}
+        details={"forced": was_forced},
     )
 
     # Redirect to home page
@@ -269,9 +268,7 @@ async def change_password_submit(
 
 @router.get("/profile", response_class=HTMLResponse, name="profile")
 async def profile_page(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """Show user profile page."""
     return templates.TemplateResponse(
@@ -279,7 +276,7 @@ async def profile_page(
         {
             "request": request,
             "user": current_user,
-        }
+        },
     )
 
 
@@ -289,13 +286,13 @@ async def update_profile(
     name: str = Form(...),
     wage: int = Form(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Update user profile."""
     current_user.name = name
     current_user.wage = wage
     db.commit()
-    
+
     return RedirectResponse(url="/profile", status_code=302)
 
 
@@ -305,21 +302,21 @@ async def change_password(
     current_password: str = Form(...),
     new_password: str = Form(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Change user password."""
     from app.auth.auth import verify_password
-    
+
     if not verify_password(current_password, current_user.password_hash):
         return templates.TemplateResponse(
             "profile.html",
             {"request": request, "user": current_user, "error": "Fel nuvarande lösenord"},
-            status_code=400
+            status_code=400,
         )
-    
+
     current_user.password_hash = get_password_hash(new_password)
     db.commit()
-    
+
     return RedirectResponse(url="/profile", status_code=302)
 
 
@@ -331,12 +328,13 @@ async def vacation_page(
 ):
     """Show vacation management page."""
     import datetime
+
     if year is None:
         year = datetime.date.today().year
-    
+
     vacation = current_user.vacation or {}
     vacation_weeks = vacation.get(str(year), [])
-    
+
     return templates.TemplateResponse(
         "vacation.html",
         {
@@ -344,7 +342,7 @@ async def vacation_page(
             "user": current_user,
             "year": year,
             "vacation_weeks": vacation_weeks,
-        }
+        },
     )
 
 
@@ -354,7 +352,7 @@ async def update_vacation(
     year: int = Form(...),
     weeks: str = Form(""),  # Comma-separated week numbers
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Update vacation weeks for a year."""
     # Parse weeks from form
@@ -362,34 +360,36 @@ async def update_vacation(
         week_list = [int(w.strip()) for w in weeks.split(",") if w.strip().isdigit()]
     else:
         week_list = []
-    
+
     # Validate week numbers
     week_list = [w for w in week_list if 1 <= w <= 53]
     week_list = sorted(set(week_list))
-    
+
     # Update vacation
     vacation = current_user.vacation or {}
     vacation[str(year)] = week_list
     current_user.vacation = vacation
-    
+
     # SQLAlchemy needs this to detect JSON changes
     from sqlalchemy.orm.attributes import flag_modified
+
     flag_modified(current_user, "vacation")
-    
+
     db.commit()
     clear_schedule_cache()
-    
+
     return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
 
 
 # ============ Admin Routes ============
+
 
 @router.get("/admin/users", response_class=HTMLResponse, name="admin_users")
 async def admin_users_page(
     request: Request,
     success: str | None = Query(None),
     current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Admin: list all users."""
     users = db.query(User).order_by(User.id).all()
@@ -400,7 +400,7 @@ async def admin_users_page(
             "user": current_user,
             "users": users,
             "success": success,
-        }
+        },
     )
 
 
@@ -415,7 +415,7 @@ async def admin_create_user_page(
         {
             "request": request,
             "user": current_user,
-        }
+        },
     )
 
 
@@ -428,7 +428,7 @@ async def admin_create_user(
     wage: int = Form(...),
     role: str = Form("user"),
     current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Admin: create new user."""
     # Check if username exists
@@ -436,9 +436,9 @@ async def admin_create_user(
         return templates.TemplateResponse(
             "admin_user_create.html",
             {"request": request, "user": current_user, "error": "Användarnamnet finns redan"},
-            status_code=400
+            status_code=400,
         )
-    
+
     new_user = User(
         username=username,
         password_hash=get_password_hash(password),
@@ -450,7 +450,7 @@ async def admin_create_user(
     )
     db.add(new_user)
     db.commit()
-    
+
     return RedirectResponse(url="/admin/users", status_code=302)
 
 
@@ -459,20 +459,20 @@ async def admin_edit_user_page(
     request: Request,
     user_id: int,
     current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Admin: show edit user form."""
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return templates.TemplateResponse(
         "admin_user_edit.html",
         {
             "request": request,
             "user": current_user,
             "edit_user": edit_user,
-        }
+        },
     )
 
 
@@ -485,13 +485,13 @@ async def admin_update_user(
     role: str = Form("user"),
     new_password: str = Form(None),
     current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Admin: update user."""
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     edit_user.name = name
     edit_user.wage = wage
     edit_user.role = UserRole(role)
@@ -510,7 +510,7 @@ async def admin_reset_password(
     request: Request,
     user_id: int,
     current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Admin: reset user password to default (London1) and force password change."""
     reset_user = db.query(User).filter(User.id == user_id).first()
@@ -530,10 +530,11 @@ async def admin_reset_password(
         username=reset_user.username,
         user_id=reset_user.id,
         success=True,
-        details={"reset_by": current_user.username, "reset_by_id": current_user.id}
+        details={"reset_by": current_user.username, "reset_by_id": current_user.id},
     )
 
     # Redirect with success message
     from urllib.parse import quote
+
     success_msg = f"Lösenordet för {reset_user.name} har återställts till London1"
     return RedirectResponse(url=f"/admin/users?success={quote(success_msg)}", status_code=302)

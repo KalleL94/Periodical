@@ -1,13 +1,9 @@
 # app\core\utils.py
 import datetime
-from typing import Any, Literal, Dict
-
-from fastapi import Request
-from fastapi.templating import Jinja2Templates
-from starlette.responses import Response
-
+from typing import Literal
 
 ViewType = Literal["day", "week", "month", "year"]
+
 
 def get_safe_today(rotation_start_date: datetime.date) -> datetime.date:
     """
@@ -17,10 +13,11 @@ def get_safe_today(rotation_start_date: datetime.date) -> datetime.date:
     today = datetime.date.today()
     return rotation_start_date if today < rotation_start_date else today
 
+
 def get_navigation_dates(
     view_type: ViewType,
     current_date: datetime.date,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """
     Beräknar prev/next för olika vyer.
 
@@ -96,5 +93,3 @@ def get_navigation_dates(
         }
 
     raise ValueError(f"Unsupported view_type: {view_type}")
-
-

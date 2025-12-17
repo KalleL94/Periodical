@@ -3,17 +3,31 @@
 SQLAlchemy database setup and models.
 """
 
-from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, Enum as SQLEnum, ForeignKey, Date, Time, Float
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
 import enum
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Time,
+    create_engine,
+)
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
 
 DATABASE_URL = "sqlite:///./app/database/schedule.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 class UserRole(str, enum.Enum):
     USER = "user"
@@ -22,6 +36,7 @@ class UserRole(str, enum.Enum):
 
 class User(Base):
     """User model with authentication and schedule data."""
+
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -31,17 +46,22 @@ class User(Base):
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
     wage = Column(Integer, nullable=False)
     vacation = Column(JSON, default=dict)  # {"2026": [1,2,3], "2027": []}
-    must_change_password = Column(Integer, default=1, nullable=False)  # 1=True, 0=False (SQLite uses integers for booleans)
+    must_change_password = Column(
+        Integer, default=1, nullable=False
+    )  # 1=True, 0=False (SQLite uses integers for booleans)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     # Fixed syntax: foreign_keys as a direct string reference avoids evaluation errors
-    overtime_shifts = relationship("OvertimeShift", foreign_keys="OvertimeShift.user_id", back_populates="user")
+    overtime_shifts = relationship(
+        "OvertimeShift", foreign_keys="OvertimeShift.user_id", back_populates="user"
+    )
 
 
 class OvertimeShift(Base):
     """Overtime shift model for tracking called-in shifts during on-call."""
+
     __tablename__ = "overtime_shifts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -59,7 +79,10 @@ class OvertimeShift(Base):
     creator = relationship("User", foreign_keys=[created_by])
 
     def __repr__(self):
-        return f"<OvertimeShift(id={self.id}, user_id={self.user_id}, date={self.date}, hours={self.hours})>"
+        return (
+            f"<OvertimeShift(id={self.id}, user_id={self.user_id}, "
+            f"date={self.date}, hours={self.hours})>"
+        )
 
 
 def create_tables():

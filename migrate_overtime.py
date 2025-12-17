@@ -10,29 +10,30 @@ import sqlite3
 import sys
 from pathlib import Path
 
+
 def migrate_overtime_table():
     """Add overtime_shifts table and index to the database."""
-    
+
     # Define path relative to project root
     db_path = Path("app/database/schedule.db")
-    
+
     if not db_path.exists():
         print(f"[ERROR] Database not found at {db_path}")
         print("Please ensure you are running this from the project root and the database exists.")
         sys.exit(1)
-        
+
     print(f"Connecting to database: {db_path}")
-    
+
     conn = None
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        
+
         # Enable foreign key constraints
         cursor.execute("PRAGMA foreign_keys = ON;")
-        
+
         print("1. Creating table 'overtime_shifts'...")
-        
+
         # Create table if it doesn't exist
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS overtime_shifts (
@@ -49,18 +50,18 @@ def migrate_overtime_table():
                 FOREIGN KEY (created_by) REFERENCES users(id)
             );
         """)
-        
+
         print("2. Creating index 'idx_overtime_user_date'...")
-        
+
         # Create index if it doesn't exist
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_overtime_user_date 
+            CREATE INDEX IF NOT EXISTS idx_overtime_user_date
             ON overtime_shifts(user_id, date);
         """)
-        
+
         conn.commit()
         print("\n[OK] Migration successful: 'overtime_shifts' table ready.")
-        
+
     except sqlite3.Error as e:
         print(f"\n[ERROR] SQLite error: {e}")
         if conn:
@@ -69,6 +70,7 @@ def migrate_overtime_table():
     finally:
         if conn:
             conn.close()
+
 
 if __name__ == "__main__":
     migrate_overtime_table()

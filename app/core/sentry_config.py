@@ -6,8 +6,8 @@ Sentry captures exceptions, errors, and performance data from production
 environments for monitoring and debugging.
 """
 
-import os
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -37,53 +37,45 @@ def init_sentry() -> bool:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
-        from sentry_sdk.integrations.starlette import StarletteIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
 
         # Logging integration - send error logs to Sentry
         logging_integration = LoggingIntegration(
-            level=logging.INFO,        # Breadcrumbs from INFO and above
-            event_level=logging.ERROR  # Send errors and above as events
+            level=logging.INFO,  # Breadcrumbs from INFO and above
+            event_level=logging.ERROR,  # Send errors and above as events
         )
 
         # Initialize Sentry
         sentry_sdk.init(
             dsn=sentry_dsn,
-
             # Integrations
             integrations=[
                 FastApiIntegration(),
                 StarletteIntegration(),
                 logging_integration,
             ],
-
             # Performance monitoring (traces)
             traces_sample_rate=0.1,  # 10% of requests tracked for performance
-
             # Error sampling
             sample_rate=1.0,  # Send 100% of errors
-
             # Release tracking
             release=os.getenv("RELEASE_VERSION", "periodical@0.0.20"),
-
             # Environment
             environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
-
             # Additional options
             send_default_pii=False,  # Don't send personally identifiable info
             attach_stacktrace=True,  # Include stack traces
-
             # Before send hook - filter sensitive data
             before_send=before_send_hook,
         )
 
-        logger.info(f"Sentry initialized successfully (environment: {os.getenv('SENTRY_ENVIRONMENT', 'production')})")
+        env = os.getenv('SENTRY_ENVIRONMENT', 'production')
+        logger.info(f"Sentry initialized successfully (environment: {env})")
         return True
 
     except ImportError:
-        logger.warning(
-            "Sentry SDK not installed. Install with: pip install sentry-sdk[fastapi]"
-        )
+        logger.warning("Sentry SDK not installed. Install with: pip install sentry-sdk[fastapi]")
         return False
     except Exception as e:
         logger.error(f"Failed to initialize Sentry: {e}", exc_info=True)
@@ -180,11 +172,13 @@ def set_user_context(user_id: int, username: str = None, email: str = None):
     try:
         import sentry_sdk
 
-        sentry_sdk.set_user({
-            "id": user_id,
-            "username": username,
-            "email": email,
-        })
+        sentry_sdk.set_user(
+            {
+                "id": user_id,
+                "username": username,
+                "email": email,
+            }
+        )
     except ImportError:
         pass
 
@@ -193,6 +187,7 @@ def clear_user_context():
     """Clear user context (e.g., after logout)."""
     try:
         import sentry_sdk
+
         sentry_sdk.set_user(None)
     except ImportError:
         pass
@@ -213,11 +208,6 @@ def add_breadcrumb(message: str, category: str = "default", level: str = "info",
     try:
         import sentry_sdk
 
-        sentry_sdk.add_breadcrumb(
-            message=message,
-            category=category,
-            level=level,
-            data=data or {}
-        )
+        sentry_sdk.add_breadcrumb(message=message, category=category, level=level, data=data or {})
     except ImportError:
         pass

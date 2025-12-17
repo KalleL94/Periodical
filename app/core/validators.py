@@ -1,5 +1,7 @@
 import datetime
+
 from fastapi import HTTPException, status
+
 
 def validate_person_id(person_id: int) -> int:
     """
@@ -13,6 +15,7 @@ def validate_person_id(person_id: int) -> int:
             detail="Person not found",
         )
     return person_id
+
 
 def validate_date_params(
     year: int,
@@ -48,12 +51,8 @@ def validate_date_params(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid date parameter combination",
         )
-    except ValueError:
+    except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid date",
-        )
-
-
-
-        
+        ) from err

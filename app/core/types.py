@@ -7,11 +7,10 @@ This module defines NewType wrappers for common domain concepts to prevent
 mixing up similar primitive types (e.g., person_id vs year vs week).
 """
 
-from calendar import weekday
 from datetime import date, datetime
 from typing import NewType, TypedDict
 
-from app.core.models import ShiftType, ObRule
+from app.core.models import ShiftType
 
 # Domain-specific type aliases using NewType for type safety
 PersonId = NewType("PersonId", int)
@@ -26,10 +25,12 @@ ShiftCode = NewType("ShiftCode", str)
 Hours = float
 MonetaryAmount = float
 
+
 class DayInfo(TypedDict, total=False):
-    """ 
+    """
     Type definition for a single day's data structure.
     """
+
     date: date
     weekday_index: int
     weekday_name: str
@@ -43,8 +44,10 @@ class DayInfo(TypedDict, total=False):
     ob: dict[str, Hours]
     persons: list["PersonDayData"]
 
+
 class PersonDayData(TypedDict, total=False):
     """Type definition for a person's data within a day."""
+
     person_id: PersonId
     person_name: str
     shift: ShiftType | None
@@ -56,6 +59,7 @@ class PersonDayData(TypedDict, total=False):
 
 class MonthSummary(TypedDict):
     """Type definition for monthly summary data."""
+
     person_id: PersonId
     person_name: str
     year: Year
@@ -69,6 +73,7 @@ class MonthSummary(TypedDict):
 
 class YearSummary(TypedDict):
     """Type definition for yearly summary data."""
+
     total_hours: Hours
     shift_counts: dict[str, int]
     ob_hours: dict[str, Hours]
@@ -77,6 +82,7 @@ class YearSummary(TypedDict):
 
 class CoworkStats(TypedDict):
     """Type definition for coworker statistics."""
+
     other_id: PersonId
     other_name: str
     total: int
@@ -85,6 +91,7 @@ class CoworkStats(TypedDict):
 
 class CoworkDetail(TypedDict):
     """Type definition for detailed coworker shift information."""
+
     date: date
     weekday_name: str
     rotation_week: RotationWeek | None
@@ -98,6 +105,7 @@ class CoworkDetail(TypedDict):
 
 class NavigationDates(TypedDict):
     """Type definition for navigation date information."""
+
     prev_year: Year
     prev_month: Month | None
     prev_week: Week | None

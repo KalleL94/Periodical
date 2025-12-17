@@ -1,6 +1,7 @@
 # app\core\holidays.py
 import datetime
 
+
 def easter_sunday(year: int) -> datetime.date:
     """Anonymous Gregorian algorithm."""
     a = year % 19
@@ -13,11 +14,12 @@ def easter_sunday(year: int) -> datetime.date:
     h = (19 * a + b - d - g + 15) % 30
     i = c // 4
     k = c % 4
-    l = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * l) // 451
-    month = (h + l - 7 * m + 114) // 31
-    day = ((h + l - 7 * m + 114) % 31) + 1
+    leap_correction = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * leap_correction) // 451
+    month = (h + leap_correction - 7 * m + 114) // 31
+    day = ((h + leap_correction - 7 * m + 114) % 31) + 1
     return datetime.date(year, month, day)
+
 
 def alla_helgons_dag(year: int) -> datetime.date:
     """Saturday between 31 Oct and 6 Nov."""
@@ -26,12 +28,14 @@ def alla_helgons_dag(year: int) -> datetime.date:
         d += datetime.timedelta(days=1)
     return d
 
+
 def midsommarafton(year: int) -> datetime.date:
     """Friday between 19 and 25 June."""
     d = datetime.date(year, 6, 19)
     while d.weekday() != 4:  # 4 = Friday
         d += datetime.timedelta(days=1)
     return d
+
 
 def first_weekday_after(date_: datetime.date) -> datetime.date:
     """First Monday–Friday after given date."""
@@ -64,6 +68,7 @@ def kristi_himmelsfardsdag(year: int) -> datetime.date:
 def skartorsdagen(year: int) -> datetime.date:
     """Maundy Thursday: Thursday before Easter Sunday."""
     return easter_sunday(year) - datetime.timedelta(days=3)
+
 
 def annandagpask(year: int) -> datetime.date:
     """Easter Monday"""

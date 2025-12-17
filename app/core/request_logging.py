@@ -5,7 +5,7 @@ Request logging middleware for tracking all HTTP requests.
 
 import time
 import uuid
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -74,31 +74,34 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Log level based on status code
             if error:
                 logger.error(
-                    f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms) - ERROR: {error}",
+                    f"{request.method} {request.url.path} - {status_code} "
+                    f"({duration_ms:.2f}ms) - ERROR: {error}",
                     extra=extra,
-                    exc_info=True
+                    exc_info=True,
                 )
             elif status_code >= 500:
                 logger.error(
                     f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
-                    extra=extra
+                    extra=extra,
                 )
             elif status_code >= 400:
                 logger.warning(
                     f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
-                    extra=extra
+                    extra=extra,
                 )
             else:
                 # Don't log health checks at INFO level (reduces noise)
                 if request.url.path == "/health":
                     logger.debug(
-                        f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
-                        extra=extra
+                        f"{request.method} {request.url.path} - {status_code} "
+                        f"({duration_ms:.2f}ms)",
+                        extra=extra,
                     )
                 else:
                     logger.info(
-                        f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
-                        extra=extra
+                        f"{request.method} {request.url.path} - {status_code} "
+                        f"({duration_ms:.2f}ms)",
+                        extra=extra,
                     )
 
         # Add request ID to response headers
@@ -112,7 +115,7 @@ def log_auth_event(
     username: str,
     user_id: int | None = None,
     success: bool = True,
-    details: dict | None = None
+    details: dict | None = None,
 ) -> None:
     """
     Log authentication-related events.
@@ -139,22 +142,12 @@ def log_auth_event(
     extra = {"extra_fields": log_data}
 
     if success:
-        logger.info(
-            f"Auth event: {event_type} - {username} - SUCCESS",
-            extra=extra
-        )
+        logger.info(f"Auth event: {event_type} - {username} - SUCCESS", extra=extra)
     else:
-        logger.warning(
-            f"Auth event: {event_type} - {username} - FAILED",
-            extra=extra
-        )
+        logger.warning(f"Auth event: {event_type} - {username} - FAILED", extra=extra)
 
 
-def log_security_event(
-    event_type: str,
-    details: dict,
-    level: str = "warning"
-) -> None:
+def log_security_event(event_type: str, details: dict, level: str = "warning") -> None:
     """
     Log security-related events.
 

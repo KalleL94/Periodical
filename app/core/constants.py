@@ -1,6 +1,5 @@
 # app/core/constants.py
-from typing import Final, Tuple, Dict
-
+from typing import Final
 
 # ==========================
 # Personer / användare
@@ -12,7 +11,7 @@ MAX_PERSONS: Final[int] = 10
 
 #: Tuple med alla giltiga person-id:n.
 #: Används i stället för hårdkodad range(1, 11).
-PERSON_IDS: Final[Tuple[int, ...]] = tuple(range(1, MAX_PERSONS + 1))
+PERSON_IDS: Final[tuple[int, ...]] = tuple(range(1, MAX_PERSONS + 1))
 
 
 # ==========================
@@ -38,7 +37,7 @@ SHIFT_CODE_SEMESTER: Final[str] = "SEM"
 SHIFT_CODE_ONCALL: Final[str] = "OC"
 
 #: Samlingslista över skiftkoder som används i logik (till exempel jämförelser).
-SHIFT_CODES: Final[Tuple[str, ...]] = (
+SHIFT_CODES: Final[tuple[str, ...]] = (
     SHIFT_CODE_N1,
     SHIFT_CODE_N2,
     SHIFT_CODE_N3,
@@ -49,7 +48,7 @@ SHIFT_CODES: Final[Tuple[str, ...]] = (
 
 #: Skiftkoder som räknas som "riktiga arbetspass" i cowork-logiken.
 #: OC (Beredskap) exkluderas medvetet - Beredskap räknas inte i samarbetsstatistik.
-WORK_SHIFT_CODES: Final[Tuple[str, ...]] = (
+WORK_SHIFT_CODES: Final[tuple[str, ...]] = (
     SHIFT_CODE_N1,
     SHIFT_CODE_N2,
     SHIFT_CODE_N3,
@@ -61,14 +60,14 @@ WORK_SHIFT_CODES: Final[Tuple[str, ...]] = (
 # ==========================
 
 #: Standardlista över OB-koder enligt avtalet.
-OB_CODES: Final[Tuple[str, ...]] = ("OB1", "OB2", "OB3", "OB4", "OB5")
+OB_CODES: Final[tuple[str, ...]] = ("OB1", "OB2", "OB3", "OB4", "OB5")
 
 #: OB-koder som används i årsöversikter och sammanställningar.
-OB_CODES_FOR_SUMMARY: Final[Tuple[str, ...]] = OB_CODES
+OB_CODES_FOR_SUMMARY: Final[tuple[str, ...]] = OB_CODES
 
 #: Prioritetsordning när OB-regler överlappar varandra.
 #: Högre värde vinner. Här är OB5 högst, sedan OB4, övriga lika.
-OB_PRIORITY_BY_CODE: Final[Dict[str, int]] = {
+OB_PRIORITY_BY_CODE: Final[dict[str, int]] = {
     "OB5": 3,
     "OB4": 2,
     # OB1–OB3 får defaultprioritet (se OB_PRIORITY_DEFAULT).
@@ -102,7 +101,7 @@ WEEK_START_WEEKDAY: Final[int] = 0  # Monday
 
 #: Svenska namn på veckodagar, indexerade som datetime.weekday() (0=måndag, 6=söndag).
 #: Används för visning i templates.
-WEEKDAY_NAMES: Final[Tuple[str, ...]] = (
+WEEKDAY_NAMES: Final[tuple[str, ...]] = (
     "Måndag",
     "Tisdag",
     "Onsdag",
