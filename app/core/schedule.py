@@ -1,4 +1,5 @@
 import datetime
+from datetime import time as dt_time
 from functools import cache, lru_cache
 
 from app.database.database import SessionLocal, User
@@ -9,6 +10,7 @@ from .config import (
 from .constants import (
     OB_PRIORITY_BY_CODE,
     OB_PRIORITY_DEFAULT,
+    OT_RATE_DIVISOR,
     PERSON_IDS,
     VACATION_CODE,
     WEEKDAY_NAMES,
@@ -40,6 +42,7 @@ from .storage import (
     load_shift_types,
     load_tax_brackets,
 )
+from .time_utils import parse_ot_times
 
 shift_types = load_shift_types()
 rotation = load_rotation()
@@ -127,7 +130,7 @@ def calculate_overtime_pay(monthly_salary: int, hours: float) -> float:
         >>> calculate_overtime_pay(30000, 8.5)
         3541.67  # (30000/72) * 8.5
     """
-    hourly_rate = monthly_salary / 72
+    hourly_rate = monthly_salary / OT_RATE_DIVISOR
     return hourly_rate * hours
 
 
@@ -145,11 +148,7 @@ def get_overtime_shift_for_date(session, user_id: int, date: datetime.date):
     """
     from app.database.database import OvertimeShift
 
-    return (
-        session.query(OvertimeShift)
-        .filter(OvertimeShift.user_id == user_id, OvertimeShift.date == date)
-        .first()
-    )
+    return session.query(OvertimeShift).filter(OvertimeShift.user_id == user_id, OvertimeShift.date == date).first()
 
 
 def get_overtime_shifts_for_month(session, user_id: int, year: int, month: int):
@@ -263,11 +262,7 @@ def build_week_data(
                     end = None
                 else:
                     shift, rotation_week = result
-                    hours, start, end = (
-                        _cached_shift_hours(current_date, shift.code)
-                        if shift
-                        else (0.0, None, None)
-                    )
+                    hours, start, end = _cached_shift_hours(current_date, shift.code) if shift else (0.0, None, None)
 
                 # Check for overtime shift - replaces regular shift
                 if session:
@@ -278,25 +273,11 @@ def build_week_data(
                         if ot_shift_type:
                             shift = ot_shift_type
                             # Parse start/end times from OT shift
-                            ot_start_str = str(ot_shift.start_time)
-                            ot_end_str = str(ot_shift.end_time)
-                            if len(ot_start_str.split(":")) == 2:
-                                ot_start_str += ":00"
-                            if len(ot_end_str.split(":")) == 2:
-                                ot_end_str += ":00"
                             try:
-                                start_time_obj = datetime.datetime.strptime(
-                                    ot_start_str, "%H:%M:%S"
-                                ).time()
-                                end_time_obj = datetime.datetime.strptime(
-                                    ot_end_str, "%H:%M:%S"
-                                ).time()
-                                start = datetime.datetime.combine(current_date, start_time_obj)
-                                end = datetime.datetime.combine(current_date, end_time_obj)
-                                if end <= start:
-                                    end = end + datetime.timedelta(days=1)
+                                start, end = parse_ot_times(ot_shift, current_date)
                             except ValueError:
-                                pass
+                                # parse_ot_times loggar felet
+                                start, end = None, None
 
                 person_data = {
                     "person_id": pid,
@@ -324,6 +305,264 @@ def build_week_data(
     return days_in_week
 
 
+def generate_period_data(
+    start_date: datetime.date,
+    end_date: datetime.date,
+    person_id: int | None = None,
+    session=None,
+    user_wages: dict[int, int] | None = None,
+) -> list[dict]:
+    """
+    Generate schedule data for any date range.
+
+    This is the core function that generates day-by-day schedule data.
+    Both generate_year_data() and generate_month_data() are wrappers around this.
+
+    Args:
+        start_date: First date to include in the output
+        end_date: Last date to include in the output
+        person_id: Optional person ID (None for all persons view)
+        session: Optional SQLAlchemy session for DB queries
+        user_wages: Optional pre-loaded wages dict to avoid N+1 queries
+
+    Returns:
+        List of day dictionaries with schedule information.
+        - If person_id is None: each day has a "persons" list
+        - If person_id is set: each day has shift, hours, OB, oncall, OT details
+    """
+    # Handle edge case where rotation hasn't started yet
+    # Adjust start_date but never go beyond end_date
+    effective_start = start_date
+    if start_date < rotation_start_date:
+        effective_start = rotation_start_date
+
+    # If the entire period is before rotation starts, return empty list
+    if effective_start > end_date:
+        return []
+
+    # Collect all years in the range for OB rules
+    years_in_range = set()
+    temp_date = effective_start
+    while temp_date <= end_date:
+        years_in_range.add(temp_date.year)
+        temp_date += datetime.timedelta(days=365)
+    years_in_range.add(end_date.year)
+
+    # Build combined OB rules for all years in range
+    combined_ob_rules = list(ob_rules)
+    for yr in years_in_range:
+        combined_ob_rules.extend(_cached_special_rules(yr))
+
+    # Load vacation dates for all years in range
+    vacation_dates: dict[int, set[datetime.date]] = {}
+    for yr in years_in_range:
+        year_vacations = _vacation_dates_for_year(yr)
+        for pid, dates in year_vacations.items():
+            if pid not in vacation_dates:
+                vacation_dates[pid] = set()
+            vacation_dates[pid].update(dates)
+
+    days_out: list[dict] = []
+    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
+
+    # Only load wages if not already provided (prevents N+1 queries)
+    if user_wages is None:
+        user_wages = get_all_user_wages(session)
+
+    current_day = effective_start  # Alltid definierad här
+
+    while current_day <= end_date:
+        weekday_index = current_day.weekday()
+        weekday_name = weekday_names[weekday_index]
+        day_info: dict = {
+            "date": current_day,
+            "weekday_index": weekday_index,
+            "weekday_name": weekday_name,
+        }
+
+        if person_id is None:
+            # All persons view
+            day_info["persons"] = []
+
+            for pid in person_ids:
+                person_data = _build_person_day_data(current_day, pid, vacation_dates, session)
+                day_info["persons"].append(person_data)
+        else:
+            # Single person view with full details
+            _populate_single_person_day(
+                day_info,
+                current_day,
+                person_id,
+                vacation_dates,
+                combined_ob_rules,
+                user_wages,
+                session,
+            )
+
+        days_out.append(day_info)
+        current_day += datetime.timedelta(days=1)
+
+    return days_out
+
+
+def _build_person_day_data(
+    current_day: datetime.date,
+    pid: int,
+    vacation_dates: dict[int, set[datetime.date]],
+    session,
+) -> dict:
+    """Build day data for a single person in all-persons view."""
+    if VACATION_SHIFT is not None and current_day in vacation_dates.get(pid, set()):
+        result = determine_shift_for_date(current_day, pid)
+        _, rotation_week = result if result else (None, None)
+        shift = VACATION_SHIFT
+        hours, start, end = 0.0, None, None
+    else:
+        result = determine_shift_for_date(current_day, pid)
+        if result is None:
+            shift, rotation_week = None, None
+            hours, start, end = 0.0, None, None
+        else:
+            shift, rotation_week = result
+            hours, start, end = _cached_shift_hours(current_day, shift.code)
+
+    # Check for overtime shift - if exists, show OT instead of scheduled shift
+    if session:
+        ot_shift = get_overtime_shift_for_date(session, pid, current_day)
+        if ot_shift:
+            ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+            if ot_shift_type:
+                shift = ot_shift_type
+                hours = ot_shift.hours
+                try:
+                    start, end = parse_ot_times(ot_shift, current_day)
+                except ValueError:
+                    start, end = None, None
+
+    return {
+        "person_id": pid,
+        "person_name": persons[pid - 1].name,
+        "shift": shift,
+        "rotation_week": rotation_week,
+        "hours": hours,
+        "start": start,
+        "end": end,
+    }
+
+
+def _populate_single_person_day(
+    day_info: dict,
+    current_day: datetime.date,
+    person_id: int,
+    vacation_dates: dict[int, set[datetime.date]],
+    combined_ob_rules: list,
+    user_wages: dict[int, int],
+    session,
+) -> None:
+    """Populate day_info dict for single person view with full details."""
+
+    if VACATION_SHIFT is not None and current_day in vacation_dates.get(person_id, set()):
+        shift = VACATION_SHIFT
+        rotation_week = None
+        hours, start, end = 0.0, None, None
+        ob: dict = {}
+    else:
+        result = determine_shift_for_date(current_day, person_id)
+        if result is None:
+            shift, rotation_week = None, None
+            hours, start, end = 0.0, None, None
+            ob = {}
+        else:
+            shift, rotation_week = result
+            hours, start, end = _cached_shift_hours(current_day, shift.code)
+            if start is not None and shift.code != "OC":
+                ob = calculate_ob_hours(start, end, combined_ob_rules)
+            else:
+                ob = {}
+
+    # Calculate on-call pay if this is an on-call shift
+    oncall_pay = 0.0
+    oncall_details: dict = {}
+    if shift and shift.code == "OC":
+        oncall_rules = _cached_oncall_rules(current_day.year)
+        oncall_calc = calculate_oncall_pay(
+            current_day,
+            user_wages.get(person_id, settings.monthly_salary),
+            oncall_rules,
+        )
+        oncall_pay = oncall_calc["total_pay"]
+        oncall_details = oncall_calc
+
+    # Check for overtime shift on this date
+    ot_shift = get_overtime_shift_for_date(session, person_id, current_day) if session else None
+    ot_pay = 0.0
+    ot_hours = 0.0
+    ot_details: dict = {}
+
+    if ot_shift:
+        # If this is an OC shift, recalculate OC pay only for period BEFORE OT starts
+        if shift and shift.code == "OC":
+            oc_start = datetime.datetime.combine(current_day, dt_time(0, 0))
+            try:
+                ot_start_dt, _ = parse_ot_times(ot_shift, current_day)
+                oc_end = ot_start_dt
+            except ValueError:
+                oc_end = datetime.datetime.combine(current_day, dt_time(0, 0))
+
+            oncall_rules = _cached_oncall_rules(current_day.year)
+            if oc_end > oc_start:
+                oncall_calc = calculate_oncall_pay_for_period(
+                    oc_start,
+                    oc_end,
+                    user_wages.get(person_id, settings.monthly_salary),
+                    oncall_rules,
+                )
+                oncall_pay = oncall_calc["total_pay"]
+                oncall_details = oncall_calc
+            else:
+                oncall_pay = 0.0
+                oncall_details = {"note": "OT starts at or before OC start", "total_pay": 0.0}
+
+        # Calculate OT pay
+        ot_pay = ot_shift.ot_pay
+        ot_hours = ot_shift.hours
+        ot_details = {
+            "start_time": str(ot_shift.start_time),
+            "end_time": str(ot_shift.end_time),
+            "hours": ot_hours,
+            "pay": ot_pay,
+            "hourly_rate": user_wages.get(person_id, settings.monthly_salary) / OT_RATE_DIVISOR,
+        }
+
+        # Replace shift with OT type for display
+        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+        if ot_shift_type:
+            shift = ot_shift_type
+            hours = ot_shift.hours
+            try:
+                start, end = parse_ot_times(ot_shift, current_day)
+            except ValueError:
+                pass
+
+    day_info.update(
+        {
+            "person_id": person_id,
+            "person_name": persons[person_id - 1].name,
+            "shift": shift,
+            "rotation_week": rotation_week,
+            "hours": hours,
+            "start": start,
+            "end": end,
+            "ob": ob,
+            "oncall_pay": oncall_pay,
+            "oncall_details": oncall_details,
+            "ot_pay": ot_pay,
+            "ot_hours": ot_hours,
+            "ot_details": ot_details,
+        }
+    )
+
+
 def generate_year_data(
     year: int,
     person_id: int | None = None,
@@ -342,234 +581,9 @@ def generate_year_data(
         session: Optional SQLAlchemy session for DB queries
         user_wages: Optional pre-loaded wages dict to avoid N+1 queries
     """
-    special_ob_rules = _cached_special_rules(year)
-    combined_ob_rules = ob_rules + special_ob_rules
     start_date = datetime.date(year, 1, 1)
     end_date = datetime.date(year, 12, 31)
-    vacation_dates = _vacation_dates_for_year(year)
-    days_in_year: list[dict] = []
-    current_day = start_date
-    if start_date < rotation_start_date:
-        current_day = rotation_start_date
-    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
-
-    # Only load wages if not already provided (prevents N+1 queries)
-    if user_wages is None:
-        user_wages = get_all_user_wages(session)
-
-    while current_day <= end_date:
-        weekday_index = current_day.weekday()
-        weekday_name = weekday_names[weekday_index]
-        day_info = {
-            "date": current_day,
-            "weekday_index": weekday_index,
-            "weekday_name": weekday_name,
-        }
-        if person_id is None:
-            day_info["persons"] = []
-
-            for pid in person_ids:
-                if VACATION_SHIFT is not None and current_day in vacation_dates.get(pid, set()):
-                    result = determine_shift_for_date(current_day, pid)
-                    shift, rotation_week = result
-                    shift = VACATION_SHIFT
-                    rotation_week = rotation_week
-                    hours = 0.0
-                    start = None
-                    end = None
-                else:
-                    result = determine_shift_for_date(current_day, pid)
-                    if result is None:
-                        shift = None
-                        rotation_week = None
-                        hours = 0.0
-                        start = None
-                        end = None
-                    else:
-                        shift, rotation_week = result
-                        hours, start, end = _cached_shift_hours(current_day, shift.code)
-
-                # Check for overtime shift - if exists, show OT instead of scheduled shift
-                if session:
-                    ot_shift = get_overtime_shift_for_date(session, pid, current_day)
-                    if ot_shift:
-                        # Replace with OT shift
-                        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-                        if ot_shift_type:
-                            shift = ot_shift_type
-                            hours = ot_shift.hours
-                            # Parse start/end times from OT shift
-                            ot_start_str = str(ot_shift.start_time)
-                            ot_end_str = str(ot_shift.end_time)
-                            if len(ot_start_str.split(":")) == 2:
-                                ot_start_str += ":00"
-                            if len(ot_end_str.split(":")) == 2:
-                                ot_end_str += ":00"
-                            try:
-                                start_time_obj = datetime.datetime.strptime(
-                                    ot_start_str, "%H:%M:%S"
-                                ).time()
-                                end_time_obj = datetime.datetime.strptime(
-                                    ot_end_str, "%H:%M:%S"
-                                ).time()
-                                start = datetime.datetime.combine(current_day, start_time_obj)
-                                end = datetime.datetime.combine(current_day, end_time_obj)
-                                if end <= start:
-                                    end = end + datetime.timedelta(days=1)
-                            except ValueError:
-                                pass
-
-                person_data = {
-                    "person_id": pid,
-                    "person_name": persons[pid - 1].name,
-                    "shift": shift,
-                    "rotation_week": rotation_week,
-                    "hours": hours,
-                    "start": start,
-                    "end": end,
-                }
-                day_info["persons"].append(person_data)
-        else:
-            if VACATION_SHIFT is not None and current_day in vacation_dates.get(person_id, set()):
-                shift = VACATION_SHIFT
-                rotation_week = None
-                hours = 0.0
-                start = None
-                end = None
-                ob = {}
-            else:
-                result = determine_shift_for_date(current_day, person_id)
-                if result is None:
-                    shift = None
-                    rotation_week = None
-                    hours = 0.0
-                    start = None
-                    end = None
-                    ob = {}
-                else:
-                    shift, rotation_week = result
-                    hours, start, end = _cached_shift_hours(current_day, shift.code)
-                    if start is not None and shift.code != "OC":
-                        ob = calculate_ob_hours(start, end, combined_ob_rules)
-                    else:
-                        ob = {}
-
-            # Callculate on-call pay if this is an on-call shift
-            oncall_pay = 0.0
-            oncall_details = {}
-            if shift and shift.code == "OC":
-                oncall_rules = _cached_oncall_rules(current_day.year)
-                oncall_calc = calculate_oncall_pay(
-                    current_day, user_wages.get(person_id, settings.monthly_salary), oncall_rules
-                )
-                oncall_pay = oncall_calc["total_pay"]
-                oncall_details = oncall_calc
-
-            # Check for overtime shift on this date
-            ot_shift = (
-                get_overtime_shift_for_date(session, person_id, current_day) if session else None
-            )
-            ot_pay = 0.0
-            ot_hours = 0.0
-            ot_details = {}
-
-            if ot_shift:
-                # If this is an OC shift, recalculate OC pay only for period BEFORE OT starts
-                if shift and shift.code == "OC":
-                    from datetime import time as dt_time
-
-                    # OC shift runs 00:00 to 00:00 next day
-                    oc_start = datetime.datetime.combine(current_day, dt_time(0, 0))
-
-                    # Parse OT start time
-                    ot_start_str = str(ot_shift.start_time)
-                    if len(ot_start_str.split(":")) == 2:
-                        ot_start_str += ":00"
-
-                    try:
-                        ot_start_time_obj = datetime.datetime.strptime(
-                            ot_start_str, "%H:%M:%S"
-                        ).time()
-                    except ValueError:
-                        # Fallback if format is weird or already time object
-                        if isinstance(ot_shift.start_time, datetime.time):
-                            ot_start_time_obj = ot_shift.start_time
-                        else:
-                            ot_start_time_obj = dt_time(0, 0)
-
-                    oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
-
-                    # Calculate OC pay only for period before OT starts (00:00 to OT start)
-                    oncall_rules = _cached_oncall_rules(current_day.year)
-                    if oc_end > oc_start:
-                        oncall_calc = calculate_oncall_pay_for_period(
-                            oc_start,
-                            oc_end,
-                            user_wages.get(person_id, settings.monthly_salary),
-                            oncall_rules,
-                        )
-                        oncall_pay = oncall_calc["total_pay"]
-                        oncall_details = oncall_calc
-                    else:
-                        # OT starts at or before OC start, no OC pay
-                        oncall_pay = 0.0
-                        oncall_details = {
-                            "note": "OT starts at or before OC start",
-                            "total_pay": 0.0,
-                        }
-
-                # Calculate OT pay
-                ot_pay = ot_shift.ot_pay
-                ot_hours = ot_shift.hours
-                ot_details = {
-                    "start_time": str(ot_shift.start_time),
-                    "end_time": str(ot_shift.end_time),
-                    "hours": ot_hours,
-                    "pay": ot_pay,
-                    "hourly_rate": user_wages.get(person_id, settings.monthly_salary) / 72,
-                }
-
-                # Replace shift with OT type for display (consistent with all-persons view)
-                ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-                if ot_shift_type:
-                    shift = ot_shift_type
-                    hours = ot_shift.hours
-
-                    # Parse OT shift times and set start/end datetimes
-                    ot_start_str = str(ot_shift.start_time)
-                    ot_end_str = str(ot_shift.end_time)
-                    if len(ot_start_str.split(":")) == 2:
-                        ot_start_str += ":00"
-                    if len(ot_end_str.split(":")) == 2:
-                        ot_end_str += ":00"
-                    try:
-                        start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
-                        end_time_obj = datetime.datetime.strptime(ot_end_str, "%H:%M:%S").time()
-                        start = datetime.datetime.combine(current_day, start_time_obj)
-                        end = datetime.datetime.combine(current_day, end_time_obj)
-                        if end <= start:
-                            end = end + datetime.timedelta(days=1)
-                    except Exception:
-                        # If parsing fails, leave start/end as they were
-                        pass
-
-            day_info["person_id"] = person_id
-            day_info["person_name"] = persons[person_id - 1].name
-            day_info["shift"] = shift
-            day_info["rotation_week"] = rotation_week
-            day_info["hours"] = hours
-            day_info["start"] = start
-            day_info["end"] = end
-            day_info["ob"] = ob
-            day_info["oncall_pay"] = oncall_pay
-            day_info["oncall_details"] = oncall_details
-            day_info["ot_pay"] = ot_pay
-            day_info["ot_hours"] = ot_hours
-            day_info["ot_details"] = ot_details
-
-        days_in_year.append(day_info)
-        current_day = current_day + datetime.timedelta(days=1)
-    return days_in_year
+    return generate_period_data(start_date, end_date, person_id, session, user_wages)
 
 
 def generate_month_data(
@@ -597,245 +611,10 @@ def generate_month_data(
     """
     import calendar
 
-    special_ob_rules = _cached_special_rules(year)
-    combined_ob_rules = ob_rules + special_ob_rules
-
-    # Calculate start and end dates for the month
     start_date = datetime.date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
     end_date = datetime.date(year, month, last_day)
-
-    vacation_dates = _vacation_dates_for_year(year)
-    days_in_month: list[dict] = []
-    current_day = start_date
-
-    # Handle edge case where rotation hasn't started yet
-    if start_date < rotation_start_date:
-        current_day = max(start_date, rotation_start_date)
-
-    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
-
-    # Only load wages if not already provided (prevents N+1 queries)
-    if user_wages is None:
-        user_wages = get_all_user_wages(session)
-
-    while current_day <= end_date:
-        weekday_index = current_day.weekday()
-        weekday_name = weekday_names[weekday_index]
-        day_info = {
-            "date": current_day,
-            "weekday_index": weekday_index,
-            "weekday_name": weekday_name,
-        }
-
-        if person_id is None:
-            # All persons view
-            day_info["persons"] = []
-
-            for pid in person_ids:
-                if VACATION_SHIFT is not None and current_day in vacation_dates.get(pid, set()):
-                    result = determine_shift_for_date(current_day, pid)
-                    shift, rotation_week = result
-                    shift = VACATION_SHIFT
-                    rotation_week = rotation_week
-                    hours = 0.0
-                    start = None
-                    end = None
-                else:
-                    result = determine_shift_for_date(current_day, pid)
-                    if result is None:
-                        shift = None
-                        rotation_week = None
-                        hours = 0.0
-                        start = None
-                        end = None
-                    else:
-                        shift, rotation_week = result
-                        hours, start, end = _cached_shift_hours(current_day, shift.code)
-
-                # Check for overtime shift - if exists, show OT instead of scheduled shift
-                if session:
-                    ot_shift = get_overtime_shift_for_date(session, pid, current_day)
-                    if ot_shift:
-                        # Replace with OT shift
-                        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-                        if ot_shift_type:
-                            shift = ot_shift_type
-                            hours = ot_shift.hours
-                            # Parse start/end times from OT shift
-                            ot_start_str = str(ot_shift.start_time)
-                            ot_end_str = str(ot_shift.end_time)
-                            if len(ot_start_str.split(":")) == 2:
-                                ot_start_str += ":00"
-                            if len(ot_end_str.split(":")) == 2:
-                                ot_end_str += ":00"
-                            try:
-                                start_time_obj = datetime.datetime.strptime(
-                                    ot_start_str, "%H:%M:%S"
-                                ).time()
-                                end_time_obj = datetime.datetime.strptime(
-                                    ot_end_str, "%H:%M:%S"
-                                ).time()
-                                start = datetime.datetime.combine(current_day, start_time_obj)
-                                end = datetime.datetime.combine(current_day, end_time_obj)
-                                if end <= start:
-                                    end = end + datetime.timedelta(days=1)
-                            except ValueError:
-                                pass
-
-                person_data = {
-                    "person_id": pid,
-                    "person_name": persons[pid - 1].name,
-                    "shift": shift,
-                    "rotation_week": rotation_week,
-                    "hours": hours,
-                    "start": start,
-                    "end": end,
-                }
-                day_info["persons"].append(person_data)
-        else:
-            # Single person view
-            if VACATION_SHIFT is not None and current_day in vacation_dates.get(person_id, set()):
-                shift = VACATION_SHIFT
-                rotation_week = None
-                hours = 0.0
-                start = None
-                end = None
-                ob = {}
-            else:
-                result = determine_shift_for_date(current_day, person_id)
-                if result is None:
-                    shift = None
-                    rotation_week = None
-                    hours = 0.0
-                    start = None
-                    end = None
-                    ob = {}
-                else:
-                    shift, rotation_week = result
-                    hours, start, end = _cached_shift_hours(current_day, shift.code)
-                    if start is not None and shift.code != "OC":
-                        ob = calculate_ob_hours(start, end, combined_ob_rules)
-                    else:
-                        ob = {}
-
-            # Calculate on-call pay if this is an on-call shift
-            oncall_pay = 0.0
-            oncall_details = {}
-            if shift and shift.code == "OC":
-                oncall_rules = _cached_oncall_rules(current_day.year)
-                oncall_calc = calculate_oncall_pay(
-                    current_day, user_wages.get(person_id, settings.monthly_salary), oncall_rules
-                )
-                oncall_pay = oncall_calc["total_pay"]
-                oncall_details = oncall_calc
-
-            # Check for overtime shift on this date
-            ot_shift = (
-                get_overtime_shift_for_date(session, person_id, current_day) if session else None
-            )
-            ot_pay = 0.0
-            ot_hours = 0.0
-            ot_details = {}
-
-            if ot_shift:
-                # If this is an OC shift, recalculate OC pay only for period BEFORE OT starts
-                if shift and shift.code == "OC":
-                    from datetime import time as dt_time
-
-                    # OC shift runs 00:00 to 00:00 next day
-                    oc_start = datetime.datetime.combine(current_day, dt_time(0, 0))
-
-                    # Parse OT start time
-                    ot_start_str = str(ot_shift.start_time)
-                    if len(ot_start_str.split(":")) == 2:
-                        ot_start_str += ":00"
-
-                    try:
-                        ot_start_time_obj = datetime.datetime.strptime(
-                            ot_start_str, "%H:%M:%S"
-                        ).time()
-                    except ValueError:
-                        # Fallback if format is weird or already time object
-                        if isinstance(ot_shift.start_time, datetime.time):
-                            ot_start_time_obj = ot_shift.start_time
-                        else:
-                            ot_start_time_obj = dt_time(0, 0)
-
-                    oc_end = datetime.datetime.combine(current_day, ot_start_time_obj)
-
-                    # Calculate OC pay only for period before OT starts (00:00 to OT start)
-                    oncall_rules = _cached_oncall_rules(current_day.year)
-                    if oc_end > oc_start:
-                        oncall_calc = calculate_oncall_pay_for_period(
-                            oc_start,
-                            oc_end,
-                            user_wages.get(person_id, settings.monthly_salary),
-                            oncall_rules,
-                        )
-                        oncall_pay = oncall_calc["total_pay"]
-                        oncall_details = oncall_calc
-                    else:
-                        # OT starts at or before OC start, no OC pay
-                        oncall_pay = 0.0
-                        oncall_details = {
-                            "note": "OT starts at or before OC start",
-                            "total_pay": 0.0,
-                        }
-
-                # Calculate OT pay
-                ot_pay = ot_shift.ot_pay
-                ot_hours = ot_shift.hours
-                ot_details = {
-                    "start_time": str(ot_shift.start_time),
-                    "end_time": str(ot_shift.end_time),
-                    "hours": ot_hours,
-                    "pay": ot_pay,
-                    "hourly_rate": user_wages.get(person_id, settings.monthly_salary) / 72,
-                }
-
-                # Replace shift with OT type for display (consistent with all-persons view)
-                ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-                if ot_shift_type:
-                    shift = ot_shift_type
-                    hours = ot_shift.hours
-
-                    # Parse OT shift times and set start/end datetimes
-                    ot_start_str = str(ot_shift.start_time)
-                    ot_end_str = str(ot_shift.end_time)
-                    if len(ot_start_str.split(":")) == 2:
-                        ot_start_str += ":00"
-                    if len(ot_end_str.split(":")) == 2:
-                        ot_end_str += ":00"
-                    try:
-                        start_time_obj = datetime.datetime.strptime(ot_start_str, "%H:%M:%S").time()
-                        end_time_obj = datetime.datetime.strptime(ot_end_str, "%H:%M:%S").time()
-                        start = datetime.datetime.combine(current_day, start_time_obj)
-                        end = datetime.datetime.combine(current_day, end_time_obj)
-                        if end <= start:
-                            end = end + datetime.timedelta(days=1)
-                    except Exception:
-                        # If parsing fails, leave start/end as they were
-                        pass
-
-            day_info["person_id"] = person_id
-            day_info["person_name"] = persons[person_id - 1].name
-            day_info["shift"] = shift
-            day_info["rotation_week"] = rotation_week
-            day_info["hours"] = hours
-            day_info["start"] = start
-            day_info["end"] = end
-            day_info["ob"] = ob
-            day_info["oncall_pay"] = oncall_pay
-            day_info["oncall_details"] = oncall_details
-            day_info["ot_pay"] = ot_pay
-            day_info["ot_hours"] = ot_hours
-            day_info["ot_details"] = ot_details
-
-        days_in_month.append(day_info)
-        current_day = current_day + datetime.timedelta(days=1)
-
-    return days_in_month
+    return generate_period_data(start_date, end_date, person_id, session, user_wages)
 
 
 def _select_ob_rules_for_date(
@@ -939,9 +718,7 @@ def _rule_interval_for_day(
     start_h, start_m = map(int, rule.start_time.split(":"))
     end_h, end_m = map(int, rule.end_time.split(":"))
 
-    ob_start = datetime.datetime(
-        current_start.year, current_start.month, current_start.day, start_h, start_m
-    )
+    ob_start = datetime.datetime(current_start.year, current_start.month, current_start.day, start_h, start_m)
 
     if rule.end_time == "24:00":
         ob_end = datetime.datetime(
@@ -952,9 +729,7 @@ def _rule_interval_for_day(
             0,
         ) + datetime.timedelta(days=1)
     else:
-        ob_end = datetime.datetime(
-            current_start.year, current_start.month, current_start.day, end_h, end_m
-        )
+        ob_end = datetime.datetime(current_start.year, current_start.month, current_start.day, end_h, end_m)
     return ob_start, ob_end
 
 
@@ -1112,14 +887,7 @@ def summarize_month_for_person(
         ob_hours: dict[str, float]
         ob_pay: dict[str, float]
 
-        if (
-            shift
-            and shift.code != "OFF"
-            and shift.code != "OC"
-            and shift.code != "OT"
-            and start
-            and end
-        ):
+        if shift and shift.code != "OFF" and shift.code != "OC" and shift.code != "OT" and start and end:
             ob_hours = calculate_ob_hours(start, end, combined_rules)
             ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary)
         else:
@@ -1639,12 +1407,7 @@ def build_cowork_details(
         target_shift = target.get("shift")
         other_shift = other.get("shift")
 
-        if (
-            not target_shift
-            or target_shift.code == "OFF"
-            or not other_shift
-            or other_shift.code == "OFF"
-        ):
+        if not target_shift or target_shift.code == "OFF" or not other_shift or other_shift.code == "OFF":
             continue
 
         # Bara dagar där ni har samma passtyp
