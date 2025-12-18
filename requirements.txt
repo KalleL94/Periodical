@@ -18,3 +18,6 @@ python-multipart>=0.0.6
 # Error tracking (optional, for production)
 # Install with: pip install sentry-sdk[fastapi]
 sentry-sdk[fastapi]>=1.40.0
+
+# Calendar export
+icalendar>=5.0.0
