@@ -1,0 +1,282 @@
+"""Sammanfattningar för månader och år."""
+
+from app.core.storage import load_persons, load_tax_brackets
+
+from .core import get_settings
+from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
+from .period import generate_year_data
+from .wages import get_all_user_wages, get_user_wage
+
+_tax_brackets = None
+_persons = None
+
+
+def _get_tax_brackets():
+    global _tax_brackets
+    if _tax_brackets is None:
+        _tax_brackets = load_tax_brackets()
+    return _tax_brackets
+
+
+def _get_persons():
+    global _persons
+    if _persons is None:
+        _persons = load_persons()
+    return _persons
+
+
+def _calculate_tax(brutto: float) -> float:
+    """Beräknar skatt baserat på bruttolön."""
+    from app.core.storage import calculate_tax_bracket
+
+    return calculate_tax_bracket(brutto, _get_tax_brackets())
+
+
+def summarize_year_by_month(year: int, person_id: int) -> dict[int, dict]:
+    """
+    Grov årsöversikt per månad för en person.
+
+    Returns:
+        Dict med månad -> {'total_hours': float, 'num_shifts': int}
+    """
+    days = generate_year_data(year, person_id)
+
+    summary = {}
+    for day in days:
+        month = day["date"].month
+        shift = day.get("shift")
+
+        if month not in summary:
+            summary[month] = {"total_hours": 0.0, "num_shifts": 0}
+
+        summary[month]["total_hours"] += day.get("hours", 0.0)
+
+        if shift and shift.code != "OFF":
+            summary[month]["num_shifts"] += 1
+
+    return summary
+
+
+def summarize_month_for_person(
+    year: int,
+    month: int,
+    person_id: int,
+    session=None,
+    user_wages: dict[int, int] | None = None,
+    year_days: list[dict] | None = None,
+) -> dict:
+    """
+    Detaljerad månadsöversikt för en person.
+
+    Args:
+        year: År
+        month: Månad (1-12)
+        person_id: Person-ID
+        session: SQLAlchemy session
+        user_wages: Förladdade löner
+        year_days: Förgenererad årsdata (optimering)
+
+    Returns:
+        Dict med total_hours, num_shifts, ob_hours, ob_pay, brutto/netto, days
+    """
+    # Använd förgenererad data eller generera ny
+    if year_days is None:
+        days = generate_year_data(year, person_id, session=session, user_wages=user_wages)
+    else:
+        days = year_days
+
+    combined_rules = get_combined_rules_for_year(year)
+    settings = get_settings()
+    persons = _get_persons()
+
+    # Hämta lön
+    if user_wages and person_id in user_wages:
+        base_salary = user_wages[person_id]
+    else:
+        try:
+            base_salary = get_user_wage(session, person_id, settings.monthly_salary)
+        except Exception:
+            base_salary = settings.monthly_salary
+
+    # Initiera totaler
+    totals = {
+        "total_hours": 0.0,
+        "num_shifts": 0,
+        "ob_hours": {},
+        "ob_pay": {},
+        "brutto_pay": base_salary,
+        "oncall_pay": 0.0,
+        "ot_pay": 0.0,
+    }
+
+    days_out = []
+
+    for day in days:
+        if day["date"].month != month:
+            continue
+
+        day_data = _process_day_for_summary(day, combined_rules, base_salary, totals)
+        days_out.append(day_data)
+
+    # Beräkna netto
+    netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"])
+
+    return {
+        "year": year,
+        "month": month,
+        "person_id": person_id,
+        "person_name": persons[person_id - 1].name,
+        "total_hours": totals["total_hours"],
+        "num_shifts": totals["num_shifts"],
+        "ob_hours": totals["ob_hours"],
+        "ob_pay": totals["ob_pay"],
+        "oncall_pay": totals["oncall_pay"],
+        "ot_pay": totals["ot_pay"],
+        "brutto_pay": totals["brutto_pay"],
+        "netto_pay": netto_pay,
+        "days": days_out,
+    }
+
+
+def _process_day_for_summary(
+    day: dict,
+    combined_rules: list,
+    base_salary: int,
+    totals: dict,
+) -> dict:
+    """Processar en dag och uppdaterar totaler."""
+    hours = day.get("hours", 0.0)
+    shift = day.get("shift")
+    start = day.get("start")
+    end = day.get("end")
+
+    # Beräkna OB om tillämpligt
+    if shift and shift.code not in ("OFF", "OC", "OT") and start and end:
+        ob_hours = calculate_ob_hours(start, end, combined_rules)
+        ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary)
+    else:
+        ob_hours = {r.code: 0.0 for r in combined_rules}
+        ob_pay = {r.code: 0.0 for r in combined_rules}
+
+    # Uppdatera totaler
+    totals["total_hours"] += hours
+
+    if shift and shift.code != "OFF":
+        totals["num_shifts"] += 1
+
+    for code, h in ob_hours.items():
+        totals["ob_hours"][code] = totals["ob_hours"].get(code, 0.0) + h
+
+    for code, p in ob_pay.items():
+        totals["ob_pay"][code] = totals["ob_pay"].get(code, 0.0) + p
+        totals["brutto_pay"] += p
+
+    # Lägg till jour och övertid
+    oncall_pay = day.get("oncall_pay", 0.0)
+    ot_pay = day.get("ot_pay", 0.0)
+
+    totals["brutto_pay"] += oncall_pay + ot_pay
+    totals["oncall_pay"] += oncall_pay
+    totals["ot_pay"] += ot_pay
+
+    return {
+        "date": day["date"],
+        "weekday_name": day["weekday_name"],
+        "shift": shift,
+        "rotation_week": day.get("rotation_week"),
+        "hours": hours,
+        "ob_hours": ob_hours,
+        "ob_pay": ob_pay,
+        "oncall_pay": oncall_pay,
+        "oncall_details": day.get("oncall_details", {}),
+        "ot_pay": ot_pay,
+        "ot_hours": day.get("ot_hours", 0.0),
+        "ot_details": day.get("ot_details", {}),
+        "start": start,
+        "end": end,
+    }
+
+
+def summarize_year_for_person(
+    year: int,
+    person_id: int,
+    session=None,
+) -> dict:
+    """
+    Bygger årsöversikt för en person.
+
+    Returns:
+        Dict med 'months' (lista med 12 månadsdictar) och 'year_summary'
+    """
+    # Förladda löner och årsdata EN gång
+    user_wages = get_all_user_wages(session)
+    year_days = generate_year_data(year, person_id, session=session, user_wages=user_wages)
+
+    months = []
+    for month in range(1, 13):
+        m = summarize_month_for_person(
+            year,
+            month,
+            person_id,
+            session=session,
+            user_wages=user_wages,
+            year_days=year_days,
+        )
+        # Beräkna total OB för månaden
+        ob_pay = m.get("ob_pay", {}) or {}
+        total_ob = sum(float(ob_pay.get(code, 0.0) or 0.0) for code in ("OB1", "OB2", "OB3", "OB4", "OB5"))
+        m["total_ob"] = total_ob
+        months.append(m)
+
+    year_summary = _build_year_summary(months)
+
+    return {
+        "months": months,
+        "year_summary": year_summary,
+    }
+
+
+def _build_year_summary(months: list[dict]) -> dict:
+    """Bygger årssammanfattning från månadsdata."""
+    month_count = len(months) or 1
+
+    # Summera totaler
+    total_netto = sum(m.get("netto_pay", 0.0) for m in months)
+    total_brutto = sum(m.get("brutto_pay", 0.0) for m in months)
+    total_shifts = sum(m.get("num_shifts", 0) for m in months)
+    total_hours = sum(m.get("total_hours", 0.0) for m in months)
+    total_ob = sum(m.get("total_ob", 0.0) for m in months)
+    total_oncall = sum(m.get("oncall_pay", 0.0) for m in months)
+    total_ot = sum(m.get("ot_pay", 0.0) for m in months)
+
+    # OB per kod
+    ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
+    ob_hours_by_code = {code: 0.0 for code in ob_codes}
+    ob_pay_by_code = {code: 0.0 for code in ob_codes}
+
+    for m in months:
+        m_ob_hours = m.get("ob_hours", {}) or {}
+        m_ob_pay = m.get("ob_pay", {}) or {}
+        for code in ob_codes:
+            ob_hours_by_code[code] += float(m_ob_hours.get(code, 0.0) or 0.0)
+            ob_pay_by_code[code] += float(m_ob_pay.get(code, 0.0) or 0.0)
+
+    return {
+        "total_netto": total_netto,
+        "total_brutto": total_brutto,
+        "total_shifts": total_shifts,
+        "total_hours": total_hours,
+        "total_ob": total_ob,
+        "total_oncall": total_oncall,
+        "total_ot": total_ot,
+        "avg_netto": total_netto / month_count,
+        "avg_brutto": total_brutto / month_count,
+        "avg_shifts": total_shifts / month_count,
+        "avg_hours": total_hours / month_count,
+        "avg_ob": total_ob / month_count,
+        "avg_oncall": total_oncall / month_count,
+        "avg_ot": total_ot / month_count,
+        "ob_hours_by_code": ob_hours_by_code,
+        "ob_pay_by_code": ob_pay_by_code,
+        "total_ob_hours": sum(ob_hours_by_code.values()),
+    }
