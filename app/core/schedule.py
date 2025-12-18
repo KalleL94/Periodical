@@ -294,12 +294,33 @@ def build_week_data(
             if result is None:
                 shift = None
                 rotation_week = None
+                start = None
+                end = None
             else:
                 shift, rotation_week = result
+                hours, start, end = _cached_shift_hours(current_date, shift.code) if shift else (0.0, None, None)
+
+            # Check for overtime shift - replaces regular shift
+            if session:
+                ot_shift = get_overtime_shift_for_date(session, person_id, current_date)
+                if ot_shift:
+                    # Replace with OT shift
+                    ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+                    if ot_shift_type:
+                        shift = ot_shift_type
+                        # Parse start/end times from OT shift
+                        try:
+                            start, end = parse_ot_times(ot_shift, current_date)
+                        except ValueError:
+                            # parse_ot_times loggar felet
+                            start, end = None, None
+
             day_info["shift"] = shift
             day_info["rotation_week"] = rotation_week
             day_info["person_id"] = person_id
             day_info["person_name"] = persons[person_id - 1].name
+            day_info["start"] = start
+            day_info["end"] = end
 
         days_in_week.append(day_info)
 

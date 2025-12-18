@@ -520,6 +520,7 @@ async def show_week_for_person(
     year: int = None,
     week: int = None,
     current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
 ):
     """Week view for a specific person."""
     if current_user is None:
@@ -539,7 +540,7 @@ async def show_week_for_person(
             status_code=302,
         )
 
-    days_in_week = build_week_data(year, week, person_id=person_id)
+    days_in_week = build_week_data(year, week, person_id=person_id, session=db)
 
     monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)
