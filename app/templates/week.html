@@ -28,45 +28,63 @@
 
 <h2 class="page-title">Week {{ week }} {{ year }} - Person {{ person_id }}</h2>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Day</th>
-                <th>Date</th>
-                <th>Rotation week</th>
-                <th>Shift</th>
-                <th>Time</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for day in days %}
-                <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}"
-                    style="border-left:6px solid {% if day.shift %}{{ day.shift.color }}{% else %}transparent{% endif %};">
-                    <td class="day-cell">{{ day.weekday_name }}</td>
-                    <td class="date-cell">
-                        <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}">
-                            {{ day.date }}
-                        </a>
-                    </td>
-                    <td>{{ day.rotation_week }}</td>
-                    <td>
-                        {% if day.shift %}
-                            <span class="badge"
-                                  style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">
-                                {{ day.shift.code }}
-                            </span>
-                        {% else %}
-                            <span class="badge badge-off">OFF</span>
-                        {% endif %}
-                    </td>
-                    {% if day.shift and day.shift.start_time is not none %}
-                        <td>{{ day.shift.start_time }} to {{ day.shift.end_time }}</td>
-                    {% else %}
-                        <td>No shift</td>
-                    {% endif %}
-                </tr>
+{# Calendar grid view for week #}
+{% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
+
+<table class="calendar-grid week-grid-single">
+    <thead>
+        <tr>
+            {% for day_name in weekday_names_short %}
+                <th>{{ day_name }}</th>
             {% endfor %}
-        </tbody>
-    </table>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            {% for day in days %}
+                {% set is_today = today is defined and day.date == today %}
+
+                <td class="calendar-day {% if is_today %}today-cell{% endif %}"
+                    style="border-top: 4px solid {% if day.shift %}{{ day.shift.color }}{% else %}#333{% endif %};">
+
+                    <div class="calendar-day-content">
+                        <div class="calendar-day-header">
+                            <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                               class="day-number">
+                                {{ day.date.day }}/{{ day.date.month }}
+                            </a>
+                            {# Show rotation week on each day for easy reference #}
+                            <div class="calendar-rotation-week">Rot. v{{ day.rotation_week }}</div>
+                            {% if day.date.weekday() == 0 %}
+                                <span class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</span>
+                            {% endif %}
+                            
+                        </div>
+                        
+
+                        <div class="calendar-day-body">
+                            {% if day.shift %}
+                                <span class="badge calendar-badge"
+                                      style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">
+                                    {{ day.shift.code }}
+                                </span>
+                            {% else %}
+                                <span class="badge badge-off calendar-badge">OFF</span>
+                            {% endif %}
+
+                            {% if day.shift and day.shift.code != 'OC' %}
+                                {% if day.shift.code == 'OT' and day.start and day.end %}
+                                    <div class="calendar-time">{{ day.start.strftime('%H:%M') }} - {{ day.end.strftime('%H:%M') }}</div>
+                                {% elif day.shift.start_time is not none %}
+                                    <div class="calendar-time">{{ day.shift.start_time }} - {{ day.shift.end_time }}</div>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </td>
+            {% endfor %}
+        </tr>
+    </tbody>
+</table>
 
 {% endblock %}

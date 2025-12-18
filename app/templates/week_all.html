@@ -28,65 +28,93 @@
 
 <h2 class="page-title">Week {{ week }} {{ year }} - All persons</h2>
 
-<table class="month-schedule table-sticky">
+{# Grid calendar view: persons as rows, days as columns #}
+{% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
+
+<div class="week-grid-wrapper">
+    <table class="week-grid-all">
         <thead>
             <tr>
-                <th style="min-width:120px">Day</th>
-                <th style="min-width:140px">Date</th>
-                {% if days and days|length > 0 %}
-                    {% for p in days[0].persons %}
-                        <th class="person-header">
-                            {# Länka bara till egen sida eller om admin #}
-                            {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
-                                <a href="/week/{{ p.person_id }}?year={{ year }}&week={{ week }}">
-                                    {{ p.person_name }}<br>
-                                    <small>(#{{ p.person_id }})</small>
-                                </a>
-                            {% else %}
-                                {{ p.person_name }}<br>
-                                <small>(#{{ p.person_id }})</small>
-                            {% endif %}
-                        </th>
-                    {% endfor %}
-                {% endif %}
+                <th class="person-header-column">Person</th>
+                {% for day in days %}
+                    <th class="day-column {% if today is defined and day.date == today %}today-column{% endif %}">
+                        <div>{{ weekday_names_short[day.date.weekday()] }}</div>
+                        <div class="date-small">{{ day.date.day }}/{{ day.date.month }}</div>
+                    </th>
+                {% endfor %}
             </tr>
         </thead>
         <tbody>
-            {% for day in days %}
-                <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
-                    <td class="day-cell" data-label="Dag">{{ day.weekday_name }}</td>
-                    <td class="date-cell" data-label="Datum">{{ day.date }}</td>
-                    {% for person in day.persons %}
-                        <td data-label="{{ person.person_name }}" style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
-                            {% if person.shift %}
+            {# Build rows for each person (1-10) #}
+            {% for person_id in range(1, 11) %}
+                <tr class="person-row">
+                    {# Person name column (sticky left) #}
+                    <td class="person-name-cell">
+                        {% if days and days|length > 0 and days[0].persons|length >= person_id %}
+                            {% set person_data = days[0].persons[person_id - 1] %}
+                            {% if user and (user.role.value == 'admin' or user.id == person_id) %}
+                                <a href="/week/{{ person_id }}?year={{ year }}&week={{ week }}">
+                                    {{ person_data.person_name }}<br>
+                                    <small>(#{{ person_id }})</small>
+                                </a>
+                            {% else %}
+                                {{ person_data.person_name }}<br>
+                                <small>(#{{ person_id }})</small>
+                            {% endif %}
+                        {% else %}
+                            Person {{ person_id }}
+                        {% endif %}
+                    </td>
+
+                    {# Day cells for this person #}
+                    {% for day in days %}
+                        {# Find this person's shift for this day #}
+                        {% set ns = namespace(person=none) %}
+                        {% for p in day.persons %}
+                            {% if p.person_id == person_id %}
+                                {% set ns.person = p %}
+                            {% endif %}
+                        {% endfor %}
+
+                        {% set is_today = today is defined and day.date == today %}
+
+                        <td class="shift-cell {% if is_today %}today-cell{% endif %}"
+                            style="border-left: 4px solid {% if ns.person and ns.person.shift %}{{ ns.person.shift.color }}{% else %}#ddd{% endif %};">
+
+                            {% if ns.person and ns.person.shift %}
                                 {# Länka till day-sida bara om admin eller egen #}
-                                {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
-                                    <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
-                                       style="text-decoration:none;">
+                                {% if user and (user.role.value == 'admin' or user.id == person_id) %}
+                                    <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                                       class="shift-link"
+                                       style="color: var(--text); text-decoration: none;">
                                 {% endif %}
-                                    {% if person.shift.code == 'SEM' %}
-                                        <span class="badge badge-sem"
-                                              title="Semester"
-                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                            SEM
-                                        </span>
-                                    {% elif person.shift.code == 'OT' %}
-                                        <span class="badge"
-                                              title="{% if person.start and person.end %}Övertid: {{ person.start.strftime('%H:%M') }} - {{ person.end.strftime('%H:%M') }}{% else %}Övertid (tider saknas){% endif %}"
-                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                            OT
-                                        </span>
+
+                                <div class="shift-name" style="color: {{ ns.person.shift.color }}; font-weight: 500; font-size: 0.85rem;">
+                                    {% if ns.person.shift.code == 'SEM' %}
+                                        Semester
+                                    {% elif ns.person.shift.code == 'OT' %}
+                                        Övertid
+                                    {% elif ns.person.shift.code == 'OC' %}
+                                        Beredskap
+                                    {% elif ns.person.shift.code == 'OFF' %}
+                                        Ledig
                                     {% else %}
-                                        <span class="badge"
-                                              style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                            {{ person.shift.code }}
-                                        </span>
+                                        {{ ns.person.shift.label or ns.person.shift.code }}
                                     {% endif %}
-                                {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
+                                </div>
+
+                                {# Show times for OT shifts #}
+                                {% if ns.person.shift.code == 'OT' and ns.person.start and ns.person.end %}
+                                    <div class="shift-time" style="color: var(--muted); font-size: 0.7rem; margin-top: 2px;">
+                                        {{ ns.person.start.strftime('%H:%M') }}-{{ ns.person.end.strftime('%H:%M') }}
+                                    </div>
+                                {% endif %}
+
+                                {% if user and (user.role.value == 'admin' or user.id == person_id) %}
                                     </a>
                                 {% endif %}
                             {% else %}
-                                <span class="badge badge-off">OFF</span>
+                                <span class="shift-name" style="color: var(--muted); font-size: 0.85rem;">Ledig</span>
                             {% endif %}
                         </td>
                     {% endfor %}
@@ -94,5 +122,6 @@
             {% endfor %}
         </tbody>
     </table>
+</div>
 
 {% endblock %}
