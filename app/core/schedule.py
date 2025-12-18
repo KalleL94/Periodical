@@ -212,10 +212,11 @@ def determine_shift_for_date(
         days_to_first_monday = (date - first_monday).days
         weeks_passed = 1 + (days_to_first_monday // 7)
 
-    rotation_week = str(((weeks_passed + (start_week - 1)) % rotation.rotation_length) + 1)
+    rotation_week = ((weeks_passed + (start_week - 1)) % rotation.rotation_length) + 1
 
     weekday_index = date.weekday()
-    shift_code = rotation.weeks[rotation_week][weekday_index]
+    # JSON dict keys are strings, so convert for lookup only
+    shift_code = rotation.weeks[str(rotation_week)][weekday_index]
 
     for shift in shift_types:
         if shift.code == shift_code:
