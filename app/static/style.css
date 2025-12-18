@@ -793,3 +793,177 @@ td.num, th.num {
         font-size: 0.65rem;
     }
 }
+
+/* ========== Week Grid Layouts ========== */
+
+/* Single person week view - horizontal grid */
+.week-grid-single {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.week-grid-single thead th {
+    background: var(--panel);
+    padding: 12px 8px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    border: 1px solid var(--table-border);
+}
+
+.week-grid-single .calendar-day {
+    height: 140px;
+    width: 14.28%; /* 100% / 7 days */
+}
+
+.calendar-rotation-week {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+/* All persons week view - person x day grid */
+.week-grid-wrapper {
+    overflow-x: auto;
+    margin-top: 20px;
+}
+
+.week-grid-all {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 800px;
+}
+
+.week-grid-all thead th {
+    background: var(--panel);
+    padding: 12px 8px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    border: 1px solid var(--table-border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.week-grid-all .person-header-column {
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    min-width: 120px;
+    background: var(--panel);
+}
+
+.week-grid-all .day-column {
+    min-width: 100px;
+}
+
+.week-grid-all .day-column.today-column {
+    background: rgba(64, 169, 255, 0.15);
+}
+
+.week-grid-all .date-small {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: normal;
+    margin-top: 2px;
+}
+
+.week-grid-all .person-row {
+    border-bottom: 1px solid var(--table-border);
+}
+
+.week-grid-all .person-name-cell {
+    position: sticky;
+    left: 0;
+    background: var(--panel);
+    padding: 6px 12px;
+    text-align: left;
+    font-weight: 500;
+    border-right: 2px solid var(--table-border);
+    z-index: 10;
+}
+
+.week-grid-all .person-name-cell a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.week-grid-all .person-name-cell a:hover {
+    color: var(--accent);
+}
+
+.week-grid-all .person-name-cell small {
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.week-grid-all .shift-cell {
+    padding: 6px 8px;
+    text-align: center;
+    background: var(--panel);
+    border: 1px solid var(--table-border);
+    position: relative;
+}
+
+.week-grid-all .shift-cell.today-cell {
+    background: rgba(64, 169, 255, 0.08);
+}
+
+.week-grid-all .shift-link {
+    text-decoration: none;
+    display: inline-block;
+}
+
+.week-grid-all .shift-link:hover .badge {
+    opacity: 0.9;
+    transform: scale(1.05);
+    transition: all 0.15s ease;
+}
+
+/* Responsive week grids */
+@media (max-width: 1024px) {
+    .week-grid-single .calendar-day {
+        height: 120px;
+    }
+
+    .week-grid-all .day-column {
+        min-width: 80px;
+    }
+
+    .week-grid-all .person-name-cell {
+        min-width: 100px;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .week-grid-single .calendar-day {
+        height: 100px;
+    }
+
+    .calendar-rotation-week {
+        font-size: 0.65rem;
+    }
+
+    .week-grid-all {
+        min-width: 600px;
+    }
+
+    .week-grid-all .day-column {
+        min-width: 70px;
+    }
+
+    .week-grid-all .person-name-cell {
+        min-width: 80px;
+        font-size: 0.8rem;
+        padding: 8px;
+    }
+
+    .week-grid-all .shift-cell {
+        padding: 6px 4px;
+    }
+}
