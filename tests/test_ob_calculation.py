@@ -31,7 +31,6 @@ from app.core.schedule import (
     calculate_ob_pay,
     calculate_shift_hours,
     determine_shift_for_date,
-    person_wages,
 )
 from app.core.storage import load_ob_rules, load_settings
 
@@ -96,11 +95,7 @@ class TestOBCalculation:
 
         if special_rules is not None:
             date_iso = date.isoformat()
-            active = [
-                r
-                for r in special_rules
-                if getattr(r, "specific_dates", None) and date_iso in r.specific_dates
-            ]
+            active = [r for r in special_rules if getattr(r, "specific_dates", None) and date_iso in r.specific_dates]
             if active:
                 print("      Active special rules for this date:")
                 for r in active:
@@ -204,15 +199,13 @@ class TestOBCalculation:
 
         shift, _ = determine_shift_for_date(test_date, start_week=person_id)
 
-        assert shift is not None and shift.code != "OFF", (
-            "Expected someone to work on Good Friday in rotation"
-        )
+        assert shift is not None and shift.code != "OFF", "Expected someone to work on Good Friday in rotation"
 
         hours, start, end = calculate_shift_hours(test_date, shift)
 
         special_rules = _cached_special_rules(year)
         combined = self.ob_rules + special_rules
-        monthly_salary = person_wages.get(person_id, self.settings.monthly_salary)
+        monthly_salary = self.settings.monthly_salary
 
         ob_hours = calculate_ob_hours(start, end, combined)
         ob_pay = calculate_ob_pay(start, end, combined, monthly_salary)
@@ -232,9 +225,7 @@ class TestOBCalculation:
         )
 
         # All hours on Good Friday should be OB5
-        assert ob_hours["OB5"] == hours, (
-            f"Expected OB5={hours}, got {ob_hours['OB5']} on Good Friday {test_date}"
-        )
+        assert ob_hours["OB5"] == hours, f"Expected OB5={hours}, got {ob_hours['OB5']} on Good Friday {test_date}"
         assert ob_hours["OB1"] == 0.0
         assert ob_hours["OB4"] == 0.0
 
@@ -251,7 +242,7 @@ class TestOBCalculation:
         """Test OB pay calculation using monthly salary and rule rates."""
         test_date = datetime.date(2027, 1, 26)  # Monday of week 4
         person_id, shift, hours, start, end = self.find_person_with_shift_on_date("N2", test_date)
-        monthly_salary = person_wages.get(person_id, self.settings.monthly_salary)
+        monthly_salary = self.settings.monthly_salary
 
         ob_pay = calculate_ob_pay(start, end, self.ob_rules, monthly_salary)
         ob_hours = calculate_ob_hours(start, end, self.ob_rules)
@@ -271,9 +262,7 @@ class TestOBCalculation:
 
         # Evening shift 14:00-22:30 has 4.5h OB1
         expected_ob1_pay = 4.5 * (monthly_salary / 600)
-        assert ob_pay["OB1"] == expected_ob1_pay, (
-            f"Expected OB1 pay={expected_ob1_pay}, got {ob_pay['OB1']}"
-        )
+        assert ob_pay["OB1"] == expected_ob1_pay, f"Expected OB1 pay={expected_ob1_pay}, got {ob_pay['OB1']}"
 
     def test_off_shift_no_ob(self):
         """OFF shift should result in zero OB hours and pay."""
@@ -442,9 +431,7 @@ class TestOBCalculation:
 
         assert ob_hours["OB5"] > 0.0, f"2nd of January should give OB5, got {ob_hours}"
         for code in ["OB4", "OB3", "OB2", "OB1"]:
-            assert ob_hours[code] == 0.0, (
-                f"{code} should not apply on 2nd of January when OB5 applies"
-            )
+            assert ob_hours[code] == 0.0, f"{code} should not apply on 2nd of January when OB5 applies"
 
     def test_ob5_skartorsdag_evening_shift(self):
         """Skärtorsdagen ska ge OB5 på allt efter kl 18:00."""
@@ -478,8 +465,7 @@ class TestOBCalculation:
         assert ob_hours["OB5"] > 0.0, f"Skärtorsdag ska ge OB5 på kvällspasset, fick {ob_hours}"
         for code in ["OB4", "OB3", "OB2", "OB1"]:
             assert ob_hours[code] == 0.0, (
-                f"{code} ska inte gälla på Skärtorsdagens kvällspass när OB5 gäller, "
-                f"fick {ob_hours[code]}"
+                f"{code} ska inte gälla på Skärtorsdagens kvällspass när OB5 gäller, fick {ob_hours[code]}"
             )
 
     def test_ob5_christmas_eve_evening_shift(self):
@@ -512,13 +498,11 @@ class TestOBCalculation:
 
         # Hela kvälls-/nattpasset på julafton ska ligga inom storhelgsblocket
         assert ob_hours["OB5"] == hours, (
-            f"Alla arbetade timmar på julafton ska vara OB5, "
-            f"fick OB5={ob_hours['OB5']} av totalt {hours}"
+            f"Alla arbetade timmar på julafton ska vara OB5, fick OB5={ob_hours['OB5']} av totalt {hours}"
         )
         for code in ["OB4", "OB3", "OB2", "OB1"]:
             assert ob_hours[code] == 0.0, (
-                f"{code} ska inte gälla på julaftons kvälls/nattpass när OB5 gäller, "
-                f"fick {ob_hours[code]}"
+                f"{code} ska inte gälla på julaftons kvälls/nattpass när OB5 gäller, fick {ob_hours[code]}"
             )
 
     def test_ob5_weekend_after_christmas_block_2031(self):
@@ -555,14 +539,11 @@ class TestOBCalculation:
 
             # Alla timmar på dessa dagar ska vara OB5
             assert ob_hours["OB5"] == hours, (
-                f"Alla arbetade timmar {date} ska vara OB5, "
-                f"fick OB5={ob_hours['OB5']} av totalt {hours}"
+                f"Alla arbetade timmar {date} ska vara OB5, fick OB5={ob_hours['OB5']} av totalt {hours}"
             )
             # Ingen annan OB-kod ska ha timmar när OB5 gäller
             for code in ["OB4", "OB3", "OB2", "OB1"]:
-                assert ob_hours[code] == 0.0, (
-                    f"{code} ska inte gälla {date} när OB5 gäller, fick {ob_hours[code]}"
-                )
+                assert ob_hours[code] == 0.0, f"{code} ska inte gälla {date} när OB5 gäller, fick {ob_hours[code]}"
 
     def test_ob5_ends_on_first_weekday_after_christmas_block_2031(self):
         """Första vardagen efter julblocket 2031 ska inte längre ha OB5."""
@@ -593,8 +574,7 @@ class TestOBCalculation:
 
         # OB5-blocket ska ha slutat vid midnatt, så ingen OB5 denna dag
         assert ob_hours["OB5"] == 0.0, (
-            f"Första vardagen efter julblocket ska inte ha OB5, "
-            f"fick OB5={ob_hours['OB5']} för {date}"
+            f"Första vardagen efter julblocket ska inte ha OB5, fick OB5={ob_hours['OB5']} för {date}"
         )
 
     def test_ob5_midsommar_block_weekend(self):
@@ -633,13 +613,10 @@ class TestOBCalculation:
 
             # Alla arbetade timmar dessa dagar ska vara OB5
             assert ob_hours["OB5"] == hours, (
-                f"Alla arbetade timmar {date} ska vara OB5, "
-                f"fick OB5={ob_hours['OB5']} av totalt {hours}"
+                f"Alla arbetade timmar {date} ska vara OB5, fick OB5={ob_hours['OB5']} av totalt {hours}"
             )
             for code in ["OB4", "OB3", "OB2", "OB1"]:
-                assert ob_hours[code] == 0.0, (
-                    f"{code} ska inte gälla {date} när OB5 gäller, fick {ob_hours[code]}"
-                )
+                assert ob_hours[code] == 0.0, f"{code} ska inte gälla {date} när OB5 gäller, fick {ob_hours[code]}"
 
     def test_ob5_midsommar_block_ends_on_first_weekday(self):
         """Första vardagen efter midsommarblocket ska inte ha OB5."""
@@ -671,8 +648,7 @@ class TestOBCalculation:
 
         # OB5 ska ha tagit slut vid midnatt innan denna dag
         assert ob_hours["OB5"] == 0.0, (
-            f"Första vardagen efter midsommarblock ska inte ha OB5, "
-            f"fick OB5={ob_hours['OB5']} för {first_weekday}"
+            f"Första vardagen efter midsommarblock ska inte ha OB5, fick OB5={ob_hours['OB5']} för {first_weekday}"
         )
 
     def test_ob5_override_ob4_everywhere(self):
@@ -741,13 +717,9 @@ class TestOBCalculation:
                 special_rules=special,
             )
 
-            assert ob_hours["OB5"] == hours, (
-                f"{date} ska vara storhelg (OB5), fick OB5={ob_hours['OB5']} av {hours}"
-            )
+            assert ob_hours["OB5"] == hours, f"{date} ska vara storhelg (OB5), fick OB5={ob_hours['OB5']} av {hours}"
             for code in ["OB4", "OB3", "OB2", "OB1"]:
-                assert ob_hours[code] == 0.0, (
-                    f"{code} ska inte gälla {date} när OB5 gäller, fick {ob_hours[code]}"
-                )
+                assert ob_hours[code] == 0.0, f"{code} ska inte gälla {date} när OB5 gäller, fick {ob_hours[code]}"
 
     def test_ob5_new_year_block_ends_on_first_weekday_2027(self):
         """Första vardagen efter nyårsblocket 2027 ska inte ha OB5."""
@@ -792,9 +764,7 @@ def run_tests():
 
     test_obj = TestOBCalculation()
     test_methods = [
-        method
-        for method in dir(test_obj)
-        if method.startswith("test_") and callable(getattr(test_obj, method))
+        method for method in dir(test_obj) if method.startswith("test_") and callable(getattr(test_obj, method))
     ]
 
     passed = 0

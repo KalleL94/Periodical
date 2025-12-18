@@ -36,6 +36,12 @@ Thumbs.db
 *_copy.py
 *_copy.html
 
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+
 # Excluded directories
 AoC/
 backups/

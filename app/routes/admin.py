@@ -76,14 +76,59 @@ async def admin_settings_update(
     - monthly_salary: int
     - person_wages: JSON string like {"1": 37000, "2": 37000, ...}
     """
+    # Validate monthly_salary range (from previous fix)
+    if not (1000 <= monthly_salary <= 1000000):
+        return templates.TemplateResponse(
+            "admin_settings.html",
+            {
+                "request": request,
+                "user": current_user,
+                "settings": settings,
+                "persons": [],  # Placeholder
+                "tax_brackets": tax_brackets,
+                "error": "Ogiltig månads lön: måste vara mellan 1000 och 1000000",
+            },
+            status_code=400,
+        )
+
+    # Parse wage updates from form with error handling
+    try:
+        wage_updates = json.loads(person_wages)
+    except json.JSONDecodeError:
+        return templates.TemplateResponse(
+            "admin_settings.html",
+            {
+                "request": request,
+                "user": current_user,
+                "settings": settings,
+                "persons": [],  # Placeholder
+                "tax_brackets": tax_brackets,
+                "error": "Ogiltig JSON för löner: kontrollera formatet",
+            },
+            status_code=400,
+        )
+
+    # Validate each wage in wage_updates (from previous fix)
+    for person_id_str, new_wage in wage_updates.items():
+        if not (1000 <= int(new_wage) <= 1000000):
+            return templates.TemplateResponse(
+                "admin_settings.html",
+                {
+                    "request": request,
+                    "user": current_user,
+                    "settings": settings,
+                    "persons": [],  # Placeholder
+                    "tax_brackets": tax_brackets,
+                    "error": f"Ogiltig lön för person {person_id_str}: måste vara mellan 1000 och 1000000",
+                },
+                status_code=400,
+            )
+
     # Update settings.json (for default monthly_salary only)
     settings_path = Path("data/settings.json")
     settings_data = json.loads(settings_path.read_text(encoding="utf-8"))
     settings_data["monthly_salary"] = monthly_salary
     write_json_safely(settings_path, settings_data)
-
-    # Parse wage updates from form
-    wage_updates = json.loads(person_wages)
 
     # Update wages in database (single source of truth)
     for person_id_str, new_wage in wage_updates.items():
@@ -92,7 +137,11 @@ async def admin_settings_update(
         if user:
             user.wage = int(new_wage)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     # Clear schedule cache to ensure new wages are used
     clear_schedule_cache()
