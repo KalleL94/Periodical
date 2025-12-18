@@ -67,8 +67,8 @@ def is_safe_redirect(url: str) -> bool:
     if not url:
         return False
     parsed = urlparse(url)
-    # Only allow relative paths (no scheme or netloc)
-    return not parsed.scheme and not parsed.netloc and url.startswith("/")
+    # Only allow relative paths (no scheme or netloc), and prevent scheme-relative URLs
+    return not parsed.scheme and not parsed.netloc and url.startswith("/") and not url.startswith("//")
 
 
 # ============ HTML Routes ============
@@ -249,7 +249,13 @@ async def change_password_submit(
     current_user.password_hash = get_password_hash(new_password)
     was_forced = current_user.must_change_password == 1
     current_user.must_change_password = 0
-    db.commit()
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     clear_schedule_cache()
 
     # Log password change
@@ -286,9 +292,21 @@ async def update_profile(
     db: Session = Depends(get_db),
 ):
     """Update user profile."""
+    # Validate wage range
+    if not (1000 <= wage <= 1000000):
+        return templates.TemplateResponse(
+            "profile.html",
+            {"request": request, "user": current_user, "error": "Ogiltig lön: måste vara mellan 1000 och 1000000"},
+            status_code=400,
+        )
+
     current_user.name = name
     current_user.wage = wage
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return RedirectResponse(url="/profile", status_code=302)
 
@@ -311,8 +329,20 @@ async def change_password(
             status_code=400,
         )
 
+    # Add length validation
+    if len(new_password) < 8:
+        return templates.TemplateResponse(
+            "profile.html",
+            {"request": request, "user": current_user, "error": "Nytt lösenord måste vara minst 8 tecken"},
+            status_code=400,
+        )
+
     current_user.password_hash = get_password_hash(new_password)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return RedirectResponse(url="/profile", status_code=302)
 
@@ -352,6 +382,20 @@ async def update_vacation(
     db: Session = Depends(get_db),
 ):
     """Update vacation weeks for a year."""
+    # Validate year range
+    if not (2020 <= year <= 2100):
+        return templates.TemplateResponse(
+            "vacation.html",
+            {
+                "request": request,
+                "user": current_user,
+                "year": year,
+                "vacation_weeks": current_user.vacation.get(str(year), []) if current_user.vacation else [],
+                "error": "Ogiltigt år: måste vara mellan 2020 och 2100",
+            },
+            status_code=400,
+        )
+
     # Parse weeks from form
     if weeks.strip():
         week_list = [int(w.strip()) for w in weeks.split(",") if w.strip().isdigit()]
@@ -372,7 +416,11 @@ async def update_vacation(
 
     flag_modified(current_user, "vacation")
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     clear_schedule_cache()
 
     return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
@@ -446,7 +494,11 @@ async def admin_create_user(
         must_change_password=1,  # Force password change on first login
     )
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return RedirectResponse(url="/admin/users", status_code=302)
 
@@ -494,10 +546,26 @@ async def admin_update_user(
     edit_user.role = UserRole(role)
 
     if new_password:
+        # Add length validation
+        if len(new_password) < 8:
+            return templates.TemplateResponse(
+                "admin_user_edit.html",
+                {
+                    "request": request,
+                    "user": current_user,
+                    "edit_user": edit_user,
+                    "error": "Nytt lösenord måste vara minst 8 tecken",
+                },
+                status_code=400,
+            )
         edit_user.password_hash = get_password_hash(new_password)
         edit_user.must_change_password = 1  # Force password change when admin sets new password
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return RedirectResponse(url="/admin/users", status_code=302)
 
@@ -518,7 +586,11 @@ async def admin_reset_password(
     default_password = DEFAULT_PASSWORD
     reset_user.password_hash = get_password_hash(default_password)
     reset_user.must_change_password = 1
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     clear_schedule_cache()
 
     # Log password reset

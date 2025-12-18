@@ -20,14 +20,18 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 dagar
 
 # Validate SECRET_KEY in production
+is_production = os.getenv("PRODUCTION", "false").lower() == "true"
 if SECRET_KEY == "your-secret-key-change-this-in-production":
-    import warnings
+    if is_production:
+        raise RuntimeError("SECRET_KEY must be set in production!")
+    else:
+        import warnings
 
-    warnings.warn(
-        "WARNING: Using default SECRET_KEY! Set SECRET_KEY environment variable for production.",
-        RuntimeWarning,
-        stacklevel=2,
-    )
+        warnings.warn(
+            "WARNING: Using default SECRET_KEY! Set SECRET_KEY environment variable for production.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -89,9 +93,7 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
     return user
 
 
-async def get_current_user_from_cookie(
-    request: Request, db: Session = Depends(get_db)
-) -> User | None:
+async def get_current_user_from_cookie(request: Request, db: Session = Depends(get_db)) -> User | None:
     """Extract and validate user from cookie."""
     token = request.cookies.get("access_token")
     if not token:
