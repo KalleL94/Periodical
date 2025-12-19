@@ -52,6 +52,7 @@ tax_brackets = load_tax_brackets()
 ob_rules = load_ob_rules()
 persons = load_persons()
 rotation_start_date = get_rotation_start_date()
+rotation = get_rotation()
 
 # Alias för gamla funktionsnamn
 _cached_special_rules = get_special_rules_for_year
@@ -102,7 +103,7 @@ __all__ = [
     "tax_brackets",
     "ob_rules",
     "persons",
-    "rotation_start_date",
+    "rotationrotation_start_date",
     "_cached_special_rules",
     "_select_ob_rules_for_date",
 ]
