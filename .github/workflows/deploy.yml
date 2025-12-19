@@ -22,7 +22,7 @@ jobs:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          port: 22
+          port: 2222
           script_stop: true
           script: |
             echo "Starting deployment to ${{ secrets.PROD_APP_PATH }}..."
