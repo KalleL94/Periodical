@@ -8,7 +8,10 @@
   --text: #e6eef6;
   --accent: #40a9ff;
   --accent-2: #7bd389;
-  --danger: #ff6b6b;
+  --danger: #ef4444;       /* Uppdaterad från #ff6b6b */
+  --danger-hover: #dc2626; /* Ny variabel */
+  --muted-bg: #4b5563;     /* Ny variabel */
+  --muted-text: #9ca3af;   /* Ny variabel */
   --warning: #ffa500;
   --table-border: rgba(255,255,255,0.06);
   --glass: rgba(255,255,255,0.03);
@@ -99,8 +102,8 @@ a:hover {
 }
 
 .badge-off {
-  background: #4b5563 !important;
-  color: #e5e7eb !important;
+  background: var(--muted-bg);
+  color: var(--muted-text);
 }
 
 /* Secondary button - transparent with border */
@@ -348,10 +351,6 @@ td.num, th.num {
 
 .day-button-row.person-select {
   margin-top: 10px;
-}
-
-.day-button-row nav-btns {
-  margin-top: 4px;
 }
 
 .day-buttons-bar {
@@ -645,7 +644,7 @@ td.num, th.num {
 .ot-form input {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--table-border);
     border-radius: 4px;
 }
 
@@ -654,7 +653,7 @@ td.num, th.num {
 }
 
 .btn-danger {
-    background-color: #dc3545;
+    background-color: var(--danger);
     color: white;
     padding: 0.25rem 0.5rem;
     font-size: 0.875rem;
@@ -664,12 +663,12 @@ td.num, th.num {
 }
 
 .btn-danger:hover {
-    background-color: #c82333;
+    background-color: var(--danger-hover);
 }
 
 .info-text {
     font-size: 0.9em;
-    color: #666;
+    color: var(--muted);
     margin-top: 0.5rem;
     font-style: italic;
 }
@@ -998,7 +997,7 @@ td.num, th.num {
 }
 
 .export-description {
-    color: var(---muted);
+    color: var(--muted);
     font-size: 0.9rem;
     margin-bottom: 1rem;
     line-height: 1.5;
