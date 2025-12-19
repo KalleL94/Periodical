@@ -1,4 +1,4 @@
-# Deployment Guide - Periodical v0.0.20
+# Deployment Guide - Periodical v1.0.0
 
 Guide för att deploya Periodical i produktionsmiljö med HTTPS.
 
@@ -102,7 +102,7 @@ server {
 
     # Statiska filer (optimering)
     location /static {
-        alias /path/to/ICA/v0.0.20/app/static;
+        alias /opt/Periodical/app/static;
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
@@ -196,21 +196,60 @@ Skapa service-fil: `/etc/systemd/system/ica-schedule.service`
 ```ini
 [Unit]
 Description=Periodical FastAPI Application
+Documentation=https://github.com/your-repo/ica-schedule
 After=network.target
 
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/path/to/ICA v0.0.20
-Environment="SECRET_KEY=your-secret-key"
+Group=www-data
+WorkingDirectory=/opt/Periodical
+
+# Environment variables
+Environment="SECRET_KEY=CHANGE_ME_TO_RANDOM_SECRET"
 Environment="PRODUCTION=true"
-ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
+Environment="PYTHONUNBUFFERED=1"
+
+# Load additional env vars from file (optional)
+# EnvironmentFile=/opt/Periodical/.env
+
+# Start command - Använd venv för isolerad miljö
+ExecStart=/opt/Periodical/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+
+# Restart policy
 Restart=always
 RestartSec=10
+StartLimitInterval=0
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/Periodical/app/database
+ReadWritePaths=/opt/Periodical/logs
+
+# Resource limits
+LimitNOFILE=4096
+MemoryMax=512M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ica-schedule
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+**Förklaring av säkerhetsinställningar:**
+- **NoNewPrivileges**: Förhindrar att processen får nya privilegier
+- **PrivateTmp**: Isolerad /tmp-katalog för tjänsten
+- **ProtectSystem=strict**: Hela filsystemet read-only utom specificerade paths
+- **ProtectHome**: Blockerar åtkomst till användares hemkataloger
+- **ReadWritePaths**: Endast databas och logs får skrivrättigheter
+- **MemoryMax**: Begränsar minnesanvändning till 512MB
+- **LimitNOFILE**: Maximalt 4096 öppna filer
 
 **Hantera service:**
 ```bash
@@ -227,6 +266,8 @@ sudo journalctl -u ica-schedule -f  # Logs
 
 Se `deployment/Dockerfile` och `deployment/docker-compose.yml`
 
+**OBS:** Använd filerna i `deployment/`-mappen, inte root Dockerfile.
+
 **Fördelar:**
 - ✅ Konsistent miljö
 - ✅ Enkel deployment
@@ -235,6 +276,7 @@ Se `deployment/Dockerfile` och `deployment/docker-compose.yml`
 
 **Starta:**
 ```bash
+cd deployment
 docker-compose up -d
 ```
 
@@ -250,8 +292,8 @@ sudo apt install supervisor
 Konfig: `/etc/supervisor/conf.d/ica-schedule.conf`
 ```ini
 [program:ica-schedule]
-command=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-directory=/path/to/ICA v0.0.20
+command=/opt/Periodical/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+directory=/opt/Periodical
 user=www-data
 autostart=true
 autorestart=true
@@ -280,7 +322,7 @@ Se `scripts/backup_database.sh`
 # Automatisk SQLite backup
 
 BACKUP_DIR="/path/to/backups"
-DB_PATH="/path/to/ICA v0.0.20/app/database/schedule.db"
+DB_PATH="/opt/Periodical/app/database/schedule.db"
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/schedule_backup_$DATE.db"
 
@@ -408,16 +450,25 @@ Se `docs/CORS.md` för fullständig guide.
 # Uppdatera system
 sudo apt update && sudo apt upgrade -y
 
+# Verifiera Python-version (kräver 3.11 eller senare)
+python3 --version  # Ska visa Python 3.11+ (projektet använder Python 3.12)
+
 # Installera dependencies
-sudo apt install python3 python3-pip nginx certbot python3-certbot-nginx git sqlite3
+sudo apt install python3 python3-pip python3-venv nginx certbot python3-certbot-nginx git sqlite3
 ```
 
 **2. Klona/kopiera applikationen:**
 ```bash
 cd /opt
-sudo git clone /path/to/repo
-cd "ICA v0.0.20"
-sudo pip3 install -r requirements.txt
+sudo git clone /path/to/repo Periodical
+cd Periodical
+
+# Skapa virtual environment (rekommenderat)
+python3 -m venv venv
+source venv/bin/activate
+
+# Installera från pyproject.toml
+pip install .
 ```
 
 **3. Sätt environment variables:**
@@ -524,7 +575,7 @@ sudo nginx -t
 **Lösning:**
 ```bash
 # Verifiera path i nginx config
-ls -la /path/to/ICA/v0.0.20/app/static/
+ls -la /opt/Periodical/app/static/
 ```
 
 ---
@@ -538,7 +589,7 @@ ls -la /path/to/ICA/v0.0.20/app/static/
 
 **Uppdatera applikation:**
 ```bash
-cd /opt/ICA\ v0.0.20
+cd /opt/Periodical
 git pull
 sudo systemctl restart ica-schedule
 ```
