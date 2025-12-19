@@ -2,20 +2,23 @@
 
 import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from icalendar import Calendar, Event
 
 from app.core.schedule.core import (
     calculate_shift_hours,
     determine_shift_for_date,
-    # get_shift_types,
 )
 
 if TYPE_CHECKING:
     from app.core.models import ShiftType
 
+# Tidszon för Sverige
+SWE_TZ = ZoneInfo("Europe/Stockholm")
+
 # Mappning av skiftkoder till svenska namn
-SHIFT_NAMES: dict[str, str] = {
+SHIFT_NAMES_SV: dict[str, str] = {
     "N1": "Dagpass",
     "N2": "Kvällspass",
     "N3": "Nattpass",
@@ -25,9 +28,21 @@ SHIFT_NAMES: dict[str, str] = {
     "OFF": "Ledig",
 }
 
+# Mappning av skiftkoder till engelska namn
+SHIFT_NAMES_EN: dict[str, str] = {
+    "N1": "Day shift",
+    "N2": "Evening shift",
+    "N3": "Night shift",
+    "OC": "On-call",
+    "SEM": "Vacation",
+    "OT": "Overtime",
+    "OFF": "Off day",
+}
 
-def _get_shift_display_name(shift: "ShiftType") -> str:
+
+def _get_shift_display_name(shift: "ShiftType", lang: str = "sv") -> str:
     """Hämtar visningsnamn för ett skift."""
+    SHIFT_NAMES = SHIFT_NAMES_SV if lang == "sv" else SHIFT_NAMES_EN
     return SHIFT_NAMES.get(shift.code, shift.label)
 
 
@@ -35,6 +50,7 @@ def generate_ical(
     person_id: int,
     start_date: datetime.date,
     end_date: datetime.date,
+    lang: str = "sv",
 ) -> str:
     """
     Genererar en iCal-fil för en persons schema.
@@ -67,7 +83,7 @@ def generate_ical(
             continue
 
         # Skapa event för arbetsdagen
-        event = _create_shift_event(current_date, person_id, shift)
+        event = _create_shift_event(current_date, person_id, shift, lang)
         cal.add_component(event)
 
         current_date += datetime.timedelta(days=1)
@@ -79,6 +95,7 @@ def _create_shift_event(
     date: datetime.date,
     person_id: int,
     shift: "ShiftType",
+    lang: str = "sv",
 ) -> Event:
     """
     Skapar ett VEVENT för ett skift.
@@ -94,7 +111,7 @@ def _create_shift_event(
     event = Event()
 
     # Hämta visningsnamn
-    display_name = _get_shift_display_name(shift)
+    display_name = _get_shift_display_name(shift, lang)
     event.add("summary", display_name)
 
     # Generera unik UID
@@ -123,7 +140,7 @@ def _create_shift_event(
     event.add("description", "\n".join(description_parts))
 
     # Tidsstämpel för när eventet skapades
-    event.add("dtstamp", datetime.datetime.now(datetime.utc))
+    event.add("dtstamp", datetime.datetime.now(SWE_TZ))
 
     return event
 
@@ -132,6 +149,7 @@ def generate_ical_for_month(
     person_id: int,
     year: int,
     month: int,
+    lang: str = "sv",
 ) -> str:
     """
     Genererar iCal för en specifik månad.
@@ -150,12 +168,13 @@ def generate_ical_for_month(
     last_day = calendar.monthrange(year, month)[1]
     end_date = datetime.date(year, month, last_day)
 
-    return generate_ical(person_id, start_date, end_date)
+    return generate_ical(person_id, start_date, end_date, lang)
 
 
 def generate_ical_for_year(
     person_id: int,
     year: int,
+    lang: str = "sv",
 ) -> str:
     """
     Genererar iCal för ett helt år.
@@ -170,4 +189,4 @@ def generate_ical_for_year(
     start_date = datetime.date(year, 1, 1)
     end_date = datetime.date(year, 12, 31)
 
-    return generate_ical(person_id, start_date, end_date)
+    return generate_ical(person_id, start_date, end_date, lang)
