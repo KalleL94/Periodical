@@ -7,7 +7,7 @@ After=network.target
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/ICA v0.0.20
+WorkingDirectory=/opt/Periodical
 
 # Environment variables
 Environment="SECRET_KEY=CHANGE_ME_TO_RANDOM_SECRET"
@@ -15,10 +15,10 @@ Environment="PRODUCTION=true"
 Environment="PYTHONUNBUFFERED=1"
 
 # Load additional env vars from file (optional)
-# EnvironmentFile=/opt/ICA v0.0.20/.env
+# EnvironmentFile=/opt/Periodical/.env
 
 # Start command
-ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+ExecStart=/opt/Periodical/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 
 # Restart policy
 Restart=always
@@ -30,8 +30,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/ICA v0.0.20/app/database
-ReadWritePaths=/opt/ICA v0.0.20/logs
+ReadWritePaths=/opt/Periodical/app/database
+ReadWritePaths=/opt/Periodical/logs
 
 # Resource limits
 LimitNOFILE=4096
