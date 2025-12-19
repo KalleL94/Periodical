@@ -204,7 +204,7 @@ td.num, th.num {
 .table-sticky thead th {
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: 5; /* Keeps header row above standard cell content */
   background: var(--panel);
 }
 
@@ -436,9 +436,11 @@ td.num, th.num {
     padding: 4px;
     transition: right 0.3s ease;
     z-index: 99; /* Overlay level: below hamburger (100) but above content */
-    gap: 0 !important;
-    justify-content: flex-start !important;
-    align-items: stretch !important;
+    
+    /* Removed !important - Cascade logic handles this */
+    gap: 0;
+    justify-content: flex-start;
+    align-items: stretch;
   }
 
   /* Show navigation when active */
@@ -449,15 +451,16 @@ td.num, th.num {
   /* Navigation links in mobile menu */
   .main-nav .nav-link {
     width: 100%;
-    padding: 0.5rem 0.75rem !important; /* 8px 12px */
-    margin: 0 !important;
+    /* More specific selector (.main-nav .nav-link) overrides global .nav-link automatically */
+    padding: 0.5rem 0.75rem; 
+    margin: 0;
     display: block;
     font-size: 0.95rem;
     line-height: 1.2;
-    border: none !important;
-    outline: none !important;
+    border: none;
+    outline: none;
     min-height: auto;
-    height: auto !important;
+    height: auto;
   }
 
   /* Navigation rows in mobile menu */
@@ -562,14 +565,15 @@ td.num, th.num {
     flex-direction: column;
   }
 
-  .year-cowork {
+  /* Specificity boost: .year-layout .class > .class */
+  .year-layout .year-cowork {
     order: 2; /* CoWork stats after monthly summary */
-    min-width: 100% !important;
+    min-width: 100%;
   }
 
-  .year-summary {
+  .year-layout .year-summary {
     order: 1; /* Monthly summary first */
-    min-width: 100% !important;
+    min-width: 100%;
   }
 }
 
@@ -616,7 +620,7 @@ td.num, th.num {
 
   /* Override flex behavior for hamburger menu links */
   .main-nav .nav-link {
-    flex: 0 0 auto !important;
+    flex: 0 0 auto;
   }
 
   /* Smaller badges on tiny screens */
