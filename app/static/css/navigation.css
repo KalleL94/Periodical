@@ -1,0 +1,107 @@
+/* ===== navigation.css - Navbar & Menus ===== */
+
+.main-nav { display: flex; flex-direction: column; gap: 0.5rem; }
+.nav-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.nav-personal { padding-left: 0.75rem; border-left: 2px solid var(--accent); font-size: 0.85rem; }
+.nav-divider { border-left: 1px solid var(--table-border); height: 20px; margin: 0 0.5rem; }
+
+.nav-link {
+  color: var(--muted);
+  padding: 6px 0.625rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  border: 1px solid transparent;
+  text-decoration: none;
+}
+.nav-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(255,255,255,0.03);
+}
+
+/* Hamburger menu */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: space-around;
+  width: 30px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 100;
+}
+
+.hamburger span {
+  width: 30px;
+  height: 3px;
+  background: var(--text);
+  border-radius: 3px;
+  transition: all 0.3s ease;
+  transform-origin: center;
+}
+
+.hamburger.active span:nth-child(1) { transform: translateY(10px) rotate(45deg); }
+.hamburger.active span:nth-child(2) { opacity: 0; }
+.hamburger.active span:nth-child(3) { transform: translateY(-11px) rotate(-45deg); }
+
+/* Responsive Navigation */
+@media (max-width: 800px) {
+  .hamburger { display: flex; }
+  .nav-divider { display: none; }
+
+  .main-nav {
+    position: fixed;
+    top: 60px;
+    right: -100%;
+    width: 160px;
+    height: auto;
+    flex-direction: column;
+    background: var(--panel);
+    border-left: 1px solid var(--table-border);
+    padding: 4px;
+    transition: right 0.3s ease;
+    z-index: 99;
+    gap: 0;
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+
+  .main-nav.active { right: 0; }
+
+  .main-nav .nav-link {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    display: block;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    border: none;
+    outline: none;
+    min-height: auto;
+    height: auto;
+    flex: 0 0 auto; /* Override for small screens */
+  }
+
+  .main-nav .nav-row {
+    flex-direction: column;
+    gap: 0;
+    align-items: stretch;
+    width: 100%;
+    border-bottom: 1px solid var(--table-border);
+    padding: 4px 0;
+  }
+
+  .main-nav .nav-personal {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--accent);
+    padding-top: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  nav.row { flex-wrap: wrap; }
+  .nav-link { flex: 1 1 auto; text-align: center; min-width: 80px; }
+}
