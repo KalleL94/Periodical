@@ -305,8 +305,13 @@ Edit `data/persons.json`:
 1. Add function to `app/core/holidays.py` (follow existing patterns)
 2. Call from `build_special_ob_rules_for_year` with appropriate parameters
 
-## Known Gotchas
+## Known Issues & Gotchas
 
+### Open Bugs (GitHub Issues)
+- **#35 N+1 Query Problem:** Dashboard makes too many database calls - needs eager loading
+- **#34 File I/O Error Handling:** Missing try/except in storage.py for JSON file operations
+
+### Technical Gotchas
 - Do not change rotation.weeks keys from strings to integers
 - End time "24:00" requires special handling
 - Person IDs are 1-based but used as array indices minus 1

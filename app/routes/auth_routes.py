@@ -426,6 +426,40 @@ async def update_vacation(
     return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
 
 
+@router.get("/profile/calendar.ics/{lang}", response_class=Response, name="export_calendar")
+async def export_calendar(
+    current_user: User = Depends(get_current_user),
+    lang: str = "sv",
+) -> Response:
+    """
+    Exporterar användarens schema som iCal-fil.
+    Genererar en kalender för de närmaste 6 månaderna.
+    """
+    from datetime import date, timedelta
+
+    from app.core.calendar_export import generate_ical
+
+    # Validera språk
+    if lang not in ["sv", "en"]:
+        raise HTTPException(status_code=400, detail="Ogiltigt språk")
+
+    # Beräkna datumintervall (6 månader framåt)
+    start_date = date.today()
+    end_date = start_date + timedelta(days=180)  # ~6 månader
+
+    # Generera iCal
+    ical_content = generate_ical(person_id=current_user.id, start_date=start_date, end_date=end_date, lang=lang)
+
+    # Returnera som nedladdningsbar fil
+    return Response(
+        content=ical_content,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="schema.ics"',
+        },
+    )
+
+
 # ============ Admin Routes ============
 
 
