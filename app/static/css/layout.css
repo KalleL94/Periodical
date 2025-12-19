@@ -1,0 +1,74 @@
+/* ===== layout.css - Main Structure & Page Layouts ===== */
+
+header {
+  padding: 1.125rem 1.5rem;
+  border-bottom: 1px solid var(--table-border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+}
+
+main {
+  max-width: 1100px;
+  margin: 1.5rem auto;
+  padding: 1.25rem;
+}
+
+footer {
+  margin-top: 1.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 1rem;
+}
+
+/* Page Headers */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+}
+
+.page-header-left, .page-header-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.page-title {
+  margin: 0.625rem 0 1.125rem 0;
+  font-size: 1.25rem;
+}
+
+/* Day View Layout */
+.day-header { margin-top: 0.75rem; margin-bottom: 1.125rem; }
+.day-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.4fr);
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+.day-section h3 { margin-top: 0; margin-bottom: 0.5rem; }
+
+/* Responsive Layout */
+@media (max-width: 900px) {
+  .day-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 800px) {
+  main { padding: 0.75rem; }
+  header .row { justify-content: space-between; align-items: center; }
+  
+  .page-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .page-header-left, .page-header-right { width: 100%; }
+
+  /* Year view reordering */
+  .year-layout { flex-direction: column; }
+  .year-layout .year-cowork { order: 2; min-width: 100%; }
+  .year-layout .year-summary { order: 1; min-width: 100%; }
+}
+
+@media (max-width: 480px) {
+  header { padding: 0.75rem 1rem; }
+  main { padding: 0.5rem; }
+}
