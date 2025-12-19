@@ -17,7 +17,7 @@ Environment="PYTHONUNBUFFERED=1"
 # Load additional env vars from file (optional)
 # EnvironmentFile=/opt/Periodical/.env
 
-# Start command
+# Start command - Använd venv för isolerad miljö
 ExecStart=/opt/Periodical/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 
 # Restart policy

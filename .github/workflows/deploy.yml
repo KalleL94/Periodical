@@ -1,0 +1,84 @@
+name: Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        id: deploy
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            echo "Starting deployment to ${{ secrets.PROD_APP_PATH }}..."
+            
+            # Navigera
+            cd ${{ secrets.PROD_APP_PATH }} || exit 1
+            
+            # Reset & Pull (Hård återställning för att garantera sync)
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Dependencies
+            if [ -f "venv/bin/activate" ]; then
+                source venv/bin/activate
+            fi
+            
+            echo "Installing dependencies..."
+            pip install .
+            
+            # Restart
+            echo "Restarting service..."
+            sudo systemctl restart ica-schedule
+            
+            # Health Check
+            echo "Running health check..."
+            sleep 5
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health)
+            
+            if [ "$HTTP_STATUS" -eq 200 ]; then
+                echo "Deployment Successful! (200 OK)"
+            else
+                echo "Deployment Failed! Status: $HTTP_STATUS"
+                sudo journalctl -u ica-schedule -n 20 --no-pager
+                exit 1
+            fi
+
+      - name: Notify Success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '**Deployment Successful**'
+            })
+
+      - name: Notify Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '**Deployment Failed** - Check Actions logs.'
+            })
