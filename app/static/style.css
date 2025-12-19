@@ -972,17 +972,17 @@ td.num, th.num {
 .calendar-export {
     margin-top: 2rem;
     padding-top: 2rem;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--table-border);
 }
 
 .calendar-export h2 {
     font-size: 1.25rem;
     margin-bottom: 0.75rem;
-    color: var(--color-text);
+    color: var(--text);
 }
 
 .export-description {
-    color: var(--color-text-muted);
+    color: var(---muted);
     font-size: 0.9rem;
     margin-bottom: 1rem;
     line-height: 1.5;
@@ -993,9 +993,9 @@ td.num, th.num {
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 1.5rem;
-    background-color: var(--color-surface);
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
+    background-color: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--table-border);
     border-radius: 0.5rem;
     text-decoration: none;
     font-size: 1rem;
@@ -1005,6 +1005,6 @@ td.num, th.num {
 }
 
 .btn-secondary:hover {
-    background-color: var(--color-border);
-    border-color: var(--color-text-muted);
+    background-color: var(--table-border);
+    border-color: var(--muted);
 }
