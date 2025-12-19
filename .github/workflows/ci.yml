@@ -1,0 +1,38 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Run Tests and Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip" # Detta aktiverar automatisk caching av dependencies
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Installerar projektet + dev-dependencies (pytest, ruff etc) definierade i pyproject.toml
+          pip install ".[dev]"
+
+      - name: Basic Syntax Check
+        run: python -m py_compile app/main.py
+
+      - name: Run Tests
+        env:
+          # Sätter dummy-variabler ifall testerna laddar app-konfigurationen
+          SECRET_KEY: "test_secret_key_for_ci"
+          PRODUCTION: "false"
+        run: |
+          pytest
