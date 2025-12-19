@@ -45,7 +45,7 @@ header {
 }
 
 main {
-  max-width: 1100px;
+  max-width: 1100px; /* Restricts content width for readability on large screens */
   margin: 1.5rem auto; /* 24px */
   padding: 1.25rem; /* 20px */
 }
@@ -281,7 +281,7 @@ td.num, th.num {
   border: none;
   cursor: pointer;
   padding: 0;
-  z-index: 100;
+  z-index: 100; /* Must be > mobile nav (99) to remain clickable */
 }
 
 .hamburger span {
@@ -294,7 +294,7 @@ td.num, th.num {
 }
 
 .hamburger.active span:nth-child(1) {
-  transform: translateY(10px) rotate(45deg);
+  transform: translateY(10px) rotate(45deg); /* 10px = move top bar to center */
 }
 
 .hamburger.active span:nth-child(2) {
@@ -302,7 +302,7 @@ td.num, th.num {
 }
 
 .hamburger.active span:nth-child(3) {
-  transform: translateY(-11px) rotate(-45deg);
+  transform: translateY(-11px) rotate(-45deg); /* -11px = move bottom bar to center (compensating for gap) */
 }
 
 /* ========== Page Headers ========== */
@@ -426,16 +426,16 @@ td.num, th.num {
   /* Hide navigation by default on mobile */
   .main-nav {
     position: fixed;
-    top: 60px;
+    top: 60px; /* Matches header height to sit exactly below it */
     right: -100%;
-    width: 160px;
+    width: 160px; /* Narrow enough for mobile, wide enough for link text */
     height: auto;
     flex-direction: column;
     background: var(--panel);
     border-left: 1px solid var(--table-border);
     padding: 4px;
     transition: right 0.3s ease;
-    z-index: 99;
+    z-index: 99; /* Overlay level: below hamburger (100) but above content */
     gap: 0 !important;
     justify-content: flex-start !important;
     align-items: stretch !important;
@@ -704,7 +704,7 @@ td.num, th.num {
 }
 
 .calendar-grid tbody td {
-    height: 120px;
+    height: 120px; /* Accommodates day number + approx 3 shift badges without overflow */
     vertical-align: top;
     border: 1px solid var(--table-border);
     background: var(--panel);
@@ -787,7 +787,7 @@ td.num, th.num {
 /* Responsive calendar adjustments */
 @media (max-width: 1024px) {
     .calendar-grid tbody td {
-        height: 100px;
+        height: 100px; /* Compressed height for tablet screens */
     }
 
     .calendar-time {
@@ -797,7 +797,7 @@ td.num, th.num {
 
 @media (max-width: 768px) {
     .calendar-grid tbody td {
-        height: 80px;
+        height: 80px; /* Minimal height for mobile, relies on scrolling/popups */
     }
 
     .calendar-day-content {
@@ -840,8 +840,8 @@ td.num, th.num {
 }
 
 .week-grid-single .calendar-day {
-    height: 140px;
-    width: 14.28%; /* 100% / 7 days */
+    height: 140px; /* Taller than month view to allow detailed shift descriptions */
+    width: 14.28%; /* 100% / 7 days = equal width columns */
 }
 
 .calendar-rotation-week {
@@ -859,7 +859,7 @@ td.num, th.num {
 .week-grid-all {
     width: 100%;
     border-collapse: collapse;
-    min-width: 800px;
+    min-width: 800px; /* Forces horizontal scroll on small screens to preserve table layout */
 }
 
 .week-grid-all thead th {
@@ -872,19 +872,19 @@ td.num, th.num {
     border: 1px solid var(--table-border);
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 10; /* Keeps header row above standard cell content */
 }
 
 .week-grid-all .person-header-column {
     position: sticky;
     left: 0;
-    z-index: 20;
-    min-width: 120px;
+    z-index: 20; /* Highest priority: keeps top-left corner visible on both X and Y scroll */
+    min-width: 120px; /* Fixed width to ensure full names are readable */
     background: var(--panel);
 }
 
 .week-grid-all .day-column {
-    min-width: 100px;
+    min-width: 100px; /* Minimum width to prevent shift details from wrapping aggressively */
 }
 
 .week-grid-all .day-column.today-column {
@@ -910,7 +910,7 @@ td.num, th.num {
     text-align: left;
     font-weight: 500;
     border-right: 2px solid var(--table-border);
-    z-index: 10;
+    z-index: 10; /* Keeps name column visible above scrollable content */
 }
 
 .week-grid-all .person-name-cell a {
