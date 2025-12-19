@@ -224,6 +224,11 @@ td.num, th.num {
   background: rgba(64, 169, 255, 0.14);
 }
 
+/* Column Width Utilities */
+.w-sm { min-width: 3.75rem; }  /* 60px */
+.w-md { min-width: 7.5rem; }   /* 120px */
+.w-lg { min-width: 8.75rem; }  /* 140px */
+
 /* ========== Navigation ========== */
 .main-nav {
   display: flex;
