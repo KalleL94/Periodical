@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # 1. Hantera argument (APP_PATH)
 APP_PATH="${1:-.}"
-SERVICE_NAME="periodical"
+SERVICE_NAME="ica-schedule"
 HEALTH_URL="http://127.0.0.1:8000/health"
 
 # Funktion för loggning med timestamp
@@ -63,20 +63,20 @@ fi
 
 # 4. Kör migrationer
 # Letar efter filer som matchar mönstret migrate_*.py
-log "🔄 Letar efter migrations-script..."
-shopt -s nullglob # Gör att loopen inte körs om inga filer hittas
-migrations=(migrate_*.py)
+# log "🔄 Letar efter migrations-script..."
+# shopt -s nullglob # Gör att loopen inte körs om inga filer hittas
+# migrations=(migrate_*.py)
 
-if [ ${#migrations[@]} -gt 0 ]; then
-    for migration in "${migrations[@]}"; do
-        log "   -> Kör migration: $migration"
-        if ! python "$migration"; then
-            error_exit "Migration misslyckades: $migration"
-        fi
-    done
-else
-    log "   -> Inga migrations-filer hittades (migrate_*.py). Hoppar över."
-fi
+# if [ ${#migrations[@]} -gt 0 ]; then
+#     for migration in "${migrations[@]}"; do
+#         log "   -> Kör migration: $migration"
+#         if ! python "$migration"; then
+#             error_exit "Migration misslyckades: $migration"
+#         fi
+#     done
+# else
+#     log "   -> Inga migrations-filer hittades (migrate_*.py). Hoppar över."
+# fi
 
 # 5. Starta om tjänsten
 log "reStartar om systemd-tjänsten ($SERVICE_NAME)..."
