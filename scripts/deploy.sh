@@ -86,8 +86,8 @@ if ! sudo /usr/bin/systemctl restart "$SERVICE_NAME"; then
 fi
 
 # 6. Vänta på uppstart
-log "⏳ Väntar 5 sekunder på att tjänsten ska starta..."
-sleep 5
+log "⏳ Väntar 10 sekunder på att tjänsten ska starta..."
+sleep 10
 
 # 7. Health Check
 log "🏥 Kör health check mot $HEALTH_URL..."
