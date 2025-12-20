@@ -1,45 +1,85 @@
-# 1. Basera på python:3.11-slim
-FROM python:3.11-slim
+# -------------------------------------------------------------------
+# STAGE 1: Base
+# Gemensam grund för alla stages.
+# -------------------------------------------------------------------
+FROM python:3.11-slim AS base
 
-# Sätt miljövariabler för att förhindra .pyc-filer och buffring
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Installera curl för healthcheck (saknas ofta i slim-images)
-# Detta är nödvändigt för att krav 6 ska fungera
+# Installera systemberoenden som behövs överallt (curl för healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Installera dependencies
-# OBS: Du måste generera requirements.txt från din pyproject.toml först.
+# Skapa användare tidigt
+RUN addgroup --system appgroup && adduser --system --group appuser
+
+# -------------------------------------------------------------------
+# STAGE 2: Builder
+# Här installerar vi allt. Denna stage slängs bort i slutändan,
+# så vi kan installera gcc och annat tungt utan att det hamnar i prod.
+# -------------------------------------------------------------------
+FROM base AS builder
+
+# Installera byggverktyg (om du har libs som kräver kompilering)
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential
+
 COPY requirements.txt .
+# Vi installerar i en venv för att enkelt kunna kopiera hela miljön senare
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# 4. Skapa non-root user
-# Vi gör detta innan COPY för att hantera rättigheter smidigare
-RUN addgroup --system appgroup && adduser --system --group appuser
+# -------------------------------------------------------------------
+# STAGE 3: Development
+# Detta är vad du kör lokalt.
+# -------------------------------------------------------------------
+FROM base AS dev
 
-# 3. Kopiera app och data
-COPY app/ ./app
-COPY data/ ./data
+# Kopiera venv från builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Sätt ägarskap till non-root användaren
-RUN chown -R appuser:appgroup /app
+# Skapa directories som appen behöver skriva till
+RUN mkdir -p logs && chown -R appuser:appgroup logs
 
-# Byt till användaren
+# I dev vill vi ofta vara root för att kunna installera debug-verktyg "on the fly",
+# men att köra som appuser är bättre praxis. Vi stannar som appuser här.
 USER appuser
 
-# 5. Exponera port
+# Kopiera koden (men docker-compose volumes kommer oftast överskugga detta i dev)
+COPY --chown=appuser:appgroup . .
+
+# Dev-kommando med reload
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# -------------------------------------------------------------------
+# STAGE 4: Production
+# Denna image blir minimal och säker.
+# -------------------------------------------------------------------
+FROM base AS prod
+
+# Kopiera BARA venv (dependencies) från builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Kopiera koden
+COPY --chown=appuser:appgroup app/ ./app
+COPY --chown=appuser:appgroup data/ ./data
+
+# Skapa directories som appen behöver skriva till
+RUN mkdir -p logs && chown -R appuser:appgroup logs
+
+USER appuser
+
 EXPOSE 8000
 
-# 6. Healthcheck
-# --fail flaggan gör att curl returnerar exit code != 0 om servern ger 400+ error
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
-# 7. Starta med uvicorn
-# Anpassa "app.main:app" till var din FastAPI-instans faktiskt ligger
+# Prod-kommando (utan reload, optimerat)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

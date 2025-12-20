@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    container_name: fastapi_dev
+    ports:
+      - "8001:8000"
+    volumes:
+      # Persistens för data. Mappas till mappen ./data på din värdmaskin.
+      - ./data:/app/data
+      # Hot reload. OBS: Dockerfile kopierar till /app/app, så vi måste mounta exakt dit.
+      # Om du mountar till /app skriver du över requirements.txt och venv, vilket kraschar allt.
+      - ./app:/app/app
+    env_file:
+      - .env
