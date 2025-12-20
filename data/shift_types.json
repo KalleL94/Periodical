@@ -14,6 +14,13 @@
         "color": "#c7c700"
     },
     {
+        "code": "ABS",
+        "label": "Frånvaro",
+        "start_time": null,
+        "end_time": null,
+        "color": "#ef4444"
+    },
+    {
         "code": "OC",
         "label": "Beredskap",
         "start_time": "00:00",
