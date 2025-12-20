@@ -13,6 +13,8 @@ env/
 # Database
 *.db
 *.sqlite3
+*shm
+*wal
 
 # IDE
 .vscode/
@@ -45,6 +47,7 @@ htmlcov/
 # Excluded directories
 AoC/
 backups/
+build/
 testauth/
 alla/
 archive/
