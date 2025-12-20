@@ -25,39 +25,8 @@ jobs:
           port: 2222
           script_stop: true
           script: |
-            echo "Starting deployment to ${{ secrets.PROD_APP_PATH }}..."
-            
-            # Navigera
-            cd ${{ secrets.PROD_APP_PATH }} || exit 1
-            
-            # Reset & Pull (Hård återställning för att garantera sync)
-            git fetch origin main
-            git reset --hard origin/main
-            
-            # Dependencies
-            if [ -f "venv/bin/activate" ]; then
-                source venv/bin/activate
-            fi
-            
-            echo "Installing dependencies..."
-            pip install .
-            
-            # Restart
-            echo "Restarting service..."
-            sudo systemctl restart ica-schedule
-            
-            # Health Check
-            echo "Running health check..."
-            sleep 5
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health)
-            
-            if [ "$HTTP_STATUS" -eq 200 ]; then
-                echo "Deployment Successful! (200 OK)"
-            else
-                echo "Deployment Failed! Status: $HTTP_STATUS"
-                sudo journalctl -u ica-schedule -n 20 --no-pager
-                exit 1
-            fi
+            # Anropa scriptet med rätt sökväg
+            bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }}
 
       - name: Notify Success
         if: success()
