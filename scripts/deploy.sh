@@ -81,7 +81,7 @@ fi
 # 5. Starta om tjänsten
 log "reStartar om systemd-tjänsten ($SERVICE_NAME)..."
 # Detta kräver sudo-rättigheter utan lösenord, vilket du konfigurerat tidigare
-if ! sudo systemctl restart "$SERVICE_NAME"; then
+if ! sudo /usr/bin/systemctl restart "$SERVICE_NAME"; then
     error_exit "Misslyckades att starta om tjänsten. Kontrollera sudo-rättigheter eller systemctl status."
 fi
 
