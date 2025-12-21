@@ -41,7 +41,33 @@ else
     error_exit "Katalogen $APP_PATH existerar inte."
 fi
 
-# 2. Git Pull
+# 2. Backup Database
+DB_PATH="app/database/schedule.db"
+BACKUP_DIR="backups"
+TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+BACKUP_FILE="$BACKUP_DIR/schedule_${TIMESTAMP}.db"
+
+if [ -f "$DB_PATH" ]; then
+    log "💾 Skapar databas-backup..."
+    
+    # Skapa backup-katalog om den inte finns
+    mkdir -p "$BACKUP_DIR"
+    
+    # Kopiera databas
+    if cp "$DB_PATH" "$BACKUP_FILE"; then
+        log "✅ Backup skapad: $BACKUP_FILE"
+        
+        # Behåll endast de 10 senaste backuperna
+        log "🧹 Rensar gamla backups (behåller 10 senaste)..."
+        ls -t "$BACKUP_DIR"/schedule_*.db | tail -n +11 | xargs -r rm
+    else
+        error_exit "Kunde inte skapa databas-backup"
+    fi
+else
+    warn "Databas hittades inte på $DB_PATH - hoppar över backup"
+fi
+
+# 3. Git Pull
 log "📥 Hämtar senaste koden..."
 if ! git pull; then
     error_exit "Git pull misslyckades. Kontrollera nätverk eller konflikter."
@@ -78,18 +104,18 @@ fi
 #     log "   -> Inga migrations-filer hittades (migrate_*.py). Hoppar över."
 # fi
 
-# 5. Starta om tjänsten
-log "reStartar om systemd-tjänsten ($SERVICE_NAME)..."
+# 6. Starta om tjänsten
+log "🔄 Startar om systemd-tjänsten ($SERVICE_NAME)..."
 # Detta kräver sudo-rättigheter utan lösenord, vilket du konfigurerat tidigare
 if ! sudo /usr/bin/systemctl restart "$SERVICE_NAME"; then
     error_exit "Misslyckades att starta om tjänsten. Kontrollera sudo-rättigheter eller systemctl status."
 fi
 
-# 6. Vänta på uppstart
+# 7. Vänta på uppstart
 log "⏳ Väntar 10 sekunder på att tjänsten ska starta..."
 sleep 10
 
-# 7. Health Check
+# 8. Health Check
 log "🏥 Kör health check mot $HEALTH_URL..."
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
 
