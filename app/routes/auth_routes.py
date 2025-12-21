@@ -516,7 +516,7 @@ async def add_absence(
 
     # Redirect back to day view
     return RedirectResponse(
-        url=f"/day/{current_user.id}/{absence_date.year}/{absence_date.month}/{absence_date.day}", status_code=302
+        url=f"/day/{target_user_id}/{absence_date.year}/{absence_date.month}/{absence_date.day}", status_code=302
     )
 
 
