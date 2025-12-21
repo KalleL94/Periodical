@@ -466,6 +466,7 @@ async def export_calendar(
 @router.post("/absence/add", name="add_absence")
 async def add_absence(
     request: Request,
+    user_id: int = Form(...),
     date_str: str = Form(..., alias="date"),
     absence_type: str = Form(...),
     current_user: User = Depends(get_current_user),
@@ -473,6 +474,10 @@ async def add_absence(
 ):
     """Add absence for the current user."""
     from datetime import datetime
+
+    # Permission check
+    if current_user.role != UserRole.ADMIN and user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to add absence for other users")
 
     # Parse date
     try:
@@ -486,8 +491,15 @@ async def add_absence(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Ogiltig frånvarotyp: {absence_type}") from None
 
+    if current_user.role == UserRole.ADMIN:
+        # Admin adding absence for another user
+        target_user_id = user_id
+    else:
+        # Regular user adding absence for self
+        target_user_id = current_user.id
+
     # Check if absence already exists for this date
-    existing = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == absence_date).first()
+    existing = db.query(Absence).filter(Absence.user_id == target_user_id, Absence.date == absence_date).first()
 
     if existing:
         # Update existing absence type
@@ -495,7 +507,7 @@ async def add_absence(
         db.commit()
     else:
         # Create new absence
-        new_absence = Absence(user_id=current_user.id, date=absence_date, absence_type=absence_type_enum)
+        new_absence = Absence(user_id=target_user_id, date=absence_date, absence_type=absence_type_enum)
         db.add(new_absence)
         db.commit()
 

@@ -371,6 +371,7 @@
                 </div>
             {% else %}
                 <form method="POST" action="/absence/add" class="absence-form">
+                    <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
                     
                     <div class="form-row">
