@@ -52,7 +52,7 @@ from app.core.schedule import (
 )
 from app.core.utils import get_navigation_dates, get_safe_today
 from app.core.validators import validate_date_params, validate_person_id
-from app.database.database import OvertimeShift, User, UserRole, get_db
+from app.database.database import Absence, OvertimeShift, User, UserRole, get_db
 
 logger = get_logger(__name__)
 
@@ -482,6 +482,9 @@ async def show_day_for_person(
 
     show_salary = can_see_salary(current_user, person_id)
 
+    # Fetch absence for this person and date
+    absence = db.query(Absence).filter(Absence.user_id == person_id, Absence.date == date_obj).first()
+
     return render_template(
         templates,
         "day.html",
@@ -507,6 +510,7 @@ async def show_day_for_person(
             "show_salary": show_salary,
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
+            "absence": absence,  # Pass absence data to template
             **nav,
         },
         user=current_user,

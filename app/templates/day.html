@@ -282,6 +282,87 @@
             {% endif %}
         </section>
         {% endif %}
+
+        {# Frånvarosection - endast för egen sida när inloggad #}
+        {% if user and user.id == person_id %}
+        <section class="day-section">
+            <h3>Frånvaro</h3>
+            
+            {% if absence %}
+                <div class="absence-display">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Typ</th>
+                                <th>Färg</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    {% if absence.absence_type.value == 'SICK' %}
+                                        Sjuk
+                                    {% elif absence.absence_type.value == 'VAB' %}
+                                        VAB (Vård av barn)
+                                    {% elif absence.absence_type.value == 'LEAVE' %}
+                                        Ledigt
+                                    {% else %}
+                                        {{ absence.absence_type.value }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if absence.absence_type.value == 'SICK' %}
+                                        <span class="badge" style="background: #ef4444; color: white;">Sjuk</span>
+                                    {% elif absence.absence_type.value == 'VAB' %}
+                                        <span class="badge" style="background: #f97316; color: white;">VAB</span>
+                                    {% elif absence.absence_type.value == 'LEAVE' %}
+                                        <span class="badge" style="background: #a855f7; color: white;">Ledigt</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <form method="POST" action="/absence/{{ absence.id }}/delete" style="display: inline;">
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort frånvaro?')">Ta bort</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="info-text">
+                        Frånvaro registrerad. Detta ersätter det schemalagda skiftet för denna dag.
+                    </p>
+                </div>
+            {% else %}
+                <form method="POST" action="/absence/add" class="absence-form">
+                    <input type="hidden" name="date" value="{{ date }}">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="absence_type">Typ av frånvaro:</label>
+                            <select id="absence_type" name="absence_type" required>
+                                <option value="">-- Välj typ --</option>
+                                <option value="SICK">Sjuk</option>
+                                <option value="VAB">VAB (Vård av barn)</option>
+                                <option value="LEAVE">Ledigt</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Lägg till frånvaro</button>
+                </form>
+                
+                <p class="info-text">
+                    Registrera frånvaro för att ersätta det schemalagda skiftet.
+                    <br>
+                    <strong>Sjuk:</strong> Ger sjuklön efter första dagen (röd färg)
+                    <br>
+                    <strong>VAB:</strong> Vård av barn (orange färg)
+                    <br>
+                    <strong>Ledigt:</strong> Permission eller annan ledighet (lila färg)
+                </p>
+            {% endif %}
+        </section>
+        {% endif %}
     </div>
 
 {% endblock %}

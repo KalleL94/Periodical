@@ -34,6 +34,14 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
 
 
+class AbsenceType(str, enum.Enum):
+    """Types of absence with different compensation rules."""
+
+    SICK = "SICK"  # Sjukfrånvaro - ger sjuklön efter dag 1
+    VAB = "VAB"  # Vård av barn - ingen extra ersättning
+    LEAVE = "LEAVE"  # Ledigt/Permission - ingen extra ersättning
+
+
 class User(Base):
     """User model with authentication and schedule data."""
 
@@ -81,20 +89,21 @@ class OvertimeShift(Base):
 
 
 class Absence(Base):
-    """Absence model for tracking any type of absence (sick leave, VAB, etc)."""
+    """Absence model for tracking different types of absence (sick leave, VAB, etc)."""
 
     __tablename__ = "absences"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     date = Column(Date, nullable=False)
+    absence_type = Column(SQLEnum(AbsenceType), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
 
     def __repr__(self):
-        return f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date})>"
+        return f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.absence_type})>"
 
 
 def create_tables():
