@@ -138,6 +138,8 @@ def summarize_month_for_person(
         totals["vab_hours"] = absence_info["vab_hours"]
         totals["leave_days"] = absence_info["leave_days"]
         totals["leave_hours"] = absence_info["leave_hours"]
+        totals["off_days"] = absence_info["off_days"]
+        totals["off_hours"] = absence_info["off_hours"]
         absence_details = absence_info["details"]
 
         # Dra av frånvaroavdrag från bruttolön
@@ -290,11 +292,14 @@ def _build_year_summary(months: list[dict]) -> dict:
     total_vab_hours = sum(m.get("vab_hours", 0.0) for m in months)
     total_leave_days = sum(m.get("leave_days", 0) for m in months)
     total_leave_hours = sum(m.get("leave_hours", 0.0) for m in months)
+    total_off_days = sum(m.get("off_days", 0) for m in months)
+    total_off_hours = sum(m.get("off_hours", 0.0) for m in months)
 
     # Calculate deductions per type from monthly details
     sick_deduction = 0.0
     vab_deduction = 0.0
     leave_deduction = 0.0
+    off_deduction = 0.0
 
     for m in months:
         details = m.get("absence_details", [])
@@ -305,6 +310,8 @@ def _build_year_summary(months: list[dict]) -> dict:
                 vab_deduction += detail["deduction"]
             elif detail["type"] == "LEAVE":
                 leave_deduction += detail["deduction"]
+            elif detail["type"] == "OFF":
+                off_deduction += detail["deduction"]
 
     # OB per kod
     ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
@@ -334,9 +341,12 @@ def _build_year_summary(months: list[dict]) -> dict:
         "total_vab_hours": total_vab_hours,
         "total_leave_days": total_leave_days,
         "total_leave_hours": total_leave_hours,
+        "total_off_days": total_off_days,
+        "total_off_hours": total_off_hours,
         "sick_deduction": sick_deduction,
         "vab_deduction": vab_deduction,
         "leave_deduction": leave_deduction,
+        "off_deduction": off_deduction,
         "avg_netto": total_netto / month_count,
         "avg_brutto": total_brutto / month_count,
         "avg_shifts": total_shifts / month_count,

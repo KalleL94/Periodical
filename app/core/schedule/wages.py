@@ -73,7 +73,7 @@ def calculate_absence_deduction(
 
     Args:
         monthly_wage: Månadslön i SEK
-        absence_type: Typ av frånvaro (SICK, VAB, LEAVE)
+        absence_type: Typ av frånvaro (SICK, VAB, LEAVE, OFF)
         shift_hours: Antal timmar för skiftet (default 8.5)
         is_first_sick_day: Om det är första sjukdagen (karensdag)
 
@@ -84,6 +84,7 @@ def calculate_absence_deduction(
         - SICK: Första dagen (karensdag) = 100% avdrag, därefter 20% avdrag (80% sjuklön från arbetsgivaren)
         - VAB: 100% avdrag (ersättning kommer från Försäkringskassan, inte arbetsgivaren)
         - LEAVE: 100% avdrag (obetald ledighet)
+        - OFF: 0% avdrag (betald ledighet)
     """
     # Beräkna timlön (månadslön / 173.33 timmar per månad enligt svensk standard)
     hourly_wage = monthly_wage / 173.33
@@ -104,6 +105,9 @@ def calculate_absence_deduction(
     elif absence_type == "LEAVE":
         # Obetald ledighet - 100% avdrag
         return shift_wage
+    elif absence_type == "OFF":
+        # Ledig - inget löneavdrag (betald ledighet)
+        return 0.0
     else:
         # Okänd frånvarotyp - inget avdrag
         return 0.0
@@ -185,6 +189,8 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
     vab_hours = 0.0
     leave_days = 0
     leave_hours = 0.0
+    off_days = 0
+    off_hours = 0.0
     details = []
 
     # Håll koll på om vi har haft karensdag för sjukperiod
@@ -213,6 +219,9 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
         elif absence.absence_type == AbsenceType.LEAVE:
             leave_days += 1
             leave_hours += shift_hours
+        elif absence.absence_type == AbsenceType.OFF:
+            off_days += 1
+            off_hours += shift_hours
 
         deduction = calculate_absence_deduction(
             monthly_wage, absence.absence_type.value, shift_hours, is_first_sick_day
@@ -239,5 +248,7 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
         "vab_hours": vab_hours,
         "leave_days": leave_days,
         "leave_hours": leave_hours,
+        "off_days": off_days,
+        "off_hours": off_hours,
         "details": details,
     }
