@@ -306,7 +306,9 @@
                                     {% elif absence.absence_type.value == 'VAB' %}
                                         VAB (Vård av barn)
                                     {% elif absence.absence_type.value == 'LEAVE' %}
-                                        Ledigt
+                                        Ledigt (obetald)
+                                    {% elif absence.absence_type.value == 'OFF' %}
+                                        Ledig (betald)
                                     {% else %}
                                         {{ absence.absence_type.value }}
                                     {% endif %}
@@ -318,6 +320,8 @@
                                         <span class="badge" style="background: #f97316; color: white;">VAB</span>
                                     {% elif absence.absence_type.value == 'LEAVE' %}
                                         <span class="badge" style="background: #a855f7; color: white;">Ledigt</span>
+                                    {% elif absence.absence_type.value == 'OFF' %}
+                                        <span class="badge" style="background: #888888; color: white;">Ledig</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -376,7 +380,8 @@
                                 <option value="">-- Välj typ --</option>
                                 <option value="SICK">Sjuk</option>
                                 <option value="VAB">VAB (Vård av barn)</option>
-                                <option value="LEAVE">Ledigt</option>
+                                <option value="LEAVE">Ledigt (obetald)</option>
+                                <option value="OFF">Ledig (betald)</option>
                             </select>
                         </div>
                     </div>
@@ -391,7 +396,9 @@
                     <br>
                     <strong>VAB:</strong> Vård av barn (orange färg)
                     <br>
-                    <strong>Ledigt:</strong> Permission eller annan ledighet (lila färg)
+                    <strong>Ledigt (obetald):</strong> Permission eller annan ledighet med löneavdrag (lila färg)
+                    <br>
+                    <strong>Ledig (betald):</strong> Ledig dag utan löneavdrag (grå färg)
                 </p>
             {% endif %}
         </section>

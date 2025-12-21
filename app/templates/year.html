@@ -259,17 +259,23 @@
                     <td class="num" data-label="Avdrag" style="color: #f97316;">-{{ "%.0f"|format(year_summary.vab_deduction or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
-                    <td data-label="Typ">Leave (Ledigt)</td>
+                    <td data-label="Typ">Leave (Ledigt obetald)</td>
                     <td class="num" data-label="Dagar">{{ year_summary.total_leave_days or 0 }}</td>
                     <td class="num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_leave_hours or 0) }}</td>
                     <td class="num" data-label="Avdrag" style="color: #a855f7;">-{{ "%.0f"|format(year_summary.leave_deduction or 0) }} kr</td>
+                </tr>
+                <tr class="shift-row">
+                    <td data-label="Typ">OFF (Ledig betald)</td>
+                    <td class="num" data-label="Dagar">{{ year_summary.total_off_days or 0 }}</td>
+                    <td class="num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_off_hours or 0) }}</td>
+                    <td class="num" data-label="Avdrag" style="color: #888888;">{{ "%.0f"|format(year_summary.off_deduction or 0) }} kr</td>
                 </tr>
             </tbody>
             <tfoot>
                 <tr>
                     <td data-label="Typ"><strong>Total</strong></td>
-                    <td class="num" data-label="Dagar"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) }}</strong></td>
-                    <td class="num" data-label="Timmar"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0)) }}</strong></td>
+                    <td class="num" data-label="Dagar"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) }}</strong></td>
+                    <td class="num" data-label="Timmar"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0)) }}</strong></td>
                     <td class="num" data-label="Avdrag" style="color: #ef4444;"><strong>-{{ "%.0f"|format(year_summary.total_absence_deduction or 0) }} kr</strong></td>
                 </tr>
             </tfoot>

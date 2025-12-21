@@ -40,6 +40,7 @@ class AbsenceType(str, enum.Enum):
     SICK = "SICK"  # Sjukfrånvaro - ger sjuklön efter dag 1
     VAB = "VAB"  # Vård av barn - ingen extra ersättning
     LEAVE = "LEAVE"  # Ledigt/Permission - ingen extra ersättning
+    OFF = "OFF"  # Ledig - inget löneavdrag
 
 
 class User(Base):
