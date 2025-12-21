@@ -55,6 +55,12 @@
                         <div class="summary-label">Estimated OT Pay</div>
                         <div class="summary-value">{{ "{:,.0f}".format(week_summary.ot_pay) }} kr</div>
                     </div>
+                    {% if week_summary.absence_deduction and week_summary.absence_deduction > 0 %}
+                    <div class="summary-item">
+                        <div class="summary-label">Absence Deduction</div>
+                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(week_summary.absence_deduction) }} kr</div>
+                    </div>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>
@@ -86,6 +92,12 @@
                         <div class="summary-label">Estimated OT Pay</div>
                         <div class="summary-value">{{ "{:,.0f}".format(month_summary.ot_pay) }} kr</div>
                     </div>
+                    {% if month_summary.absence_deduction and month_summary.absence_deduction > 0 %}
+                    <div class="summary-item">
+                        <div class="summary-label">Absence Deduction</div>
+                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(month_summary.absence_deduction) }} kr</div>
+                    </div>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>
@@ -235,3 +247,4 @@
         }
     </style>
 {% endblock %}
+%}

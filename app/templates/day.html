@@ -328,6 +328,39 @@
                             </tr>
                         </tbody>
                     </table>
+                    
+                    {% if show_salary and absence_deduction > 0 %}
+                    <h3>Löneavdrag</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timmar</th>
+                                <th>Avdrag</th>
+                                <th>Info</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>{{ "%.2f"|format(absence_shift_hours) }} h</td>
+                                <td>{{ "%.2f"|format(absence_deduction) }} kr</td>
+                                <td>
+                                    {% if absence.absence_type.value == 'SICK' %}
+                                        {% if is_karens %}
+                                            <span class="badge" style="background: #dc2626; color: white;">Karensdag (100% avdrag)</span>
+                                        {% else %}
+                                            20% avdrag (80% sjuklön från arbetsgivaren)
+                                        {% endif %}
+                                    {% elif absence.absence_type.value == 'VAB' %}
+                                        100% avdrag (ersättning från Försäkringskassan)
+                                    {% elif absence.absence_type.value == 'LEAVE' %}
+                                        100% avdrag (obetald ledighet)
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    {% endif %}
+                    
                     <p class="info-text">
                         Frånvaro registrerad. Detta ersätter det schemalagda skiftet för denna dag.
                     </p>
