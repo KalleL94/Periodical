@@ -52,7 +52,7 @@ from app.core.schedule import (
 )
 from app.core.utils import get_navigation_dates, get_safe_today
 from app.core.validators import validate_date_params, validate_person_id
-from app.database.database import OvertimeShift, User, UserRole, get_db
+from app.database.database import Absence, OvertimeShift, User, UserRole, get_db
 
 logger = get_logger(__name__)
 
@@ -148,6 +148,7 @@ async def read_root(
         total_pay = 0.0
         oc_pay = 0.0
         ot_pay = 0.0
+        absence_deduction = 0.0
 
         # Get OB rules for the year
         special_rules = _cached_special_rules(safe_today.year)
@@ -157,6 +158,34 @@ async def read_root(
         oncall_rules = _cached_oncall_rules(safe_today.year)
 
         for day in week_data:
+            # Check for absence first
+            absence = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == day["date"]).first()
+
+            if absence and can_see_salary(current_user, current_user.id):
+                from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
+
+                shift_hours = get_shift_hours_for_date(db, current_user.id, day["date"])
+
+                # Check if karensdag
+                five_days_ago = day["date"] - timedelta(days=5)
+                previous_sick = None
+                if absence.absence_type.value == "SICK":
+                    previous_sick = (
+                        db.query(Absence)
+                        .filter(
+                            Absence.user_id == current_user.id,
+                            Absence.date >= five_days_ago,
+                            Absence.date < day["date"],
+                            Absence.absence_type == absence.absence_type,
+                        )
+                        .first()
+                    )
+
+                is_karens = previous_sick is None if absence.absence_type.value == "SICK" else False
+                wage = get_user_wage(db, current_user.id)
+                deduction = calculate_absence_deduction(wage, absence.absence_type.value, shift_hours, is_karens)
+                absence_deduction += deduction
+
             # Check for overtime shift first
             ot_shift = get_overtime_shift_for_date(db, current_user.id, day["date"])
 
@@ -207,6 +236,7 @@ async def read_root(
             "total_pay": total_pay,
             "oc_pay": oc_pay,
             "ot_pay": ot_pay,
+            "absence_deduction": absence_deduction,
         }
 
     # Calculate month summary
@@ -223,9 +253,38 @@ async def read_root(
     month_total_pay = 0.0
     month_oc_pay = 0.0
     month_ot_pay = 0.0
+    month_absence_deduction = 0.0
 
     current_date = current_month_start
     while current_date <= current_month_end:
+        # Check for absence first
+        absence = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == current_date).first()
+
+        if absence and can_see_salary(current_user, current_user.id):
+            from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
+
+            shift_hours = get_shift_hours_for_date(db, current_user.id, current_date)
+
+            # Check if karensdag
+            five_days_ago = current_date - timedelta(days=5)
+            previous_sick = None
+            if absence.absence_type.value == "SICK":
+                previous_sick = (
+                    db.query(Absence)
+                    .filter(
+                        Absence.user_id == current_user.id,
+                        Absence.date >= five_days_ago,
+                        Absence.date < current_date,
+                        Absence.absence_type == absence.absence_type,
+                    )
+                    .first()
+                )
+
+            is_karens = previous_sick is None if absence.absence_type.value == "SICK" else False
+            wage = get_user_wage(db, current_user.id)
+            deduction = calculate_absence_deduction(wage, absence.absence_type.value, shift_hours, is_karens)
+            month_absence_deduction += deduction
+
         # Check for overtime shift first
         ot_shift = get_overtime_shift_for_date(db, current_user.id, current_date)
 
@@ -279,6 +338,7 @@ async def read_root(
         "total_pay": month_total_pay,
         "oc_pay": month_oc_pay,
         "ot_pay": month_ot_pay,
+        "absence_deduction": month_absence_deduction,
         "month_name": safe_today.strftime("%B"),
     }
 
@@ -421,10 +481,8 @@ async def show_day_for_person(
             ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
 
             try:
-                from datetime import datetime as dt
-
-                start_time_obj = dt.strptime(ot_start_full, "%H:%M:%S").time()
-                end_time_obj = dt.strptime(ot_end_full, "%H:%M:%S").time()
+                start_time_obj = datetime.strptime(ot_start_full, "%H:%M:%S").time()
+                end_time_obj = datetime.strptime(ot_end_full, "%H:%M:%S").time()
                 start_dt = datetime.combine(date_obj, start_time_obj)
                 end_dt = datetime.combine(date_obj, end_time_obj)
                 if end_dt <= start_dt:
@@ -482,6 +540,41 @@ async def show_day_for_person(
 
     show_salary = can_see_salary(current_user, person_id)
 
+    # Fetch absence for this person and date
+    absence = db.query(Absence).filter(Absence.user_id == person_id, Absence.date == date_obj).first()
+
+    # Calculate absence deduction if absence exists
+    absence_deduction = 0.0
+    absence_shift_hours = 0.0
+    is_karens = False
+
+    if absence and show_salary:
+        from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
+
+        # Get shift hours for the day
+        absence_shift_hours = get_shift_hours_for_date(db, person_id, date_obj)
+
+        # Check if this is a karensdag (first sick day in a period)
+        if absence.absence_type.value == "SICK":
+            # Check if there was a sick day within the last 5 days
+            five_days_ago = date_obj - timedelta(days=5)
+            previous_sick = (
+                db.query(Absence)
+                .filter(
+                    Absence.user_id == person_id,
+                    Absence.date >= five_days_ago,
+                    Absence.date < date_obj,
+                    Absence.absence_type == absence.absence_type,
+                )
+                .first()
+            )
+            is_karens = previous_sick is None
+
+        # Calculate deduction
+        absence_deduction = calculate_absence_deduction(
+            monthly_salary, absence.absence_type.value, absence_shift_hours, is_karens
+        )
+
     return render_template(
         templates,
         "day.html",
@@ -507,6 +600,10 @@ async def show_day_for_person(
             "show_salary": show_salary,
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
+            "absence": absence,  # Pass absence data to template
+            "absence_deduction": absence_deduction,  # Deduction amount in SEK
+            "absence_shift_hours": absence_shift_hours,  # Hours for the shift
+            "is_karens": is_karens,  # Whether this is a karensdag
             **nav,
         },
         user=current_user,

@@ -28,7 +28,7 @@ from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
 from app.core.sentry_config import add_breadcrumb, clear_user_context, set_user_context
-from app.database.database import User, UserRole, get_db
+from app.database.database import Absence, AbsenceType, User, UserRole, get_db
 
 logger = get_logger(__name__)
 
@@ -457,6 +457,89 @@ async def export_calendar(
         headers={
             "Content-Disposition": 'attachment; filename="schema.ics"',
         },
+    )
+
+
+# ============ Absence Routes ============
+
+
+@router.post("/absence/add", name="add_absence")
+async def add_absence(
+    request: Request,
+    date_str: str = Form(..., alias="date"),
+    absence_type: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Add absence for the current user."""
+    from datetime import datetime
+
+    # Parse date
+    try:
+        absence_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ogiltigt datumformat. Använd YYYY-MM-DD") from None
+
+    # Validate absence type
+    try:
+        absence_type_enum = AbsenceType(absence_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Ogiltig frånvarotyp: {absence_type}") from None
+
+    # Check if absence already exists for this date
+    existing = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == absence_date).first()
+
+    if existing:
+        # Update existing absence type
+        existing.absence_type = absence_type_enum
+        db.commit()
+    else:
+        # Create new absence
+        new_absence = Absence(user_id=current_user.id, date=absence_date, absence_type=absence_type_enum)
+        db.add(new_absence)
+        db.commit()
+
+    # Clear schedule cache to reflect changes
+    clear_schedule_cache()
+
+    # Redirect back to day view
+    return RedirectResponse(
+        url=f"/day/{current_user.id}/{absence_date.year}/{absence_date.month}/{absence_date.day}", status_code=302
+    )
+
+
+@router.post("/absence/{absence_id}/delete", name="delete_absence")
+async def delete_absence(
+    request: Request,
+    absence_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete an absence record."""
+    # Find the absence
+    absence = db.query(Absence).filter(Absence.id == absence_id).first()
+
+    if not absence:
+        raise HTTPException(status_code=404, detail="Frånvaro hittades inte")
+
+    # Check if user owns this absence
+    if absence.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Du kan bara ta bort din egen frånvaro")
+
+    # Store date for redirect
+    absence_date = absence.date
+    absence_user_id = absence.user_id
+
+    # Delete the absence
+    db.delete(absence)
+    db.commit()
+
+    # Clear schedule cache to reflect changes
+    clear_schedule_cache()
+
+    # Redirect back to day view
+    return RedirectResponse(
+        url=f"/day/{absence_user_id}/{absence_date.year}/{absence_date.month}/{absence_date.day}", status_code=302
     )
 
 

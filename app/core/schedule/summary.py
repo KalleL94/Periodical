@@ -5,7 +5,7 @@ from app.core.storage import load_persons, load_tax_brackets
 from .core import get_settings
 from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
 from .period import generate_year_data
-from .wages import get_all_user_wages, get_user_wage
+from .wages import get_absence_deductions_for_month, get_all_user_wages, get_user_wage
 
 _tax_brackets = None
 _persons = None
@@ -107,6 +107,14 @@ def summarize_month_for_person(
         "brutto_pay": base_salary,
         "oncall_pay": 0.0,
         "ot_pay": 0.0,
+        "absence_deduction": 0.0,
+        "absence_hours": 0.0,
+        "sick_days": 0,
+        "sick_hours": 0.0,
+        "vab_days": 0,
+        "vab_hours": 0.0,
+        "leave_days": 0,
+        "leave_hours": 0.0,
     }
 
     days_out = []
@@ -117,6 +125,23 @@ def summarize_month_for_person(
 
         day_data = _process_day_for_summary(day, combined_rules, base_salary, totals)
         days_out.append(day_data)
+
+    # Hämta frånvaroavdrag för månaden
+    absence_details = []
+    if session:
+        absence_info = get_absence_deductions_for_month(session, person_id, year, month, base_salary)
+        totals["absence_deduction"] = absence_info["total_deduction"]
+        totals["absence_hours"] = absence_info["total_hours"]
+        totals["sick_days"] = absence_info["sick_days"]
+        totals["sick_hours"] = absence_info["sick_hours"]
+        totals["vab_days"] = absence_info["vab_days"]
+        totals["vab_hours"] = absence_info["vab_hours"]
+        totals["leave_days"] = absence_info["leave_days"]
+        totals["leave_hours"] = absence_info["leave_hours"]
+        absence_details = absence_info["details"]
+
+        # Dra av frånvaroavdrag från bruttolön
+        totals["brutto_pay"] -= totals["absence_deduction"]
 
     # Beräkna netto
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"])
@@ -132,6 +157,15 @@ def summarize_month_for_person(
         "ob_pay": totals["ob_pay"],
         "oncall_pay": totals["oncall_pay"],
         "ot_pay": totals["ot_pay"],
+        "absence_deduction": totals["absence_deduction"],
+        "absence_hours": totals["absence_hours"],
+        "sick_days": totals["sick_days"],
+        "sick_hours": totals.get("sick_hours", 0.0),
+        "vab_days": totals["vab_days"],
+        "vab_hours": totals.get("vab_hours", 0.0),
+        "leave_days": totals["leave_days"],
+        "leave_hours": totals.get("leave_hours", 0.0),
+        "absence_details": absence_details,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
         "days": days_out,
@@ -248,6 +282,29 @@ def _build_year_summary(months: list[dict]) -> dict:
     total_ob = sum(m.get("total_ob", 0.0) for m in months)
     total_oncall = sum(m.get("oncall_pay", 0.0) for m in months)
     total_ot = sum(m.get("ot_pay", 0.0) for m in months)
+    total_absence_deduction = sum(m.get("absence_deduction", 0.0) for m in months)
+    total_absence_hours = sum(m.get("absence_hours", 0.0) for m in months)
+    total_sick_days = sum(m.get("sick_days", 0) for m in months)
+    total_sick_hours = sum(m.get("sick_hours", 0.0) for m in months)
+    total_vab_days = sum(m.get("vab_days", 0) for m in months)
+    total_vab_hours = sum(m.get("vab_hours", 0.0) for m in months)
+    total_leave_days = sum(m.get("leave_days", 0) for m in months)
+    total_leave_hours = sum(m.get("leave_hours", 0.0) for m in months)
+
+    # Calculate deductions per type from monthly details
+    sick_deduction = 0.0
+    vab_deduction = 0.0
+    leave_deduction = 0.0
+
+    for m in months:
+        details = m.get("absence_details", [])
+        for detail in details:
+            if detail["type"] == "SICK":
+                sick_deduction += detail["deduction"]
+            elif detail["type"] == "VAB":
+                vab_deduction += detail["deduction"]
+            elif detail["type"] == "LEAVE":
+                leave_deduction += detail["deduction"]
 
     # OB per kod
     ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
@@ -269,6 +326,17 @@ def _build_year_summary(months: list[dict]) -> dict:
         "total_ob": total_ob,
         "total_oncall": total_oncall,
         "total_ot": total_ot,
+        "total_absence_deduction": total_absence_deduction,
+        "total_absence_hours": total_absence_hours,
+        "total_sick_days": total_sick_days,
+        "total_sick_hours": total_sick_hours,
+        "total_vab_days": total_vab_days,
+        "total_vab_hours": total_vab_hours,
+        "total_leave_days": total_leave_days,
+        "total_leave_hours": total_leave_hours,
+        "sick_deduction": sick_deduction,
+        "vab_deduction": vab_deduction,
+        "leave_deduction": leave_deduction,
         "avg_netto": total_netto / month_count,
         "avg_brutto": total_brutto / month_count,
         "avg_shifts": total_shifts / month_count,
@@ -276,6 +344,7 @@ def _build_year_summary(months: list[dict]) -> dict:
         "avg_ob": total_ob / month_count,
         "avg_oncall": total_oncall / month_count,
         "avg_ot": total_ot / month_count,
+        "avg_absence_deduction": total_absence_deduction / month_count,
         "ob_hours_by_code": ob_hours_by_code,
         "ob_pay_by_code": ob_pay_by_code,
         "total_ob_hours": sum(ob_hours_by_code.values()),

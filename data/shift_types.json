@@ -14,6 +14,27 @@
         "color": "#c7c700"
     },
     {
+        "code": "SICK",
+        "label": "Sjuk",
+        "start_time": null,
+        "end_time": null,
+        "color": "#ef4444"
+    },
+    {
+        "code": "VAB",
+        "label": "VAB",
+        "start_time": null,
+        "end_time": null,
+        "color": "#f97316"
+    },
+    {
+        "code": "LEAVE",
+        "label": "Ledigt",
+        "start_time": null,
+        "end_time": null,
+        "color": "#a855f7"
+    },
+    {
         "code": "OC",
         "label": "Beredskap",
         "start_time": "00:00",

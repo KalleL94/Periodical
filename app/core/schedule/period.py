@@ -224,6 +224,28 @@ def _build_person_day_basic(
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
 
+    # Kolla frånvaro först (högsta prioritet)
+    if session:
+        from app.database.database import Absence
+
+        absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == date).first()
+
+        if absence:
+            # Hitta rätt shift type för frånvarotypen
+            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+            if absence_shift:
+                result = determine_shift_for_date(date, person_id)
+                _, rotation_week = result if result else (None, None)
+                return {
+                    "person_id": person_id,
+                    "person_name": persons[person_id - 1].name,
+                    "shift": absence_shift,
+                    "rotation_week": rotation_week,
+                    "hours": 0.0,
+                    "start": None,
+                    "end": None,
+                }
+
     # Kolla semester
     if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
         result = determine_shift_for_date(date, person_id)
@@ -285,6 +307,45 @@ def _populate_single_person_day(
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
+
+    # Kolla frånvaro först (högsta prioritet)
+    if session:
+        from app.database.database import Absence
+
+        absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == current_day).first()
+
+        if absence:
+            # Hitta rätt shift type för frånvarotypen
+            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+            if absence_shift:
+                shift = absence_shift
+                rotation_week = None
+                hours, start, end = 0.0, None, None
+                ob = {}
+                oncall_pay = 0.0
+                oncall_details = {}
+                ot_pay = 0.0
+                ot_hours = 0.0
+                ot_details = {}
+
+                day_info.update(
+                    {
+                        "person_id": person_id,
+                        "person_name": persons[person_id - 1].name,
+                        "shift": shift,
+                        "rotation_week": rotation_week,
+                        "hours": hours,
+                        "start": start,
+                        "end": end,
+                        "ob": ob,
+                        "oncall_pay": oncall_pay,
+                        "oncall_details": oncall_details,
+                        "ot_pay": ot_pay,
+                        "ot_hours": ot_hours,
+                        "ot_details": ot_details,
+                    }
+                )
+                return
 
     # Kolla semester
     if vacation_shift and current_day in vacation_dates.get(person_id, set()):
