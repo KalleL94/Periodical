@@ -25,10 +25,31 @@ def _get_persons():
     return _persons
 
 
-def _calculate_tax(brutto: float) -> float:
-    """Beräknar skatt baserat på bruttolön."""
-    from app.core.storage import calculate_tax_bracket
+def _calculate_tax(brutto: float, tax_table: str | None = None) -> float:
+    """
+    Beräknar skatt baserat på bruttolön.
 
+    Args:
+        brutto: Bruttolön i SEK
+        tax_table: Skattetabellnummer (t.ex. "33"). Om None används tax_brackets.json
+
+    Returns:
+        Skattebelopp i SEK
+    """
+    from app.core.storage import calculate_tax_bracket, calculate_tax_from_table
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Om skattetabell är angiven, använd den
+    if tax_table:
+        try:
+            return calculate_tax_from_table(brutto, tax_table)
+        except Exception as e:
+            # Fallback till tax_brackets om något går fel
+            logger.warning(f"Failed to calculate tax from table {tax_table}: {e}. Using fallback.")
+
+    # Fallback till gamla systemet
     return calculate_tax_bracket(brutto, _get_tax_brackets())
 
 
@@ -89,7 +110,7 @@ def summarize_month_for_person(
     settings = get_settings()
     persons = _get_persons()
 
-    # Hämta lön
+    # Hämta lön och skattetabell från användare
     if user_wages and person_id in user_wages:
         base_salary = user_wages[person_id]
     else:
@@ -97,6 +118,23 @@ def summarize_month_for_person(
             base_salary = get_user_wage(session, person_id, settings.monthly_salary)
         except Exception:
             base_salary = settings.monthly_salary
+
+    # Hämta skattetabell från användare
+    tax_table = None
+    if session:
+        from app.database.database import User
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        user = session.query(User).filter(User.id == person_id).first()
+        logger.info(f"Looking up tax_table for person_id={person_id}, user found: {user is not None}")
+        if user:
+            logger.info(f"User {user.username} has tax_table: {user.tax_table}")
+            if user.tax_table:
+                tax_table = user.tax_table
+        else:
+            logger.warning(f"No user found in database for person_id={person_id}")
 
     # Initiera totaler
     totals = {
@@ -145,8 +183,8 @@ def summarize_month_for_person(
         # Dra av frånvaroavdrag från bruttolön
         totals["brutto_pay"] -= totals["absence_deduction"]
 
-    # Beräkna netto
-    netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"])
+    # Beräkna netto med användarens skattetabell
+    netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table)
 
     return {
         "year": year,

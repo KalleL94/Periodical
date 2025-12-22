@@ -274,11 +274,16 @@ async def change_password_submit(
 @router.get("/profile", response_class=HTMLResponse, name="profile")
 async def profile_page(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Show user profile page."""
+    from app.core.storage import get_available_tax_tables
+
+    available_tax_tables = get_available_tax_tables()
+
     return templates.TemplateResponse(
         "profile.html",
         {
             "request": request,
             "user": current_user,
+            "available_tax_tables": available_tax_tables,
         },
     )
 
@@ -288,25 +293,51 @@ async def update_profile(
     request: Request,
     name: str = Form(...),
     wage: int = Form(...),
+    tax_table: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Update user profile."""
+    from app.core.storage import get_available_tax_tables
+
     # Validate wage range
     if not (1000 <= wage <= 1000000):
+        available_tax_tables = get_available_tax_tables()
         return templates.TemplateResponse(
             "profile.html",
-            {"request": request, "user": current_user, "error": "Ogiltig lön: måste vara mellan 1000 och 1000000"},
+            {
+                "request": request,
+                "user": current_user,
+                "available_tax_tables": available_tax_tables,
+                "error": "Ogiltig lön: måste vara mellan 1000 och 1000000",
+            },
+            status_code=400,
+        )
+
+    # Validate tax table
+    available_tax_tables = get_available_tax_tables()
+    if tax_table not in available_tax_tables:
+        return templates.TemplateResponse(
+            "profile.html",
+            {
+                "request": request,
+                "user": current_user,
+                "available_tax_tables": available_tax_tables,
+                "error": f"Ogiltig skattetabell: {tax_table}",
+            },
             status_code=400,
         )
 
     current_user.name = name
     current_user.wage = wage
+    current_user.tax_table = tax_table
     try:
         db.commit()
     except Exception:
         db.rollback()
         raise
+
+    clear_schedule_cache()
 
     return RedirectResponse(url="/profile", status_code=302)
 
@@ -640,9 +671,13 @@ async def admin_edit_user_page(
     db: Session = Depends(get_db),
 ):
     """Admin: show edit user form."""
+    from app.core.storage import get_available_tax_tables
+
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    available_tax_tables = get_available_tax_tables()
 
     return templates.TemplateResponse(
         "admin_user_edit.html",
@@ -650,6 +685,7 @@ async def admin_edit_user_page(
             "request": request,
             "user": current_user,
             "edit_user": edit_user,
+            "available_tax_tables": available_tax_tables,
         },
     )
 

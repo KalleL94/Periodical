@@ -55,6 +55,7 @@ class User(Base):
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
     wage = Column(Integer, nullable=False)
     vacation = Column(JSON, default=dict)  # {"2026": [1,2,3], "2027": []}
+    tax_table = Column(String(10), default="33", nullable=True)  # Swedish tax table number (e.g., "29", "30", "33")
     must_change_password = Column(
         Integer, default=1, nullable=False
     )  # 1=True, 0=False (SQLite uses integers for booleans)

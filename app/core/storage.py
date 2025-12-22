@@ -197,3 +197,145 @@ def load_persons() -> list[Person]:
         logger.exception("Failed to parse persons from %s", file_path)
         raise StorageError(f"Could not parse persons from {file_path}: {e}") from e
     return persons
+
+
+# Cache for tax table data
+_tax_table_cache = None
+
+
+def load_tax_table() -> dict[str, list[dict]]:
+    """
+    Load Swedish tax table from CSV file.
+
+    Returns:
+        Dict with table numbers as keys, each containing list of income brackets:
+        {
+            "29": [{"from": 1, "to": 2000, "tax": 0}, ...],
+            "30": [...],
+            ...
+        }
+
+    Raises:
+        StorageError: If file cannot be loaded or parsed
+    """
+    global _tax_table_cache
+
+    if _tax_table_cache is not None:
+        return _tax_table_cache
+
+    file_path = Path("data/skattetabell.csv")
+
+    if not file_path.exists():
+        logger.error("Tax table file not found at %s", file_path)
+        raise StorageError(f"Tax table file not found: {file_path}")
+
+    try:
+        import csv
+
+        tax_tables = {}
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            # Skip BOM if present
+            content = f.read()
+            if content.startswith("\ufeff"):
+                content = content[1:]
+
+            lines = content.splitlines()
+            reader = csv.DictReader(lines, delimiter=";")
+
+            for row in reader:
+                # Extract relevant fields
+                table_nr = row.get("Tabellnr", "").strip()
+                income_from = row.get("Inkomst fr.o.m.", "").strip()
+                income_to = row.get("Inkomst t.o.m.", "").strip()
+                tax_col1 = row.get("Kolumn 1", "").strip()
+
+                # Skip invalid rows
+                if not table_nr or not income_from or not tax_col1:
+                    continue
+
+                # Parse values
+                try:
+                    income_from_val = int(income_from)
+                    income_to_val = int(income_to) if income_to else None
+                    tax_val = int(tax_col1)
+                except (ValueError, TypeError):
+                    continue
+
+                # Initialize table if not exists
+                if table_nr not in tax_tables:
+                    tax_tables[table_nr] = []
+
+                # Add bracket
+                tax_tables[table_nr].append({"from": income_from_val, "to": income_to_val, "tax": tax_val})
+
+        # Sort each table by income_from
+        for table_nr in tax_tables:
+            tax_tables[table_nr].sort(key=lambda x: x["from"])
+
+        _tax_table_cache = tax_tables
+        logger.info("Loaded tax tables for %d table numbers", len(tax_tables))
+        return tax_tables
+
+    except Exception as e:
+        logger.exception("Failed to load tax table from %s", file_path)
+        raise StorageError(f"Could not load tax table from {file_path}: {e}") from e
+
+
+def calculate_tax_from_table(income: float, table_number: str) -> float:
+    """
+    Calculate tax amount from Swedish tax table.
+
+    Args:
+        income: Monthly gross income in SEK
+        table_number: Tax table number (e.g., "29", "30", "33")
+
+    Returns:
+        Tax amount in SEK
+
+    Raises:
+        StorageError: If tax table cannot be loaded
+        ValueError: If table number is invalid
+    """
+    if income <= 0:
+        return 0.0
+
+    tax_tables = load_tax_table()
+
+    if table_number not in tax_tables:
+        available = ", ".join(sorted(tax_tables.keys()))
+        raise ValueError(f"Invalid tax table number '{table_number}'. Available: {available}")
+
+    brackets = tax_tables[table_number]
+
+    # Find matching bracket
+    for bracket in brackets:
+        if bracket["to"] is None:
+            # Last bracket (no upper limit)
+            if income >= bracket["from"]:
+                return float(bracket["tax"])
+        else:
+            # Normal bracket
+            if bracket["from"] <= income <= bracket["to"]:
+                return float(bracket["tax"])
+
+    # If income is below first bracket, return 0
+    if income < brackets[0]["from"]:
+        return 0.0
+
+    # If income is above all brackets, use the last bracket's tax
+    return float(brackets[-1]["tax"])
+
+
+def get_available_tax_tables() -> list[str]:
+    """
+    Get list of available tax table numbers.
+
+    Returns:
+        Sorted list of table numbers (e.g., ["29", "30", "31", "32", "33"])
+
+    Raises:
+        StorageError: If tax table cannot be loaded
+    """
+    tax_tables = load_tax_table()
+    return sorted(tax_tables.keys())
