@@ -21,6 +21,7 @@ from app.core.helpers import (
 from app.core.logging_config import get_logger
 from app.core.oncall import (
     _cached_oncall_rules,
+    _get_storhelg_dates_for_year,
     calculate_oncall_pay,
     calculate_oncall_pay_for_period,
 )
@@ -540,6 +541,10 @@ async def show_day_for_person(
 
     show_salary = can_see_salary(current_user, person_id)
 
+    # Check if this date is a storhelg (major holiday)
+    storhelg_dates = _get_storhelg_dates_for_year(year)
+    is_storhelg = date_obj in storhelg_dates
+
     # Fetch absence for this person and date
     absence = db.query(Absence).filter(Absence.user_id == person_id, Absence.date == date_obj).first()
 
@@ -598,6 +603,7 @@ async def show_day_for_person(
             "iso_year": iso_year,
             "iso_week": iso_week,
             "show_salary": show_salary,
+            "is_storhelg": is_storhelg,  # Whether this date is a major holiday
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
             "absence": absence,  # Pass absence data to template
