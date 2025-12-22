@@ -13,6 +13,11 @@
                class="btn btn-primary">
                 Back to week
             </a>
+            <input type="date"
+                   id="date-picker"
+                   class="date-picker-input"
+                   value="{{ date }}"
+                   onchange="window.location.href='/day/{{ person_id }}/' + this.value.replace(/-/g, '/')">
             <a href="/day/{{ person_id }}/{{ next_year }}/{{ next_month }}/{{ next_day }}"
                class="btn btn-primary">
                 Next day

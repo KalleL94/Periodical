@@ -40,6 +40,28 @@ button, .btn {
   cursor: pointer;
 }
 
+/* Date Picker */
+.date-picker-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--table-border);
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--text);
+  transition: all 0.2s ease;
+}
+
+.date-picker-input:hover {
+  border-color: var(--accent);
+}
+
+.date-picker-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
 button.secondary, .btn.secondary, .btn-secondary {
   display: inline-flex;
   align-items: center;
