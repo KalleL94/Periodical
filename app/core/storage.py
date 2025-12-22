@@ -234,7 +234,7 @@ def load_tax_table() -> dict[str, list[dict]]:
 
         tax_tables = {}
 
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             # Skip BOM if present
             content = f.read()
             if content.startswith("\ufeff"):

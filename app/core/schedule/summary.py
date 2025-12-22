@@ -36,8 +36,9 @@ def _calculate_tax(brutto: float, tax_table: str | None = None) -> float:
     Returns:
         Skattebelopp i SEK
     """
-    from app.core.storage import calculate_tax_bracket, calculate_tax_from_table
     import logging
+
+    from app.core.storage import calculate_tax_bracket, calculate_tax_from_table
 
     logger = logging.getLogger(__name__)
 

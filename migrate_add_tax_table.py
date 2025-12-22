@@ -34,14 +34,14 @@ def migrate():
         # Add tax_table column with default value "33"
         print("Adding tax_table column to users table...")
         cursor.execute("""
-            ALTER TABLE users 
+            ALTER TABLE users
             ADD COLUMN tax_table VARCHAR(10) DEFAULT '33'
         """)
 
         # Update existing users to have tax_table = "33"
         cursor.execute("""
-            UPDATE users 
-            SET tax_table = '33' 
+            UPDATE users
+            SET tax_table = '33'
             WHERE tax_table IS NULL
         """)
 
