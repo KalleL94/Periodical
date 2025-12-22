@@ -60,7 +60,8 @@
                 <th>Night (OB2)</th>
                 <th>Weekend (OB3+OB4)</th>
                 <th>Holiday (OB5)</th>
-                <th>On-call</th>
+                <th>On-call hours</th>
+                <th>On-call pay</th>
                 <th>OT pay</th>
             </tr>
         </thead>
@@ -82,7 +83,8 @@
                 <td data-label="OB2 Natt">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
                 <td data-label="OB3+4 Helg">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
                 <td data-label="OB5 Storhelg">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
-                <td data-label="On-call">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
+                <td data-label="On-call hours">{{ "%.2f"|format(days.oncall_hours or 0) }}</td>
+                <td data-label="On-call pay">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
                 <td data-label="OT pay">{{ "%.2f"|format(days.ot_pay or 0) }} kr</td>
                 {% endif %}
             </tr>
