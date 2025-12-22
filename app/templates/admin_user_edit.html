@@ -42,6 +42,16 @@
             </div>
             
             <div style="margin-bottom: 16px;">
+                <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">Skattetabell</label>
+                <select id="tax_table" name="tax_table" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);">
+                    {% for table in available_tax_tables %}
+                    <option value="{{ table }}" {% if edit_user.tax_table == table %}selected{% endif %}>Tabell {{ table }}</option>
+                    {% endfor %}
+                </select>
+                <small style="color: var(--muted);">Skattetabell enligt Skatteverket</small>
+            </div>
+            
+            <div style="margin-bottom: 16px;">
                 <label for="role" style="display: block; margin-bottom: 6px; color: var(--muted);">Roll</label>
                 <select id="role" name="role" style="width: 100%; box-sizing: border-box;">
                     <option value="user" {% if edit_user.role.value == 'user' %}selected{% endif %}>User</option>
