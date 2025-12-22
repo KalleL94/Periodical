@@ -97,7 +97,19 @@
     {# Get first day of month and calculate its weekday (0=Monday, 6=Sunday) #}
     {% set first_day = days.days[0].date.replace(day=1) %}
     {% set first_weekday = first_day.weekday() %}
-    {% set num_days = days.days|length %}
+    {# Calculate actual number of days in the month #}
+    {% if month in [1, 3, 5, 7, 8, 10, 12] %}
+        {% set num_days = 31 %}
+    {% elif month in [4, 6, 9, 11] %}
+        {% set num_days = 30 %}
+    {% elif month == 2 %}
+        {# Check for leap year #}
+        {% if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) %}
+            {% set num_days = 29 %}
+        {% else %}
+            {% set num_days = 28 %}
+        {% endif %}
+    {% endif %}
 
     {# Calculate total cells needed (weeks * 7) #}
     {% set total_cells = ((first_weekday + num_days + 6) // 7) * 7 %}
