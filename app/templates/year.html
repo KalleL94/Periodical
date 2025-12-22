@@ -68,16 +68,19 @@
             <thead>
                 <tr>
                     <th>Type</th>
+                    <th>Hours</th>
                     <th>Amount (SEK)</th>
                 </tr>
             </thead>
             <tbody>
                 <tr class="shift-row">
-                    <td data-label="Typ">Total on-call pay</td>
+                    <td data-label="Typ">Total on-call</td>
+                    <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_oncall_hours or 0) }}</td>
                     <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.total_oncall or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
-                    <td data-label="Typ">Average on-call pay/month</td>
+                    <td data-label="Typ">Average on-call/month</td>
+                    <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.avg_oncall_hours or 0) }}</td>
                     <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.avg_oncall or 0) }} kr</td>
                 </tr>
             </tbody>

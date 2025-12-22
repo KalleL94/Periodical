@@ -123,8 +123,9 @@ def summarize_month_for_person(
     # Hämta skattetabell från användare
     tax_table = None
     if session:
-        from app.database.database import User
         import logging
+
+        from app.database.database import User
 
         logger = logging.getLogger(__name__)
 
@@ -145,6 +146,7 @@ def summarize_month_for_person(
         "ob_pay": {},
         "brutto_pay": base_salary,
         "oncall_pay": 0.0,
+        "oncall_hours": 0.0,
         "ot_pay": 0.0,
         "absence_deduction": 0.0,
         "absence_hours": 0.0,
@@ -197,6 +199,7 @@ def summarize_month_for_person(
         "ob_hours": totals["ob_hours"],
         "ob_pay": totals["ob_pay"],
         "oncall_pay": totals["oncall_pay"],
+        "oncall_hours": totals["oncall_hours"],
         "ot_pay": totals["ot_pay"],
         "absence_deduction": totals["absence_deduction"],
         "absence_hours": totals["absence_hours"],
@@ -233,10 +236,11 @@ def _process_day_for_summary(
         ob_hours = {r.code: 0.0 for r in combined_rules}
         ob_pay = {r.code: 0.0 for r in combined_rules}
 
-    # Uppdatera totaler
-    totals["total_hours"] += hours
+    # Uppdatera totaler (exkludera OC från shifts och hours)
+    if shift and shift.code != "OC":
+        totals["total_hours"] += hours
 
-    if shift and shift.code != "OFF":
+    if shift and shift.code not in ("OFF", "OC"):
         totals["num_shifts"] += 1
 
     for code, h in ob_hours.items():
@@ -248,10 +252,13 @@ def _process_day_for_summary(
 
     # Lägg till jour och övertid
     oncall_pay = day.get("oncall_pay", 0.0)
+    oncall_details = day.get("oncall_details", {})
+    oncall_hours = oncall_details.get("total_hours", 0.0) if oncall_details else 0.0
     ot_pay = day.get("ot_pay", 0.0)
 
     totals["brutto_pay"] += oncall_pay + ot_pay
     totals["oncall_pay"] += oncall_pay
+    totals["oncall_hours"] += oncall_hours
     totals["ot_pay"] += ot_pay
 
     return {
@@ -322,6 +329,7 @@ def _build_year_summary(months: list[dict]) -> dict:
     total_hours = sum(m.get("total_hours", 0.0) for m in months)
     total_ob = sum(m.get("total_ob", 0.0) for m in months)
     total_oncall = sum(m.get("oncall_pay", 0.0) for m in months)
+    total_oncall_hours = sum(m.get("oncall_hours", 0.0) for m in months)
     total_ot = sum(m.get("ot_pay", 0.0) for m in months)
     total_absence_deduction = sum(m.get("absence_deduction", 0.0) for m in months)
     total_absence_hours = sum(m.get("absence_hours", 0.0) for m in months)
@@ -371,6 +379,7 @@ def _build_year_summary(months: list[dict]) -> dict:
         "total_hours": total_hours,
         "total_ob": total_ob,
         "total_oncall": total_oncall,
+        "total_oncall_hours": total_oncall_hours,
         "total_ot": total_ot,
         "total_absence_deduction": total_absence_deduction,
         "total_absence_hours": total_absence_hours,
@@ -392,6 +401,7 @@ def _build_year_summary(months: list[dict]) -> dict:
         "avg_hours": total_hours / month_count,
         "avg_ob": total_ob / month_count,
         "avg_oncall": total_oncall / month_count,
+        "avg_oncall_hours": total_oncall_hours / month_count,
         "avg_ot": total_ot / month_count,
         "avg_absence_deduction": total_absence_deduction / month_count,
         "ob_hours_by_code": ob_hours_by_code,

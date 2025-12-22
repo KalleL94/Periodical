@@ -60,7 +60,8 @@
                 <th>Night (OB2)</th>
                 <th>Weekend (OB3+OB4)</th>
                 <th>Holiday (OB5)</th>
-                <th>On-call</th>
+                <th>On-call hours</th>
+                <th>On-call pay</th>
                 <th>OT pay</th>
             </tr>
         </thead>
@@ -82,7 +83,8 @@
                 <td data-label="OB2 Natt">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
                 <td data-label="OB3+4 Helg">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
                 <td data-label="OB5 Storhelg">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
-                <td data-label="On-call">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
+                <td data-label="On-call hours">{{ "%.2f"|format(days.oncall_hours or 0) }}</td>
+                <td data-label="On-call pay">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
                 <td data-label="OT pay">{{ "%.2f"|format(days.ot_pay or 0) }} kr</td>
                 {% endif %}
             </tr>
@@ -95,7 +97,19 @@
     {# Get first day of month and calculate its weekday (0=Monday, 6=Sunday) #}
     {% set first_day = days.days[0].date.replace(day=1) %}
     {% set first_weekday = first_day.weekday() %}
-    {% set num_days = days.days|length %}
+    {# Calculate actual number of days in the month #}
+    {% if month in [1, 3, 5, 7, 8, 10, 12] %}
+        {% set num_days = 31 %}
+    {% elif month in [4, 6, 9, 11] %}
+        {% set num_days = 30 %}
+    {% elif month == 2 %}
+        {# Check for leap year #}
+        {% if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) %}
+            {% set num_days = 29 %}
+        {% else %}
+            {% set num_days = 28 %}
+        {% endif %}
+    {% endif %}
 
     {# Calculate total cells needed (weeks * 7) #}
     {% set total_cells = ((first_weekday + num_days + 6) // 7) * 7 %}
