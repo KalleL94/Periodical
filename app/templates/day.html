@@ -40,7 +40,7 @@
     <div class="day-header">
         <h2>
             {{ weekday_name }} {{ date }} - {{ person_name }} ({{ person_id }})
-            {% if show_salary and ob_hours.get("OB5", 0) > 0 %}
+            {% if show_salary and is_storhelg %}
                 <span class="badge-ob5">Storhelg</span>
             {% endif %}
         </h2>
