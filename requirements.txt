@@ -93,7 +93,7 @@ tzdata==2025.3
     # via icalendar
 urllib3==2.6.2
     # via sentry-sdk
-uvicorn[standard]==0.38.0
+uvicorn[standard]==0.40.0
     # via periodical (pyproject.toml)
 uvloop==0.22.1
     # via uvicorn
