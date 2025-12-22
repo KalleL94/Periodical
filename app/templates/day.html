@@ -13,15 +13,15 @@
                class="btn btn-primary">
                 Back to week
             </a>
+            <a href="/day/{{ person_id }}/{{ next_year }}/{{ next_month }}/{{ next_day }}"
+               class="btn btn-primary">
+                Next day
+            </a>
             <input type="date"
                    id="date-picker"
                    class="date-picker-input"
                    value="{{ date }}"
                    onchange="window.location.href='/day/{{ person_id }}/' + this.value.replace(/-/g, '/')">
-            <a href="/day/{{ person_id }}/{{ next_year }}/{{ next_month }}/{{ next_day }}"
-               class="btn btn-primary">
-                Next day
-            </a>
         </div>
 
         <div class="day-buttons-right">
@@ -46,6 +46,7 @@
         </h2>
     </div>
 
+    <!-- Shift -->
     <div class="day-layout">
         <section class="day-section">
             <h3>Shift</h3>
@@ -91,134 +92,7 @@
                     </tr>
                 </tbody>
             </table>
-        </section>
-
-        {% if show_salary %}
-        {% if original_shift and original_shift.code == 'OC' %}
-        {# On-call compensation section - only for OC shifts (check original_shift to handle OT replacement) #}
-        <section class="day-section">
-            <h3>Oncall pay</h3>
-            {% set oncall = oncall_details %}
-            {% if oncall and oncall.breakdown %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Hours</th>
-                            <th>Pay</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for code, details in oncall.breakdown.items() %}
-                        <tr>
-                            <td>{{ details.label }}</td>
-                            <td>{{ "%.2f"|format(details.hours) }}</td>
-                            <td>{{ "%.2f"|format(details.pay) }} kr</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>Total</th>
-                            <th>{{ "%.2f"|format(oncall.total_hours) }}</th>
-                            <th>{{ "%.2f"|format(oncall_pay) }} kr</th>
-                        </tr>
-                    </tfoot>
-                </table>
-            {% else %}
-                <p>No on-call compensation details available.</p>
-            {% endif %}
-        </section>
-        {% else %}
-        {# Regular OB section for non-OC shifts #}
-        <section class="day-section">
-            <h3>OB hours</h3>
-            {% if ob_codes %}
-                {% set total_ob_hours = ob_hours.values() | sum %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>OB code</th>
-                            <th>Hours</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for code in ob_codes %}
-                            <tr>
-                                <td>{{ code }}</td>
-                                <td>{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>Total OB hours</th>
-                            <th>{{ "%.2f"|format(total_ob_hours) }}</th>
-                        </tr>
-                    </tfoot>
-                </table>
-            {% else %}
-                <p>No OB hours this day.</p>
-            {% endif %}
-
-            <h3>OB pay</h3>
-            {% if ob_codes %}
-                {% set total_ob_pay = ob_pay.values() | sum %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>OB code</th>
-                            <th>Amount (SEK)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for code in ob_codes %}
-                            <tr>
-                                <td>{{ code }}</td>
-                                <td>{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>Total OB pay</th>
-                            <th>{{ "%.2f"|format(total_ob_pay) }}</th>
-                        </tr>
-                    </tfoot>
-                </table>
-            {% else %}
-                <p>No OB compensation this day.</p>
-            {% endif %}
-
-            <h3>Active OB rules</h3>
-            {% if active_special_rules and active_special_rules|length > 0 %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Code</th>
-                            <th>Label</th>
-                            <th>Time</th>
-                            <th>Rate</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for rule in active_special_rules %}
-                            <tr>
-                                <td>{{ rule.code }}</td>
-                                <td>{{ rule.label }}</td>
-                                <td>{{ rule.start_time }} to {{ rule.end_time }}</td>
-                                <td>{{ rule.rate }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <p>No special OB rules active this day.</p>
-            {% endif %}
-        </section>
-        {% endif %}
-
-        <section class="day-section">
+                <!-- <section class="day-section"> -->
             <h3>Övertidspass (OT)</h3>
 
             {% if ot_shift %}
@@ -285,12 +159,11 @@
                     Övertidslön beräknas som månadslön / 72 per timme.
                 </p>
             {% endif %}
-        </section>
-        {% endif %}
+        <!-- </section> -->
 
         {# Frånvarosection - endast för egen sida när inloggad #}
         {% if user and user.id == person_id or user.id == 0 %}
-        <section class="day-section">
+        <!-- <section class="day-section"> -->
             <h3>Frånvaro</h3>
             
             {% if absence %}
@@ -407,8 +280,135 @@
                     <strong>Ledig (betald):</strong> Ledig dag utan löneavdrag (grå färg)
                 </p>
             {% endif %}
+        <!-- </section> -->
+        {% endif %}
+        </section>
+
+        {% if show_salary %}
+            <section class="day-section">
+            {% if original_shift and original_shift.code == 'OC' %}
+            {# On-call compensation section - only for OC shifts (check original_shift to handle OT replacement) #}
+                <h3>Oncall pay</h3>
+                {% set oncall = oncall_details %}
+                {% if oncall and oncall.breakdown %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Hours</th>
+                                <th>Pay</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for code, details in oncall.breakdown.items() %}
+                                <tr>
+                                    <td>{{ details.label }}</td>
+                                    <td>{{ "%.2f"|format(details.hours) }}</td>
+                                    <td>{{ "%.2f"|format(details.pay) }} kr</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th>Total</th>
+                                <th>{{ "%.2f"|format(oncall.total_hours) }}</th>
+                                <th>{{ "%.2f"|format(oncall_pay) }} kr</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                {% else %}
+                    <p>No on-call compensation details available.</p>
+                {% endif %}
+            {% else %}
+            {# Regular OB section for non-OC shifts #}
+                <h3>OB hours</h3>
+                {% if ob_codes %}
+                    {% set total_ob_hours = ob_hours.values() | sum %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>OB code</th>
+                                <th>Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for code in ob_codes %}
+                                <tr>
+                                    <td>{{ code }}</td>
+                                    <td>{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th>Total OB hours</th>
+                                <th>{{ "%.2f"|format(total_ob_hours) }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                {% else %}
+                    <p>No OB hours this day.</p>
+                {% endif %}
+
+            <h3>OB pay</h3>
+            {% if ob_codes %}
+                {% set total_ob_pay = ob_pay.values() | sum %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>OB code</th>
+                            <th>Amount (SEK)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for code in ob_codes %}
+                            <tr>
+                                <td>{{ code }}</td>
+                                <td>{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total OB pay</th>
+                            <th>{{ "%.2f"|format(total_ob_pay) }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            {% else %}
+                <p>No OB compensation this day.</p>
+            {% endif %}
+
+            <h3>Active OB rules</h3>
+            {% if active_special_rules and active_special_rules|length > 0 %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Label</th>
+                            <th>Time</th>
+                            <th>Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rule in active_special_rules %}
+                            <tr>
+                                <td>{{ rule.code }}</td>
+                                <td>{{ rule.label }}</td>
+                                <td>{{ rule.start_time }} to {{ rule.end_time }}</td>
+                                <td>{{ rule.rate }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No special OB rules active this day.</p>
+            {% endif %}
         </section>
         {% endif %}
+        {% endif %}
+
+
     </div>
 
 {% endblock %}
