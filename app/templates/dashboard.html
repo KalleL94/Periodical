@@ -29,6 +29,28 @@
             </div>
             {% endif %}
 
+            {% if next_oncall_shift %}
+            <div class="card">
+                <h3>Next On-Call Shift</h3>
+                <div class="shift-info">
+                    <div class="shift-badge" style="background-color: #9333ea; color: white;">
+                        {{ next_oncall_shift.shift_type }}
+                    </div>
+                    <div class="shift-details">
+                        <strong>{{ next_oncall_shift.date.strftime('%A, %B %d, %Y') }}</strong>
+                        <div>{{ next_oncall_shift.time_range }}</div>
+                        {% if next_oncall_shift.days_until == 0 %}
+                            <div class="shift-countdown" style="color: var(--success);">Today</div>
+                        {% elif next_oncall_shift.days_until == 1 %}
+                            <div class="shift-countdown" style="color: var(--success);">Tomorrow</div>
+                        {% else %}
+                            <div class="shift-countdown">In {{ next_oncall_shift.days_until }} days</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Week Summary Card -->
             {% if week_summary %}
             <div class="card">
