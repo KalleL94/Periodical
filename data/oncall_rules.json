@@ -1,7 +1,7 @@
 [
     {
         "code": "OC_DEFAULT",
-        "label": "On-call standard",
+        "label": "On-call standard (403)",
         "description": "Base on-call compensation",
         "days": [0, 1, 2, 3, 4, 5, 6],
         "start_time": "00:00",
@@ -13,7 +13,7 @@
     },
     {
         "code": "OC_FRIDAY_NIGHT",
-        "label": "On-call friday night",
+        "label": "On-call friday night (404)",
         "description": "Increased compensation Friday 18:00 to Saturday 07:00",
         "days": [4],
         "start_time": "18:00",
@@ -25,7 +25,7 @@
     },
     {
         "code": "OC_SATURDAY_MORNING",
-        "label": "On-call saturday morning",
+        "label": "On-call saturday morning (404)",
         "description": "Continuation of saturday morning, rate on Saturday 00:00-07:00",
         "days": [5],
         "start_time": "00:00",
@@ -37,7 +37,7 @@
     },
     {
         "code": "OC_WEEKEND_SAT",
-        "label": "On-call weekend",
+        "label": "On-call weekend (405)",
         "description": "Increased compensation Saturday 07:00 to 24:00",
         "days": [5],
         "start_time": "07:00",
@@ -49,7 +49,7 @@
     },
     {
         "code": "OC_WEEKEND_SUN",
-        "label": "On-call weekend",
+        "label": "On-call weekend (405)",
         "description": "Increased compensation Sunday 00:00 to 24:00",
         "days": [6],
         "start_time": "00:00",
@@ -61,7 +61,7 @@
     },
     {
         "code": "OC_HOLIDAY_EVE",
-        "label": "On-call holiday eve",
+        "label": "On-call holiday eve (404)",
         "description": "Eve before public holiday (from 18:00)",
         "specific_dates": [],
         "start_time": "18:00",
@@ -73,7 +73,7 @@
     },
     {
         "code": "OC_HOLIDAY",
-        "label": "On-call holiday",
+        "label": "On-call holiday (405)",
         "description": "Public holiday all day",
         "specific_dates": [],
         "start_time": "00:00",
@@ -85,7 +85,7 @@
     },
     {
         "code": "OC_SPECIAL",
-        "label": "On-call major holiday",
+        "label": "On-call major holiday (406)",
         "description": "Major holidays (Christmas, New Year, Easter, Midsummer) - extended to first weekday",
         "specific_dates": [],
         "start_time": "00:00",
