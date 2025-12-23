@@ -103,7 +103,8 @@ async def read_root(
     ]
 
     for check_year, check_week in weeks_to_check:
-        if next_shift:
+        # Stop searching if we found both types of shifts
+        if next_shift and next_oncall_shift:
             break
 
         check_week_data = build_week_data(check_year, check_week, person_id=current_user.id)
@@ -115,7 +116,7 @@ async def read_root(
             # Check for overtime shift first
             ot_shift = get_overtime_shift_for_date(db, current_user.id, day["date"])
 
-            if ot_shift:
+            if ot_shift and not next_shift:
                 # Show OT shift as next shift
                 days_until = (day["date"] - today).days
                 start_str = ot_shift.start_time.strftime("%H:%M")
@@ -127,9 +128,8 @@ async def read_root(
                     "time_range": f"{start_str} - {end_str}",
                     "days_until": days_until,
                 }
-                break
-            # Check for regular rotation shift (including on-call)
-            elif day["shift"] and day["shift"].code != "OFF" and day["shift"].code != "OC":
+            # Check for regular rotation shift (excluding on-call)
+            elif day["shift"] and day["shift"].code != "OFF" and day["shift"].code != "OC" and not next_shift:
                 days_until = (day["date"] - today).days
                 shift = day["shift"]
                 time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
@@ -140,7 +140,7 @@ async def read_root(
                     "time_range": time_range,
                     "days_until": days_until,
                 }
-                break
+            # Check for on-call shift separately
             elif day["shift"] and day["shift"].code == "OC" and not next_oncall_shift:
                 # Store next on-call shift separately
                 days_until = (day["date"] - today).days
