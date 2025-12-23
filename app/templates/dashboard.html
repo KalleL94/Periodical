@@ -6,10 +6,13 @@
         <h2>Welcome, {{ user.name }}</h2>
 
         <div class="dashboard-container">
-            <!-- Next Shift Card -->
-            {% if next_shift %}
+            <!-- Next Shifts Card -->
+            {% if next_shift or next_oncall_shift %}
             <div class="card">
-                <h3>Next Shift</h3>
+                <h3>Upcoming Shifts</h3>
+                
+                {% if next_shift %}
+                <h4>Next Shift</h4>
                 <div class="shift-info">
                     <div class="shift-badge" style="background-color: {{ next_shift.color }}; color: {{ next_shift.color|contrast }};">
                         {{ next_shift.shift_type }}
@@ -26,12 +29,10 @@
                         {% endif %}
                     </div>
                 </div>
-            </div>
-            {% endif %}
+                {% endif %}
 
-            {% if next_oncall_shift %}
-            <div class="card">
-                <h3>Next On-Call Shift</h3>
+                {% if next_oncall_shift %}
+                <h4 style="margin-top: 1.5rem;">Next On-Call</h4>
                 <div class="shift-info">
                     <div class="shift-badge" style="background-color: #9333ea; color: white;">
                         {{ next_oncall_shift.shift_type }}
@@ -48,6 +49,7 @@
                         {% endif %}
                     </div>
                 </div>
+                {% endif %}
             </div>
             {% endif %}
 
