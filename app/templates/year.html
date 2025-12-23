@@ -257,10 +257,17 @@
         {# OB summering - endast om användaren har behörighet #}
         {% if show_salary %}
         <h3 class="page-title">Yearly OB breakdown</h3>
+        {# Create a mapping of code to label from ob_rules #}
+        {% set ob_labels = {} %}
+        {% for rule in ob_rules %}
+            {% if rule.code not in ob_labels %}
+                {% set _ = ob_labels.update({rule.code: rule.label}) %}
+            {% endif %}
+        {% endfor %}
         <table class="summary">
             <thead>
                 <tr>
-                    <th>OB code</th>
+                    <th>OB type</th>
                     <th>OB hours</th>
                     <th>OB pay (SEK)</th>
                 </tr>
@@ -268,7 +275,7 @@
             <tbody>
                 {% for code, hours in year_summary.ob_hours_by_code.items() %}
                 <tr class="shift-row">
-                    <td data-label="OB-kod">{{ code }}</td>
+                    <td data-label="OB-typ">{{ ob_labels.get(code, code) }}</td>
                     <td class="num" data-label="Timmar">{{ "%.2f"|format(hours or 0) }}</td>
                     <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
                 </tr>
