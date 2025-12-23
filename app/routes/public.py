@@ -596,6 +596,7 @@ async def show_day_for_person(
             "ob_hours": ob_hours if show_salary else {},
             "ob_pay": ob_pay if show_salary else {},
             "ob_codes": ob_codes if show_salary else [],
+            "ob_rules": combined_rules,  # All OB rules for label lookup
             "active_special_rules": active_special_rules,
             "oncall_pay": oncall_pay if show_salary else 0.0,
             "oncall_details": oncall_details if show_salary else {},
