@@ -324,17 +324,24 @@
                 <h3>OB hours</h3>
                 {% if ob_codes %}
                     {% set total_ob_hours = ob_hours.values() | sum %}
+                    {# Create a mapping of code to label from ob_rules #}
+                    {% set ob_labels = {} %}
+                    {% for rule in ob_rules %}
+                        {% if rule.code not in ob_labels %}
+                            {% set _ = ob_labels.update({rule.code: rule.label}) %}
+                        {% endif %}
+                    {% endfor %}
                     <table>
                         <thead>
                             <tr>
-                                <th>OB code</th>
+                                <th>OB type</th>
                                 <th>Hours</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for code in ob_codes %}
                                 <tr>
-                                    <td>{{ code }}</td>
+                                    <td>{{ ob_labels.get(code, code) }}</td>
                                     <td>{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
                                 </tr>
                             {% endfor %}
@@ -353,17 +360,24 @@
             <h3>OB pay</h3>
             {% if ob_codes %}
                 {% set total_ob_pay = ob_pay.values() | sum %}
+                {# Create a mapping of code to label from ob_rules #}
+                {% set ob_labels = {} %}
+                {% for rule in ob_rules %}
+                    {% if rule.code not in ob_labels %}
+                        {% set _ = ob_labels.update({rule.code: rule.label}) %}
+                    {% endif %}
+                {% endfor %}
                 <table>
                     <thead>
                         <tr>
-                            <th>OB code</th>
+                            <th>OB type</th>
                             <th>Amount (SEK)</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for code in ob_codes %}
                             <tr>
-                                <td>{{ code }}</td>
+                                <td>{{ ob_labels.get(code, code) }}</td>
                                 <td>{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
                             </tr>
                         {% endfor %}

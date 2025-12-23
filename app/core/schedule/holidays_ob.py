@@ -30,7 +30,7 @@ def build_special_ob_rules_for_year(year: int) -> list[ObRule]:
     """
     rules: list[ObRule] = []
 
-    # === OB4 (Helgdag 300) ===
+    # === OB4 (Helgdag - löneart 152) ===
     ob4_holidays = [
         (trettondagen(year), "07:00"),
         (forsta_maj(year), "07:00"),
@@ -40,36 +40,36 @@ def build_special_ob_rules_for_year(year: int) -> list[ObRule]:
     ]
 
     for holiday_date, start_time in ob4_holidays:
-        rules.extend(_build_holiday_interval("OB4", "Helgdag 300", holiday_date, start_time, 300))
+        rules.extend(_build_holiday_interval("OB4", "Helgdag (152)", holiday_date, start_time, 300))
 
-    # === OB5 (Storhelg 150) ===
+    # === OB5 (Storhelg - löneart 153) ===
 
     # Skärtorsdag från 18:00
-    rules.extend(_build_holiday_interval("OB5", "Storhelg 150", skartorsdagen(year), "18:00", 150))
+    rules.extend(_build_holiday_interval("OB5", "Storhelg (153)", skartorsdagen(year), "18:00", 150))
 
     # Långfredag från 00:00
-    rules.extend(_build_holiday_interval("OB5", "Storhelg 150", langfredagen(year), "00:00", 150))
+    rules.extend(_build_holiday_interval("OB5", "Storhelg (153)", langfredagen(year), "00:00", 150))
 
     # Annandag påsk
-    rules.extend(_build_holiday_interval("OB5", "Storhelg 150", annandagpask(year), "00:00", 150))
+    rules.extend(_build_holiday_interval("OB5", "Storhelg (153)", annandagpask(year), "00:00", 150))
 
     # Nyårshelgen (från föregående år)
     rules.extend(_build_new_years_rules(year))
 
     # Pingsthelgen
     pingst_eve = pingstafton(year)
-    rules.extend(_build_eve_block("OB5", "Storhelg 150", pingst_eve, pingst_eve + datetime.timedelta(days=1), 150))
+    rules.extend(_build_eve_block("OB5", "Storhelg (153)", pingst_eve, pingst_eve + datetime.timedelta(days=1), 150))
 
     # Midsommarhelgen
     midsummer_eve = midsommarafton(year)
     rules.extend(
-        _build_eve_block("OB5", "Storhelg 150", midsummer_eve, midsummer_eve + datetime.timedelta(days=1), 150)
+        _build_eve_block("OB5", "Storhelg (153)", midsummer_eve, midsummer_eve + datetime.timedelta(days=1), 150)
     )
 
     # Julhelgen
     christmas_eve = julafton(year)
     rules.extend(
-        _build_eve_block("OB5", "Storhelg 150", christmas_eve, christmas_eve + datetime.timedelta(days=2), 150)
+        _build_eve_block("OB5", "Storhelg (153)", christmas_eve, christmas_eve + datetime.timedelta(days=2), 150)
     )
 
     return rules
@@ -156,7 +156,7 @@ def _build_new_years_rules(year: int) -> list[ObRule]:
         rules.append(
             ObRule(
                 code="OB5",
-                label="Storhelg 150",
+                label="Storhelg (153)",
                 specific_dates=[day.isoformat()],
                 start_time=st,
                 end_time="24:00",
@@ -177,7 +177,7 @@ def _build_new_years_rules(year: int) -> list[ObRule]:
         rules.append(
             ObRule(
                 code="OB5",
-                label="Storhelg 150",
+                label="Storhelg (153)",
                 specific_dates=[day.isoformat()],
                 start_time=st,
                 end_time="24:00",
