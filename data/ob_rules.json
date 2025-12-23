@@ -17,7 +17,7 @@
     },
     {
         "code": "OB3",
-        "label": "OB helg lördag (152)",
+        "label": "OB helg (152)",
         "days": [5],
         "start_time": "07:00",
         "end_time": "24:00",
