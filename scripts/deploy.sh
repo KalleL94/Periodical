@@ -123,6 +123,13 @@ if [ "$HTTP_STATUS" -eq 200 ]; then
     log "✅ Deployment slutförd! Health check svarade 200 OK."
     exit 0
 else
+    log "⏳ Väntar 30 sekunder på att tjänsten ska starta..."
+    sleep 30
+    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
+    if [ "$HTTP_STATUS" -eq 200 ]; then
+        log "✅ Deployment slutförd efter väntan! Health check svarade 200 OK."
+        exit 0
+    fi
     # Hämta loggar för att se vad som gick fel
     log "❌ Health check misslyckades med status: $HTTP_STATUS"
     echo "--- Senaste loggarna ---"
