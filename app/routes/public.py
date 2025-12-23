@@ -90,6 +90,7 @@ async def read_root(
 
     # Find next upcoming shift (including overtime shifts)
     next_shift = None
+    next_oncall_shift = None
 
     # Check this week and next week for upcoming shifts
     weeks_to_check = [
@@ -102,7 +103,8 @@ async def read_root(
     ]
 
     for check_year, check_week in weeks_to_check:
-        if next_shift:
+        # Stop searching if we found both types of shifts
+        if next_shift and next_oncall_shift:
             break
 
         check_week_data = build_week_data(check_year, check_week, person_id=current_user.id)
@@ -114,7 +116,7 @@ async def read_root(
             # Check for overtime shift first
             ot_shift = get_overtime_shift_for_date(db, current_user.id, day["date"])
 
-            if ot_shift:
+            if ot_shift and not next_shift:
                 # Show OT shift as next shift
                 days_until = (day["date"] - today).days
                 start_str = ot_shift.start_time.strftime("%H:%M")
@@ -126,9 +128,8 @@ async def read_root(
                     "time_range": f"{start_str} - {end_str}",
                     "days_until": days_until,
                 }
-                break
-            # Check for regular rotation shift (including on-call)
-            elif day["shift"] and day["shift"].code != "OFF":
+            # Check for regular rotation shift (excluding on-call)
+            elif day["shift"] and day["shift"].code != "OFF" and day["shift"].code != "OC" and not next_shift:
                 days_until = (day["date"] - today).days
                 shift = day["shift"]
                 time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
@@ -139,7 +140,19 @@ async def read_root(
                     "time_range": time_range,
                     "days_until": days_until,
                 }
-                break
+            # Check for on-call shift separately
+            elif day["shift"] and day["shift"].code == "OC" and not next_oncall_shift:
+                # Store next on-call shift separately
+                days_until = (day["date"] - today).days
+                shift = day["shift"]
+                time_range = f"{shift.start_time} - {shift.end_time}" if shift.start_time and shift.end_time else ""
+                next_oncall_shift = {
+                    "date": day["date"],
+                    "shift_type": shift.label or shift.code,
+                    "color": shift.color or "#666",
+                    "time_range": time_range,
+                    "days_until": days_until,
+                }
 
     # Calculate week summary
     week_summary = None
@@ -375,6 +388,7 @@ async def read_root(
         request,
         {
             "next_shift": next_shift,
+            "next_oncall_shift": next_oncall_shift,
             "week_summary": week_summary,
             "month_summary": month_summary,
             "upcoming_vacation": upcoming_vacation,

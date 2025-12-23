@@ -6,10 +6,13 @@
         <h2>Welcome, {{ user.name }}</h2>
 
         <div class="dashboard-container">
-            <!-- Next Shift Card -->
-            {% if next_shift %}
+            <!-- Next Shifts Card -->
+            {% if next_shift or next_oncall_shift %}
             <div class="card">
-                <h3>Next Shift</h3>
+                <h3>Upcoming Shifts</h3>
+                
+                {% if next_shift %}
+                <h4>Next Shift</h4>
                 <div class="shift-info">
                     <div class="shift-badge" style="background-color: {{ next_shift.color }}; color: {{ next_shift.color|contrast }};">
                         {{ next_shift.shift_type }}
@@ -26,6 +29,27 @@
                         {% endif %}
                     </div>
                 </div>
+                {% endif %}
+
+                {% if next_oncall_shift %}
+                <h4 style="margin-top: 1.5rem;">Next On-Call</h4>
+                <div class="shift-info">
+                    <div class="shift-badge" style="background-color: {{ next_oncall_shift.color }}; color: {{ next_oncall_shift.color|contrast }};">
+                        {{ next_oncall_shift.shift_type }}
+                    </div>
+                    <div class="shift-details">
+                        <strong>{{ next_oncall_shift.date.strftime('%A, %B %d, %Y') }}</strong>
+                        <div>{{ next_oncall_shift.time_range }}</div>
+                        {% if next_oncall_shift.days_until == 0 %}
+                            <div class="shift-countdown" style="color: var(--success);">Today</div>
+                        {% elif next_oncall_shift.days_until == 1 %}
+                            <div class="shift-countdown" style="color: var(--success);">Tomorrow</div>
+                        {% else %}
+                            <div class="shift-countdown">In {{ next_oncall_shift.days_until }} days</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
             {% endif %}
 
