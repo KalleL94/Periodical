@@ -56,3 +56,4 @@ archive/
 tree.txt
 venv.bat
 ICA schedule.xlsx
+logs/*.log*

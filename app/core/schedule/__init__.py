@@ -44,7 +44,13 @@ from .summary import (
     summarize_year_for_person,
 )
 from .vacation import get_vacation_dates_for_year
-from .wages import get_all_user_wages, get_user_wage
+from .wages import (
+    add_new_wage,
+    get_all_user_wages,
+    get_current_wage_record,
+    get_user_wage,
+    get_wage_history,
+)
 
 # === Bakåtkompatibilitet (deprecated - använd funktionerna istället) ===
 settings = load_settings()
@@ -84,6 +90,9 @@ __all__ = [
     # wages
     "get_user_wage",
     "get_all_user_wages",
+    "add_new_wage",
+    "get_wage_history",
+    "get_current_wage_record",
     # vacation
     "get_vacation_dates_for_year",
     # period

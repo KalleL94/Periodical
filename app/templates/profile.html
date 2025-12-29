@@ -82,8 +82,103 @@
             <a href="/profile/vacation" class="btn">Hantera semester</a>
         </div>
     </div>
-    
+
 </div>
+
+    <!-- Lönehistorik -->
+    <section style="margin-top: 32px;">
+        <h2>Lönehistorik</h2>
+
+        {% if wage_history %}
+            <div class="card">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Lön (SEK)</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Från datum</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Åtgärd</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in wage_history %}
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px; font-weight: 500;">{{ "{:,}".format(record.wage).replace(',', ' ') }} SEK</td>
+                            <td style="padding: 8px;">{{ record.effective_from }}</td>
+                            <td style="padding: 8px;">
+                                {% if record.effective_to %}
+                                    {{ record.effective_to }}
+                                {% else %}
+                                    <span style="color: var(--muted); font-style: italic;">pågående</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 8px;">
+                                {% if record.is_current %}
+                                    <span style="color: var(--success); font-weight: 500;">✓ Aktuell</span>
+                                {% else %}
+                                    <span style="color: var(--muted);">Historisk</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 8px;">
+                                {% if wage_history | length > 1 %}
+                                    <form method="POST" action="/profile/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('Är du säker på att du vill ta bort denna lönepost?');">
+                                        <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
+                                    </form>
+                                {% else %}
+                                    <span style="color: var(--muted); font-size: 0.875rem;">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="card">
+                <p style="color: var(--muted);">Ingen lönehistorik tillgänglig.</p>
+            </div>
+        {% endif %}
+
+        <!-- Add New Wage -->
+        <div class="card" style="margin-top: 16px;">
+            <h3 style="margin-top: 0;">Lägg till ny lön</h3>
+            <p style="color: var(--muted); margin-bottom: 16px;">
+                Lägg till en ny lön med ett effektivt datum. Tidigare lön kommer automatiskt att avslutas dagen innan. Detta är användbart vid lönerevision eller förhandling.
+            </p>
+
+            <form method="POST" action="/profile/add-wage">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">Ny lön (SEK)</label>
+                        <input
+                            type="number"
+                            id="new_wage"
+                            name="new_wage"
+                            required
+                            min="0"
+                            step="500"
+                            placeholder="t.ex. 35000"
+                            style="width: 100%; box-sizing: border-box;"
+                        >
+                    </div>
+
+                    <div>
+                        <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">Från datum</label>
+                        <input
+                            type="date"
+                            id="effective_from"
+                            name="effective_from"
+                            required
+                            style="width: 100%; box-sizing: border-box;"
+                        >
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">Lägg till lön</button>
+            </form>
+        </div>
+    </section>
 
     <!-- Kalenderexport -->
     <section class="calendar-export">
