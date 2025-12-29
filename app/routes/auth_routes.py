@@ -297,27 +297,12 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
 async def update_profile(
     request: Request,
     name: str = Form(...),
-    wage: int = Form(...),
     tax_table: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Update user profile."""
     from app.core.storage import get_available_tax_tables
-
-    # Validate wage range
-    if not (1000 <= wage <= 1000000):
-        available_tax_tables = get_available_tax_tables()
-        return templates.TemplateResponse(
-            "profile.html",
-            {
-                "request": request,
-                "user": current_user,
-                "available_tax_tables": available_tax_tables,
-                "error": "Ogiltig lön: måste vara mellan 1000 och 1000000",
-            },
-            status_code=400,
-        )
 
     # Validate tax table
     available_tax_tables = get_available_tax_tables()
@@ -334,7 +319,6 @@ async def update_profile(
         )
 
     current_user.name = name
-    current_user.wage = wage
     current_user.tax_table = tax_table
     try:
         db.commit()
@@ -801,7 +785,6 @@ async def admin_update_user(
     request: Request,
     user_id: int,
     name: str = Form(...),
-    wage: int = Form(...),
     role: str = Form("user"),
     new_password: str = Form(None),
     current_user: User = Depends(get_admin_user),
@@ -813,7 +796,6 @@ async def admin_update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     edit_user.name = name
-    edit_user.wage = wage
     edit_user.role = UserRole(role)
 
     if new_password:

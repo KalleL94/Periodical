@@ -35,12 +35,13 @@
                 <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">Namn</label>
                 <input type="text" id="name" name="name" value="{{ edit_user.name }}" required style="width: 100%; box-sizing: border-box;">
             </div>
-            
+
             <div style="margin-bottom: 16px;">
-                <label for="wage" style="display: block; margin-bottom: 6px; color: var(--muted);">Månadslön (SEK)</label>
-                <input type="number" id="wage" name="wage" value="{{ edit_user.wage }}" required min="0" step="500" style="width: 100%; box-sizing: border-box;">
+                <label style="display: block; margin-bottom: 6px; color: var(--muted);">Nuvarande månadslön</label>
+                <input type="text" value="{{ '{:,}'.format(edit_user.wage).replace(',', ' ') }} SEK" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
+                <small style="color: var(--muted);">Hantera lönehistorik längre ner på sidan</small>
             </div>
-            
+
             <div style="margin-bottom: 16px;">
                 <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">Skattetabell</label>
                 <select id="tax_table" name="tax_table" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);">
