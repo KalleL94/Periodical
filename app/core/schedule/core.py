@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from app.core.config import DATE_FORMAT_ISO
 from app.core.constants import VACATION_CODE, WEEKDAY_NAMES
 from app.core.storage import load_rotation, load_settings, load_shift_types
+from app.database.database import RotationEra, SessionLocal
 
 if TYPE_CHECKING:
     from app.core.models import Rotation, Settings, ShiftType
@@ -56,27 +57,53 @@ def get_vacation_shift() -> "ShiftType | None":
     return next((s for s in get_shift_types() if s.code == VACATION_CODE), None)
 
 
+def get_rotation_era_for_date(date: datetime.date) -> RotationEra | None:
+    """
+    Hämtar den rotation era som är aktiv för ett givet datum.
+
+    Args:
+        date: Datum att hitta era för
+
+    Returns:
+        RotationEra om en matchande era finns, annars None
+    """
+    db = SessionLocal()
+    try:
+        # Hitta era där date >= start_date OCH (end_date är NULL ELLER date < end_date)
+        era = (
+            db.query(RotationEra)
+            .filter(RotationEra.start_date <= date)
+            .filter((RotationEra.end_date.is_(None)) | (RotationEra.end_date > date))
+            .order_by(RotationEra.start_date.desc())
+            .first()
+        )
+        return era
+    finally:
+        db.close()
+
+
 @cache
 def determine_shift_for_date(
     date: datetime.date,
     start_week: int = 1,
 ) -> tuple["ShiftType | None", int | None]:
     """
-    Bestämmer skift för ett datum baserat på rotation.
+    Bestämmer skift för ett datum baserat på rotation era.
 
     Args:
         date: Datum att kontrollera
-        start_week: Personens startvecka i rotationen (1-10)
+        start_week: Personens startvecka i rotationen
 
     Returns:
-        (shift, rotation_week) eller (None, None) om före rotationsstart
+        (shift, rotation_week) eller (None, None) om ingen era finns för datumet
     """
-    rotation_start = get_rotation_start_date()
-    rotation = get_rotation()
-    shift_types = get_shift_types()
-
-    if date < rotation_start:
+    # Hämta rätt rotation era för datumet
+    era = get_rotation_era_for_date(date)
+    if era is None:
         return None, None
+
+    shift_types = get_shift_types()
+    rotation_start = era.start_date
 
     # Beräkna första måndagen efter rotationsstart
     days_to_monday = (7 - rotation_start.weekday()) % 7
@@ -91,9 +118,12 @@ def determine_shift_for_date(
     else:
         weeks_passed = 1 + ((date - first_monday).days // 7)
 
-    rotation_week = ((weeks_passed + (start_week - 1)) % rotation.rotation_length) + 1
+    # Använd erans rotation_length för modulo-beräkningen
+    rotation_week = ((weeks_passed + (start_week - 1)) % era.rotation_length) + 1
     weekday_index = date.weekday()
-    shift_code = rotation.weeks[str(rotation_week)][weekday_index]
+
+    # Använd erans weeks_pattern
+    shift_code = era.weeks_pattern[str(rotation_week)][weekday_index]
 
     shift = next((s for s in shift_types if s.code == shift_code), None)
     return shift, rotation_week
