@@ -82,6 +82,20 @@ def get_rotation_era_for_date(date: datetime.date) -> RotationEra | None:
         db.close()
 
 
+def get_rotation_length_for_date(date: datetime.date) -> int | None:
+    """
+    Hämtar rotationslängden som är aktiv för ett givet datum.
+
+    Args:
+        date: Datum att hitta rotationslängd för
+
+    Returns:
+        Antal veckor i rotationen för det datumet, eller None om ingen era finns
+    """
+    era = get_rotation_era_for_date(date)
+    return era.rotation_length if era else None
+
+
 @cache
 def determine_shift_for_date(
     date: datetime.date,

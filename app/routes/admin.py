@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_user
 from app.core.schedule import clear_schedule_cache, settings, tax_brackets
-from app.database.database import User, get_db
+from app.database.database import RotationEra, User, get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -148,3 +148,154 @@ async def admin_settings_update(
 
     # Redirect back to GET (Post-Redirect-Get pattern)
     return RedirectResponse(url="/admin/settings", status_code=303)
+
+
+@router.get("/rotation-eras", response_class=HTMLResponse, name="admin_rotation_eras")
+async def admin_rotation_eras(
+    request: Request,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """View and manage rotation eras."""
+    # Get all eras ordered by start_date (most recent first)
+    eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
+
+    return templates.TemplateResponse(
+        "admin_rotation_eras.html",
+        {
+            "request": request,
+            "user": current_user,
+            "eras": eras,
+        },
+    )
+
+
+@router.post("/rotation-eras/create", name="admin_rotation_eras_create")
+async def admin_rotation_eras_create(
+    request: Request,
+    start_date: str = Form(...),
+    rotation_length: int = Form(...),
+    weeks_pattern: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new rotation era."""
+    from datetime import datetime
+
+    try:
+        # Parse and validate start_date
+        new_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+
+        # Validate rotation_length
+        if not (1 <= rotation_length <= 52):
+            raise ValueError("Rotation length must be between 1 and 52 weeks")
+
+        # Parse weeks_pattern (should be JSON)
+        weeks_pattern_dict = json.loads(weeks_pattern)
+
+        # Validate that weeks_pattern has the right number of weeks
+        if len(weeks_pattern_dict) != rotation_length:
+            raise ValueError(f"Weeks pattern must have exactly {rotation_length} weeks, got {len(weeks_pattern_dict)}")
+
+        # Check for overlapping eras
+        overlapping = (
+            db.query(RotationEra)
+            .filter(RotationEra.start_date <= new_start_date)
+            .filter((RotationEra.end_date.is_(None)) | (RotationEra.end_date > new_start_date))
+            .first()
+        )
+
+        if overlapping:
+            # Close the overlapping era by setting its end_date
+            overlapping.end_date = new_start_date
+            db.add(overlapping)
+
+        # Create new era
+        new_era = RotationEra(
+            start_date=new_start_date,
+            end_date=None,  # New era is ongoing
+            rotation_length=rotation_length,
+            weeks_pattern=weeks_pattern_dict,
+            created_by=current_user.id,
+        )
+
+        db.add(new_era)
+        db.commit()
+
+        # Clear cache since rotation configuration changed
+        clear_schedule_cache()
+
+        return RedirectResponse(url="/admin/rotation-eras", status_code=303)
+
+    except (ValueError, json.JSONDecodeError) as e:
+        db.rollback()
+        # Re-fetch eras for error display
+        eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
+        return templates.TemplateResponse(
+            "admin_rotation_eras.html",
+            {
+                "request": request,
+                "user": current_user,
+                "eras": eras,
+                "error": f"Error creating era: {str(e)}",
+            },
+            status_code=400,
+        )
+
+
+@router.post("/rotation-eras/delete/{era_id}", name="admin_rotation_eras_delete")
+async def admin_rotation_eras_delete(
+    era_id: int,
+    request: Request,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a rotation era."""
+    try:
+        # Find the era to delete
+        era = db.query(RotationEra).filter(RotationEra.id == era_id).first()
+
+        if not era:
+            raise ValueError(f"Era with id {era_id} not found")
+
+        # Check if this is the only era
+        total_eras = db.query(RotationEra).count()
+        if total_eras == 1:
+            raise ValueError("Cannot delete the only rotation era. At least one era must exist.")
+
+        # If deleting an ongoing era (end_date is NULL), reopen the previous era
+        if era.end_date is None:
+            previous_era = (
+                db.query(RotationEra)
+                .filter(RotationEra.end_date == era.start_date)
+                .order_by(RotationEra.start_date.desc())
+                .first()
+            )
+
+            if previous_era:
+                previous_era.end_date = None  # Make it ongoing again
+                db.add(previous_era)
+
+        # Delete the era
+        db.delete(era)
+        db.commit()
+
+        # Clear cache since rotation configuration changed
+        clear_schedule_cache()
+
+        return RedirectResponse(url="/admin/rotation-eras", status_code=303)
+
+    except ValueError as e:
+        db.rollback()
+        # Re-fetch eras for error display
+        eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
+        return templates.TemplateResponse(
+            "admin_rotation_eras.html",
+            {
+                "request": request,
+                "user": current_user,
+                "eras": eras,
+                "error": f"Error deleting era: {str(e)}",
+            },
+            status_code=400,
+        )

@@ -1,0 +1,229 @@
+{# app/templates/admin_rotation_eras.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<h2 class="page-title">Rotation Eras</h2>
+
+<div class="card" style="margin-bottom: 24px; background-color: #e8f4fd; border-left: 4px solid #2196F3;">
+    <h3 style="margin-top: 0; color: #1976D2;">ℹ️ About Rotation Eras</h3>
+    <p style="color: #424242; line-height: 1.6;">
+        <strong>Rotation eras</strong> allow you to change the rotation length (e.g., from 10 to 11 weeks)
+        without corrupting historical schedules. Each era defines a time period with its own rotation parameters.
+    </p>
+    <ul style="color: #424242; line-height: 1.6; margin-bottom: 0;">
+        <li>Historical dates use the rotation length that was active at that time</li>
+        <li>Creating a new era automatically closes the current era</li>
+        <li>You can have different rotation lengths for different time periods</li>
+    </ul>
+</div>
+
+{% if error %}
+<div class="card" style="margin-bottom: 24px; background-color: #ffebee; border-left: 4px solid #f44336;">
+    <p style="color: #c62828; margin: 0;"><strong>Error:</strong> {{ error }}</p>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom: 24px;">
+    <h3>Current & Historical Eras</h3>
+
+    {% if eras %}
+    <table>
+        <thead>
+            <tr>
+                <th>Start Date</th>
+                <th>End Date</th>
+                <th class="num">Rotation Length</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for era in eras %}
+            <tr>
+                <td data-label="Start Date">{{ era.start_date }}</td>
+                <td data-label="End Date">
+                    {% if era.end_date %}
+                        {{ era.end_date }}
+                    {% else %}
+                        <span style="color: var(--success); font-weight: 600;">Ongoing</span>
+                    {% endif %}
+                </td>
+                <td class="num" data-label="Length">{{ era.rotation_length }} weeks</td>
+                <td data-label="Status">
+                    {% if era.end_date %}
+                        <span style="color: var(--muted);">Historical</span>
+                    {% else %}
+                        <span style="color: var(--success); font-weight: 600;">✓ Current</span>
+                    {% endif %}
+                </td>
+                <td data-label="Created">
+                    <small style="color: var(--muted);">{{ era.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                </td>
+                <td data-label="Actions">
+                    <form method="POST" action="/admin/rotation-eras/delete/{{ era.id }}"
+                          style="display: inline;"
+                          onsubmit="return confirm('Are you sure you want to delete this era? This action cannot be undone.');">
+                        <button type="submit"
+                                style="background: none; border: none; color: #d32f2f; cursor: pointer; padding: 4px 8px; font-size: 0.9rem; text-decoration: underline;">
+                            🗑️ Delete
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--muted); text-align: center; padding: 20px;">
+        No rotation eras found. Please run the migration script first.
+    </p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>Create New Era</h3>
+    <p style="color: var(--muted); margin-bottom: 16px;">
+        Creating a new era will automatically close the current era and start a new rotation period.
+    </p>
+
+    <form method="POST" action="/admin/rotation-eras/create" id="create-era-form">
+        <table style="width: auto;">
+            <tbody>
+                <tr>
+                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">Start Date</td>
+                    <td>
+                        <input
+                            type="date"
+                            name="start_date"
+                            required
+                            style="width: 200px;"
+                        />
+                        <small style="color: var(--muted); display: block; margin-top: 4px;">
+                            When the new rotation era begins
+                        </small>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">Rotation Length</td>
+                    <td>
+                        <input
+                            type="number"
+                            name="rotation_length"
+                            id="rotation_length"
+                            min="1"
+                            max="52"
+                            value="11"
+                            required
+                            style="width: 100px;"
+                            onchange="updateWeeksPattern()"
+                        /> weeks
+                        <small style="color: var(--muted); display: block; margin-top: 4px;">
+                            Number of weeks in the rotation cycle (1-52)
+                        </small>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px; vertical-align: top;">Weeks Pattern</td>
+                    <td>
+                        <div style="margin-bottom: 8px;">
+                            <label style="display: inline-flex; align-items: center; margin-right: 16px;">
+                                <input type="radio" name="pattern_option" value="copy_current" checked onchange="updateWeeksPattern()" style="margin-right: 6px;">
+                                Copy from current era
+                            </label>
+                            <label style="display: inline-flex; align-items: center;">
+                                <input type="radio" name="pattern_option" value="custom" onchange="updateWeeksPattern()" style="margin-right: 6px;">
+                                Custom JSON
+                            </label>
+                        </div>
+                        <textarea
+                            name="weeks_pattern"
+                            id="weeks_pattern"
+                            rows="8"
+                            required
+                            style="width: 100%; max-width: 600px; font-family: monospace; font-size: 0.9rem;"
+                            placeholder='{"1": ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"], ...}'
+                        ></textarea>
+                        <small style="color: var(--muted); display: block; margin-top: 4px;">
+                            JSON object mapping week numbers (1-{{ rotation_length }}) to shift patterns
+                        </small>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div style="margin-top: 24px;">
+            <button type="submit" class="btn" style="padding: 10px 24px;">
+                Create New Era
+            </button>
+            <a href="/admin/settings" class="btn secondary" style="margin-left: 12px;">
+                Back to Settings
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+// Initialize weeks pattern from current era
+const currentEra = {{ eras[0].weeks_pattern | tojson if eras else '{}' }};
+const currentRotationLength = {{ eras[0].rotation_length if eras else 10 }};
+
+function formatWeeksPattern(pattern) {
+    // Custom JSON formatting: each week's array on one line
+    let lines = ['{'];
+    const keys = Object.keys(pattern).sort((a, b) => parseInt(a) - parseInt(b));
+
+    keys.forEach((key, index) => {
+        const weekArray = pattern[key];
+        const arrayStr = '["' + weekArray.join('","') + '"]';
+        const comma = index < keys.length - 1 ? ',' : '';
+        lines.push('  "' + key + '": ' + arrayStr + comma);
+    });
+
+    lines.push('}');
+    return lines.join('\n');
+}
+
+function updateWeeksPattern() {
+    const rotationLength = parseInt(document.getElementById('rotation_length').value);
+    const patternOption = document.querySelector('input[name="pattern_option"]:checked').value;
+    const textarea = document.getElementById('weeks_pattern');
+
+    if (patternOption === 'copy_current') {
+        const pattern = {};
+
+        // Copy existing weeks from current era
+        for (let i = 1; i <= rotationLength; i++) {
+            if (currentEra[i.toString()]) {
+                pattern[i.toString()] = currentEra[i.toString()];
+            } else {
+                // Default pattern for new weeks
+                pattern[i.toString()] = ["OFF", "OFF", "OFF", "N1", "N1", "N1", "N1"];
+            }
+        }
+
+        textarea.value = formatWeeksPattern(pattern);
+        textarea.readOnly = true;
+        textarea.style.backgroundColor = '#f5f5f5';
+    } else {
+        textarea.readOnly = false;
+        textarea.style.backgroundColor = 'white';
+        if (textarea.value === '' || textarea.value === '{}') {
+            // Provide a template
+            const pattern = {};
+            for (let i = 1; i <= rotationLength; i++) {
+                pattern[i.toString()] = ["OFF", "OFF", "OFF", "N1", "N1", "N1", "N1"];
+            }
+            textarea.value = formatWeeksPattern(pattern);
+        }
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateWeeksPattern();
+});
+</script>
+
+{% endblock %}
