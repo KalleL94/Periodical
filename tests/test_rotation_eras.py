@@ -22,6 +22,7 @@ sys.path.insert(0, str(project_root))
 
 # ruff: noqa: E402
 from app.core.schedule import (
+    clear_schedule_cache,
     determine_shift_for_date,
     get_rotation_era_for_date,
     get_rotation_length_for_date,
@@ -53,6 +54,9 @@ def db_session(monkeypatch):
 
     # Cleanup
     session.close()
+
+    # Clear cache to prevent test interference
+    clear_schedule_cache()
 
     # Drop all test tables (in-memory DB will be auto-deleted)
     Base.metadata.drop_all(bind=test_engine)

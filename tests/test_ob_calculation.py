@@ -34,6 +34,7 @@ from app.core.schedule import (
     calculate_ob_hours,
     calculate_ob_pay,
     calculate_shift_hours,
+    clear_schedule_cache,
     determine_shift_for_date,
 )
 from app.core.storage import load_ob_rules, load_settings
@@ -86,6 +87,9 @@ def setup_rotation_era(monkeypatch):
         db.close()
 
     yield
+
+    # Clear cache to prevent test interference
+    clear_schedule_cache()
 
     # Drop all test tables (in-memory DB will be auto-deleted)
     Base.metadata.drop_all(bind=test_engine)

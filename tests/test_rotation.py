@@ -18,7 +18,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # ruff: noqa: E402
-from app.core.schedule import determine_shift_for_date, rotation, rotation_start_date
+from app.core.schedule import clear_schedule_cache, determine_shift_for_date, rotation, rotation_start_date
 from app.database.database import Base, RotationEra
 
 # Use uniquely named in-memory SQLite database for tests (isolated, fast, auto-cleaned)
@@ -68,6 +68,9 @@ def setup_rotation_era(monkeypatch):
         db.close()
 
     yield
+
+    # Clear cache to prevent test interference
+    clear_schedule_cache()
 
     # Drop all test tables (in-memory DB will be auto-deleted)
     Base.metadata.drop_all(bind=test_engine)
