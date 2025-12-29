@@ -52,7 +52,9 @@
                 </td>
                 <td class="num" data-label="Length">{{ era.rotation_length }} weeks</td>
                 <td data-label="Status">
-                    {% if era.end_date %}
+                    {% if era.start_date > now %}
+                        <span style="color: #1976D2; font-weight: 600;">⏵ Future</span>
+                    {% elif era.end_date and era.end_date <= now %}
                         <span style="color: var(--muted);">Historical</span>
                     {% else %}
                         <span style="color: var(--success); font-weight: 600;">✓ Current</span>

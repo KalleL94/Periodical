@@ -156,7 +156,7 @@
                                             {% if ns.d.date.weekday() == 0 %}
                                                 <span class="rotation-week-small">v{{ ns.d.date.isocalendar()[1] }}</span>
                                             {% elif ns.d.date.weekday() == 6 %}
-                                                <span class="rotation-week-small">r-v{{ ns.d.rotation_week }}</span>
+                                                <span class="rotation-week-small">r-v{{ ns.d.rotation_week }}/{{ ns.d.rotation_length }}</span>
                                             {% endif %}
                                         </div>
 

@@ -41,6 +41,7 @@ from app.core.schedule import (
     get_all_user_wages,
     get_overtime_shift_for_date,
     get_overtime_shifts_for_month,
+    get_rotation_length_for_date,
     get_user_wage,
     ob_rules,
     rotation_start_date,
@@ -433,6 +434,7 @@ async def show_day_for_person(
     iso_year, iso_week, _ = date_obj.isocalendar()
 
     shift, rotation_week = determine_shift_for_date(date_obj, start_week=person_id)
+    rotation_length = get_rotation_length_for_date(date_obj)
     original_shift = shift  # Keep track of original shift for OC calculation
     hours: float = 0.0
     start_dt: datetime | None = None
@@ -619,6 +621,7 @@ async def show_day_for_person(
             "date": date_obj,
             "weekday_name": weekday_name,
             "rotation_week": rotation_week,
+            "rotation_length": rotation_length,
             "shift": shift,
             "original_shift": original_shift,  # Pass original shift for OC detection
             "hours": hours,

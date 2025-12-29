@@ -63,7 +63,7 @@
                 <tbody>
                     <tr class="shift-row"
                         style="border-left:6px solid {% if shift %}{{ shift.color }}{% else %}transparent{% endif %};">
-                        <td>{{ rotation_week if rotation_week else "-" }}</td>
+                        <td>{% if rotation_week and rotation_length %}{{ rotation_week }}/{{ rotation_length }}{% else %}-{% endif %}</td>
                         <td>
                             {% if shift %}
                                 <span class="badge"
