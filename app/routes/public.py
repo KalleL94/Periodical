@@ -1036,18 +1036,16 @@ async def add_overtime_shift(
     if current_user.role != UserRole.ADMIN and user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to add overtime for other users")
 
-    # Get user's wage
-    user = session.query(User).filter_by(id=user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # Parse date first (needed for wage lookup)
+    ot_date = datetime.strptime(date, "%Y-%m-%d").date()
 
-    monthly_salary = user.wage
+    # Get user's wage for the specific date (temporal query)
+    from app.core.schedule import get_user_wage
+
+    monthly_salary = get_user_wage(session, user_id, effective_date=ot_date)
 
     # Calculate OT pay
     ot_pay = calculate_overtime_pay(monthly_salary, hours)
-
-    # Parse date
-    ot_date = datetime.strptime(date, "%Y-%m-%d").date()
 
     # Parse times
     start_t = datetime.strptime(start_time, "%H:%M").time()
