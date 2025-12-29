@@ -13,6 +13,7 @@ from app.core.time_utils import parse_ot_times
 from .core import (
     calculate_shift_hours,
     determine_shift_for_date,
+    get_rotation_length_for_date,
     get_rotation_start_date,
     get_settings,
     get_shift_types,
@@ -264,6 +265,7 @@ def _build_person_day_basic(
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
+    rotation_length = get_rotation_length_for_date(date)
 
     # Kolla frånvaro först (högsta prioritet)
     if session:
@@ -282,6 +284,7 @@ def _build_person_day_basic(
                     "person_name": persons[person_id - 1].name,
                     "shift": absence_shift,
                     "rotation_week": rotation_week,
+                    "rotation_length": rotation_length,
                     "hours": 0.0,
                     "start": None,
                     "end": None,
@@ -296,6 +299,7 @@ def _build_person_day_basic(
             "person_name": persons[person_id - 1].name,
             "shift": vacation_shift,
             "rotation_week": rotation_week,
+            "rotation_length": rotation_length,
             "hours": 0.0,
             "start": None,
             "end": None,
@@ -333,6 +337,7 @@ def _build_person_day_basic(
         "person_name": persons[person_id - 1].name,
         "shift": shift,
         "rotation_week": rotation_week,
+        "rotation_length": rotation_length,
         "hours": hours,
         "start": start,
         "end": end,

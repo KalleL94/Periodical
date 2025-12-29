@@ -5,6 +5,12 @@
 
 <h2 class="page-title">Settings</h2>
 
+<div style="margin-bottom: 20px;">
+    <a href="/admin/rotation-eras" class="btn secondary" style="display: inline-block;">
+        📅 Manage Rotation Eras
+    </a>
+</div>
+
 <form method="POST" action="/admin/settings" id="settings-form" onsubmit="return prepareFormSubmit()">
     <div class="card" style="margin-bottom: 24px;">
         <h3>Global Configuration</h3>
@@ -74,7 +80,7 @@
         </a>
     </div>
 
-    <div class="card" style="margin-bottom: 24px;">
+    <!-- <div class="card" style="margin-bottom: 24px;">
         <h3>Tax Brackets <span style="color: var(--muted); font-size: 0.85rem; font-weight: normal;">(read-only)</span></h3>
         <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 12px;">
             Preliminary tax (prel_skatt) based on monthly income brackets.
@@ -103,7 +109,7 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>
+    </div> -->
 
     {# Hidden field to store person wages as JSON #}
     <input type="hidden" name="person_wages" id="person_wages" value="">

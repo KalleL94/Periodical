@@ -10,6 +10,10 @@ import datetime
 import sys
 from pathlib import Path
 
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 # Add the app directory to the path so we can import schedule, models, etc.
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -30,9 +34,66 @@ from app.core.schedule import (
     calculate_ob_hours,
     calculate_ob_pay,
     calculate_shift_hours,
+    clear_schedule_cache,
     determine_shift_for_date,
 )
 from app.core.storage import load_ob_rules, load_settings
+from app.database.database import Base, RotationEra
+
+# Use uniquely named in-memory SQLite database for tests (isolated, fast, auto-cleaned)
+TEST_DATABASE_URL = "sqlite:///file:test_ob_calc_memdb?mode=memory&cache=shared&uri=true"
+test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False, "uri": True})
+TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def setup_rotation_era(monkeypatch):
+    """Set up rotation era for all tests in this module using an in-memory test database."""
+    # Create all tables in memory
+    Base.metadata.create_all(bind=test_engine)
+
+    # Create test session
+    db = TestSessionLocal()
+
+    # Use monkeypatch to temporarily replace SessionLocal
+    import app.database.database as db_module
+
+    monkeypatch.setattr(db_module, "SessionLocal", TestSessionLocal)
+
+    try:
+        # Create the default rotation era matching the current system
+        era_pattern = {
+            "1": ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"],
+            "2": ["OFF", "OC", "N3", "N3", "N3", "N3", "OFF"],
+            "3": ["OFF", "OFF", "N1", "N1", "N1", "N1", "OC"],
+            "4": ["OC", "OFF", "N2", "N2", "N2", "OFF", "N1"],
+            "5": ["N1", "N1", "N1", "N1", "OC", "OFF", "OFF"],
+            "6": ["N3", "N3", "N3", "OFF", "OFF", "OC", "N3"],
+            "7": ["N3", "N3", "OFF", "OC", "N2", "N2", "N2"],
+            "8": ["N2", "N2", "OFF", "OFF", "N1", "N1", "N1"],
+            "9": ["N1", "N1", "OC", "OFF", "OFF", "N2", "N2"],
+            "10": ["N2", "N2", "N2", "N2", "OFF", "OFF", "OFF"],
+        }
+
+        era = RotationEra(
+            start_date=datetime.date(2026, 1, 2),
+            end_date=None,
+            rotation_length=10,
+            weeks_pattern=era_pattern,
+        )
+        db.add(era)
+        db.commit()
+    finally:
+        db.close()
+
+    yield
+
+    # Clear cache to prevent test interference
+    clear_schedule_cache()
+
+    # Drop all test tables (in-memory DB will be auto-deleted)
+    Base.metadata.drop_all(bind=test_engine)
+    # monkeypatch automatically restores original value
 
 
 class TestOBCalculation:

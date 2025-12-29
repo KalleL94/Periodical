@@ -132,6 +132,34 @@ class WageHistory(Base):
         )
 
 
+class RotationEra(Base):
+    """Rotation era model for tracking rotation configuration changes over time.
+
+    Allows the system to change rotation length (e.g., from 10 to 11 weeks) without
+    corrupting historical schedule calculations. Each era defines a time period with
+    its own rotation parameters.
+    """
+
+    __tablename__ = "rotation_eras"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    start_date = Column(Date, nullable=False, index=True)  # When this era begins
+    end_date = Column(Date, nullable=True, index=True)  # When this era ends (NULL = current/ongoing)
+    rotation_length = Column(Integer, nullable=False)  # Number of weeks in rotation cycle
+    weeks_pattern = Column(JSON, nullable=False)  # Week definitions: {"1": ["OFF", "OFF", ...], ...}
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return (
+            f"<RotationEra(id={self.id}, start_date={self.start_date}, "
+            f"end_date={self.end_date}, rotation_length={self.rotation_length})>"
+        )
+
+
 def create_tables():
     """Create all database tables."""
     Base.metadata.create_all(bind=engine)

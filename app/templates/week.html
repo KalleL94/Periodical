@@ -54,7 +54,7 @@
                                 {{ day.date.day }}/{{ day.date.month }}
                             </a>
                             {# Show rotation week on each day for easy reference #}
-                            <div class="calendar-rotation-week">Rot. v{{ day.rotation_week }}</div>
+                            <div class="calendar-rotation-week">Rot. v{{ day.rotation_week }}/{{ day.rotation_length }}</div>
                             {% if day.date.weekday() == 0 %}
                                 <span class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</span>
                             {% endif %}
