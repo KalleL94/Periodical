@@ -111,12 +111,18 @@ def summarize_month_for_person(
     settings = get_settings()
     persons = _get_persons()
 
-    # Hämta lön och skattetabell från användare
+    # Hämta lön för denna specifika månad (använd första dagen i månaden)
+    from datetime import date as dt_date
+
+    month_start_date = dt_date(year, month, 1)
+
     if user_wages and person_id in user_wages:
-        base_salary = user_wages[person_id]
+        # Note: user_wages from get_all_user_wages() returns current wage only
+        # For temporal queries, we need to use get_user_wage with effective_date
+        base_salary = get_user_wage(session, person_id, settings.monthly_salary, effective_date=month_start_date)
     else:
         try:
-            base_salary = get_user_wage(session, person_id, settings.monthly_salary)
+            base_salary = get_user_wage(session, person_id, settings.monthly_salary, effective_date=month_start_date)
         except Exception:
             base_salary = settings.monthly_salary
 

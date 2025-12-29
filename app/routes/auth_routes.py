@@ -274,9 +274,13 @@ async def change_password_submit(
 @router.get("/profile", response_class=HTMLResponse, name="profile")
 async def profile_page(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Show user profile page."""
+    from app.core.schedule import get_wage_history
     from app.core.storage import get_available_tax_tables
 
     available_tax_tables = get_available_tax_tables()
+
+    # Get wage history for current user
+    wage_history = get_wage_history(db, current_user.id)
 
     return templates.TemplateResponse(
         "profile.html",
@@ -284,6 +288,7 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
             "request": request,
             "user": current_user,
             "available_tax_tables": available_tax_tables,
+            "wage_history": wage_history,
         },
     )
 
@@ -292,27 +297,12 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
 async def update_profile(
     request: Request,
     name: str = Form(...),
-    wage: int = Form(...),
     tax_table: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Update user profile."""
     from app.core.storage import get_available_tax_tables
-
-    # Validate wage range
-    if not (1000 <= wage <= 1000000):
-        available_tax_tables = get_available_tax_tables()
-        return templates.TemplateResponse(
-            "profile.html",
-            {
-                "request": request,
-                "user": current_user,
-                "available_tax_tables": available_tax_tables,
-                "error": "Ogiltig lön: måste vara mellan 1000 och 1000000",
-            },
-            status_code=400,
-        )
 
     # Validate tax table
     available_tax_tables = get_available_tax_tables()
@@ -329,7 +319,6 @@ async def update_profile(
         )
 
     current_user.name = name
-    current_user.wage = wage
     current_user.tax_table = tax_table
     try:
         db.commit()
@@ -374,6 +363,102 @@ async def change_password(
     except Exception:
         db.rollback()
         raise
+
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/add-wage", name="profile_add_wage")
+async def profile_add_wage(
+    request: Request,
+    new_wage: int = Form(...),
+    effective_from: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: add a new wage with effective date."""
+    from datetime import datetime
+
+    from app.core.schedule import add_new_wage
+
+    try:
+        # Parse effective_from date
+        effective_date = datetime.strptime(effective_from, "%Y-%m-%d").date()
+
+        # Add new wage
+        add_new_wage(
+            session=db,
+            user_id=current_user.id,
+            new_wage=new_wage,
+            effective_from=effective_date,
+            created_by=current_user.id,
+        )
+
+        # Clear schedule cache to update calculations
+        clear_schedule_cache()
+
+    except ValueError as e:
+        # Invalid date format
+        raise HTTPException(status_code=400, detail=f"Ogiltigt datum: {e}") from e
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Kunde inte lägga till lön: {e}") from e
+
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/delete-wage/{wage_id}", name="profile_delete_wage")
+async def profile_delete_wage(
+    request: Request,
+    wage_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: delete a wage history entry (only if it's their own and not the only one)."""
+    from app.database.database import WageHistory
+
+    # Get the wage record
+    wage_record = db.query(WageHistory).filter(WageHistory.id == wage_id).first()
+
+    if not wage_record:
+        raise HTTPException(status_code=404, detail="Wage record not found")
+
+    # Security check: ensure user can only delete their own wages
+    if wage_record.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this wage record")
+
+    # Check if this is the only wage record
+    total_wages = db.query(WageHistory).filter(WageHistory.user_id == current_user.id).count()
+
+    if total_wages <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the only wage record")
+
+    # If this was the current wage (effective_to is NULL), we need to reopen the previous wage
+    if wage_record.effective_to is None:
+        # Find the previous wage (the one that ends just before this one starts)
+        previous_wage = (
+            db.query(WageHistory)
+            .filter(
+                WageHistory.user_id == current_user.id,
+                WageHistory.id != wage_id,
+                WageHistory.effective_to.isnot(None),
+            )
+            .order_by(WageHistory.effective_from.desc())
+            .first()
+        )
+
+        if previous_wage:
+            # Reopen the previous wage (set effective_to to NULL)
+            previous_wage.effective_to = None
+
+            # Update User.wage to the previous wage
+            current_user.wage = previous_wage.wage
+
+    # Delete the wage record
+    db.delete(wage_record)
+    db.commit()
+
+    # Clear schedule cache
+    clear_schedule_cache()
 
     return RedirectResponse(url="/profile", status_code=302)
 
@@ -671,6 +756,7 @@ async def admin_edit_user_page(
     db: Session = Depends(get_db),
 ):
     """Admin: show edit user form."""
+    from app.core.schedule import get_wage_history
     from app.core.storage import get_available_tax_tables
 
     edit_user = db.query(User).filter(User.id == user_id).first()
@@ -679,6 +765,9 @@ async def admin_edit_user_page(
 
     available_tax_tables = get_available_tax_tables()
 
+    # Get wage history for this user
+    wage_history = get_wage_history(db, user_id)
+
     return templates.TemplateResponse(
         "admin_user_edit.html",
         {
@@ -686,6 +775,7 @@ async def admin_edit_user_page(
             "user": current_user,
             "edit_user": edit_user,
             "available_tax_tables": available_tax_tables,
+            "wage_history": wage_history,
         },
     )
 
@@ -695,7 +785,6 @@ async def admin_update_user(
     request: Request,
     user_id: int,
     name: str = Form(...),
-    wage: int = Form(...),
     role: str = Form("user"),
     new_password: str = Form(None),
     current_user: User = Depends(get_admin_user),
@@ -707,7 +796,6 @@ async def admin_update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     edit_user.name = name
-    edit_user.wage = wage
     edit_user.role = UserRole(role)
 
     if new_password:
@@ -733,6 +821,110 @@ async def admin_update_user(
         raise
 
     return RedirectResponse(url="/admin/users", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/add-wage", name="admin_add_wage")
+async def admin_add_wage(
+    request: Request,
+    user_id: int,
+    new_wage: int = Form(...),
+    effective_from: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: add a new wage with effective date."""
+    from datetime import datetime
+
+    from app.core.schedule import add_new_wage
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        # Parse effective_from date
+        effective_date = datetime.strptime(effective_from, "%Y-%m-%d").date()
+
+        # Add new wage
+        add_new_wage(
+            session=db,
+            user_id=user_id,
+            new_wage=new_wage,
+            effective_from=effective_date,
+            created_by=current_user.id,
+        )
+
+        # Clear schedule cache to update calculations
+        clear_schedule_cache()
+
+    except ValueError as e:
+        # Invalid date format
+        raise HTTPException(status_code=400, detail=f"Ogiltigt datum: {e}") from e
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Kunde inte lägga till lön: {e}") from e
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/delete-wage/{wage_id}", name="admin_delete_wage")
+async def admin_delete_wage(
+    request: Request,
+    user_id: int,
+    wage_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete a wage history entry for any user."""
+    from app.database.database import WageHistory
+
+    # Get the wage record
+    wage_record = db.query(WageHistory).filter(WageHistory.id == wage_id).first()
+
+    if not wage_record:
+        raise HTTPException(status_code=404, detail="Wage record not found")
+
+    # Security check: ensure wage belongs to the user_id in the URL
+    if wage_record.user_id != user_id:
+        raise HTTPException(status_code=400, detail="Wage record does not belong to this user")
+
+    # Check if this is the only wage record for this user
+    total_wages = db.query(WageHistory).filter(WageHistory.user_id == user_id).count()
+
+    if total_wages <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the only wage record")
+
+    # If this was the current wage (effective_to is NULL), we need to reopen the previous wage
+    if wage_record.effective_to is None:
+        # Find the previous wage
+        previous_wage = (
+            db.query(WageHistory)
+            .filter(
+                WageHistory.user_id == user_id,
+                WageHistory.id != wage_id,
+                WageHistory.effective_to.isnot(None),
+            )
+            .order_by(WageHistory.effective_from.desc())
+            .first()
+        )
+
+        if previous_wage:
+            # Reopen the previous wage
+            previous_wage.effective_to = None
+
+            # Update User.wage to the previous wage
+            edit_user = db.query(User).filter(User.id == user_id).first()
+            if edit_user:
+                edit_user.wage = previous_wage.wage
+
+    # Delete the wage record
+    db.delete(wage_record)
+    db.commit()
+
+    # Clear schedule cache
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 @router.post("/admin/users/{user_id}/reset-password", name="admin_reset_password")

@@ -7,17 +7,18 @@ from sqlalchemy.orm import Session
 from app.core.constants import PERSON_IDS
 
 
-def get_user_wage(session, user_id: int, fallback: int | None = None) -> int:
+def get_user_wage(session, user_id: int, fallback: int | None = None, effective_date: date | None = None) -> int:
     """
-    Hämtar en användares lön från databasen.
+    Hämtar en användares lön från databasen med temporal validity support.
 
     Args:
         session: SQLAlchemy session
         user_id: Användar-ID
         fallback: Fallback-värde om användare saknas
+        effective_date: Datum för vilket lönen ska hämtas (None = dagens lön)
 
     Returns:
-        Lön i SEK
+        Lön i SEK som var giltig på angivet datum
     """
     from .core import get_settings
 
@@ -27,6 +28,32 @@ def get_user_wage(session, user_id: int, fallback: int | None = None) -> int:
     if not session:
         return default
 
+    # If no effective_date specified, use current wage from User table
+    if effective_date is None:
+        from app.database.database import User
+
+        user = session.query(User).filter(User.id == user_id).first()
+        return user.wage if user else default
+
+    # Query wage history for the specific date
+    from app.database.database import WageHistory
+
+    wage_record = (
+        session.query(WageHistory)
+        .filter(
+            WageHistory.user_id == user_id,
+            WageHistory.effective_from <= effective_date,
+            # Either no end date (current wage) OR end date is after effective_date
+            (WageHistory.effective_to.is_(None)) | (WageHistory.effective_to > effective_date),
+        )
+        .order_by(WageHistory.effective_from.desc())
+        .first()
+    )
+
+    if wage_record:
+        return wage_record.wage
+
+    # Fallback: try to get current wage from User table
     from app.database.database import User
 
     user = session.query(User).filter(User.id == user_id).first()
@@ -252,3 +279,112 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
         "off_hours": off_hours,
         "details": details,
     }
+
+
+# ============================================================================
+# Wage History Management Functions
+# ============================================================================
+
+
+def add_new_wage(session: Session, user_id: int, new_wage: int, effective_from: date, created_by: int | None = None):
+    """
+    Lägger till en ny lön för en användare med angiven effective_from date.
+
+    Denna funktion:
+    1. Sätter effective_to på nuvarande lön (om den finns)
+    2. Skapar ny lönepost med effective_from
+    3. Uppdaterar User.wage för snabb access till nuvarande lön
+
+    Args:
+        session: SQLAlchemy session
+        user_id: Användar-ID
+        new_wage: Ny lön i SEK
+        effective_from: Datum när nya lönen börjar gälla
+        created_by: Användar-ID för den som skapar ändringen
+
+    Returns:
+        Den skapade WageHistory-posten
+    """
+    from datetime import timedelta
+
+    from app.database.database import User, WageHistory
+
+    # Close previous wage history (set effective_to to day before new wage starts)
+    previous_wage = (
+        session.query(WageHistory).filter(WageHistory.user_id == user_id, WageHistory.effective_to.is_(None)).first()
+    )
+
+    if previous_wage:
+        # Set end date to day before new wage starts
+        previous_wage.effective_to = effective_from - timedelta(days=1)
+
+    # Create new wage history entry
+    new_wage_history = WageHistory(
+        user_id=user_id,
+        wage=new_wage,
+        effective_from=effective_from,
+        effective_to=None,  # NULL = current/future wage
+        created_by=created_by,
+    )
+
+    session.add(new_wage_history)
+
+    # Update User.wage for current wage (for backwards compatibility and performance)
+    # Only update if this is the current or future wage
+    if effective_from <= date.today():
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            user.wage = new_wage
+
+    session.commit()
+
+    return new_wage_history
+
+
+def get_wage_history(session: Session, user_id: int) -> list[dict]:
+    """
+    Hämtar all lönehistorik för en användare, sorterad efter datum.
+
+    Args:
+        session: SQLAlchemy session
+        user_id: Användar-ID
+
+    Returns:
+        Lista med lönehistorik (nyaste först)
+    """
+    from app.database.database import WageHistory
+
+    wage_records = (
+        session.query(WageHistory)
+        .filter(WageHistory.user_id == user_id)
+        .order_by(WageHistory.effective_from.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": record.id,
+            "wage": record.wage,
+            "effective_from": record.effective_from,
+            "effective_to": record.effective_to,
+            "is_current": record.effective_to is None,
+            "created_at": record.created_at,
+        }
+        for record in wage_records
+    ]
+
+
+def get_current_wage_record(session: Session, user_id: int):
+    """
+    Hämtar den nuvarande löneposten för en användare.
+
+    Args:
+        session: SQLAlchemy session
+        user_id: Användar-ID
+
+    Returns:
+        WageHistory-post eller None
+    """
+    from app.database.database import WageHistory
+
+    return session.query(WageHistory).filter(WageHistory.user_id == user_id, WageHistory.effective_to.is_(None)).first()

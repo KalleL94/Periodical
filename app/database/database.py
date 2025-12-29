@@ -108,6 +108,30 @@ class Absence(Base):
         return f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.absence_type})>"
 
 
+class WageHistory(Base):
+    """Wage history model for tracking wage changes over time with temporal validity."""
+
+    __tablename__ = "wage_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    wage = Column(Integer, nullable=False)  # Monthly wage in SEK
+    effective_from = Column(Date, nullable=False)  # When this wage becomes effective
+    effective_to = Column(Date, nullable=True)  # When this wage ends (NULL = current wage)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return (
+            f"<WageHistory(id={self.id}, user_id={self.user_id}, wage={self.wage}, "
+            f"effective_from={self.effective_from}, effective_to={self.effective_to})>"
+        )
+
+
 def create_tables():
     """Create all database tables."""
     Base.metadata.create_all(bind=engine)
