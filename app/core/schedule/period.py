@@ -446,17 +446,25 @@ def _populate_single_person_day(
                 current_day, ot_shift, user_wages, person_id, settings
             )
 
-        # Beräkna övertidsersättning
+        # Beräkna övertidsersättning med temporal wage query
         from app.core.constants import OT_RATE_DIVISOR
 
-        ot_pay = ot_shift.ot_pay
+        from .wages import get_user_wage
+
+        # Get wage for this specific date (temporal query)
+        wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
+        hourly_rate = wage_for_date / OT_RATE_DIVISOR
+
+        # Recalculate overtime pay based on historical wage
         ot_hours = ot_shift.hours
+        ot_pay = hourly_rate * ot_hours
+
         ot_details = {
             "start_time": str(ot_shift.start_time),
             "end_time": str(ot_shift.end_time),
             "hours": ot_hours,
             "pay": ot_pay,
-            "hourly_rate": user_wages.get(person_id, settings.monthly_salary) / OT_RATE_DIVISOR,
+            "hourly_rate": hourly_rate,
         }
 
         # Ersätt skift med OT för visning

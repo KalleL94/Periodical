@@ -445,7 +445,8 @@ async def show_day_for_person(
     combined_rules = ob_rules + special_rules
 
     person = person_list[person_id - 1]
-    monthly_salary = get_user_wage(db, person_id, settings.monthly_salary)
+    # Use temporal wage query for the specific date being viewed
+    monthly_salary = get_user_wage(db, person_id, settings.monthly_salary, effective_date=date_obj)
 
     # OT shifts never have OB pay, so check if this will become an OT shift
     # We need to check this before fetching the OT shift
@@ -513,12 +514,18 @@ async def show_day_for_person(
             except ValueError:
                 pass
 
+        # Recalculate overtime pay based on historical wage
+        from app.core.constants import OT_RATE_DIVISOR
+
+        hourly_rate = monthly_salary / OT_RATE_DIVISOR
+        ot_pay = hourly_rate * ot_shift.hours
+
         ot_details = {
             "start_time": ot_shift.start_time,
             "end_time": ot_shift.end_time,
             "hours": ot_shift.hours,
-            "pay": ot_shift.ot_pay,
-            "hourly_rate": monthly_salary / 72,
+            "pay": ot_pay,
+            "hourly_rate": hourly_rate,
         }
 
     # Calculate on-call pay if this is an on-call shift (use original_shift to check)

@@ -71,11 +71,14 @@ def get_overtime_shifts_for_month(
 
 
 def build_ot_details(ot_shift, hourly_rate: float) -> dict:
-    """Bygger detaljerad info om ett övertidspass."""
+    """Bygger detaljerad info om ett övertidspass.
+
+    Recalculates pay based on the provided hourly_rate instead of using stored value.
+    """
     return {
         "start_time": str(ot_shift.start_time),
         "end_time": str(ot_shift.end_time),
         "hours": ot_shift.hours,
-        "pay": ot_shift.ot_pay,
+        "pay": hourly_rate * ot_shift.hours,
         "hourly_rate": hourly_rate,
     }
