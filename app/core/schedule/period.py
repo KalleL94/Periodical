@@ -123,10 +123,15 @@ def generate_period_data(
     if user_wages is None:
         user_wages = get_all_user_wages(session)
 
+    # Förbered person-lista
+    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
+
+    # Batch fetch overtime shifts for the entire period to avoid N+1 queries
+    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date)
+
     # Generera dagdata
     persons = _get_persons()
     settings = get_settings()
-    person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
     days_out = []
 
     current_day = effective_start
@@ -139,7 +144,9 @@ def generate_period_data(
 
         if person_id is None:
             day_info["persons"] = [
-                _build_person_day_basic(current_day, pid, persons, get_shift_types(), session, vacation_dates)
+                _build_person_day_basic(
+                    current_day, pid, persons, get_shift_types(), session, vacation_dates, ot_shift_map
+                )
                 for pid in person_ids
             ]
         else:
@@ -153,6 +160,7 @@ def generate_period_data(
                 session,
                 persons,
                 settings,
+                ot_shift_map,
             )
 
         days_out.append(day_info)
@@ -213,6 +221,38 @@ def _load_vacation_dates(years: set[int]) -> dict[int, set[datetime.date]]:
     return vacation_dates
 
 
+def _batch_fetch_ot_shifts(
+    session,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> dict[tuple[int, datetime.date], object]:
+    """
+    Batch-hämtar övertidspass för flera personer och en period.
+
+    Returns:
+        Dict med (person_id, date) -> OvertimeShift
+    """
+    if not session:
+        return {}
+
+    from app.database.database import OvertimeShift
+
+    # Hämta alla OT-pass för alla personer i perioden
+    ot_shifts = (
+        session.query(OvertimeShift)
+        .filter(
+            OvertimeShift.user_id.in_(person_ids),
+            OvertimeShift.date >= start_date,
+            OvertimeShift.date <= end_date,
+        )
+        .all()
+    )
+
+    # Skapa lookup-dict
+    return {(shift.user_id, shift.date): shift for shift in ot_shifts}
+
+
 def _build_person_day_basic(
     date: datetime.date,
     person_id: int,
@@ -220,6 +260,7 @@ def _build_person_day_basic(
     shift_types: list,
     session=None,
     vacation_dates: dict[int, set[datetime.date]] | None = None,
+    ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
@@ -270,17 +311,22 @@ def _build_person_day_basic(
         hours, start, end = calculate_shift_hours(date, shift.code)
 
     # Kolla övertid
-    if session:
+    if ot_shift_map is not None:
+        ot_shift = ot_shift_map.get((person_id, date))
+    elif session:
         ot_shift = get_overtime_shift_for_date(session, person_id, date)
-        if ot_shift:
-            ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-            if ot_shift_type:
-                shift = ot_shift_type
-                hours = ot_shift.hours
-                try:
-                    start, end = parse_ot_times(ot_shift, date)
-                except ValueError:
-                    start, end = None, None
+    else:
+        ot_shift = None
+
+    if ot_shift:
+        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+        if ot_shift_type:
+            shift = ot_shift_type
+            hours = ot_shift.hours
+            try:
+                start, end = parse_ot_times(ot_shift, date)
+            except ValueError:
+                start, end = None, None
 
     return {
         "person_id": person_id,
@@ -303,6 +349,7 @@ def _populate_single_person_day(
     session,
     persons: list,
     settings,
+    ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -381,7 +428,13 @@ def _populate_single_person_day(
         oncall_details = oncall_calc
 
     # Kolla övertid
-    ot_shift = get_overtime_shift_for_date(session, person_id, current_day) if session else None
+    if ot_shift_map is not None:
+        ot_shift = ot_shift_map.get((person_id, current_day))
+    elif session:
+        ot_shift = get_overtime_shift_for_date(session, person_id, current_day)
+    else:
+        ot_shift = None
+
     ot_pay = 0.0
     ot_hours = 0.0
     ot_details = {}
