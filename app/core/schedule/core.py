@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 from app.core.config import DATE_FORMAT_ISO
 from app.core.constants import VACATION_CODE, WEEKDAY_NAMES
 from app.core.storage import load_rotation, load_settings, load_shift_types
-from app.database.database import RotationEra, SessionLocal
+from app.database import database as db_module
+from app.database.database import RotationEra
 
 if TYPE_CHECKING:
     from app.core.models import Rotation, Settings, ShiftType
@@ -67,7 +68,8 @@ def get_rotation_era_for_date(date: datetime.date) -> RotationEra | None:
     Returns:
         RotationEra om en matchande era finns, annars None
     """
-    db = SessionLocal()
+    # Use db_module.SessionLocal() to get the current version (supports monkeypatch in tests)
+    db = db_module.SessionLocal()
     try:
         # Hitta era där date >= start_date OCH (end_date är NULL ELLER date < end_date)
         era = (
