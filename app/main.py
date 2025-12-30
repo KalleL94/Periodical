@@ -65,7 +65,11 @@ app = FastAPI(
 
 # CORS Configuration
 IS_PRODUCTION = os.getenv("PRODUCTION", "false").lower() == "true"
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+CORS_ORIGINS = (
+    [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+    if os.getenv("CORS_ORIGINS")
+    else []
+)
 
 if IS_PRODUCTION:
     # Production: Strict CORS - only allow specified origins
@@ -118,6 +122,4 @@ async def health_check():
 
     Returns 200 OK if application is running.
     """
-    return JSONResponse(
-        status_code=200, content={"status": "healthy", "service": "periodical", "version": "0.0.20"}
-    )
+    return JSONResponse(status_code=200, content={"status": "healthy", "service": "periodical", "version": "0.0.20"})
