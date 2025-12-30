@@ -221,7 +221,7 @@ async def read_root(
             # Check for overtime shift first (use dictionary lookup)
             ot_shift = ot_shift_map.get(day["date"])
 
-            if ot_shift:
+            if ot_shift and not absence:  # Skip OT if there's an absence
                 # Calculate OT hours and pay
                 ot_start = datetime.combine(day["date"], ot_shift.start_time)
                 ot_end = datetime.combine(day["date"], ot_shift.end_time)
@@ -316,7 +316,7 @@ async def read_root(
         # Check for overtime shift first (use dictionary lookup)
         ot_shift = ot_shift_map.get(current_date)
 
-        if ot_shift:
+        if ot_shift and not absence:  # Skip OT if there's an absence
             # Calculate OT hours and pay
             ot_start = datetime.combine(current_date, ot_shift.start_time)
             ot_end = datetime.combine(current_date, ot_shift.end_time)
@@ -476,7 +476,10 @@ async def show_day_for_person(
     ot_shift_id = ot_shift.id if ot_shift else None
     ot_details = {}
 
-    if ot_shift:
+    # Fetch absence for this person and date (check before calculating OT)
+    absence = db.query(Absence).filter(Absence.user_id == person_id, Absence.date == date_obj).first()
+
+    if ot_shift and not absence:  # Skip OT if there's an absence
         # Replace shift display with OT shift
         from app.core.models import ShiftType
         from app.core.storage import load_shift_types
@@ -577,9 +580,6 @@ async def show_day_for_person(
     # Check if this date is a storhelg (major holiday)
     storhelg_dates = _get_storhelg_dates_for_year(year)
     is_storhelg = date_obj in storhelg_dates
-
-    # Fetch absence for this person and date
-    absence = db.query(Absence).filter(Absence.user_id == person_id, Absence.date == date_obj).first()
 
     # Calculate absence deduction if absence exists
     absence_deduction = 0.0
