@@ -126,7 +126,48 @@ async def admin_settings_update(
 
     # Update settings.json (for default monthly_salary only)
     settings_path = Path("data/settings.json")
-    settings_data = json.loads(settings_path.read_text(encoding="utf-8"))
+    try:
+        settings_data = json.loads(settings_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return templates.TemplateResponse(
+            "admin_settings.html",
+            {
+                "request": request,
+                "user": current_user,
+                "settings": settings,
+                "persons": [],
+                "tax_brackets": tax_brackets,
+                "error": "Konfigurationsfil saknas. Kontakta administratör.",
+            },
+            status_code=500,
+        )
+    except json.JSONDecodeError as e:
+        return templates.TemplateResponse(
+            "admin_settings.html",
+            {
+                "request": request,
+                "user": current_user,
+                "settings": settings,
+                "persons": [],
+                "tax_brackets": tax_brackets,
+                "error": f"Korrupt konfigurationsfil: {e}. Kontakta administratör.",
+            },
+            status_code=500,
+        )
+    except OSError as e:
+        return templates.TemplateResponse(
+            "admin_settings.html",
+            {
+                "request": request,
+                "user": current_user,
+                "settings": settings,
+                "persons": [],
+                "tax_brackets": tax_brackets,
+                "error": f"Kunde inte läsa konfigurationsfil: {e}. Kontakta administratör.",
+            },
+            status_code=500,
+        )
+
     settings_data["monthly_salary"] = monthly_salary
     write_json_safely(settings_path, settings_data)
 
