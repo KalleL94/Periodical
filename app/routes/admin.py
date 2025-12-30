@@ -1,7 +1,6 @@
 import json
 import shutil
 import tempfile
-from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_user
 from app.core.schedule import clear_schedule_cache, settings, tax_brackets
+from app.core.utils import get_today
 from app.database.database import RotationEra, User, get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -18,7 +18,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 # Add now (today's date) as a global for templates
 
-templates.env.globals["now"] = date.today()
+templates.env.globals["now"] = get_today()
 
 
 def write_json_safely(file_path: Path, data: dict | list) -> None:

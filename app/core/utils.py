@@ -1,8 +1,29 @@
 # app\core\utils.py
 import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 ViewType = Literal["day", "week", "month", "year"]
+
+# Application timezone - all "today" calculations use Stockholm time
+APP_TIMEZONE = ZoneInfo("Europe/Stockholm")
+
+
+def get_today() -> datetime.date:
+    """
+    Returns today's date in Stockholm timezone.
+
+    This ensures consistent "today" calculations regardless of server timezone settings.
+    Used throughout the application for:
+    - Today highlighting in calendars
+    - Default year/month/week selection
+    - Vacation calculations
+    - Current shift detection
+
+    Returns:
+        datetime.date: Today's date in Europe/Stockholm timezone
+    """
+    return datetime.datetime.now(APP_TIMEZONE).date()
 
 
 def get_safe_today(rotation_start_date: datetime.date) -> datetime.date:
@@ -10,7 +31,7 @@ def get_safe_today(rotation_start_date: datetime.date) -> datetime.date:
     Returnerar dagens datum, men aldrig tidigare än rotation_start_date.
     Används för att beräkna default-år och -vecka utan att hamna före schemats start.
     """
-    today = datetime.date.today()
+    today = get_today()
     return rotation_start_date if today < rotation_start_date else today
 
 

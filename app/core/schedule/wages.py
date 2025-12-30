@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.constants import PERSON_IDS
+from app.core.utils import get_today
 
 
 def get_user_wage(session, user_id: int, fallback: int | None = None, effective_date: date | None = None) -> int:
@@ -331,7 +332,7 @@ def add_new_wage(session: Session, user_id: int, new_wage: int, effective_from: 
 
     # Update User.wage for current wage (for backwards compatibility and performance)
     # Only update if this is the current or future wage
-    if effective_from <= date.today():
+    if effective_from <= get_today():
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             user.wage = new_wage

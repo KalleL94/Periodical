@@ -128,6 +128,23 @@ PRODUCTION=false
 TZ=Europe/Stockholm
 ```
 
+### Timezone Handling
+
+Periodical uses explicit timezone management to ensure consistent "today" calculations regardless of server timezone settings:
+
+- **Application timezone**: Europe/Stockholm (hardcoded in `app/core/utils.py`)
+- **All "today" calculations**: Use `get_today()` helper function (Stockholm time)
+- **Database timestamps**: Use UTC via `datetime.utcnow()` (JWT tokens, logging, created_at fields)
+- **Performance timing**: Uses local `datetime.now()` (timing only, not business logic)
+
+This ensures:
+- Today highlighting works correctly in calendars
+- Vacation week calculations use Stockholm time
+- Current shift detection is accurate even around midnight
+- No timezone-related bugs at DST transitions
+
+**Note:** While `TZ` environment variable can be set, the application explicitly uses Stockholm time for all date-based business logic to prevent timezone-related bugs.
+
 ### Data Configuration
 
 All business logic is data-driven via JSON files in `data/`:
