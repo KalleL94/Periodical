@@ -55,7 +55,7 @@ from app.core.schedule import (
 from app.core.schedule import (
     persons as person_list,
 )
-from app.core.utils import get_navigation_dates, get_safe_today
+from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import Absence, OvertimeShift, User, UserRole, get_db
 
@@ -68,7 +68,8 @@ templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["contrast"] = contrast_color
 
 # Add now (today's date) as a global for templates
-templates.env.globals["now"] = date.today()
+# Note: This is set once at module load. For dynamic "today", use get_today() in routes.
+templates.env.globals["now"] = get_today()
 
 
 # ============ Routes ============
@@ -85,7 +86,7 @@ async def read_root(
         return RedirectResponse(url="/login", status_code=302)
 
     # Get current date and week (use safe_today to handle dates before rotation start)
-    today = date.today()
+    today = get_today()
     safe_today = get_safe_today(rotation_start_date)
     iso_year, iso_week, _ = safe_today.isocalendar()
 
@@ -683,7 +684,7 @@ async def show_week_for_person(
     monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)
 
-    real_today = date.today()
+    real_today = get_today()
 
     return render_template(
         templates,
@@ -722,7 +723,7 @@ async def show_week_all(
     monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)
 
-    real_today = date.today()
+    real_today = get_today()
 
     return render_template(
         templates,

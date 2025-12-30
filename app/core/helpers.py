@@ -6,6 +6,7 @@ Shared helper functions for templates and route handlers.
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from app.core.utils import get_today
 from app.database.database import User, UserRole
 
 
@@ -96,8 +97,6 @@ def render_template(
     """
     Render template with user context automatically included.
     """
-    from datetime import date
-
-    ctx = {"request": request, "user": user, "now": date.today()}
+    ctx = {"request": request, "user": user, "now": get_today()}
     ctx.update(context)
     return templates.TemplateResponse(template_name, ctx)

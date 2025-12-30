@@ -3,7 +3,6 @@
 Authentication routes: login, logout, registration.
 """
 
-from datetime import date
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
@@ -28,6 +27,7 @@ from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
 from app.core.sentry_config import add_breadcrumb, clear_user_context, set_user_context
+from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, User, UserRole, get_db
 
 logger = get_logger(__name__)
@@ -37,7 +37,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 # Add now (today's date) as a global callable for templates
 
-templates.env.globals["now"] = date.today()
+templates.env.globals["now"] = get_today()
 
 
 # ============ Pydantic schemas ============
@@ -470,10 +470,8 @@ async def vacation_page(
     current_user: User = Depends(get_current_user),
 ):
     """Show vacation management page."""
-    import datetime
-
     if year is None:
-        year = datetime.date.today().year
+        year = get_today().year
 
     vacation = current_user.vacation or {}
     vacation_weeks = vacation.get(str(year), [])
@@ -551,7 +549,7 @@ async def export_calendar(
     Exporterar användarens schema som iCal-fil.
     Genererar en kalender för de närmaste 6 månaderna.
     """
-    from datetime import date, timedelta
+    from datetime import timedelta
 
     from app.core.calendar_export import generate_ical
 
@@ -560,7 +558,7 @@ async def export_calendar(
         raise HTTPException(status_code=400, detail="Ogiltigt språk")
 
     # Beräkna datumintervall (6 månader framåt)
-    start_date = date.today()
+    start_date = get_today()
     end_date = start_date + timedelta(days=180)  # ~6 månader
 
     # Generera iCal
