@@ -26,7 +26,7 @@ cryptography==46.0.3
     # via python-jose
 ecdsa==0.19.1
     # via python-jose
-fastapi==0.127.0
+fastapi==0.128.0
     # via
     #   periodical (pyproject.toml)
     #   sentry-sdk
