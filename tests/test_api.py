@@ -25,6 +25,8 @@ class TestPublicRoutes:
         data = response.json()
         assert "status" in data
         assert data["status"] == "healthy"
+        assert "database" in data
+        assert data["database"] == "connected"
 
     def test_root_redirects_to_week_view(self, test_client, test_user):
         """GET / should redirect to login or week view."""

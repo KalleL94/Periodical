@@ -3,18 +3,22 @@
 FastAPI application entry point.
 """
 
+import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.logging_config import get_logger, setup_logging
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.sentry_config import init_sentry
-from app.database.database import create_tables
+from app.database.database import create_tables, get_db
 from app.routes.admin import router as admin_router
 from app.routes.auth_routes import router as auth_router
 from app.routes.public import router as public_router
@@ -26,6 +30,42 @@ logger = get_logger(__name__)
 # Initialize Sentry for error tracking (production only)
 
 sentry_enabled = init_sentry()
+
+
+def validate_required_data_files():
+    """
+    Validate that all required JSON configuration files exist and are valid.
+
+    Raises:
+        RuntimeError: If any required file is missing or contains invalid JSON
+    """
+    required_files = [
+        "data/shift_types.json",
+        "data/rotation.json",
+        "data/settings.json",
+        "data/persons.json",
+        "data/ob_rules.json",
+        "data/oncall_rules.json",
+    ]
+
+    for file_path in required_files:
+        path = Path(file_path)
+
+        # Check if file exists
+        if not path.exists():
+            raise RuntimeError(
+                f"Required data file missing: {file_path}\n"
+                f"Ensure you are running from the correct directory and all data files are present."
+            )
+
+        # Validate JSON syntax
+        try:
+            with open(path, encoding="utf-8") as f:
+                json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Invalid JSON in {file_path}: {e}") from e
+
+    logger.info(f"All {len(required_files)} required data files validated successfully")
 
 
 @asynccontextmanager
@@ -41,6 +81,13 @@ async def lifespan(app: FastAPI):
             }
         },
     )
+
+    # Validate required data files
+    try:
+        validate_required_data_files()
+    except Exception as e:
+        logger.error(f"Data file validation failed: {e}", exc_info=True)
+        raise
 
     # Create database tables
     try:
@@ -116,10 +163,34 @@ app.include_router(admin_router)
 
 
 @app.get("/health", tags=["health"])
-async def health_check():
+async def health_check(db: Session = Depends(get_db)):
     """
     Health check endpoint for monitoring.
 
-    Returns 200 OK if application is running.
+    Checks both application status and database connectivity.
+    Returns 200 OK if both application and database are healthy.
+    Returns 503 Service Unavailable if database connection fails.
     """
-    return JSONResponse(status_code=200, content={"status": "healthy", "service": "periodical", "version": "0.0.20"})
+    try:
+        # Verify database connection with a simple query
+        db.execute(text("SELECT 1"))
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "healthy",
+                "service": "periodical",
+                "version": "0.0.20",
+                "database": "connected",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Health check failed - database connection error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "unhealthy",
+                "service": "periodical",
+                "database": "disconnected",
+                "error": "Database connection failed",
+            },
+        ) from e
