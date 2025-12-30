@@ -28,6 +28,20 @@
 }
 
 .calendar-day.empty { background: var(--bg); }
+.calendar-day.adjacent-month {
+    background: var(--bg);
+    opacity: 0.3;
+}
+.calendar-day.adjacent-month .day-number,
+.calendar-day.adjacent-month .calendar-badge,
+.calendar-day.adjacent-month .calendar-time,
+.calendar-day.adjacent-month .rotation-week-small {
+    opacity: 0.5;
+}
+.calendar-day.adjacent-month:hover {
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+}
 .calendar-day.today-cell { background: rgba(64, 169, 255, 0.08); box-shadow: inset 0 0 0 2px var(--accent); }
 .calendar-day-content { padding: 0.5rem; height: 100%; display: flex; flex-direction: column; }
 

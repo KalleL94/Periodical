@@ -28,6 +28,7 @@ from app.core.oncall import (
 from app.core.schedule import (
     _cached_special_rules,
     _select_ob_rules_for_date,
+    build_calendar_grid_for_month,
     build_cowork_details,
     build_cowork_stats,
     build_week_data,
@@ -35,6 +36,7 @@ from app.core.schedule import (
     calculate_ob_pay,
     calculate_overtime_pay,
     calculate_shift_hours,
+    clear_schedule_cache,
     determine_shift_for_date,
     generate_month_data,
     generate_year_data,
@@ -767,7 +769,9 @@ async def show_month_for_person(
 
     validate_date_params(year, month, None)
 
-    days_in_month = summarize_month_for_person(year, month, person_id=person_id, session=db)
+    calendar_data = build_calendar_grid_for_month(year, month, person_id=person_id, session=db)
+    days_in_month = calendar_data["summary"]
+    calendar_grid = calendar_data["grid"]
 
     show_salary = can_see_salary(current_user, person_id)
 
@@ -796,6 +800,7 @@ async def show_month_for_person(
             "person_id": person_id,
             "person_name": person_list[person_id - 1].name,
             "days": days_in_month,
+            "calendar_grid": calendar_grid,
             "show_salary": show_salary,
         },
         user=current_user,
@@ -823,13 +828,16 @@ async def show_month_all(
     # Pre-load wages once to avoid N+1 queries (10 persons × 1 query each)
     user_wages = get_all_user_wages(db)
 
+    # Only fetch tax tables if user is admin (needed for salary calculations)
+    is_admin = current_user is not None and current_user.role == UserRole.ADMIN
+
     persons = []
     for pid in range(1, 11):
         # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
         person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
 
         summary = summarize_month_for_person(
-            year, month, pid, session=db, user_wages=user_wages, year_days=person_month_days
+            year, month, pid, session=db, user_wages=user_wages, year_days=person_month_days, fetch_tax_table=is_admin
         )
         if not can_see_salary(current_user, pid):
             summary = strip_salary_data(summary)
@@ -1075,6 +1083,9 @@ async def add_overtime_shift(
     session.add(ot_shift)
     session.commit()
 
+    # Clear schedule cache to reflect changes
+    clear_schedule_cache()
+
     return RedirectResponse(url=f"/day/{user_id}/{ot_date.year}/{ot_date.month}/{ot_date.day}", status_code=303)
 
 
@@ -1105,5 +1116,8 @@ async def delete_overtime_shift(
     # Delete
     session.delete(ot_shift)
     session.commit()
+
+    # Clear schedule cache to reflect changes
+    clear_schedule_cache()
 
     return RedirectResponse(url=f"/day/{user_id}/{date.year}/{date.month}/{date.day}", status_code=303)

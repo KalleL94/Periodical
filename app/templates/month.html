@@ -94,26 +94,6 @@
     {# Calendar grid view #}
     {% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
 
-    {# Get first day of month and calculate its weekday (0=Monday, 6=Sunday) #}
-    {% set first_day = days.days[0].date.replace(day=1) %}
-    {% set first_weekday = first_day.weekday() %}
-    {# Calculate actual number of days in the month #}
-    {% if month in [1, 3, 5, 7, 8, 10, 12] %}
-        {% set num_days = 31 %}
-    {% elif month in [4, 6, 9, 11] %}
-        {% set num_days = 30 %}
-    {% elif month == 2 %}
-        {# Check for leap year #}
-        {% if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) %}
-            {% set num_days = 29 %}
-        {% else %}
-            {% set num_days = 28 %}
-        {% endif %}
-    {% endif %}
-
-    {# Calculate total cells needed (weeks * 7) #}
-    {% set total_cells = ((first_weekday + num_days + 6) // 7) * 7 %}
-
     <table class="calendar-grid">
         <thead>
             <tr>
@@ -123,67 +103,52 @@
             </tr>
         </thead>
         <tbody>
-            {% for week_offset in range(0, total_cells, 7) %}
+            {% for week in calendar_grid %}
                 <tr>
-                    {% for day_offset in range(7) %}
-                        {% set cell_index = week_offset + day_offset %}
-                        {% set day_num = cell_index - first_weekday + 1 %}
+                    {% for day_data in week %}
+                        {% set is_today = today is defined and day_data.date == today %}
+                        {% set is_current = day_data.is_current_month %}
 
-                        {% if day_num < 1 or day_num > num_days %}
-                            {# Empty cell for days outside this month #}
-                            <td class="calendar-day empty"></td>
-                        {% else %}
-                            {# Valid day in this month - find the correct day by matching the date #}
-                            {% set ns = namespace(d=none) %}
-                            {% for day_obj in days.days %}
-                                {% if day_obj.date.day == day_num %}
-                                    {% set ns.d = day_obj %}
-                                {% endif %}
-                            {% endfor %}
+                        <td class="calendar-day {% if not is_current %}adjacent-month{% endif %} {% if is_today %}today-cell{% endif %}"
+                            style="border-top: 4px solid {% if day_data.shift %}{{ day_data.shift.color }}{% else %}#333{% endif %};">
 
-                            {% if ns.d %}
-                                {% set is_today = today is defined and ns.d.date == today %}
+                            <div class="calendar-day-content">
+                                <div class="calendar-day-header">
+                                    <a href="/day/{{ person_id }}/{{ day_data.date.year }}/{{ day_data.date.month }}/{{ day_data.date.day }}"
+                                       class="day-number">
+                                        {{ day_data.date.day }}
+                                    </a>
+                                    {% if day_data.date.weekday() == 0 %}
+                                        <span class="rotation-week-small">v{{ day_data.date.isocalendar()[1] }}</span>
+                                    {% elif day_data.date.weekday() == 6 and day_data.rotation_week %}
+                                        {% if day_data.rotation_length %}
+                                            <span class="rotation-week-small">r-v{{ day_data.rotation_week }}/{{ day_data.rotation_length }}</span>
+                                        {% else %}
+                                            <span class="rotation-week-small">r-v{{ day_data.rotation_week }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
 
-                                <td class="calendar-day {% if is_today %}today-cell{% endif %}"
-                                    style="border-top: 4px solid {% if ns.d.shift %}{{ ns.d.shift.color }}{% else %}#333{% endif %};">
+                                <div class="calendar-day-body">
+                                    {% if day_data.shift %}
+                                        <span class="badge calendar-badge"
+                                              style="background: {{ day_data.shift.color }}; color: {{ day_data.shift.color | contrast }};">
+                                            {{ day_data.shift.code }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge badge-off calendar-badge">OFF</span>
+                                    {% endif %}
 
-                                    <div class="calendar-day-content">
-                                        <div class="calendar-day-header">
-                                            <a href="/day/{{ person_id }}/{{ ns.d.date.year }}/{{ ns.d.date.month }}/{{ ns.d.date.day }}"
-                                               class="day-number">
-                                                {{ day_num }}
-                                            </a>
-                                            {% if ns.d.date.weekday() == 0 %}
-                                                <span class="rotation-week-small">v{{ ns.d.date.isocalendar()[1] }}</span>
-                                            {% elif ns.d.date.weekday() == 6 %}
-                                                <span class="rotation-week-small">r-v{{ ns.d.rotation_week }}/{{ ns.d.rotation_length }}</span>
-                                            {% endif %}
-                                        </div>
-
-                                        <div class="calendar-day-body">
-                                            {% if ns.d.shift %}
-                                                <span class="badge calendar-badge"
-                                                      style="background: {{ ns.d.shift.color }}; color: {{ ns.d.shift.color | contrast }};">
-                                                    {{ ns.d.shift.code }}
-                                                </span>
-                                            {% else %}
-                                                <span class="badge badge-off calendar-badge">OFF</span>
-                                            {% endif %}
-
-                                            {% if ns.d.shift and ns.d.shift.code != 'OC' %}
-                                                {% if ns.d.shift.code == 'OT' and ns.d.start and ns.d.end %}
-                                                    <div class="calendar-time">{{ ns.d.start.strftime('%H:%M') }} - {{ ns.d.end.strftime('%H:%M') }}</div>
-                                                {% elif ns.d.shift.start_time is not none %}
-                                                    <div class="calendar-time">{{ ns.d.shift.start_time }} - {{ ns.d.shift.end_time }}</div>
-                                                {% endif %}
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </td>
-                            {% else %}
-                                <td class="calendar-day empty"></td>
-                            {% endif %}
-                        {% endif %}
+                                    {% if day_data.shift and day_data.shift.code != 'OC' %}
+                                        {% if day_data.shift.code == 'OT' and day_data.start and day_data.end %}
+                                            <div class="calendar-time">{{ day_data.start.strftime('%H:%M') }} - {{ day_data.end.strftime('%H:%M') }}</div>
+                                        {% elif day_data.shift.start_time is not none %}
+                                            <div class="calendar-time">{{ day_data.shift.start_time }} - {{ day_data.shift.end_time }}</div>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
                     {% endfor %}
                 </tr>
             {% endfor %}

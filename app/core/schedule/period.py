@@ -54,9 +54,15 @@ def build_week_data(
         Lista med 7 dagar, varje dag innehåller skiftinfo
     """
     monday = datetime.date.fromisocalendar(year, week, 1)
+    sunday = monday + datetime.timedelta(days=6)
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
     persons = _get_persons()
     shift_types = get_shift_types()
+
+    # Batch fetch absences and overtime for the week to avoid N+1 queries
+    absence_map = _batch_fetch_absences(session, person_ids, monday, sunday)
+    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday)
+
     days_in_week = []
 
     for offset in range(7):
@@ -69,10 +75,31 @@ def build_week_data(
 
         if person_id is None:
             day_info["persons"] = [
-                _build_person_day_basic(current_date, pid, persons, shift_types, session) for pid in person_ids
+                _build_person_day_basic(
+                    current_date,
+                    pid,
+                    persons,
+                    shift_types,
+                    session,
+                    None,
+                    ot_shift_map,
+                    absence_map,
+                )
+                for pid in person_ids
             ]
         else:
-            day_info.update(_build_person_day_basic(current_date, person_id, persons, shift_types, session))
+            day_info.update(
+                _build_person_day_basic(
+                    current_date,
+                    person_id,
+                    persons,
+                    shift_types,
+                    session,
+                    None,
+                    ot_shift_map,
+                    absence_map,
+                )
+            )
 
         days_in_week.append(day_info)
 
@@ -127,7 +154,8 @@ def generate_period_data(
     # Förbered person-lista
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
 
-    # Batch fetch overtime shifts for the entire period to avoid N+1 queries
+    # Batch fetch absences and overtime shifts for the entire period to avoid N+1 queries
+    absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date)
 
     # Generera dagdata
@@ -146,7 +174,7 @@ def generate_period_data(
         if person_id is None:
             day_info["persons"] = [
                 _build_person_day_basic(
-                    current_day, pid, persons, get_shift_types(), session, vacation_dates, ot_shift_map
+                    current_day, pid, persons, get_shift_types(), session, vacation_dates, ot_shift_map, absence_map
                 )
                 for pid in person_ids
             ]
@@ -162,6 +190,7 @@ def generate_period_data(
                 persons,
                 settings,
                 ot_shift_map,
+                absence_map,
             )
 
         days_out.append(day_info)
@@ -222,6 +251,38 @@ def _load_vacation_dates(years: set[int]) -> dict[int, set[datetime.date]]:
     return vacation_dates
 
 
+def _batch_fetch_absences(
+    session,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> dict[tuple[int, datetime.date], object]:
+    """
+    Batch-hämtar frånvaro för flera personer och en period.
+
+    Returns:
+        Dict med (person_id, date) -> Absence
+    """
+    if not session:
+        return {}
+
+    from app.database.database import Absence
+
+    # Hämta alla frånvaro för alla personer i perioden
+    absences = (
+        session.query(Absence)
+        .filter(
+            Absence.user_id.in_(person_ids),
+            Absence.date >= start_date,
+            Absence.date <= end_date,
+        )
+        .all()
+    )
+
+    # Skapa lookup-dict
+    return {(absence.user_id, absence.date): absence for absence in absences}
+
+
 def _batch_fetch_ot_shifts(
     session,
     person_ids: list[int],
@@ -262,33 +323,37 @@ def _build_person_day_basic(
     session=None,
     vacation_dates: dict[int, set[datetime.date]] | None = None,
     ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
+    absence_map: dict[tuple[int, datetime.date], object] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
     rotation_length = get_rotation_length_for_date(date)
 
-    # Kolla frånvaro först (högsta prioritet)
-    if session:
+    # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
+    absence = None
+    if absence_map is not None:
+        absence = absence_map.get((person_id, date))
+    elif session:
         from app.database.database import Absence
 
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == date).first()
 
-        if absence:
-            # Hitta rätt shift type för frånvarotypen
-            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
-            if absence_shift:
-                result = determine_shift_for_date(date, person_id)
-                _, rotation_week = result if result else (None, None)
-                return {
-                    "person_id": person_id,
-                    "person_name": persons[person_id - 1].name,
-                    "shift": absence_shift,
-                    "rotation_week": rotation_week,
-                    "rotation_length": rotation_length,
-                    "hours": 0.0,
-                    "start": None,
-                    "end": None,
-                }
+    if absence:
+        # Hitta rätt shift type för frånvarotypen
+        absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+        if absence_shift:
+            result = determine_shift_for_date(date, person_id)
+            _, rotation_week = result if result else (None, None)
+            return {
+                "person_id": person_id,
+                "person_name": persons[person_id - 1].name,
+                "shift": absence_shift,
+                "rotation_week": rotation_week,
+                "rotation_length": rotation_length,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
+            }
 
     # Kolla semester
     if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
@@ -355,49 +420,53 @@ def _populate_single_person_day(
     persons: list,
     settings,
     ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
+    absence_map: dict[tuple[int, datetime.date], object] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
 
-    # Kolla frånvaro först (högsta prioritet)
-    if session:
+    # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
+    absence = None
+    if absence_map is not None:
+        absence = absence_map.get((person_id, current_day))
+    elif session:
         from app.database.database import Absence
 
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == current_day).first()
 
-        if absence:
-            # Hitta rätt shift type för frånvarotypen
-            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
-            if absence_shift:
-                shift = absence_shift
-                rotation_week = None
-                hours, start, end = 0.0, None, None
-                ob = {}
-                oncall_pay = 0.0
-                oncall_details = {}
-                ot_pay = 0.0
-                ot_hours = 0.0
-                ot_details = {}
+    if absence:
+        # Hitta rätt shift type för frånvarotypen
+        absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+        if absence_shift:
+            shift = absence_shift
+            rotation_week = None
+            hours, start, end = 0.0, None, None
+            ob = {}
+            oncall_pay = 0.0
+            oncall_details = {}
+            ot_pay = 0.0
+            ot_hours = 0.0
+            ot_details = {}
 
-                day_info.update(
-                    {
-                        "person_id": person_id,
-                        "person_name": persons[person_id - 1].name,
-                        "shift": shift,
-                        "rotation_week": rotation_week,
-                        "hours": hours,
-                        "start": start,
-                        "end": end,
-                        "ob": ob,
-                        "oncall_pay": oncall_pay,
-                        "oncall_details": oncall_details,
-                        "ot_pay": ot_pay,
-                        "ot_hours": ot_hours,
-                        "ot_details": ot_details,
-                    }
-                )
-                return
+            day_info.update(
+                {
+                    "person_id": person_id,
+                    "person_name": persons[person_id - 1].name,
+                    "shift": shift,
+                    "rotation_week": rotation_week,
+                    "hours": hours,
+                    "start": start,
+                    "end": end,
+                    "ob": ob,
+                    "oncall_pay": oncall_pay,
+                    "oncall_details": oncall_details,
+                    "ot_pay": ot_pay,
+                    "ot_hours": ot_hours,
+                    "ot_details": ot_details,
+                }
+            )
+            return
 
     # Kolla semester
     if vacation_shift and current_day in vacation_dates.get(person_id, set()):
