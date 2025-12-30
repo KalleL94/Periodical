@@ -24,7 +24,7 @@ def contrast_color(hex_color: str) -> str:
         r = int(h[0:2], 16)
         g = int(h[2:4], 16)
         b = int(h[4:6], 16)
-    except Exception:
+    except ValueError:
         return "#fff"
     lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
     return "#000" if lum > 0.5 else "#fff"
