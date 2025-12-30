@@ -58,6 +58,7 @@ def get_vacation_shift() -> "ShiftType | None":
     return next((s for s in get_shift_types() if s.code == VACATION_CODE), None)
 
 
+@cache
 def get_rotation_era_for_date(date: datetime.date) -> RotationEra | None:
     """
     Hämtar den rotation era som är aktiv för ett givet datum.
@@ -202,6 +203,7 @@ def calculate_shift_hours(
 
 def clear_schedule_cache() -> None:
     """Rensar alla cachade schemaberäkningar."""
+    get_rotation_era_for_date.cache_clear()
     determine_shift_for_date.cache_clear()
     _calculate_shift_hours_cached.cache_clear()
 

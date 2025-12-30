@@ -4,7 +4,7 @@ from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings
 from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
-from .period import generate_year_data
+from .period import generate_period_data, generate_year_data
 from .wages import get_absence_deductions_for_month, get_all_user_wages, get_user_wage
 
 _tax_brackets = None
@@ -86,6 +86,7 @@ def summarize_month_for_person(
     session=None,
     user_wages: dict[int, int] | None = None,
     year_days: list[dict] | None = None,
+    fetch_tax_table: bool = True,
 ) -> dict:
     """
     Detaljerad månadsöversikt för en person.
@@ -126,9 +127,9 @@ def summarize_month_for_person(
         except Exception:
             base_salary = settings.monthly_salary
 
-    # Hämta skattetabell från användare
+    # Hämta skattetabell från användare (bara om fetch_tax_table=True)
     tax_table = None
-    if session:
+    if fetch_tax_table and session:
         import logging
 
         from app.database.database import User
@@ -219,6 +220,96 @@ def summarize_month_for_person(
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
         "days": days_out,
+    }
+
+
+def build_calendar_grid_for_month(
+    year: int,
+    month: int,
+    person_id: int,
+    session=None,
+    user_wages: dict[int, int] | None = None,
+) -> dict:
+    """
+    Bygger en komplett kalendergrid inklusive intilliggande månaders dagar.
+
+    Args:
+        year: År
+        month: Månad (1-12)
+        person_id: Person-ID
+        session: SQLAlchemy session
+        user_wages: Förladdade löner
+
+    Returns:
+        Dict med 'summary' (månadssammanfattning) och 'grid' (lista med veckor)
+    """
+    import calendar as cal
+    from datetime import date as dt_date
+    from datetime import timedelta
+
+    # Hämta befintlig månadssammanfattning
+    month_summary = summarize_month_for_person(year, month, person_id, session, user_wages)
+
+    # Beräkna grid-gränser baserat på första och sista dagens veckodag
+    first_day = dt_date(year, month, 1)
+    first_weekday = first_day.weekday()  # 0=Monday, 6=Sunday
+
+    last_day_num = cal.monthrange(year, month)[1]
+    last_day = dt_date(year, month, last_day_num)
+    last_weekday = last_day.weekday()
+
+    # Beräkna extended range för att inkludera hela veckor
+    grid_start = first_day - timedelta(days=first_weekday)
+    grid_end = last_day + timedelta(days=(6 - last_weekday))
+
+    # Hämta data för extended range
+    extended_days = generate_period_data(grid_start, grid_end, person_id, session=session, user_wages=user_wages)
+
+    # Bygg date lookup med is_current_month flag
+    days_by_date = {}
+    for day in extended_days:
+        day_date = day["date"]
+        is_current_month = day_date.month == month and day_date.year == year
+        days_by_date[day_date] = {
+            "date": day_date,
+            "shift": day.get("shift"),
+            "rotation_week": day.get("rotation_week"),
+            "rotation_length": day.get("rotation_length"),
+            "hours": day.get("hours", 0.0),
+            "start": day.get("start"),
+            "end": day.get("end"),
+            "weekday_name": day.get("weekday_name"),
+            "is_current_month": is_current_month,
+        }
+
+    # Bygg grid struktur (lista med veckor, varje vecka = 7 dagar)
+    grid = []
+    current_date = grid_start
+
+    while current_date <= grid_end:
+        week = []
+        for _ in range(7):
+            day_data = days_by_date.get(
+                current_date,
+                {
+                    "date": current_date,
+                    "shift": None,
+                    "is_current_month": False,
+                    "rotation_week": None,
+                    "rotation_length": None,
+                    "hours": 0.0,
+                    "start": None,
+                    "end": None,
+                    "weekday_name": "",
+                },
+            )
+            week.append(day_data)
+            current_date += timedelta(days=1)
+        grid.append(week)
+
+    return {
+        "summary": month_summary,
+        "grid": grid,
     }
 
 
