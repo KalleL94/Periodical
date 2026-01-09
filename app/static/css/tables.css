@@ -34,6 +34,14 @@ td.num, th.num { text-align: right; font-family: ui-monospace, SFMono-Regular, M
 .today-row { background: rgba(64, 169, 255, 0.08); }
 .today-row:hover { background: rgba(64, 169, 255, 0.14); }
 
+.coworkers-row {
+  background: rgba(255,255,255,0.02);
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.coworkers-row:hover { background: rgba(255,255,255,0.03); }
+
 /* Responsive Tables */
 @media (max-width: 800px) {
   thead { display: none; }

@@ -149,6 +149,122 @@ def build_cowork_details(
     return details
 
 
+def get_coworkers_for_day(
+    target_person_id: int,
+    target_shift_code: str,
+    persons_on_day: list[dict],
+    target_start=None,
+    target_end=None,
+) -> list[str]:
+    """
+    Returns list of coworker names who work the same shift on this day.
+
+    Matching logic:
+    - Both must work (not OFF, SICK, etc.)
+    - Same shift type (N1, N2, or N3)
+    - For OT shifts: matches if original_shift matches, OR if times overlap significantly
+
+    Args:
+        target_person_id: The person whose coworkers we're finding
+        target_shift_code: The shift code (N1, N2, N3, etc.)
+        persons_on_day: List of person data for this day
+        target_start: Start datetime of target person's shift (for OT overlap checking)
+        target_end: End datetime of target person's shift (for OT overlap checking)
+
+    Returns:
+        List of coworker names (sorted by person_id), excluding target person
+    """
+    from app.core.constants import WORK_SHIFT_CODES
+
+    # Only show coworkers for actual work shifts or OT (with time matching)
+    if target_shift_code not in WORK_SHIFT_CODES and target_shift_code != "OT":
+        return []
+
+    coworkers = []
+
+    # If target is OT without a known work shift, use time-based matching for everyone
+    use_time_matching_for_target = target_shift_code == "OT"
+
+    for person_data in persons_on_day:
+        person_id = person_data.get("person_id")
+
+        # Skip self
+        if person_id == target_person_id:
+            continue
+
+        actual_shift = person_data.get("shift")
+        if not actual_shift:
+            continue
+
+        # Skip if person is not actually working
+        # OFF, SICK, VAB, LEAVE, SEM, OC should not count as working together
+        non_work_codes = ("OFF", "SICK", "VAB", "LEAVE", "SEM", "OC")
+        if actual_shift.code in non_work_codes:
+            continue
+
+        # Check if this person matches
+        is_match = False
+
+        if use_time_matching_for_target:
+            # Target has OT, match anyone who works and has time overlap
+            if target_start and target_end:
+                other_start = person_data.get("start")
+                other_end = person_data.get("end")
+                if other_start and other_end:
+                    # Check if shifts overlap significantly (at least 4 hours)
+                    overlap = _calculate_overlap_hours(target_start, target_end, other_start, other_end)
+                    if overlap >= 4.0:
+                        is_match = True
+        elif actual_shift.code == "OT":
+            # Person has OT, target has regular shift: check if original_shift matches, or if times overlap
+            original_shift = person_data.get("original_shift")
+            if original_shift and original_shift.code == target_shift_code:
+                # OT replacing a shift that matches target
+                is_match = True
+            elif target_start and target_end:
+                # Check time overlap
+                other_start = person_data.get("start")
+                other_end = person_data.get("end")
+                if other_start and other_end:
+                    # Check if shifts overlap significantly (at least 4 hours)
+                    overlap = _calculate_overlap_hours(target_start, target_end, other_start, other_end)
+                    if overlap >= 4.0:
+                        is_match = True
+        else:
+            # Regular work shift (N1, N2, N3)
+            # Use original_shift if available (for when target has OT)
+            original_shift = person_data.get("original_shift")
+            shift_for_matching = original_shift if original_shift else actual_shift
+
+            if shift_for_matching.code == target_shift_code:
+                is_match = True
+
+        if is_match:
+            coworkers.append(
+                {
+                    "id": person_id,
+                    "name": person_data.get("person_name", ""),
+                }
+            )
+
+    # Sort by person_id and return just names
+    coworkers.sort(key=lambda x: x["id"])
+    return [c["name"] for c in coworkers]
+
+
+def _calculate_overlap_hours(start1, end1, start2, end2) -> float:
+    """Calculate overlap hours between two time periods."""
+    # Find the overlap period
+    overlap_start = max(start1, start2)
+    overlap_end = min(end1, end2)
+
+    if overlap_start >= overlap_end:
+        return 0.0
+
+    overlap_seconds = (overlap_end - overlap_start).total_seconds()
+    return overlap_seconds / 3600.0
+
+
 def _find_person_in_day(persons_today: list[dict], person_id: int) -> dict | None:
     """Hittar en person i dagens personlista."""
     return next(

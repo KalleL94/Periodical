@@ -81,6 +81,10 @@
                                     <div class="calendar-time">{{ day.shift.start_time }} - {{ day.shift.end_time }}</div>
                                 {% endif %}
                             {% endif %}
+
+                            {% if day.coworkers %}
+                                <div class="coworkers-list">Med: {{ day.coworkers | join(', ') }}</div>
+                            {% endif %}
                         </div>
                     </div>
                 </td>
