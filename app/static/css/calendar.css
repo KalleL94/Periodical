@@ -53,6 +53,7 @@
 .calendar-day-body { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .calendar-badge { font-size: 0.75rem; padding: 3px 7px; align-self: flex-start; }
 .calendar-time { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.coworkers-list { font-size: 0.7rem; color: var(--muted); margin-top: 2px; font-style: italic; line-height: 1.2; }
 .calendar-hours { font-size: 0.75rem; color: var(--accent-2); font-weight: 600; }
 .calendar-pay { font-size: 0.75rem; color: var(--accent); font-weight: 600; margin-top: auto; }
 
@@ -98,7 +99,7 @@
   .calendar-day-content { padding: 4px; }
   .day-number { font-size: 1rem; }
   .calendar-badge { font-size: 0.65rem; padding: 2px 5px; }
-  .calendar-time, .calendar-hours, .calendar-pay { font-size: 0.65rem; }
+  .calendar-time, .coworkers-list, .calendar-hours, .calendar-pay { font-size: 0.65rem; }
   
   .week-grid-single .calendar-day { height: 100px; }
   .calendar-rotation-week { font-size: 0.65rem; }

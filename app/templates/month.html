@@ -146,6 +146,10 @@
                                             <div class="calendar-time">{{ day_data.shift.start_time }} - {{ day_data.shift.end_time }}</div>
                                         {% endif %}
                                     {% endif %}
+
+                                    {% if day_data.coworkers %}
+                                        <div class="coworkers-list">Med: {{ day_data.coworkers | join(', ') }}</div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </td>

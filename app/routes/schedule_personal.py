@@ -255,6 +255,31 @@ async def show_day_for_person(
             monthly_salary, absence.absence_type.value, absence_shift_hours, is_karens
         )
 
+    # Get coworkers for this day
+    from app.core.schedule import generate_period_data
+    from app.core.schedule.cowork import get_coworkers_for_day
+
+    # Fetch all persons' data for this single day
+    all_persons_day = generate_period_data(date_obj, date_obj, person_id=None, session=db)
+    persons_today = []
+    if all_persons_day:
+        persons_today = all_persons_day[0].get("persons", [])
+
+    # Determine shift code for coworker matching
+    actual_shift_obj = shift
+    if actual_shift_obj and actual_shift_obj.code == "OT":
+        # If target has OT, use original_shift if it's a work shift, else use "OT"
+        if original_shift and original_shift.code in ("N1", "N2", "N3"):
+            shift_code_for_matching = original_shift.code
+        else:
+            shift_code_for_matching = "OT"
+    else:
+        # Use original_shift if available, otherwise actual shift
+        shift_for_matching = original_shift if original_shift else actual_shift_obj
+        shift_code_for_matching = shift_for_matching.code if shift_for_matching else "OFF"
+
+    coworkers = get_coworkers_for_day(person_id, shift_code_for_matching, persons_today, start_dt, end_dt)
+
     return render_template(
         templates,
         "day.html",
@@ -287,6 +312,7 @@ async def show_day_for_person(
             "absence_deduction": absence_deduction,  # Deduction amount in SEK
             "absence_shift_hours": absence_shift_hours,  # Hours for the shift
             "is_karens": is_karens,  # Whether this is a karensdag
+            "coworkers": coworkers,  # List of coworker names
             **nav,
         },
         user=current_user,
@@ -320,7 +346,7 @@ async def show_week_for_person(
             status_code=302,
         )
 
-    days_in_week = build_week_data(year, week, person_id=person_id, session=db)
+    days_in_week = build_week_data(year, week, person_id=person_id, session=db, include_coworkers=True)
 
     monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)
@@ -373,7 +399,7 @@ async def show_month_for_person(
 
     validate_date_params(year, month, None)
 
-    calendar_data = build_calendar_grid_for_month(year, month, person_id=person_id, session=db)
+    calendar_data = build_calendar_grid_for_month(year, month, person_id=person_id, session=db, include_coworkers=True)
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]
 

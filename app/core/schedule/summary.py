@@ -229,6 +229,7 @@ def build_calendar_grid_for_month(
     person_id: int,
     session=None,
     user_wages: dict[int, int] | None = None,
+    include_coworkers: bool = False,
 ) -> dict:
     """
     Bygger en komplett kalendergrid inklusive intilliggande månaders dagar.
@@ -265,12 +266,21 @@ def build_calendar_grid_for_month(
     # Hämta data för extended range
     extended_days = generate_period_data(grid_start, grid_end, person_id, session=session, user_wages=user_wages)
 
+    # Fetch all persons' data if coworkers requested
+    all_persons_data = None
+    if include_coworkers and person_id is not None:
+        all_persons_extended = generate_period_data(
+            grid_start, grid_end, person_id=None, session=session, user_wages=user_wages
+        )
+        # Build lookup: date -> persons list
+        all_persons_data = {day["date"]: day.get("persons", []) for day in all_persons_extended}
+
     # Bygg date lookup med is_current_month flag
     days_by_date = {}
     for day in extended_days:
         day_date = day["date"]
         is_current_month = day_date.month == month and day_date.year == year
-        days_by_date[day_date] = {
+        day_data = {
             "date": day_date,
             "shift": day.get("shift"),
             "rotation_week": day.get("rotation_week"),
@@ -281,6 +291,35 @@ def build_calendar_grid_for_month(
             "weekday_name": day.get("weekday_name"),
             "is_current_month": is_current_month,
         }
+
+        # Add coworkers if requested
+        if include_coworkers and person_id is not None and all_persons_data:
+            from .cowork import get_coworkers_for_day
+
+            actual_shift = day.get("shift")
+
+            # For OT shifts with time-based matching, use a special marker
+            # For regular shifts, use original_shift if available, otherwise actual shift
+            if actual_shift and actual_shift.code == "OT":
+                # Use OT as shift_code to trigger time-based matching
+                original_shift = day.get("original_shift")
+                # If original_shift is a work shift, use it; otherwise use "OT" for time matching
+                if original_shift and original_shift.code in ("N1", "N2", "N3"):
+                    shift_code = original_shift.code
+                else:
+                    shift_code = "OT"  # Will use time-based matching
+            else:
+                original_shift = day.get("original_shift")
+                shift = original_shift if original_shift else actual_shift
+                shift_code = shift.code if shift else "OFF"
+
+            persons_today = all_persons_data.get(day_date, [])
+            target_start = day.get("start")
+            target_end = day.get("end")
+            coworkers = get_coworkers_for_day(person_id, shift_code, persons_today, target_start, target_end)
+            day_data["coworkers"] = coworkers
+
+        days_by_date[day_date] = day_data
 
     # Bygg grid struktur (lista med veckor, varje vecka = 7 dagar)
     grid = []

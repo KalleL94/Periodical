@@ -40,6 +40,7 @@ def build_week_data(
     week: int,
     person_id: int | None = None,
     session=None,
+    include_coworkers: bool = False,
 ) -> list[dict]:
     """
     Bygger veckodata för ett år/vecka.
@@ -102,6 +103,42 @@ def build_week_data(
             )
 
         days_in_week.append(day_info)
+
+    # Add coworkers if requested
+    if include_coworkers and person_id is not None:
+        from .cowork import get_coworkers_for_day
+
+        # Fetch all persons' data for the week for coworker matching
+        all_persons_week = build_week_data(year, week, person_id=None, session=session)
+
+        # Build lookup: date -> persons list
+        persons_by_date = {day["date"]: day.get("persons", []) for day in all_persons_week}
+
+        # Add coworkers to each day
+        for day_info in days_in_week:
+            current_date = day_info["date"]
+            actual_shift = day_info.get("shift")
+
+            # For OT shifts with time-based matching, use a special marker
+            # For regular shifts, use original_shift if available, otherwise actual shift
+            if actual_shift and actual_shift.code == "OT":
+                # Use OT as shift_code to trigger time-based matching
+                original_shift = day_info.get("original_shift")
+                # If original_shift is a work shift, use it; otherwise use "OT" for time matching
+                if original_shift and original_shift.code in ("N1", "N2", "N3"):
+                    shift_code = original_shift.code
+                else:
+                    shift_code = "OT"  # Will use time-based matching
+            else:
+                original_shift = day_info.get("original_shift")
+                shift = original_shift if original_shift else actual_shift
+                shift_code = shift.code if shift else "OFF"
+
+            persons_today = persons_by_date.get(current_date, [])
+            target_start = day_info.get("start")
+            target_end = day_info.get("end")
+            coworkers = get_coworkers_for_day(person_id, shift_code, persons_today, target_start, target_end)
+            day_info["coworkers"] = coworkers
 
     return days_in_week
 
@@ -343,11 +380,12 @@ def _build_person_day_basic(
         absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
         if absence_shift:
             result = determine_shift_for_date(date, person_id)
-            _, rotation_week = result if result else (None, None)
+            original_shift, rotation_week = result if result else (None, None)
             return {
                 "person_id": person_id,
                 "person_name": persons[person_id - 1].name,
                 "shift": absence_shift,
+                "original_shift": original_shift,  # For coworker matching
                 "rotation_week": rotation_week,
                 "rotation_length": rotation_length,
                 "hours": 0.0,
@@ -358,11 +396,12 @@ def _build_person_day_basic(
     # Kolla semester
     if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
         result = determine_shift_for_date(date, person_id)
-        _, rotation_week = result if result else (None, None)
+        original_shift, rotation_week = result if result else (None, None)
         return {
             "person_id": person_id,
             "person_name": persons[person_id - 1].name,
             "shift": vacation_shift,
+            "original_shift": original_shift,  # For coworker matching
             "rotation_week": rotation_week,
             "rotation_length": rotation_length,
             "hours": 0.0,
@@ -378,6 +417,9 @@ def _build_person_day_basic(
     else:
         shift, rotation_week = result
         hours, start, end = calculate_shift_hours(date, shift.code)
+
+    # Spara det ursprungliga skiftet för coworker-matchning
+    original_shift = shift
 
     # Kolla övertid
     if ot_shift_map is not None:
@@ -401,6 +443,7 @@ def _build_person_day_basic(
         "person_id": person_id,
         "person_name": persons[person_id - 1].name,
         "shift": shift,
+        "original_shift": original_shift,  # For coworker matching with OT shifts
         "rotation_week": rotation_week,
         "rotation_length": rotation_length,
         "hours": hours,
@@ -440,7 +483,9 @@ def _populate_single_person_day(
         absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
         if absence_shift:
             shift = absence_shift
-            rotation_week = None
+            # Get original shift for coworker matching
+            result = determine_shift_for_date(current_day, person_id)
+            original_shift, rotation_week = result if result else (None, None)
             hours, start, end = 0.0, None, None
             ob = {}
             oncall_pay = 0.0
@@ -454,6 +499,7 @@ def _populate_single_person_day(
                     "person_id": person_id,
                     "person_name": persons[person_id - 1].name,
                     "shift": shift,
+                    "original_shift": original_shift,  # For coworker matching
                     "rotation_week": rotation_week,
                     "hours": hours,
                     "start": start,
@@ -487,6 +533,9 @@ def _populate_single_person_day(
                 ob = calculate_ob_hours(start, end, combined_ob_rules)
             else:
                 ob = {}
+
+    # Spara det ursprungliga skiftet för coworker-matchning
+    original_shift = shift
 
     # Beräkna jour-ersättning
     oncall_pay = 0.0
@@ -556,6 +605,7 @@ def _populate_single_person_day(
             "person_id": person_id,
             "person_name": persons[person_id - 1].name,
             "shift": shift,
+            "original_shift": original_shift,  # For coworker matching with OT shifts
             "rotation_week": rotation_week,
             "hours": hours,
             "start": start,

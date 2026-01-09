@@ -90,6 +90,13 @@
                         </td>
                         <td>{{ "%.2f"|format(hours) if hours else "0.00" }}</td>
                     </tr>
+                    {% if coworkers %}
+                    <tr>
+                        <td colspan="5" class="coworkers-row">
+                            <strong>Arbetar med:</strong> {{ coworkers | join(', ') }}
+                        </td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
                 <!-- <section class="day-section"> -->
