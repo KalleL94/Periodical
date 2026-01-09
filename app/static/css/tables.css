@@ -8,7 +8,7 @@ table {
 }
 
 thead th {
-  text-align: left;
+  text-align: center;
   padding: 0.625rem 0.75rem;
   color: var(--muted);
   font-weight: 600;
@@ -24,7 +24,7 @@ tbody td {
 }
 
 tr:hover td { background: rgba(255,255,255,0.01); }
-td.num, th.num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+td.num, th.num { text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 /* Sticky tables */
 .table-sticky { border-collapse: separate; border-spacing: 0; }
