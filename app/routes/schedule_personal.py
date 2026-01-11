@@ -41,7 +41,7 @@ from app.core.schedule import (
 from app.core.schedule import (
     persons as person_list,
 )
-from app.core.utils import get_navigation_dates, get_safe_today, get_today
+from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import Absence, User, UserRole, get_db
 from app.routes.shared import templates
@@ -261,9 +261,22 @@ async def show_day_for_person(
 
     # Fetch all persons' data for this single day
     all_persons_day = generate_period_data(date_obj, date_obj, person_id=None, session=db)
+
     persons_today = []
-    if all_persons_day:
+    persons_today_with_shift = []
+    if all_persons_day and len(all_persons_day) > 0:
         persons_today = all_persons_day[0].get("persons", [])
+    for p in persons_today:
+        p_shift = p.get("shift")
+        if p_shift and p_shift.code != "OFF":
+            if p_shift.code == "OT":
+                # Use helper function to get the display code for OT shifts
+                p_shift_code = get_ot_shift_display_code(p.get("start"))
+                persons_today_with_shift.append((p.get("person_name"), p_shift_code))
+            else:
+                persons_today_with_shift.append((p.get("person_name"), p_shift.code))
+    # Sort by 2nd item (shift code), then by name
+    persons_today_with_shift.sort(key=lambda x: (x[1], x[0]))
 
     # Determine shift code for coworker matching
     actual_shift_obj = shift
@@ -313,6 +326,7 @@ async def show_day_for_person(
             "absence_shift_hours": absence_shift_hours,  # Hours for the shift
             "is_karens": is_karens,  # Whether this is a karensdag
             "coworkers": coworkers,  # List of coworker names
+            "all_working_persons": persons_today_with_shift,
             **nav,
         },
         user=current_user,

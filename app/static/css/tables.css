@@ -8,13 +8,18 @@ table {
 }
 
 thead th {
-  text-align: center;
+  text-align: left;
   padding: 0.625rem 0.75rem;
   color: var(--muted);
   font-weight: 600;
   font-size: 0.85rem;
   border-bottom: 1px solid var(--table-border);
 }
+
+th.th_right, td.td_right { text-align: right; }
+th.th_center, td.td_center { text-align: center; }
+th.th_left, td.td_left { text-align: left; }
+td.foot_left { padding-left: 0.75rem;}
 
 tbody td {
   padding: 0.625rem 0.75rem;
@@ -24,7 +29,8 @@ tbody td {
 }
 
 tr:hover td { background: rgba(255,255,255,0.01); }
-td.num, th.num { text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
 
 /* Sticky tables */
 .table-sticky { border-collapse: separate; border-spacing: 0; }

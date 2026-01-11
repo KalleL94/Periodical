@@ -99,7 +99,7 @@
                     {% endif %}
                 </tbody>
             </table>
-                <!-- <section class="day-section"> -->
+
             <h3>Övertidspass (OT)</h3>
 
             {% if ot_shift %}
@@ -166,11 +166,9 @@
                     Övertidslön beräknas som månadslön / 72 per timme.
                 </p>
             {% endif %}
-        <!-- </section> -->
 
         {# Frånvarosection - endast för egen sida när inloggad #}
         {% if user and user.id == person_id or user.id == 0 %}
-        <!-- <section class="day-section"> -->
             <h3>Frånvaro</h3>
             
             {% if absence %}
@@ -287,7 +285,26 @@
                     <strong>Ledig (betald):</strong> Ledig dag utan löneavdrag (grå färg)
                 </p>
             {% endif %}
-        <!-- </section> -->
+        {% endif %}
+
+        <h3>Alla som arbetar denna dag</h3>
+        {% if all_working_persons and all_working_persons|length > 0 %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Namn</th>
+                        <th>Skift</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in all_working_persons %}
+                    <tr>
+                        <td>{{ p[0] }}</td>
+                        <td>{{ p[1] }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
         {% endif %}
         </section>
 
@@ -301,25 +318,25 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Type</th>
-                                <th>Hours</th>
-                                <th>Pay</th>
+                                <th class="th_left">Type</th>
+                                <th class="th_center">Hours</th>
+                                <th class="th_center">Pay</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for code, details in oncall.breakdown.items() %}
                                 <tr>
-                                    <td>{{ details.label }}</td>
-                                    <td>{{ "%.2f"|format(details.hours) }}</td>
-                                    <td>{{ "%.2f"|format(details.pay) }} kr</td>
+                                    <td class="td_left">{{ details.label }}</td>
+                                    <td class="td_center">{{ "%.2f"|format(details.hours) }}</td>
+                                    <td class="td_center">{{ "%.2f"|format(details.pay) }} kr</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th>Total</th>
-                                <th>{{ "%.2f"|format(oncall.total_hours) }}</th>
-                                <th>{{ "%.2f"|format(oncall_pay) }} kr</th>
+                                <td class="td_left foot_left"><strong>Total</strong></td>
+                                <td class="td_center"><strong>{{ "%.2f"|format(oncall.total_hours) }}</strong></td>
+                                <td class="td_center"><strong>{{ "%.2f"|format(oncall_pay) }} kr</strong></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -342,21 +359,21 @@
                         <thead>
                             <tr>
                                 <th>OB type</th>
-                                <th>Hours</th>
+                                <th class="th_center">Hours</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for code in ob_codes %}
                                 <tr>
-                                    <td>{{ ob_labels.get(code, code) }}</td>
-                                    <td>{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
+                                    <td class="num">{{ ob_labels.get(code, code) }}</td>
+                                    <td class="td_center num">{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th>Total OB hours</th>
-                                <th>{{ "%.2f"|format(total_ob_hours) }}</th>
+                                <td class="foot_left"><strong>Total OB hours</strong></td>
+                                <td class="td_center num"><strong>{{ "%.2f"|format(total_ob_hours) }}</strong></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -377,22 +394,22 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>OB type</th>
-                            <th>Amount (SEK)</th>
+                            <th class="th_left">OB type</th>
+                            <th class="th_center">Amount (SEK)</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for code in ob_codes %}
                             <tr>
-                                <td>{{ ob_labels.get(code, code) }}</td>
-                                <td>{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
+                                <td class="num">{{ ob_labels.get(code, code) }}</td>
+                                <td class="td_center num">{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
                             </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot>
                         <tr>
-                            <th>Total OB pay</th>
-                            <th>{{ "%.2f"|format(total_ob_pay) }}</th>
+                            <td class="foot_left num"><strong>Total OB pay</strong></td>
+                            <td class="td_center num"><strong>{{ "%.2f"|format(total_ob_pay) }}</strong></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -405,19 +422,19 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Code</th>
-                            <th>Label</th>
-                            <th>Time</th>
-                            <th>Rate</th>
+                            <th class="th_left">Code</th>
+                            <th class="th_left">Label</th>
+                            <th class="th_left">Time</th>
+                            <th class="th_right">Rate</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for rule in active_special_rules %}
                             <tr>
-                                <td>{{ rule.code }}</td>
-                                <td>{{ rule.label }}</td>
-                                <td>{{ rule.start_time }} to {{ rule.end_time }}</td>
-                                <td>{{ rule.rate }}</td>
+                                <td class="td_left num">{{ rule.code }}</td>
+                                <td class="td_left num">{{ rule.label }}</td>
+                                <td class="td_left num">{{ rule.start_time }} to {{ rule.end_time }}</td>
+                                <td class="td_right num">{{ rule.rate }}</td>
                             </tr>
                         {% endfor %}
                     </tbody>

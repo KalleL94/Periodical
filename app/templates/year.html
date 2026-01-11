@@ -35,17 +35,17 @@
         <table class="summary">
             <thead>
                 <tr>
-                    <th>Person</th>
-                    <th>Total</th>
-                    <th>N1</th>
-                    <th>N2</th>
-                    <th>N3</th>
+                    <th class="th_left">Person</th>
+                    <th class="th_center">Total</th>
+                    <th class="th_center">N1</th>
+                    <th class="th_center">N2</th>
+                    <th class="th_center">N3</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in cowork_rows %}
                 <tr class="shift-row">
-                    <td data-label="Person">
+                    <td class="td_left" data-label="Person">
                         {# Länka till cowork-detaljer endast om det är ens egen sida #}
                         {% if show_salary %}
                             <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
@@ -55,10 +55,10 @@
                             {{ r.other_name }} (#{{ r.other_id }})
                         {% endif %}
                     </td>
-                    <td class="num" data-label="Totalt">{{ r.total }}</td>
-                    <td class="num" data-label="N1">{{ r.by_shift["N1"] }}</td>
-                    <td class="num" data-label="N2">{{ r.by_shift["N2"] }}</td>
-                    <td class="num" data-label="N3">{{ r.by_shift["N3"] }}</td>
+                    <td class="td_center num" data-label="Totalt">{{ r.total }}</td>
+                    <td class="td_center num" data-label="N1">{{ r.by_shift["N1"] }}</td>
+                    <td class="td_center num" data-label="N2">{{ r.by_shift["N2"] }}</td>
+                    <td class="td_center num" data-label="N3">{{ r.by_shift["N3"] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -67,21 +67,21 @@
         <table class="summary">
             <thead>
                 <tr>
-                    <th>Type</th>
-                    <th>Hours</th>
-                    <th>Amount (SEK)</th>
+                    <th class="th_left">Type</th>
+                    <th class="th_center">Hours</th>
+                    <th class="th_center">Amount (SEK)</th>
                 </tr>
             </thead>
             <tbody>
                 <tr class="shift-row">
-                    <td data-label="Typ">Total on-call</td>
-                    <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_oncall_hours or 0) }}</td>
-                    <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.total_oncall or 0) }} kr</td>
+                    <td class="td_left" data-label="Typ">Total on-call</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_oncall_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Belopp">{{ "%.2f"|format(year_summary.total_oncall or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
-                    <td data-label="Typ">Average on-call/month</td>
-                    <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.avg_oncall_hours or 0) }}</td>
-                    <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.avg_oncall or 0) }} kr</td>
+                    <td class="td_left" data-label="Typ">Average on-call/month</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.2f"|format(year_summary.avg_oncall_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Belopp">{{ "%.2f"|format(year_summary.avg_oncall or 0) }} kr</td>
                 </tr>
             </tbody>
         </table>
@@ -91,17 +91,17 @@
             <thead>
                 <tr>
                     <th>Type</th>
-                    <th>Amount (SEK)</th>
+                    <th class="th_center">Amount (SEK)</th>
                 </tr>
             </thead>
             <tbody>
                 <tr class="shift-row">
                     <td data-label="Typ">Total OT pay</td>
-                    <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.total_ot or 0) }} kr</td>
+                    <td class="td_center num" data-label="Belopp">{{ "%.2f"|format(year_summary.total_ot or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
                     <td data-label="Typ">Average OT pay/month</td>
-                    <td class="num" data-label="Belopp">{{ "%.2f"|format(year_summary.avg_ot or 0) }} kr</td>
+                    <td class="td_center num" data-label="Belopp">{{ "%.2f"|format(year_summary.avg_ot or 0) }} kr</td>
                 </tr>
             </tbody>
         </table>
@@ -110,44 +110,44 @@
         <table class="summary">
             <thead>
                 <tr>
-                    <th>Type</th>
-                    <th>Days</th>
-                    <th>Hours</th>
-                    <th>Deduction (SEK)</th>
+                    <th class="th_left">Type</th>
+                    <th class="th_center">Days</th>
+                    <th class="th_center">Hours</th>
+                    <th class="th_center">Deduction (SEK)</th>
                 </tr>
             </thead>
             <tbody>
                 <tr class="shift-row">
-                    <td data-label="Typ">Sick leave (Sjuk)</td>
-                    <td class="num" data-label="Dagar">{{ year_summary.total_sick_days or 0 }}</td>
-                    <td class="num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_sick_hours or 0) }}</td>
-                    <td class="num" data-label="Avdrag" style="color: #ef4444;">-{{ "%.0f"|format(year_summary.sick_deduction or 0) }} kr</td>
+                    <td class="td_left" data-label="Typ">Sick leave (Sjuk)</td>
+                    <td class="td_center num" data-label="Dagar">{{ year_summary.total_sick_days or 0 }}</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_sick_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Avdrag" style="color: #ef4444;">-{{ "%.0f"|format(year_summary.sick_deduction or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
-                    <td data-label="Typ">VAB (Vård av barn)</td>
-                    <td class="num" data-label="Dagar">{{ year_summary.total_vab_days or 0 }}</td>
-                    <td class="num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_vab_hours or 0) }}</td>
-                    <td class="num" data-label="Avdrag" style="color: #f97316;">-{{ "%.0f"|format(year_summary.vab_deduction or 0) }} kr</td>
+                    <td class="td_left" data-label="Typ">VAB (Vård av barn)</td>
+                    <td class="td_center num" data-label="Dagar">{{ year_summary.total_vab_days or 0 }}</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_vab_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Avdrag" style="color: #f97316;">-{{ "%.0f"|format(year_summary.vab_deduction or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
-                    <td data-label="Typ">Leave (Ledigt obetald)</td>
-                    <td class="num" data-label="Dagar">{{ year_summary.total_leave_days or 0 }}</td>
-                    <td class="num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_leave_hours or 0) }}</td>
-                    <td class="num" data-label="Avdrag" style="color: #a855f7;">-{{ "%.0f"|format(year_summary.leave_deduction or 0) }} kr</td>
+                    <td class="td_left" data-label="Typ">Leave (Ledigt obetald)</td>
+                    <td class="td_center num" data-label="Dagar">{{ year_summary.total_leave_days or 0 }}</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_leave_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Avdrag" style="color: #a855f7;">-{{ "%.0f"|format(year_summary.leave_deduction or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
-                    <td data-label="Typ">OFF (Ledig betald)</td>
-                    <td class="num" data-label="Dagar">{{ year_summary.total_off_days or 0 }}</td>
-                    <td class="num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_off_hours or 0) }}</td>
-                    <td class="num" data-label="Avdrag" style="color: #888888;">{{ "%.0f"|format(year_summary.off_deduction or 0) }} kr</td>
+                    <td class="td_left" data-label="Typ">OFF (Ledig betald)</td>
+                    <td class="td_center num" data-label="Dagar">{{ year_summary.total_off_days or 0 }}</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.1f"|format(year_summary.total_off_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Avdrag" style="color: #888888;">{{ "%.0f"|format(year_summary.off_deduction or 0) }} kr</td>
                 </tr>
             </tbody>
             <tfoot>
                 <tr>
-                    <td data-label="Typ"><strong>Total</strong></td>
-                    <td class="num" data-label="Dagar"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) }}</strong></td>
-                    <td class="num" data-label="Timmar"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0)) }}</strong></td>
-                    <td class="num" data-label="Avdrag" style="color: #ef4444;"><strong>-{{ "%.0f"|format(year_summary.total_absence_deduction or 0) }} kr</strong></td>
+                    <td class="td_left foot_left" data-label="Typ"><strong>Total</strong></td>
+                    <td class="td_center num" data-label="Dagar"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) }}</strong></td>
+                    <td class="td_center num" data-label="Timmar"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0)) }}</strong></td>
+                    <td class="td_center num" data-label="Avdrag" style="color: #ef4444;"><strong>-{{ "%.0f"|format(year_summary.total_absence_deduction or 0) }} kr</strong></td>
                 </tr>
             </tfoot>
         </table>
@@ -179,7 +179,7 @@
                 {% for m in months_list %}
                 {% set mnum = loop.index %}
                 <tr class="shift-row">
-                    <td data-label="Månad">
+                    <td class="td_center" data-label="Månad">
                         {# Länka till month endast om behörighet #}
                         {% if show_salary %}
                             <a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a>
@@ -188,16 +188,16 @@
                         {% endif %}
                     </td>
                     {% if show_salary %}
-                    <td class="num" data-label="Netto">{{ "%.0f"|format(m.netto_pay or 0) }}</td>
-                    <td class="num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay or 0) }}</td>
+                    <td class="td_center num" data-label="Netto">{{ "%.0f"|format(m.netto_pay or 0) }}</td>
+                    <td class="td_center num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay or 0) }}</td>
                     {% endif %}
-                    <td class="num" data-label="Pass">{{ m.num_shifts }}</td>
-                    <td class="num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Pass">{{ m.num_shifts }}</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
                     {% if show_salary %}
-                    <td class="num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
-                    <td class="num" data-label="On-call">{{ "%.0f"|format(m.oncall_pay or 0) }}</td>
-                    <td class="num" data-label="OT pay">{{ "%.0f"|format(m.ot_pay or 0) }}</td>
-                    <td class="num" data-label="Absence" style="color: #ef4444;">
+                    <td class="td_center num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
+                    <td class="td_center num" data-label="On-call">{{ "%.0f"|format(m.oncall_pay or 0) }}</td>
+                    <td class="td_center num" data-label="OT pay">{{ "%.0f"|format(m.ot_pay or 0) }}</td>
+                    <td class="td_center num" data-label="Absence" style="color: #ef4444;">
                         {% if m.absence_deduction and m.absence_deduction > 0 %}
                             -{{ "%.0f"|format(m.absence_deduction) }}
                         {% else %}
@@ -210,18 +210,18 @@
             </tbody>
             <tfoot>
             <tr>
-                <td data-label="Typ"><strong>Total</strong></td>
+                <td class="foot_left" data-label="Typ"><strong>Total</strong></td>
                 {% if show_salary %}
-                <td class="num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
-                <td class="num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
+                <td class="td_center num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
+                <td class="td_center num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
                 {% endif %}
-                <td class="num" data-label="Pass">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
-                <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
+                <td class="td_center num" data-label="Pass">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
+                <td class="td_center num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
                 {% if show_salary %}
-                <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
-                <td class="num" data-label="On-call">{{ "%.0f"|format(year_summary.total_oncall or 0) }}</td>
-                <td class="num" data-label="OT pay">{{ "%.0f"|format(year_summary.total_ot or 0) }}</td>
-                <td class="num" data-label="Absence" style="color: #ef4444;">
+                <td class="td_center num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                <td class="td_center num" data-label="On-call">{{ "%.0f"|format(year_summary.total_oncall or 0) }}</td>
+                <td class="td_center num" data-label="OT pay">{{ "%.0f"|format(year_summary.total_ot or 0) }}</td>
+                <td class="td_center num" data-label="Absence" style="color: #ef4444;">
                     {% if year_summary.total_absence_deduction and year_summary.total_absence_deduction > 0 %}
                         -{{ "%.0f"|format(year_summary.total_absence_deduction) }}
                     {% else %}
@@ -231,18 +231,18 @@
                 {% endif %}
             </tr>
             <tr>
-                <td data-label="Typ"><strong>Snitt</strong></td>
+                <td class="foot_left" data-label="Typ"><strong>Snitt</strong></td>
                 {% if show_salary %}
-                <td class="num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
-                <td class="num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
+                <td class="td_center num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
+                <td class="td_center num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
                 {% endif %}
-                <td class="num" data-label="Pass">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
-                <td class="num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
+                <td class="td_center num" data-label="Pass">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
+                <td class="td_center num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
                 {% if show_salary %}
-                <td class="num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
-                <td class="num" data-label="On-call">{{ "%.0f"|format(year_summary.avg_oncall or 0) }}</td>
-                <td class="num" data-label="OT pay">{{ "%.0f"|format(year_summary.avg_ot or 0) }}</td>
-                <td class="num" data-label="Absence" style="color: #ef4444;">
+                <td class="td_center num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
+                <td class="td_center num" data-label="On-call">{{ "%.0f"|format(year_summary.avg_oncall or 0) }}</td>
+                <td class="td_center num" data-label="OT pay">{{ "%.0f"|format(year_summary.avg_ot or 0) }}</td>
+                <td class="td_center num" data-label="Absence" style="color: #ef4444;">
                     {% if year_summary.avg_absence_deduction and year_summary.avg_absence_deduction > 0 %}
                         -{{ "%.0f"|format(year_summary.avg_absence_deduction) }}
                     {% else %}
@@ -268,24 +268,24 @@
             <thead>
                 <tr>
                     <th>OB type</th>
-                    <th>OB hours</th>
-                    <th>OB pay (SEK)</th>
+                    <th class="th_center">OB hours</th>
+                    <th class="th_center">OB pay (SEK)</th>
                 </tr>
             </thead>
             <tbody>
                 {% for code, hours in year_summary.ob_hours_by_code.items() %}
                 <tr class="shift-row">
                     <td data-label="OB-typ">{{ ob_labels.get(code, code) }}</td>
-                    <td class="num" data-label="Timmar">{{ "%.2f"|format(hours or 0) }}</td>
-                    <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.2f"|format(hours or 0) }}</td>
+                    <td class="td_center num" data-label="Belopp">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr>
-                    <td data-label="Typ"><strong>Total</strong></td>
-                    <td class="num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_ob_hours or 0) }}</td>
-                    <td class="num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                    <td class="foot_left" data-label="Typ"><strong>Total</strong></td>
+                    <td class="td_center num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_ob_hours or 0) }}</td>
+                    <td class="td_center num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
                 </tr>
             </tfoot>
         </table>
