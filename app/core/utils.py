@@ -114,3 +114,44 @@ def get_navigation_dates(
         }
 
     raise ValueError(f"Unsupported view_type: {view_type}")
+
+
+def get_ot_shift_display_code(start_time: datetime.datetime | str | None) -> str:
+    """
+    Maps an overtime shift start time to a display code.
+
+    Returns a shift code that indicates which regular shift the OT aligns with:
+    - "N1-OT" for OT starting at 06:00 (aligns with N1 shift)
+    - "N2-OT" for OT starting at 14:00 (aligns with N2 shift)
+    - "N3-OT" for OT starting at 22:00 (aligns with N3 shift)
+    - "OT" for all other start times
+
+    Args:
+        start_time: The start time of the OT shift (datetime, string, or None)
+
+    Returns:
+        str: The shift code for display purposes
+    """
+    if not start_time:
+        return "OT"
+
+    # Extract hour from start time
+    hour = None
+    if isinstance(start_time, datetime.datetime):
+        hour = start_time.hour
+    elif isinstance(start_time, str):
+        try:
+            # Try to parse hour from string (assumes format contains HH at position 11-13)
+            hour = int(str(start_time)[11:13])
+        except (ValueError, IndexError):
+            pass
+
+    # Map hour to shift code
+    if hour == 6:
+        return "N1-OT"
+    elif hour == 14:
+        return "N2-OT"
+    elif hour == 22:
+        return "N3-OT"
+    else:
+        return "OT"
