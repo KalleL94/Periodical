@@ -68,7 +68,7 @@ pyyaml==6.0.3
     # via uvicorn
 rsa==4.9.1
     # via python-jose
-sentry-sdk[fastapi]==2.48.0
+sentry-sdk[fastapi]==2.49.0
     # via periodical (pyproject.toml)
 six==1.17.0
     # via
