@@ -84,7 +84,13 @@ def get_user_by_id(db: Session, user_id: int) -> User | None:
 
 
 def authenticate_user(db: Session, username: str, password: str) -> User | None:
-    """Authenticate a user with username and password."""
+    """
+    Authenticate a user with username and password.
+
+    NOTE: Inactive users (is_active=0) are allowed to log in.
+    This enables former employees to view their historical data after leaving.
+    Access to current data is controlled by employment period filtering in views.
+    """
     user = get_user_by_username(db, username)
     if not user:
         return None

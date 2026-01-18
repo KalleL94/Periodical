@@ -607,7 +607,7 @@ async def year_view(
         selected_other_name = person_list[with_person_id - 1].name
         cowork_details = build_cowork_details(year, person_id, with_person_id)
 
-    year_data = summarize_year_for_person(year, person_id, session=db)
+    year_data = summarize_year_for_person(year, person_id, session=db, current_user=current_user)
     months = year_data["months"]
     year_summary = year_data["year_summary"]
 

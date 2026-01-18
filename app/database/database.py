@@ -63,6 +63,9 @@ class User(Base):
     wage = Column(Integer, nullable=False)
     vacation = Column(JSON, default=dict)  # {"2026": [1,2,3], "2027": []}
     tax_table = Column(String(10), default="33", nullable=True)  # Swedish tax table number (e.g., "29", "30", "33")
+    is_active = Column(
+        Integer, default=1, nullable=False
+    )  # 1=active, 0=inactive (allows filtering without PersonHistory queries)
     must_change_password = Column(
         Integer, default=1, nullable=False
     )  # 1=True, 0=False (SQLite uses integers for booleans)
@@ -157,6 +160,40 @@ class WageHistory(Base):
         return (
             f"<WageHistory(id={self.id}, user_id={self.user_id}, wage={self.wage}, "
             f"effective_from={self.effective_from}, effective_to={self.effective_to})>"
+        )
+
+
+class PersonHistory(Base):
+    """Person history model for tracking person changes over time with temporal validity.
+
+    Tracks who occupied each person_id (position 1-10) during which time periods.
+    This enables:
+    - Old employees to see their own historical data after leaving
+    - New employees to only see data from their start date
+    - Admin to see all data with correct person names per time period
+    """
+
+    __tablename__ = "person_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Which User occupied this position
+    person_id = Column(Integer, nullable=False)  # Which position (1-10) in rotation
+    name = Column(String(100), nullable=False)  # Person's name during this period
+    username = Column(String(50), nullable=False)  # Username during this period
+    is_active = Column(Integer, nullable=False)  # 1=active, 0=inactive during this period
+    effective_from = Column(Date, nullable=False)  # Start date of this employment period
+    effective_to = Column(Date, nullable=True)  # End date (NULL = currently employed)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return (
+            f"<PersonHistory(id={self.id}, user_id={self.user_id}, person_id={self.person_id}, "
+            f"name={self.name}, effective_from={self.effective_from}, effective_to={self.effective_to})>"
         )
 
 

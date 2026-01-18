@@ -471,6 +471,7 @@ def summarize_year_for_person(
     year: int,
     person_id: int,
     session=None,
+    current_user=None,
 ) -> dict:
     """
     Bygger årsöversikt för en person baserat på UTBETALNINGS-månader.
@@ -481,10 +482,22 @@ def summarize_year_for_person(
     - ...
     - Dec-utbetalning (för nov 2026 arbete)
 
+    Args:
+        year: År för utbetalningar
+        person_id: Position (1-10) att visa
+        session: SQLAlchemy session
+        current_user: Inloggad användare (för att filtrera på anställningsperiod)
+
     Returns:
         Dict med 'months' (lista med 12 månadsdictar) och 'year_summary'
+
+    Note:
+        För vanliga användare filtreras månaderna baserat på anställningsperiod.
+        Admins ser alla månader.
     """
     import datetime as dt
+
+    from app.database.database import UserRole
 
     settings = get_settings()
     user_wages = get_all_user_wages(session)
@@ -565,6 +578,28 @@ def summarize_year_for_person(
         m["total_ob"] = total_ob
 
         months.append(m)
+
+    # Filter months by employment period for non-admin users
+    if current_user and current_user.role != UserRole.ADMIN:
+        from app.core.schedule.person_history import get_employment_period
+
+        start_date, end_date = get_employment_period(session, current_user.id, person_id)
+
+        # Filter months to only include employment period
+        filtered_months = []
+        for m in months:
+            # Use middle of work month to check employment
+            month_date = dt.date(m["year"], m["month"], 15)
+
+            # Check if this month is within employment period
+            if month_date < start_date:
+                continue
+            if end_date and month_date > end_date:
+                continue
+
+            filtered_months.append(m)
+
+        months = filtered_months
 
     # Årssumman inkluderar alla 12 månader (utbetalningar under året)
     year_summary = _build_year_summary(months)
