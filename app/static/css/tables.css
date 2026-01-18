@@ -20,6 +20,7 @@ th.th_right, td.td_right { text-align: right; }
 th.th_center, td.td_center { text-align: center; }
 th.th_left, td.td_left { text-align: left; }
 td.foot_left { padding-left: 0.75rem;}
+td.foot_right { padding-right: 0.75rem;}
 
 tbody td {
   padding: 0.625rem 0.75rem;

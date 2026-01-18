@@ -26,7 +26,7 @@
                 <th>Användarnamn</th>
                 <th>Namn</th>
                 <th>Roll</th>
-                <th>Lön</th>
+                <th class="th_right">Lön</th>
                 <th></th>
             </tr>
         </thead>
@@ -43,7 +43,7 @@
                         <span class="badge badge-off">User</span>
                     {% endif %}
                 </td>
-                <td data-label="Lön" class="num">{{ "{:,}".format(u.wage) }} SEK</td>
+                <td data-label="Lön" class="td_right num">{{ "{:,}".format(u.wage) }} SEK</td>
                 <td>
                     <a href="/admin/users/{{ u.id }}" class="btn secondary" style="padding: 4px 12px; font-size: 0.85rem;">Redigera</a>
                     <form method="POST" action="/admin/users/{{ u.id }}/reset-password" style="display: inline-block; margin-left: 8px;" onsubmit="return confirm('Återställ lösenord för {{ u.name }} till London1?');">
