@@ -4,7 +4,7 @@ from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings
 from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
-from .period import generate_period_data, generate_year_data
+from .period import generate_month_data, generate_period_data, generate_year_data
 from .wages import get_absence_deductions_for_month, get_all_user_wages, get_user_wage
 
 _tax_brackets = None
@@ -25,13 +25,14 @@ def _get_persons():
     return _persons
 
 
-def _calculate_tax(brutto: float, tax_table: str | None = None) -> float:
+def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: int | None = None) -> float:
     """
     Beräknar skatt baserat på bruttolön.
 
     Args:
         brutto: Bruttolön i SEK
         tax_table: Skattetabellnummer (t.ex. "33"). Om None används tax_brackets.json
+        payment_year: Utbetalningsår för att välja rätt skattetabell
 
     Returns:
         Skattebelopp i SEK
@@ -45,7 +46,7 @@ def _calculate_tax(brutto: float, tax_table: str | None = None) -> float:
     # Om skattetabell är angiven, använd den
     if tax_table:
         try:
-            return calculate_tax_from_table(brutto, tax_table)
+            return calculate_tax_from_table(brutto, tax_table, year=payment_year)
         except Exception as e:
             # Fallback till tax_brackets om något går fel
             logger.warning(f"Failed to calculate tax from table {tax_table}: {e}. Using fallback.")
@@ -87,6 +88,7 @@ def summarize_month_for_person(
     user_wages: dict[int, int] | None = None,
     year_days: list[dict] | None = None,
     fetch_tax_table: bool = True,
+    payment_year: int | None = None,
 ) -> dict:
     """
     Detaljerad månadsöversikt för en person.
@@ -168,7 +170,8 @@ def summarize_month_for_person(
     days_out = []
 
     for day in days:
-        if day["date"].month != month:
+        # Filtrera på både år och månad (viktigt när all_work_days innehåller flera år)
+        if day["date"].year != year or day["date"].month != month:
             continue
 
         day_data = _process_day_for_summary(day, combined_rules, base_salary, totals)
@@ -193,8 +196,8 @@ def summarize_month_for_person(
         # Dra av frånvaroavdrag från bruttolön
         totals["brutto_pay"] -= totals["absence_deduction"]
 
-    # Beräkna netto med användarens skattetabell
-    netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table)
+    # Beräkna netto med användarens skattetabell (använd payment_year för rätt skattetabell)
+    netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
 
     return {
         "year": year,
@@ -249,7 +252,7 @@ def build_calendar_grid_for_month(
     from datetime import timedelta
 
     # Hämta befintlig månadssammanfattning
-    month_summary = summarize_month_for_person(year, month, person_id, session, user_wages)
+    month_summary = summarize_month_for_person(year, month, person_id, session, user_wages, payment_year=year)
 
     # Beräkna grid-gränser baserat på första och sista dagens veckodag
     first_day = dt_date(year, month, 1)
@@ -415,37 +418,155 @@ def _process_day_for_summary(
     }
 
 
+def _build_payment_month_mapping(year: int) -> list[dict]:
+    """
+    Build mapping of payment months for a year.
+
+    For year 2026, this returns 12 entries representing:
+    - Payment in Jan 2026 for work in Dec 2025
+    - Payment in Feb 2026 for work in Jan 2026
+    - ...
+    - Payment in Dec 2026 for work in Nov 2026
+
+    Args:
+        year: The payment year to build mappings for
+
+    Returns:
+        List of 12 dicts with:
+            - payment_month: Month when payment is made (1-12)
+            - payment_year: Year when payment is made
+            - payment_date: Actual payment date (date object)
+            - work_month: Month when work was performed (1-12)
+            - work_year: Year when work was performed
+    """
+    from app.core.utils import calculate_payment_date
+
+    mappings = []
+
+    for payment_month in range(1, 13):
+        # Calculate which work month this payment represents
+        if payment_month == 1:
+            work_month = 12
+            work_year = year - 1
+        else:
+            work_month = payment_month - 1
+            work_year = year
+
+        payment_date = calculate_payment_date(work_year, work_month)
+
+        mappings.append(
+            {
+                "payment_month": payment_month,
+                "payment_year": year,
+                "payment_date": payment_date,
+                "work_month": work_month,
+                "work_year": work_year,
+            }
+        )
+
+    return mappings
+
+
 def summarize_year_for_person(
     year: int,
     person_id: int,
     session=None,
 ) -> dict:
     """
-    Bygger årsöversikt för en person.
+    Bygger årsöversikt för en person baserat på UTBETALNINGS-månader.
+
+    För år 2026 returneras 12 månader som representerar:
+    - Jan-utbetalning (för dec 2025 arbete)
+    - Feb-utbetalning (för jan 2026 arbete)
+    - ...
+    - Dec-utbetalning (för nov 2026 arbete)
 
     Returns:
         Dict med 'months' (lista med 12 månadsdictar) och 'year_summary'
     """
-    # Förladda löner och årsdata EN gång
+    import datetime as dt
+
+    settings = get_settings()
     user_wages = get_all_user_wages(session)
-    year_days = generate_year_data(year, person_id, session=session, user_wages=user_wages)
+
+    # Hämta data för arbete utfört från dec (year-1) till nov (year)
+    # Detta är allt arbete som betalas ut under det angivna året
+    prev_year_dec_days = generate_month_data(year - 1, 12, person_id, session=session, user_wages=user_wages)
+    current_year_days = generate_year_data(year, person_id, session=session, user_wages=user_wages)
+
+    # Kombinera december (year-1) med jan-nov (year) för komplett arbetsdata
+    all_work_days = prev_year_dec_days + current_year_days
+
+    # Bygg kartläggning av utbetalnings-månader
+    payment_mappings = _build_payment_month_mapping(year)
 
     months = []
-    for month in range(1, 13):
-        m = summarize_month_for_person(
-            year,
-            month,
-            person_id,
-            session=session,
-            user_wages=user_wages,
-            year_days=year_days,
-        )
-        # Beräkna total OB för månaden
+    for mapping in payment_mappings:
+        work_year = mapping["work_year"]
+        work_month = mapping["work_month"]
+        payment_date = mapping["payment_date"]
+
+        # Special case: Dec 2025 - använd bara grundlön (rotation startade inte förrän 2026)
+        if work_year == 2025 and work_month == 12:
+            from app.database.database import User
+
+            base_salary = get_user_wage(
+                session, person_id, settings.monthly_salary, effective_date=dt.date(2025, 12, 1)
+            )
+
+            # Hämta skattetabell för korrekt netto-beräkning
+            tax_table = None
+            if session:
+                user = session.query(User).filter(User.id == person_id).first()
+                if user and user.tax_table:
+                    tax_table = user.tax_table
+
+            # Beräkna netto med rätt skattetabell för utbetalningsåret (2026)
+            netto_pay = base_salary - _calculate_tax(base_salary, tax_table, payment_year=mapping["payment_year"])
+
+            m = {
+                "year": 2025,
+                "month": 12,
+                "person_id": person_id,
+                "total_hours": 0.0,
+                "num_shifts": 0,
+                "ob_hours": {},
+                "ob_pay": {},
+                "oncall_pay": 0.0,
+                "ot_pay": 0.0,
+                "brutto_pay": base_salary,
+                "netto_pay": netto_pay,
+                "absence_deduction": 0.0,
+                "sick_days": 0,
+                "vab_days": 0,
+                "leave_days": 0,
+                "off_days": 0,
+            }
+        else:
+            # Sammanfatta baserat på ARBETS-månad, inte utbetalnings-månad
+            m = summarize_month_for_person(
+                work_year,
+                work_month,
+                person_id,
+                session=session,
+                user_wages=user_wages,
+                year_days=all_work_days,  # Skicka kombinerad data
+                payment_year=mapping["payment_year"],  # Skicka utbetalningsår för skattetabell
+            )
+
+        # Lägg till utbetalnings-metadata
+        m["payment_date"] = payment_date
+        m["payment_month"] = mapping["payment_month"]
+        m["payment_year"] = mapping["payment_year"]
+
+        # Beräkna total OB
         ob_pay = m.get("ob_pay", {}) or {}
         total_ob = sum(float(ob_pay.get(code, 0.0) or 0.0) for code in ("OB1", "OB2", "OB3", "OB4", "OB5"))
         m["total_ob"] = total_ob
+
         months.append(m)
 
+    # Årssumman inkluderar alla 12 månader (utbetalningar under året)
     year_summary = _build_year_summary(months)
 
     return {

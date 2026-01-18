@@ -155,3 +155,60 @@ def get_ot_shift_display_code(start_time: datetime.datetime | str | None) -> str
         return "N3-OT"
     else:
         return "OT"
+
+
+def calculate_payment_date(work_year: int, work_month: int) -> datetime.date:
+    """
+    Calculate the payment date for work performed in a given month.
+
+    Payment is on the 25th of the following month, or the first weekday before
+    if the 25th falls on a weekend or red day (public holiday).
+
+    Args:
+        work_year: Year when work was performed (e.g., 2025)
+        work_month: Month when work was performed (1-12)
+
+    Returns:
+        Payment date (25th of next month, or first weekday before)
+
+    Examples:
+        - Work in Jan 2026 → Paid Feb 25, 2026
+        - Work in Nov 2026 → Paid Dec 25, 2026 (or earlier if red day)
+        - Work in Dec 2025 → Paid Jan 25, 2026
+        - If 25th is Saturday → Paid on Friday 24th
+        - If 25th is Sunday → Paid on Friday 23rd
+        - If 25th is Dec 25 (juldagen) → Paid on Dec 22 or earlier
+    """
+    # Calculate the next month
+    if work_month == 12:
+        payment_month = 1
+        payment_year = work_year + 1
+    else:
+        payment_month = work_month + 1
+        payment_year = work_year
+
+    # Start with the 25th
+    payment_date = datetime.date(payment_year, payment_month, 25)
+
+    # Check if 25th is a red day (public holiday)
+    # December 25 is always a red day (juldagen)
+    if payment_month == 12 and payment_date.day == 25:
+        # Move to previous weekday before Christmas
+        # Dec 24 is also red (julafton), so go to Dec 23 or earlier
+        payment_date = datetime.date(payment_year, 12, 23)
+        # If Dec 23 is weekend, move back further
+        weekday = payment_date.weekday()
+        if weekday == 5:  # Saturday
+            payment_date = payment_date - datetime.timedelta(days=1)  # Friday Dec 22
+        elif weekday == 6:  # Sunday
+            payment_date = payment_date - datetime.timedelta(days=2)  # Friday Dec 22
+    else:
+        # If weekend, move to previous Friday
+        weekday = payment_date.weekday()  # 0=Monday, 5=Saturday, 6=Sunday
+
+        if weekday == 5:  # Saturday
+            payment_date = payment_date - datetime.timedelta(days=1)  # Friday
+        elif weekday == 6:  # Sunday
+            payment_date = payment_date - datetime.timedelta(days=2)  # Friday
+
+    return payment_date

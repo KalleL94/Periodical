@@ -199,13 +199,16 @@ def load_persons() -> list[Person]:
     return persons
 
 
-# Cache for tax table data
-_tax_table_cache = None
+# Cache for tax table data - now per year
+_tax_table_cache = {}
 
 
-def load_tax_table() -> dict[str, list[dict]]:
+def load_tax_table(year: int | None = None) -> dict[str, list[dict]]:
     """
-    Load Swedish tax table from CSV file.
+    Load Swedish tax table from CSV file for a specific year.
+
+    Args:
+        year: Tax year to load table for (defaults to 2026)
 
     Returns:
         Dict with table numbers as keys, each containing list of income brackets:
@@ -220,10 +223,15 @@ def load_tax_table() -> dict[str, list[dict]]:
     """
     global _tax_table_cache
 
-    if _tax_table_cache is not None:
-        return _tax_table_cache
+    # Default to 2026 if no year specified
+    if year is None:
+        year = 2026
 
-    file_path = Path("data/skattetabell.csv")
+    # Check cache
+    if year in _tax_table_cache:
+        return _tax_table_cache[year]
+
+    file_path = Path(f"data/skattetabell{year}.csv")
 
     if not file_path.exists():
         logger.error("Tax table file not found at %s", file_path)
@@ -273,8 +281,8 @@ def load_tax_table() -> dict[str, list[dict]]:
         for table_nr in tax_tables:
             tax_tables[table_nr].sort(key=lambda x: x["from"])
 
-        _tax_table_cache = tax_tables
-        logger.info("Loaded tax tables for %d table numbers", len(tax_tables))
+        _tax_table_cache[year] = tax_tables
+        logger.info("Loaded tax tables for year %d with %d table numbers", year, len(tax_tables))
         return tax_tables
 
     except Exception as e:
@@ -282,13 +290,14 @@ def load_tax_table() -> dict[str, list[dict]]:
         raise StorageError(f"Could not load tax table from {file_path}: {e}") from e
 
 
-def calculate_tax_from_table(income: float, table_number: str) -> float:
+def calculate_tax_from_table(income: float, table_number: str, year: int | None = None) -> float:
     """
     Calculate tax amount from Swedish tax table.
 
     Args:
         income: Monthly gross income in SEK
         table_number: Tax table number (e.g., "29", "30", "33")
+        year: Tax year to use (defaults to 2026)
 
     Returns:
         Tax amount in SEK
@@ -300,7 +309,7 @@ def calculate_tax_from_table(income: float, table_number: str) -> float:
     if income <= 0:
         return 0.0
 
-    tax_tables = load_tax_table()
+    tax_tables = load_tax_table(year)
 
     if table_number not in tax_tables:
         available = ", ".join(sorted(tax_tables.keys()))

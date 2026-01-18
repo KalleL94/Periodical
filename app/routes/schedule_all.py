@@ -98,7 +98,14 @@ async def show_month_all(
         person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
 
         summary = summarize_month_for_person(
-            year, month, pid, session=db, user_wages=user_wages, year_days=person_month_days, fetch_tax_table=is_admin
+            year,
+            month,
+            pid,
+            session=db,
+            user_wages=user_wages,
+            year_days=person_month_days,
+            fetch_tax_table=is_admin,
+            payment_year=year,
         )
         if not can_see_salary(current_user, pid):
             summary = strip_salary_data(summary)

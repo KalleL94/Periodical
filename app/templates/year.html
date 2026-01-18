@@ -156,11 +156,16 @@
     <!-- Höger kolumn: årssammanställning -->
     <div class="col year-summary" style="min-width: 500px; flex: 1 1 0;">
         <h2 class="page-title">Monthly summary {{ year }} - {{ person_name }}</h2>
+        <p style="font-style: italic; color: #666; margin-bottom: 16px;">
+            Tabellen visar arbete från dec {{ year - 1 }} till nov {{ year }}.
+            Lönen betalas ut den 25:e följande månad (eller första vardagen före om helg/röd dag).
+        </p>
 
         <table class="summary">
             <thead>
             <tr>
-                <th>Month</th>
+                <th>Work Month</th>
+                <th>Payment Date</th>
                 {% if show_salary %}
                 <th>Net</th>
                 <th>Gross</th>
@@ -177,14 +182,18 @@
             </thead>
             <tbody>
                 {% for m in months_list %}
-                {% set mnum = loop.index %}
                 <tr class="shift-row">
-                    <td class="td_center" data-label="Månad">
-                        {# Länka till month endast om behörighet #}
+                    <td class="td_center" data-label="Utbetalning">
+                        {{ m.payment_date.strftime('%Y-%m-%d') }}
+                    </td>
+                    <td class="td_center" data-label="Arbetsmånad">
+                        {# Länka till ARBETS-månad #}
                         {% if show_salary %}
-                            <a href="/month/{{ person_id }}?year={{ year }}&month={{ mnum }}">{{ mnum }}</a>
+                            <a href="/month/{{ person_id }}?year={{ m.year }}&month={{ m.month }}">
+                                {{ m.year }}-{{ '%02d'|format(m.month) }}
+                            </a>
                         {% else %}
-                            {{ mnum }}
+                            {{ m.year }}-{{ '%02d'|format(m.month) }}
                         {% endif %}
                     </td>
                     {% if show_salary %}
@@ -210,7 +219,8 @@
             </tbody>
             <tfoot>
             <tr>
-                <td class="foot_left" data-label="Typ"><strong>Total</strong></td>
+                <td class=""></td>
+                <td class="td_center" data-label="Typ"><strong>Total</strong></td>
                 {% if show_salary %}
                 <td class="td_right num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
                 <td class="td_right num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
@@ -231,7 +241,8 @@
                 {% endif %}
             </tr>
             <tr>
-                <td class="foot_left" data-label="Typ"><strong>Snitt</strong></td>
+                <td class=""></td>
+                <td class="td_center" data-label="Typ"><strong>Snitt</strong></td>
                 {% if show_salary %}
                 <td class="td_right num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
                 <td class="td_right num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
