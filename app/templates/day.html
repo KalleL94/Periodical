@@ -327,7 +327,7 @@
                             {% for code, details in oncall.breakdown.items() %}
                                 <tr>
                                     <td class="td_left">{{ details.label }}</td>
-                                    <td class="td_center num">{{ "%.2f"|format(details.hours) }}</td>
+                                    <td class="td_right num">{{ "%.2f"|format(details.hours) }}</td>
                                     <td class="td_right num">{{ "%.2f"|format(details.pay) }} kr</td>
                             </tr>
                             {% endfor %}
@@ -335,7 +335,7 @@
                         <tfoot>
                             <tr>
                                 <td class="td_left foot_left"><strong>Total</strong></td>
-                                <td class="td_center num"><strong>{{ "%.2f"|format(oncall.total_hours) }}</strong></td>
+                                <td class="td_right foot_right num"><strong>{{ "%.2f"|format(oncall.total_hours) }}</strong></td>
                                 <td class="td_right foot_right num"><strong>{{ "%.2f"|format(oncall_pay) }} kr</strong></td>
                             </tr>
                         </tfoot>
