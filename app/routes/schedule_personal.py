@@ -113,8 +113,27 @@ async def show_day_for_person(
     midnight = datetime.combine(date_obj, time(0, 0))
     active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
 
-    # Fetch Overtime Shift from DB
-    ot_shift = get_overtime_shift_for_date(db, person_id, date_obj)
+    # Fetch Overtime Shift for display (only if registered on current day)
+    ot_shift_for_display = get_overtime_shift_for_date(db, person_id, date_obj)
+
+    # Also check previous day for OT affecting on-call (but not displayed as OT shift)
+    ot_shift_for_oncall = ot_shift_for_display
+    if not ot_shift_for_oncall:
+        from app.core.time_utils import parse_ot_times
+
+        prev_day = date_obj - timedelta(days=1)
+        prev_ot = get_overtime_shift_for_date(db, person_id, prev_day)
+        if prev_ot:
+            try:
+                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
+                if ot_end_dt.date() > prev_day:
+                    # OT crosses midnight into current day - affects on-call but not displayed
+                    ot_shift_for_oncall = prev_ot
+            except ValueError:
+                pass
+
+    # Use ot_shift_for_display for showing OT shift and calculating OT pay
+    ot_shift = ot_shift_for_display
     ot_shift_id = ot_shift.id if ot_shift else None
     ot_details = {}
 
@@ -187,31 +206,92 @@ async def show_day_for_person(
         # Default: Full 24h calculation
         oc_calc = calculate_oncall_pay(date_obj, monthly_salary, oncall_rules)
 
-        # If OT exists, recalculate OC pay only for period BEFORE OT starts
-        if ot_shift:
-            # OC shift runs 00:00 to 00:00 next day
-            oc_start = datetime.combine(date_obj, time(0, 0))
+        # If OT exists (including from previous day), recalculate OC pay for periods BEFORE and AFTER OT
+        if ot_shift_for_oncall:
+            day_start = datetime.combine(date_obj, time(0, 0))
+            day_end = datetime.combine(date_obj + timedelta(days=1), time(0, 0))
 
-            # Parse OT start time
-            ot_start_time_val = ot_shift.start_time
+            # Parse OT times from ot_shift_for_oncall (may be from previous day)
+            ot_start_time_val = ot_shift_for_oncall.start_time
+            ot_end_time_val = ot_shift_for_oncall.end_time
 
-            # Ensure we have time object
+            # Ensure we have time objects
             if isinstance(ot_start_time_val, str):
                 try:
                     ot_start_time_val = datetime.strptime(ot_start_time_val, "%H:%M:%S").time()
                 except ValueError:
                     ot_start_time_val = datetime.strptime(ot_start_time_val, "%H:%M").time()
 
-            oc_end = datetime.combine(date_obj, ot_start_time_val)
+            if isinstance(ot_end_time_val, str):
+                try:
+                    ot_end_time_val = datetime.strptime(ot_end_time_val, "%H:%M:%S").time()
+                except ValueError:
+                    ot_end_time_val = datetime.strptime(ot_end_time_val, "%H:%M").time()
 
-            # Calculate OC pay only for period before OT starts (00:00 to OT start)
-            if oc_end > oc_start:
-                oc_calc = calculate_oncall_pay_for_period(oc_start, oc_end, monthly_salary, oncall_rules)
-                oncall_pay = oc_calc["total_pay"]
-            else:
-                # OT starts at or before OC start, no OC pay
-                oncall_pay = 0.0
-                oc_calc = {"total_pay": 0.0, "breakdown": {}, "total_hours": 0.0}
+            # Use ot_shift_for_oncall.date for combining times (in case OT is from previous day)
+            ot_start_dt = datetime.combine(ot_shift_for_oncall.date, ot_start_time_val)
+            ot_end_dt = datetime.combine(ot_shift_for_oncall.date, ot_end_time_val)
+
+            # Handle shifts that cross midnight
+            if ot_end_time_val < ot_start_time_val:
+                ot_end_dt = datetime.combine(ot_shift_for_oncall.date + timedelta(days=1), ot_end_time_val)
+
+            total_pay = 0.0
+            combined_breakdown = {}
+            combined_details = {
+                "periods": [],
+                "total_pay": 0.0,
+                "total_hours": 0.0,
+            }
+
+            # Period 1: Before OT (00:00 to OT start)
+            if ot_start_dt > day_start:
+                period1 = calculate_oncall_pay_for_period(day_start, ot_start_dt, monthly_salary, oncall_rules)
+                total_pay += period1["total_pay"]
+                combined_details["periods"].append(
+                    {
+                        "start": day_start,
+                        "end": ot_start_dt,
+                        "hours": period1["total_hours"],
+                        "pay": period1["total_pay"],
+                    }
+                )
+                combined_details["total_hours"] += period1["total_hours"]
+
+                # Merge breakdown
+                for code, data in period1["breakdown"].items():
+                    if code not in combined_breakdown:
+                        combined_breakdown[code] = data.copy()
+                    else:
+                        combined_breakdown[code]["hours"] += data["hours"]
+                        combined_breakdown[code]["pay"] += data["pay"]
+
+            # Period 2: After OT (OT end to 24:00)
+            if ot_end_dt < day_end:
+                period2 = calculate_oncall_pay_for_period(ot_end_dt, day_end, monthly_salary, oncall_rules)
+                total_pay += period2["total_pay"]
+                combined_details["periods"].append(
+                    {
+                        "start": ot_end_dt,
+                        "end": day_end,
+                        "hours": period2["total_hours"],
+                        "pay": period2["total_pay"],
+                    }
+                )
+                combined_details["total_hours"] += period2["total_hours"]
+
+                # Merge breakdown
+                for code, data in period2["breakdown"].items():
+                    if code not in combined_breakdown:
+                        combined_breakdown[code] = data.copy()
+                    else:
+                        combined_breakdown[code]["hours"] += data["hours"]
+                        combined_breakdown[code]["pay"] += data["pay"]
+
+            combined_details["breakdown"] = combined_breakdown
+            combined_details["total_pay"] = total_pay
+            oncall_pay = total_pay
+            oc_calc = combined_details
         else:
             oncall_pay = oc_calc["total_pay"]
 

@@ -337,12 +337,15 @@ def _batch_fetch_ot_shifts(
 
     from app.database.database import OvertimeShift
 
+    # Hämta också dagen före start_date för att fånga OT som går över midnatt
+    fetch_start = start_date - datetime.timedelta(days=1)
+
     # Hämta alla OT-pass för alla personer i perioden
     ot_shifts = (
         session.query(OvertimeShift)
         .filter(
             OvertimeShift.user_id.in_(person_ids),
-            OvertimeShift.date >= start_date,
+            OvertimeShift.date >= fetch_start,
             OvertimeShift.date <= end_date,
         )
         .all()
@@ -421,21 +424,41 @@ def _build_person_day_basic(
     # Spara det ursprungliga skiftet för coworker-matchning
     original_shift = shift
 
-    # Kolla övertid
+    # Kolla övertid på aktuell dag (för att visa som skift)
+    ot_shift_for_display = None
     if ot_shift_map is not None:
-        ot_shift = ot_shift_map.get((person_id, date))
+        ot_shift_for_display = ot_shift_map.get((person_id, date))
     elif session:
-        ot_shift = get_overtime_shift_for_date(session, person_id, date)
-    else:
-        ot_shift = None
+        ot_shift_for_display = get_overtime_shift_for_date(session, person_id, date)
 
-    if ot_shift:
+    # Kolla också föregående dag för OT som påverkar beredskap (men visas inte som skift)
+    ot_shift_for_oncall = ot_shift_for_display
+    if not ot_shift_for_oncall:
+        prev_day = date - datetime.timedelta(days=1)
+        if ot_shift_map is not None:
+            prev_ot = ot_shift_map.get((person_id, prev_day))
+        elif session:
+            prev_ot = get_overtime_shift_for_date(session, person_id, prev_day)
+        else:
+            prev_ot = None
+
+        if prev_ot:
+            try:
+                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
+                if ot_end_dt.date() > prev_day:
+                    # OT går över midnatt in i aktuell dag - används för beredskapsberäkning
+                    ot_shift_for_oncall = prev_ot
+            except ValueError:
+                pass
+
+    # Visa OT som skift bara om det är registrerat på aktuell dag
+    if ot_shift_for_display:
         ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
         if ot_shift_type:
             shift = ot_shift_type
-            hours = ot_shift.hours
+            hours = ot_shift_for_display.hours
             try:
-                start, end = parse_ot_times(ot_shift, date)
+                start, end = parse_ot_times(ot_shift_for_display, date)
             except ValueError:
                 start, end = None, None
 
@@ -449,6 +472,7 @@ def _build_person_day_basic(
         "hours": hours,
         "start": start,
         "end": end,
+        "ot_shift_for_oncall": ot_shift_for_oncall,  # OT that affects on-call (may be from prev day)
     }
 
 
@@ -550,23 +574,42 @@ def _populate_single_person_day(
         oncall_pay = oncall_calc["total_pay"]
         oncall_details = oncall_calc
 
-    # Kolla övertid
+    # Kolla övertid - både på aktuell dag (för visning) och föregående dag (för beredskap)
+    ot_shift = None
     if ot_shift_map is not None:
         ot_shift = ot_shift_map.get((person_id, current_day))
     elif session:
         ot_shift = get_overtime_shift_for_date(session, person_id, current_day)
-    else:
-        ot_shift = None
+
+    # Check previous day for OT that crosses midnight (affects on-call but not displayed as OT)
+    ot_shift_for_oncall = ot_shift
+    if not ot_shift_for_oncall:
+        prev_day = current_day - datetime.timedelta(days=1)
+        if ot_shift_map is not None:
+            prev_ot = ot_shift_map.get((person_id, prev_day))
+        elif session:
+            prev_ot = get_overtime_shift_for_date(session, person_id, prev_day)
+        else:
+            prev_ot = None
+
+        if prev_ot:
+            try:
+                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
+                if ot_end_dt.date() > prev_day:
+                    # OT crosses midnight into current day - used for on-call calc
+                    ot_shift_for_oncall = prev_ot
+            except ValueError:
+                pass
 
     ot_pay = 0.0
     ot_hours = 0.0
     ot_details = {}
 
     if ot_shift:
-        # Om jour + övertid, räkna om jour för perioden före övertid
-        if shift and shift.code == "OC":
+        # Om jour + övertid, räkna om jour för perioden före/efter övertid
+        if shift and shift.code == "OC" and ot_shift_for_oncall:
             oncall_pay, oncall_details = _recalculate_oncall_before_ot(
-                current_day, ot_shift, user_wages, person_id, settings
+                current_day, ot_shift_for_oncall, user_wages, person_id, settings
             )
 
         # Beräkna övertidsersättning med temporal wage query
@@ -590,7 +633,7 @@ def _populate_single_person_day(
             "hourly_rate": hourly_rate,
         }
 
-        # Ersätt skift med OT för visning
+        # Replace shift with OT for display
         ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
         if ot_shift_type:
             shift = ot_shift_type
@@ -598,7 +641,7 @@ def _populate_single_person_day(
             try:
                 start, end = parse_ot_times(ot_shift, current_day)
             except ValueError:
-                pass
+                start, end = None, None
 
     day_info.update(
         {
@@ -627,24 +670,87 @@ def _recalculate_oncall_before_ot(
     person_id: int,
     settings,
 ) -> tuple[float, dict]:
-    """Räknar om jour-ersättning för perioden före övertid."""
-    oc_start = datetime.datetime.combine(current_day, dt_time(0, 0))
+    """Räknar om jour-ersättning för perioden före OCH efter övertid.
+
+    Beredskap betalas för 24h minus övertidstimmar.
+    Ex: 24h beredskap - 8.5h övertid = 15.5h beredskapsersättning
+    """
+    day_start = datetime.datetime.combine(current_day, dt_time(0, 0))
+    day_end = datetime.datetime.combine(current_day + datetime.timedelta(days=1), dt_time(0, 0))
 
     try:
-        ot_start_dt, _ = parse_ot_times(ot_shift, current_day)
-        oc_end = ot_start_dt
+        # Use ot_shift.date for parsing, not current_day (in case OT crosses midnight)
+        ot_start_dt, ot_end_dt = parse_ot_times(ot_shift, ot_shift.date)
     except ValueError:
-        oc_end = datetime.datetime.combine(current_day, dt_time(0, 0))
+        # Om parsing misslyckas, betala ingen beredskap
+        return 0.0, {"note": "Could not parse OT times", "total_pay": 0.0}
 
     oncall_rules = get_oncall_rules(current_day.year)
+    monthly_salary = user_wages.get(person_id, settings.monthly_salary)
 
-    if oc_end > oc_start:
-        oncall_calc = calculate_oncall_pay_for_period(
-            oc_start,
-            oc_end,
-            user_wages.get(person_id, settings.monthly_salary),
+    total_pay = 0.0
+    combined_breakdown = {}
+    combined_details = {
+        "periods": [],
+        "total_pay": 0.0,
+        "total_hours": 0.0,
+    }
+
+    # Period 1: Före övertid (00:00 till OT start)
+    if ot_start_dt > day_start:
+        period1 = calculate_oncall_pay_for_period(
+            day_start,
+            ot_start_dt,
+            monthly_salary,
             oncall_rules,
         )
-        return oncall_calc["total_pay"], oncall_calc
-    else:
-        return 0.0, {"note": "OT starts at or before OC start", "total_pay": 0.0}
+        total_pay += period1["total_pay"]
+        combined_details["periods"].append(
+            {
+                "start": day_start,
+                "end": ot_start_dt,
+                "hours": period1["total_hours"],
+                "pay": period1["total_pay"],
+            }
+        )
+        combined_details["total_hours"] += period1["total_hours"]
+
+        # Merge breakdown
+        for code, data in period1["breakdown"].items():
+            if code not in combined_breakdown:
+                combined_breakdown[code] = data.copy()
+            else:
+                combined_breakdown[code]["hours"] += data["hours"]
+                combined_breakdown[code]["pay"] += data["pay"]
+
+    # Period 2: Efter övertid (OT slut till 24:00)
+    if ot_end_dt < day_end:
+        period2 = calculate_oncall_pay_for_period(
+            ot_end_dt,
+            day_end,
+            monthly_salary,
+            oncall_rules,
+        )
+        total_pay += period2["total_pay"]
+        combined_details["periods"].append(
+            {
+                "start": ot_end_dt,
+                "end": day_end,
+                "hours": period2["total_hours"],
+                "pay": period2["total_pay"],
+            }
+        )
+        combined_details["total_hours"] += period2["total_hours"]
+
+        # Merge breakdown
+        for code, data in period2["breakdown"].items():
+            if code not in combined_breakdown:
+                combined_breakdown[code] = data.copy()
+            else:
+                combined_breakdown[code]["hours"] += data["hours"]
+                combined_breakdown[code]["pay"] += data["pay"]
+
+    combined_details["breakdown"] = combined_breakdown
+    combined_details["total_pay"] = total_pay
+
+    return total_pay, combined_details
