@@ -40,7 +40,6 @@ from .holidays import (
     nationaldagen,
     nyarsafton,
     nyarsdagen,
-    pingstafton,
     skartorsdagen,
     trettondagen,
 )
@@ -79,10 +78,8 @@ def _get_holidays_for_year(year: int) -> set[datetime.date]:
     # Ascension Day
     holidays.add(kristi_himmelsfardsdag(year))
 
-    # Pentecost
-    holidays.add(pingstafton(year))  # Pingstafton
-    pentecost = easter_sunday(year) + datetime.timedelta(days=49)
-    holidays.add(pentecost)  # Pingstdagen
+    # NOTE: Pentecost (Pingst) is NOT included - gets normal weekend rate (97 kr)
+    # Pingstafton is always Saturday, Pingstdagen is always Sunday
 
     # Midsummer (Friday-Saturday between Jun 19-25)
     holidays.add(midsommarafton(year))
@@ -93,6 +90,33 @@ def _get_holidays_for_year(year: int) -> set[datetime.date]:
     holidays.add(alla_helgons_dag(year))
 
     return holidays
+
+
+def _get_nationaldagen_block(year: int) -> set[datetime.date]:
+    """
+    Return set of dates for Nationaldagen block.
+
+    Nationaldagen (June 6) is treated like storhelg timewise but with red day rate (112 kr).
+    Block: From 17:00 day before to 07:00 first weekday after.
+    """
+    nationaldagen_block = set()
+
+    nat_day = nationaldagen(year)
+    # Start from day before at 17:00 (add that day)
+    day_before = nat_day - datetime.timedelta(days=1)
+    nationaldagen_block.add(day_before)
+
+    # Add Nationaldagen itself
+    nationaldagen_block.add(nat_day)
+
+    # Add all days until first weekday after Nationaldagen
+    nat_end = first_weekday_after(nat_day)
+    current = nat_day + datetime.timedelta(days=1)
+    while current < nat_end:
+        nationaldagen_block.add(current)
+        current += datetime.timedelta(days=1)
+
+    return nationaldagen_block
 
 
 def _get_storhelg_dates_for_year(year: int) -> set[datetime.date]:
@@ -145,13 +169,7 @@ def _get_storhelg_dates_for_year(year: int) -> set[datetime.date]:
         storhelg.add(d)
         d += datetime.timedelta(days=1)
 
-    # Pentecost block: Pingstafton → first weekday after Pingstdagen
-    pingst_start = pingstafton(year)
-    pingst_end = first_weekday_after(easter_sunday(year) + datetime.timedelta(days=49))
-    d = pingst_start
-    while d < pingst_end:
-        storhelg.add(d)
-        d += datetime.timedelta(days=1)
+    # NOTE: Pingst is NOT included as storhelg for on-call compensation
 
     return storhelg
 
@@ -174,55 +192,298 @@ def build_oncall_rules_for_year(year: int) -> list[OnCallRule]:
     holidays = _get_holidays_for_year(year)
     storhelg_dates = _get_storhelg_dates_for_year(year)
 
-    for date in sorted(storhelg_dates):
-        if date == skartorsdagen(year) or date == nyarsafton(year) or date == nyarsafton(year - 1):
-            start_time = "18:00"
-        elif date == julafton(year) or date == midsommarafton(year) or date == pingstafton(year):
-            start_time = "07:00"
-        else:
+    # Nationaldagen gets special treatment: extended like storhelg but at red day rate (112 kr)
+    nationaldagen_block = _get_nationaldagen_block(year)
+    nat_day = nationaldagen(year)
+
+    # Get first weekday after Nationaldagen
+    first_weekday = first_weekday_after(nat_day)
+
+    for date in sorted(nationaldagen_block):
+        # Determine start and end times based on which day it is
+        if date == nat_day - datetime.timedelta(days=1):
+            # Day before Nationaldagen: start at 17:00
+            start_time = "17:00"
+            end_time = "00:00"
+            specific_dates = [date.isoformat()]
+            spans = False
+        elif date == first_weekday - datetime.timedelta(days=1):
+            # Last day before first weekday: full day (00:00-24:00)
             start_time = "00:00"
+            end_time = "00:00"
+            specific_dates = [date.isoformat()]
+            spans = False
+        else:
+            # Nationaldagen itself and intermediate days: full day
+            start_time = "00:00"
+            end_time = "00:00"
+            specific_dates = [date.isoformat()]
+            spans = False
+
         rules.append(
             OnCallRule(
-                code="OC_SPECIAL",
-                label="Oncall major holiday",
-                specific_dates=[date.isoformat()],
+                code="OC_NATIONALDAGEN",
+                label="Beredskap Nationaldagen",
+                specific_dates=specific_dates,
                 start_time=start_time,
-                end_time="00:00",
-                rate=250,
-                priority=6,
+                end_time=end_time,
+                fixed_hourly_rate=112,
+                priority=6,  # Higher than everything including storhelg to override weekend rules
                 generated=True,
+                spans_to_next_day=spans,
             )
         )
 
-    regular_holidays = holidays - storhelg_dates
-    for date in sorted(regular_holidays):
+    # Add separate rule for first weekday morning (00:00-07:00)
+    if first_weekday not in nationaldagen_block:
         rules.append(
             OnCallRule(
-                code="OC_HOLIDAY",
-                label="Oncall holiday",
-                specific_dates=[date.isoformat()],
-                start_time="07:00",
-                end_time="24:00",
-                rate=500,
+                code="OC_NATIONALDAGEN",
+                label="Beredskap Nationaldagen",
+                specific_dates=[first_weekday.isoformat()],
+                start_time="00:00",
+                end_time="07:00",
+                fixed_hourly_rate=112,
+                priority=6,
+                generated=True,
+                spans_to_next_day=False,
+            )
+        )
+
+    # Add day-before rules for julafton and midsommarafton (start at 17:00)
+    julafton_date = julafton(year)
+    day_before_jul = julafton_date - datetime.timedelta(days=1)
+    if day_before_jul not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[day_before_jul.isoformat()],
+                start_time="17:00",
+                end_time="00:00",
+                fixed_hourly_rate=192,
                 priority=5,
                 generated=True,
             )
         )
 
+    midsommar_date = midsommarafton(year)
+    day_before_midsommar = midsommar_date - datetime.timedelta(days=1)
+    if day_before_midsommar not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[day_before_midsommar.isoformat()],
+                start_time="17:00",
+                end_time="00:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    # Add day-before rule for nyårsafton (30/12 from 17:00)
+    nyarsafton_date = nyarsafton(year)
+    day_before_nyar = nyarsafton_date - datetime.timedelta(days=1)
+    if day_before_nyar not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[day_before_nyar.isoformat()],
+                start_time="17:00",
+                end_time="00:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    for date in sorted(storhelg_dates):
+        if date == skartorsdagen(year):
+            start_time = "17:00"  # Skärtorsdag (day before långfredag) starts at 17:00
+        elif (
+            date == julafton(year)
+            or date == midsommarafton(year)
+            or date == nyarsafton(year)
+            or date == nyarsafton(year - 1)
+        ):
+            start_time = "00:00"  # Full day since day before already starts at 17:00
+        else:
+            start_time = "00:00"
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[date.isoformat()],
+                start_time=start_time,
+                end_time="00:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    # Add rules for first weekday morning (00:00-07:00) after each storhelg block
+    # Christmas: first weekday after Dec 26
+    christmas_first_weekday = first_weekday_after(datetime.date(year, 12, 26))
+    if christmas_first_weekday not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[christmas_first_weekday.isoformat()],
+                start_time="00:00",
+                end_time="07:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    # New Year: first weekday after Jan 1 (current year)
+    newyear_first_weekday = first_weekday_after(nyarsdagen(year))
+    if newyear_first_weekday not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[newyear_first_weekday.isoformat()],
+                start_time="00:00",
+                end_time="07:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    # Easter: first weekday after Annandag påsk
+    easter_first_weekday = first_weekday_after(annandagpask(year))
+    if easter_first_weekday not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[easter_first_weekday.isoformat()],
+                start_time="00:00",
+                end_time="07:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    # Midsummer: first weekday after Midsommardagen
+    midsummer_day = midsommarafton(year) + datetime.timedelta(days=1)
+    midsummer_first_weekday = first_weekday_after(midsummer_day)
+    if midsummer_first_weekday not in storhelg_dates:
+        rules.append(
+            OnCallRule(
+                code="OC_SPECIAL",
+                label="Beredskap storhelg",
+                specific_dates=[midsummer_first_weekday.isoformat()],
+                start_time="00:00",
+                end_time="07:00",
+                fixed_hourly_rate=192,
+                priority=5,
+                generated=True,
+            )
+        )
+
+    # Regular holidays exclude storhelg and Nationaldagen block
+    regular_holidays = holidays - storhelg_dates - nationaldagen_block
+    for date in sorted(regular_holidays):
+        # Full day at holiday rate
+        rules.append(
+            OnCallRule(
+                code="OC_HOLIDAY",
+                label="Beredskap röd dag",
+                specific_dates=[date.isoformat()],
+                start_time="00:00",
+                end_time="24:00",
+                fixed_hourly_rate=112,
+                priority=4,
+                generated=True,
+            )
+        )
+
+        # Check if holiday falls on Fri-Sun for extended block
+        weekday = date.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+
+        # Eve before holiday: 17:00-24:00 at holiday rate (112 kr)
         eve = date - datetime.timedelta(days=1)
-        if eve not in holidays and eve not in storhelg_dates:
+        if eve not in holidays and eve not in storhelg_dates and eve not in nationaldagen_block:
             rules.append(
                 OnCallRule(
-                    code="OC_HOLIDAY_EVE",
-                    label="Oncall holiday eve",
+                    code="OC_HOLIDAY",
+                    label="Beredskap röd dag",
                     specific_dates=[eve.isoformat()],
-                    start_time="18:00",
+                    start_time="17:00",
                     end_time="24:00",
-                    rate=700,
+                    fixed_hourly_rate=112,
                     priority=4,
                     generated=True,
                 )
             )
+
+        # If holiday falls on Fri-Sun, extend to first weekday morning (like storhelg)
+        if weekday >= 4:  # Friday, Saturday, or Sunday
+            # Extend to first weekday after this holiday
+            first_weekday = first_weekday_after(date)
+            current = date + datetime.timedelta(days=1)
+
+            # Add full days until day before first weekday
+            while current < first_weekday:
+                if current not in holidays and current not in storhelg_dates and current not in nationaldagen_block:
+                    rules.append(
+                        OnCallRule(
+                            code="OC_HOLIDAY",
+                            label="Beredskap röd dag",
+                            specific_dates=[current.isoformat()],
+                            start_time="00:00",
+                            end_time="24:00",
+                            fixed_hourly_rate=112,
+                            priority=4,
+                            generated=True,
+                        )
+                    )
+                current += datetime.timedelta(days=1)
+
+            # Add first weekday morning (00:00-07:00)
+            if (
+                first_weekday not in holidays
+                and first_weekday not in storhelg_dates
+                and first_weekday not in nationaldagen_block
+            ):
+                rules.append(
+                    OnCallRule(
+                        code="OC_HOLIDAY",
+                        label="Beredskap röd dag",
+                        specific_dates=[first_weekday.isoformat()],
+                        start_time="00:00",
+                        end_time="07:00",
+                        fixed_hourly_rate=112,
+                        priority=4,
+                        generated=True,
+                    )
+                )
+        else:
+            # Weekday holiday: only add morning after (00:00-07:00)
+            day_after = date + datetime.timedelta(days=1)
+            if day_after not in holidays and day_after not in storhelg_dates and day_after not in nationaldagen_block:
+                rules.append(
+                    OnCallRule(
+                        code="OC_HOLIDAY",
+                        label="Beredskap röd dag",
+                        specific_dates=[day_after.isoformat()],
+                        start_time="00:00",
+                        end_time="07:00",
+                        fixed_hourly_rate=112,
+                        priority=4,
+                        generated=True,
+                    )
+                )
 
     return rules
 
@@ -304,8 +565,7 @@ def _get_rule_intervals_for_shift(
 
     # Determine if rule spans midnight
     spans_midnight = rule.spans_to_next_day or (
-        datetime.time(rule_end_h, rule_end_m) <= datetime.time(rule_start_h, rule_start_m)
-        and not ends_at_midnight
+        datetime.time(rule_end_h, rule_end_m) <= datetime.time(rule_start_h, rule_start_m) and not ends_at_midnight
     )
 
     # Iterate through each day in the shift span
@@ -326,22 +586,16 @@ def _get_rule_intervals_for_shift(
 
         if date_applies:
             # Create rule interval for this date
-            interval_start = datetime.datetime.combine(
-                current_date, datetime.time(rule_start_h, rule_start_m)
-            )
+            interval_start = datetime.datetime.combine(current_date, datetime.time(rule_start_h, rule_start_m))
 
             if ends_at_midnight:
-                interval_end = datetime.datetime.combine(
-                    current_date + datetime.timedelta(days=1), datetime.time(0, 0)
-                )
+                interval_end = datetime.datetime.combine(current_date + datetime.timedelta(days=1), datetime.time(0, 0))
             elif spans_midnight:
                 interval_end = datetime.datetime.combine(
                     current_date + datetime.timedelta(days=1), datetime.time(rule_end_h, rule_end_m)
                 )
             else:
-                interval_end = datetime.datetime.combine(
-                    current_date, datetime.time(rule_end_h, rule_end_m)
-                )
+                interval_end = datetime.datetime.combine(current_date, datetime.time(rule_end_h, rule_end_m))
 
             # Clip to shift boundaries
             clipped_start = max(interval_start, shift_start)
@@ -458,15 +712,20 @@ def calculate_oncall_pay(
 
                 if hours > 0:
                     # Calculate pay for this segment
-                    # On-call pay: (monthly_salary / rate) gives hourly rate
-                    # For any number of hours: (monthly_salary / rate) * hours
-                    segment_pay = (monthly_salary / rule.rate) * hours
+                    if rule.fixed_hourly_rate is not None:
+                        # New system: fixed SEK per hour
+                        segment_pay = rule.fixed_hourly_rate * hours
+                        rate_display = rule.fixed_hourly_rate
+                    else:
+                        # Legacy system: monthly_salary / rate
+                        segment_pay = (monthly_salary / rule.rate) * hours
+                        rate_display = rule.rate
 
                     # Track in breakdown
                     if rule.code not in breakdown:
                         breakdown[rule.code] = {
                             "hours": 0.0,
-                            "rate": rule.rate,
+                            "rate": rate_display,
                             "pay": 0.0,
                             "label": rule.label,
                         }
@@ -480,7 +739,7 @@ def calculate_oncall_pay(
                             "end": unc_end,
                             "hours": hours,
                             "code": rule.code,
-                            "rate": rule.rate,
+                            "rate": rate_display,
                             "pay": segment_pay,
                         }
                     )
@@ -585,13 +844,22 @@ def calculate_oncall_pay_for_period(
             for uncov_start, uncov_end in uncovered:
                 # Calculate hours and pay for this segment
                 segment_hours = (uncov_end - uncov_start).total_seconds() / 3600.0
-                segment_pay = (monthly_salary / rule.rate) * segment_hours
+
+                # Calculate pay based on rule type
+                if rule.fixed_hourly_rate is not None:
+                    # New system: fixed SEK per hour
+                    segment_pay = rule.fixed_hourly_rate * segment_hours
+                    rate_display = rule.fixed_hourly_rate
+                else:
+                    # Legacy system: monthly_salary / rate
+                    segment_pay = (monthly_salary / rule.rate) * segment_hours
+                    rate_display = rule.rate
 
                 # Add to breakdown
                 if rule.code not in breakdown:
                     breakdown[rule.code] = {
                         "hours": 0.0,
-                        "rate": rule.rate,
+                        "rate": rate_display,
                         "pay": 0.0,
                         "label": rule.label,
                     }

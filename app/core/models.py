@@ -48,7 +48,8 @@ class OnCallRule(BaseModel):
     specific_dates: list[str] | None = None
     start_time: str
     end_time: str
-    rate: int  # Divisor: monthly_salary / rate = daily compensation
+    rate: int | None = None  # Divisor: monthly_salary / rate = hourly compensation (deprecated)
+    fixed_hourly_rate: int | None = None  # Fixed SEK per hour (preferred)
     priority: int = 1  # Higher priority replaces lower priority
     spans_to_next_day: bool = False
     generated: bool = False
