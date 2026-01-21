@@ -76,7 +76,7 @@ six==1.17.0
     #   python-dateutil
 sqlalchemy==2.0.45
     # via periodical (pyproject.toml)
-starlette==0.52.0
+starlette==0.52.1
     # via fastapi
 typing-extensions==4.15.0
     # via
