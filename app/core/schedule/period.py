@@ -60,9 +60,10 @@ def build_week_data(
     persons = _get_persons()
     shift_types = get_shift_types()
 
-    # Batch fetch absences and overtime for the week to avoid N+1 queries
+    # Batch fetch absences, overtime, and oncall overrides for the week to avoid N+1 queries
     absence_map = _batch_fetch_absences(session, person_ids, monday, sunday)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday)
+    oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday)
 
     days_in_week = []
 
@@ -85,6 +86,7 @@ def build_week_data(
                     None,
                     ot_shift_map,
                     absence_map,
+                    oncall_override_map,
                 )
                 for pid in person_ids
             ]
@@ -99,6 +101,7 @@ def build_week_data(
                     None,
                     ot_shift_map,
                     absence_map,
+                    oncall_override_map,
                 )
             )
 
@@ -191,9 +194,10 @@ def generate_period_data(
     # Förbered person-lista
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
 
-    # Batch fetch absences and overtime shifts for the entire period to avoid N+1 queries
+    # Batch fetch absences, overtime shifts, and oncall overrides for the entire period to avoid N+1 queries
     absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date)
+    oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, effective_start, end_date)
 
     # Generera dagdata
     persons = _get_persons()
@@ -211,7 +215,15 @@ def generate_period_data(
         if person_id is None:
             day_info["persons"] = [
                 _build_person_day_basic(
-                    current_day, pid, persons, get_shift_types(), session, vacation_dates, ot_shift_map, absence_map
+                    current_day,
+                    pid,
+                    persons,
+                    get_shift_types(),
+                    session,
+                    vacation_dates,
+                    ot_shift_map,
+                    absence_map,
+                    oncall_override_map,
                 )
                 for pid in person_ids
             ]
@@ -228,6 +240,7 @@ def generate_period_data(
                 settings,
                 ot_shift_map,
                 absence_map,
+                oncall_override_map,
             )
 
         days_out.append(day_info)
@@ -355,6 +368,38 @@ def _batch_fetch_ot_shifts(
     return {(shift.user_id, shift.date): shift for shift in ot_shifts}
 
 
+def _batch_fetch_oncall_overrides(
+    session,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> dict[tuple[int, datetime.date], object]:
+    """
+    Batch-hämtar on-call overrides för flera personer och en period.
+
+    Returns:
+        Dict med (person_id, date) -> OnCallOverride
+    """
+    if not session:
+        return {}
+
+    from app.database.database import OnCallOverride
+
+    # Hämta alla overrides för alla personer i perioden
+    overrides = (
+        session.query(OnCallOverride)
+        .filter(
+            OnCallOverride.user_id.in_(person_ids),
+            OnCallOverride.date >= start_date,
+            OnCallOverride.date <= end_date,
+        )
+        .all()
+    )
+
+    # Skapa lookup-dict
+    return {(override.user_id, override.date): override for override in overrides}
+
+
 def _build_person_day_basic(
     date: datetime.date,
     person_id: int,
@@ -364,6 +409,7 @@ def _build_person_day_basic(
     vacation_dates: dict[int, set[datetime.date]] | None = None,
     ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
     absence_map: dict[tuple[int, datetime.date], object] | None = None,
+    oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
@@ -423,6 +469,36 @@ def _build_person_day_basic(
 
     # Spara det ursprungliga skiftet för coworker-matchning
     original_shift = shift
+
+    # Kolla oncall override - hämta från batch eller databas
+    oncall_override = None
+    if oncall_override_map is not None:
+        oncall_override = oncall_override_map.get((person_id, date))
+    elif session:
+        from app.database.database import OnCallOverride
+
+        oncall_override = (
+            session.query(OnCallOverride)
+            .filter(OnCallOverride.user_id == person_id, OnCallOverride.date == date)
+            .first()
+        )
+
+    if oncall_override:
+        from app.database.database import OnCallOverrideType
+
+        if oncall_override.override_type == OnCallOverrideType.ADD:
+            # Lägg till OC-pass - ersätt skiftet med OC
+            oc_shift = next((s for s in shift_types if s.code == "OC"), None)
+            if oc_shift:
+                shift = oc_shift
+                hours, start, end = 0.0, None, None  # OC har inga specifika tider
+        elif oncall_override.override_type == OnCallOverrideType.REMOVE:
+            # Ta bort OC-pass - om skiftet är OC, ersätt med OFF
+            if shift and shift.code == "OC":
+                off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+                if off_shift:
+                    shift = off_shift
+                    hours, start, end = 0.0, None, None
 
     # Kolla övertid på aktuell dag (för att visa som skift)
     ot_shift_for_display = None
@@ -488,6 +564,7 @@ def _populate_single_person_day(
     settings,
     ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
     absence_map: dict[tuple[int, datetime.date], object] | None = None,
+    oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -560,6 +637,38 @@ def _populate_single_person_day(
 
     # Spara det ursprungliga skiftet för coworker-matchning
     original_shift = shift
+
+    # Kolla oncall override - hämta från batch eller databas
+    oncall_override = None
+    if oncall_override_map is not None:
+        oncall_override = oncall_override_map.get((person_id, current_day))
+    elif session:
+        from app.database.database import OnCallOverride
+
+        oncall_override = (
+            session.query(OnCallOverride)
+            .filter(OnCallOverride.user_id == person_id, OnCallOverride.date == current_day)
+            .first()
+        )
+
+    if oncall_override:
+        from app.database.database import OnCallOverrideType
+
+        if oncall_override.override_type == OnCallOverrideType.ADD:
+            # Lägg till OC-pass - ersätt skiftet med OC
+            oc_shift = next((s for s in shift_types if s.code == "OC"), None)
+            if oc_shift:
+                shift = oc_shift
+                hours, start, end = 0.0, None, None  # OC har inga specifika tider
+                ob = {}
+        elif oncall_override.override_type == OnCallOverrideType.REMOVE:
+            # Ta bort OC-pass - om skiftet är OC, ersätt med OFF
+            if shift and shift.code == "OC":
+                off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+                if off_shift:
+                    shift = off_shift
+                    hours, start, end = 0.0, None, None
+                    ob = {}
 
     # Beräkna jour-ersättning
     oncall_pay = 0.0

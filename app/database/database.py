@@ -43,6 +43,13 @@ class AbsenceType(str, enum.Enum):
     OFF = "OFF"  # Ledig - inget löneavdrag
 
 
+class OnCallOverrideType(str, enum.Enum):
+    """Types of on-call override."""
+
+    ADD = "ADD"  # Manuellt tillagt OC-pass
+    REMOVE = "REMOVE"  # Avbokat OC-pass från rotation
+
+
 class User(Base):
     """User model with authentication and schedule data."""
 
@@ -106,6 +113,27 @@ class Absence(Base):
 
     def __repr__(self):
         return f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.absence_type})>"
+
+
+class OnCallOverride(Base):
+    """On-call override model for manually adding or removing on-call shifts."""
+
+    __tablename__ = "oncall_overrides"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    override_type = Column(SQLEnum(OnCallOverrideType), nullable=False)
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f"<OnCallOverride(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.override_type})>"
 
 
 class WageHistory(Base):

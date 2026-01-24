@@ -43,7 +43,7 @@ from app.core.schedule import (
 )
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
-from app.database.database import Absence, User, UserRole, get_db
+from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, UserRole, get_db
 from app.routes.shared import templates
 
 logger = get_logger(__name__)
@@ -80,6 +80,37 @@ async def show_day_for_person(
     shift, rotation_week = determine_shift_for_date(date_obj, start_week=person_id)
     rotation_length = get_rotation_length_for_date(date_obj)
     original_shift = shift  # Keep track of original shift for OC calculation
+
+    # Fetch oncall override EARLY to apply before hours calculation
+    oncall_override = (
+        db.query(OnCallOverride).filter(OnCallOverride.user_id == person_id, OnCallOverride.date == date_obj).first()
+    )
+
+    # Determine if this person has OC in the rotation (before any overrides)
+    has_rotation_oc = original_shift and original_shift.code == "OC"
+
+    # Apply oncall override to shift
+    if oncall_override:
+        from app.core.storage import load_shift_types
+
+        all_shifts = load_shift_types()
+        if oncall_override.override_type == OnCallOverrideType.ADD:
+            # ADD override: change shift to OC
+            oc_shift = next((s for s in all_shifts if s.code == "OC"), None)
+            if oc_shift:
+                shift = oc_shift
+        elif oncall_override.override_type == OnCallOverrideType.REMOVE:
+            # REMOVE override: if shift is OC, change to OFF
+            if shift and shift.code == "OC":
+                off_shift = next((s for s in all_shifts if s.code == "OFF"), None)
+                if off_shift:
+                    shift = off_shift
+
+    # Determine if this is effectively an OC shift (considering overrides)
+    is_effective_oc = (
+        has_rotation_oc and not (oncall_override and oncall_override.override_type == OnCallOverrideType.REMOVE)
+    ) or (oncall_override and oncall_override.override_type == OnCallOverrideType.ADD)
+
     hours: float = 0.0
     start_dt: datetime | None = None
     end_dt: datetime | None = None
@@ -98,12 +129,13 @@ async def show_day_for_person(
     # We need to check this before fetching the OT shift
     temp_ot_check = get_overtime_shift_for_date(db, person_id, date_obj)
 
-    if start_dt and end_dt and not temp_ot_check:
-        # Only calculate OB if there's NO overtime shift
+    # OC shifts also don't have OB - they have oncall pay instead
+    if start_dt and end_dt and not temp_ot_check and not is_effective_oc:
+        # Only calculate OB if there's NO overtime shift AND NOT an OC shift
         ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
         ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary)
     else:
-        # No OB for OT shifts
+        # No OB for OT shifts or OC shifts
         ob_hours = {r.code: 0.0 for r in ob_rules}
         ob_pay = {r.code: 0.0 for r in ob_rules}
 
@@ -196,11 +228,11 @@ async def show_day_for_person(
             "hourly_rate": hourly_rate,
         }
 
-    # Calculate on-call pay if this is an on-call shift (use original_shift to check)
+    # Calculate on-call pay if this is effectively an on-call shift (considering overrides)
     oncall_pay = 0.0
     oncall_details = {}
 
-    if original_shift and original_shift.code == "OC":
+    if is_effective_oc:
         oncall_rules = _cached_oncall_rules(year)
 
         # Default: Full 24h calculation
@@ -407,6 +439,9 @@ async def show_day_for_person(
             "is_karens": is_karens,  # Whether this is a karensdag
             "coworkers": coworkers,  # List of coworker names
             "all_working_persons": persons_today_with_shift,
+            "oncall_override": oncall_override,  # On-call override data
+            "has_rotation_oc": has_rotation_oc,  # Whether person has OC in rotation
+            "is_effective_oc": is_effective_oc,  # Whether this is effectively an OC shift
             **nav,
         },
         user=current_user,

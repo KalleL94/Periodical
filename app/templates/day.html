@@ -287,6 +287,93 @@
             {% endif %}
         {% endif %}
 
+        {# Beredskapssection - endast för egen sida när inloggad #}
+        {% if user and user.id == person_id or user.id == 0 %}
+            <h3>Beredskap (On-call)</h3>
+
+            {% if oncall_override %}
+                <div class="oncall-override-display">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Typ</th>
+                                <th>Anledning</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    {% if oncall_override.override_type.value == 'ADD' %}
+                                        <span class="badge" style="background: #22c55e; color: white;">Tillagd OC</span>
+                                    {% else %}
+                                        <span class="badge" style="background: #ef4444; color: white;">Borttagen OC</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ oncall_override.reason or '-' }}</td>
+                                <td>
+                                    <form method="POST" action="/oncall/{{ oncall_override.id }}/delete" style="display: inline;">
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Ångra ändringen och återställ till rotation?')">Ångra</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="info-text">
+                        {% if oncall_override.override_type.value == 'ADD' %}
+                            Beredskapspass har lagts till manuellt. Klicka "Ångra" för att ta bort.
+                        {% else %}
+                            Beredskapspass har tagits bort manuellt från rotationen. Klicka "Ångra" för att återställa.
+                        {% endif %}
+                    </p>
+                </div>
+            {% else %}
+                {% if has_rotation_oc %}
+                    {# Person har OC enligt rotation - visa ta bort-knapp #}
+                    <form method="POST" action="/oncall/remove" class="oncall-form">
+                        <input type="hidden" name="user_id" value="{{ person_id }}">
+                        <input type="hidden" name="date" value="{{ date }}">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="reason">Anledning (valfritt):</label>
+                                <input type="text" id="reason" name="reason" placeholder="T.ex. sjuk, byte med kollega">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-danger">Ta bort beredskapspass</button>
+                    </form>
+
+                    <p class="info-text">
+                        Du har beredskap denna dag enligt rotationsschemat.
+                        <br>
+                        Ta bort om du inte kan ha beredskap (t.ex. vid sjukdom eller byte med kollega).
+                    </p>
+                {% else %}
+                    {# Person har inte OC - visa lägg till-knapp #}
+                    <form method="POST" action="/oncall/add" class="oncall-form">
+                        <input type="hidden" name="user_id" value="{{ person_id }}">
+                        <input type="hidden" name="date" value="{{ date }}">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="reason">Anledning (valfritt):</label>
+                                <input type="text" id="reason" name="reason" placeholder="T.ex. byte med kollega">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Lägg till beredskapspass</button>
+                    </form>
+
+                    <p class="info-text">
+                        Du har inte beredskap denna dag enligt rotationsschemat.
+                        <br>
+                        Lägg till om du tar över beredskap från en kollega.
+                    </p>
+                {% endif %}
+            {% endif %}
+        {% endif %}
+
         <h3>Alla som arbetar denna dag</h3>
         {% if all_working_persons and all_working_persons|length > 0 %}
             <table>
@@ -310,8 +397,8 @@
 
         {% if show_salary %}
             <section class="day-section">
-            {% if original_shift and original_shift.code == 'OC' %}
-            {# On-call compensation section - only for OC shifts (check original_shift to handle OT replacement) #}
+            {% if is_effective_oc %}
+            {# On-call compensation section - for effective OC shifts (including ADD overrides) #}
                 <h3>Oncall pay</h3>
                 {% set oncall = oncall_details %}
                 {% if oncall and oncall.breakdown %}
