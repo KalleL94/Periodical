@@ -26,7 +26,7 @@ from app.core.schedule import (
     rotation_start_date,
 )
 from app.core.utils import get_safe_today, get_today
-from app.database.database import Absence, User, get_db
+from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, get_db
 from app.routes.shared import templates
 
 router = APIRouter(tags=["dashboard"])
@@ -47,8 +47,8 @@ async def read_root(
     safe_today = get_safe_today(rotation_start_date)
     iso_year, iso_week, _ = safe_today.isocalendar()
 
-    # Build this week's data for the user
-    week_data = build_week_data(iso_year, iso_week, person_id=current_user.id)
+    # Build this week's data for the user (pass session for oncall override support)
+    week_data = build_week_data(iso_year, iso_week, person_id=current_user.id, session=db)
 
     # Batch fetch overtime shifts for current and next month to avoid N+1 queries
     current_month = safe_today.month
@@ -66,22 +66,18 @@ async def read_root(
     next_shift = None
     next_oncall_shift = None
 
-    # Check this week and next week for upcoming shifts
-    weeks_to_check = [
-        (iso_year, iso_week),
-        # Calculate next week
-        (
-            (safe_today + dt.timedelta(days=7)).isocalendar()[0],
-            (safe_today + dt.timedelta(days=7)).isocalendar()[1],
-        ),
-    ]
+    # Check up to 11 weeks ahead for upcoming shifts (covers full rotation cycle)
+    weeks_to_check = []
+    for week_offset in range(11):
+        check_date = safe_today + dt.timedelta(days=7 * week_offset)
+        weeks_to_check.append((check_date.isocalendar()[0], check_date.isocalendar()[1]))
 
     for check_year, check_week in weeks_to_check:
         # Stop searching if we found both types of shifts
         if next_shift and next_oncall_shift:
             break
 
-        check_week_data = build_week_data(check_year, check_week, person_id=current_user.id)
+        check_week_data = build_week_data(check_year, check_week, person_id=current_user.id, session=db)
 
         for day in check_week_data:
             if day["date"] < safe_today:
@@ -248,6 +244,18 @@ async def read_root(
     oncall_rules = _cached_oncall_rules(safe_today.year)
     user_wage = get_user_wage(db, current_user.id)
 
+    # Batch fetch oncall overrides for the month
+    month_oncall_overrides = (
+        db.query(OnCallOverride)
+        .filter(
+            OnCallOverride.user_id == current_user.id,
+            OnCallOverride.date >= current_month_start,
+            OnCallOverride.date <= current_month_end,
+        )
+        .all()
+    )
+    oncall_override_map = {override.date: override for override in month_oncall_overrides}
+
     current_date = current_month_start
     while current_date <= current_month_end:
         # Check for absence first
@@ -303,24 +311,34 @@ async def read_root(
         result = determine_shift_for_date(current_date, start_week=current_user.id)
         if result:
             shift, rotation_week = result
-            if shift:
-                if shift.code == "OC":
-                    # Calculate on-call pay
+
+            # Check for oncall override
+            oncall_override = oncall_override_map.get(current_date)
+
+            # Determine if this is effectively an OC shift (considering overrides)
+            has_rotation_oc = shift and shift.code == "OC"
+            is_effective_oc = (
+                has_rotation_oc and not (oncall_override and oncall_override.override_type == OnCallOverrideType.REMOVE)
+            ) or (oncall_override and oncall_override.override_type == OnCallOverrideType.ADD)
+
+            if is_effective_oc:
+                # Calculate on-call pay
+                if can_see_salary(current_user, current_user.id):
+                    oc_result = calculate_oncall_pay(current_date, user_wage, oncall_rules)
+                    month_oc_pay += oc_result["total_pay"]
+
+            elif shift and shift.code != "OFF" and shift.code != "OC":
+                # Regular work shift (not OC, not OFF)
+                hours, start_dt, end_dt = calculate_shift_hours(current_date, shift)
+                month_total_hours += hours
+
+                if start_dt and end_dt:
+                    ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                    month_ob_hours += sum(ob_hours_dict.values())
+
                     if can_see_salary(current_user, current_user.id):
-                        oc_result = calculate_oncall_pay(current_date, user_wage, oncall_rules)
-                        month_oc_pay += oc_result["total_pay"]
-
-                elif shift.code != "OFF":
-                    hours, start_dt, end_dt = calculate_shift_hours(current_date, shift)
-                    month_total_hours += hours
-
-                    if start_dt and end_dt:
-                        ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                        month_ob_hours += sum(ob_hours_dict.values())
-
-                        if can_see_salary(current_user, current_user.id):
-                            ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, user_wage)
-                            month_total_pay += sum(ob_pay_dict.values())
+                        ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, user_wage)
+                        month_total_pay += sum(ob_pay_dict.values())
 
         current_date += dt.timedelta(days=1)
 
