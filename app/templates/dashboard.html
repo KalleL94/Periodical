@@ -57,32 +57,46 @@
             {% if week_summary %}
             <div class="card">
                 <h3>This Week</h3>
-                <div class="summary-grid">
+                {% if week_schedule %}
+                <div class="week-schedule">
+                    {% for day in week_schedule %}
+                    <div class="schedule-day {% if day.is_today %}today{% endif %}{% if day.is_past %} past{% endif %}">
+                        <div class="schedule-weekday">{{ day.weekday }}</div>
+                        <div class="schedule-shift" {% if day.color %}style="background-color: {{ day.color }}; color: {{ day.color|contrast }};"{% endif %}>
+                            {{ day.code }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <div class="week-grid">
                     <div class="summary-item">
                         <div class="summary-label">Total Hours</div>
-                        <div class="summary-value">{{ "%.1f"|format(week_summary.total_hours) }} h</div>
+                        <div class="summary-value">{{ "%.1f"|format(week_summary.total_hours) }}h</div>
                     </div>
                     <div class="summary-item">
                         <div class="summary-label">OB Hours</div>
-                        <div class="summary-value">{{ "%.1f"|format(week_summary.ob_hours) }} h</div>
+                        <div class="summary-value">{{ "%.1f"|format(week_summary.ob_hours) }}h</div>
                     </div>
                     {% if can_see_salary %}
                     <div class="summary-item">
                         <div class="summary-label">Estimated OB Pay</div>
-                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.total_pay) }} kr</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.total_pay) }}kr</div>
                     </div>
                     <div class="summary-item">
                         <div class="summary-label">Estimated OC Pay</div>
-                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.oc_pay) }} kr</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.oc_pay) }}kr</div>
                     </div>
+                    {% if week_summary.ot_pay > 0 %}
                     <div class="summary-item">
                         <div class="summary-label">Estimated OT Pay</div>
-                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.ot_pay) }} kr</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(week_summary.ot_pay) }}kr</div>
                     </div>
+                    {% endif %}
                     {% if week_summary.absence_deduction and week_summary.absence_deduction > 0 %}
                     <div class="summary-item">
                         <div class="summary-label">Absence Deduction</div>
-                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(week_summary.absence_deduction) }} kr</div>
+                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(week_summary.absence_deduction) }}kr</div>
                     </div>
                     {% endif %}
                     {% endif %}
@@ -97,29 +111,72 @@
                 <div class="summary-grid">
                     <div class="summary-item">
                         <div class="summary-label">Total Hours</div>
-                        <div class="summary-value">{{ "%.1f"|format(month_summary.total_hours) }} h</div>
+                        <div class="summary-value">{{ "%.1f"|format(month_summary.total_hours) }}h</div>
                     </div>
                     <div class="summary-item">
                         <div class="summary-label">OB Hours</div>
-                        <div class="summary-value">{{ "%.1f"|format(month_summary.ob_hours) }} h</div>
+                        <div class="summary-value">{{ "%.1f"|format(month_summary.ob_hours) }}h</div>
                     </div>
                     {% if can_see_salary %}
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OB Pay</div>
-                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.total_pay) }} kr</div>
+                        <div class="summary-label">Estimated OB</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.total_ob_pay) }}kr</div>
                     </div>
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OC Pay</div>
-                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.oc_pay) }} kr</div>
+                        <div class="summary-label">Estimated OC</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.oc_pay) }}kr</div>
                     </div>
+                    {% if month_summary.ot_pay > 0 %}
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OT Pay</div>
-                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.ot_pay) }} kr</div>
+                        <div class="summary-label">Estimated OT</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.ot_pay) }}kr</div>
                     </div>
+                    {% endif %}
                     {% if month_summary.absence_deduction and month_summary.absence_deduction > 0 %}
                     <div class="summary-item">
                         <div class="summary-label">Absence Deduction</div>
-                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(month_summary.absence_deduction) }} kr</div>
+                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(month_summary.absence_deduction) }}kr</div>
+                    </div>
+                    {% endif %}
+                    {% if month_summary.total_hours > 0 %}
+                        {% set has_ot = month_summary.ot_pay > 0 %}
+                        {% set has_absence = month_summary.absence_deduction and month_summary.absence_deduction > 0 %}
+                        {% if not has_ot and not has_absence %}
+                        <div class="summary-item">
+                            <div class="summary-label">Pay per hour</div>
+                            <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Pay per day</div>
+                            <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / (month_summary.total_hours / 8.5)) }}kr</div>
+                        </div>
+                        {% elif not (has_ot and has_absence) %}
+                        <div class="summary-item">
+                            <div class="summary-label">Pay per hour</div>
+                            <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
+                        </div>
+                        {% endif %}
+                    {% endif %}
+                    <div class="summary-item">
+                        <div class="summary-label">Gross Pay</div>
+                        <div class="summary-value">{{ "{:,.0f}".format(month_summary.gross_pay) }}kr</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Net Pay</div>
+                        <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.net_pay) }}kr</div>
+                    </div>
+                    {% if month_summary.trend %}
+                    <div class="summary-item trend-item">
+                        <div class="summary-label">vs {{ month_summary.trend.last_month_name }}</div>
+                        <div class="summary-value">
+                            {% if month_summary.trend.direction == 'up' %}
+                            <span class="trend-up" style="color: #60d302;">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↑</span>
+                            {% elif month_summary.trend.direction == 'down' %}
+                            <span class="trend-down" style="color: #ef4444;">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↓</span>
+                            {% else %}
+                            <span class="trend-same"> Same as last month</span>
+                            {% endif %}
+                        </div>
                     </div>
                     {% endif %}
                     {% endif %}
@@ -160,16 +217,16 @@
     <style>
         .dashboard-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 20px;
             margin-top: 20px;
         }
 
         .card {
             background: var(--background);
-            border: 1px solid var(--table-border);
+            border: 2px solid var(--table-border);
             border-radius: 8px;
-            padding: 20px;
+            padding: 10px;
         }
 
         .card h3 {
@@ -209,8 +266,18 @@
 
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(85px, 1fr));
+            gap: 26px;
+        }
+
+        .summary-grid .summary-value {
+            font-size: 20px;
+        }
+
+        .week-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 26px;
         }
 
         .summary-item {
@@ -229,9 +296,71 @@
             color: var(--text);
         }
 
+        .summary-value .ob-pct {
+            font-size: 14px;
+            color: var(--success);
+        }
+
         .vacation-alert {
             background: var(--info-bg);
             border-color: var(--info);
+        }
+
+        /* Week Schedule Styles */
+        .week-schedule {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--table-border);
+        }
+
+        .schedule-day {
+            text-align: center;
+            padding: 4px 6px;
+            border-radius: 4px;
+            background: var(--table-stripe);
+            min-width: 36px;
+        }
+
+        .schedule-day.today {
+            background: var(--primary);
+            color: white;
+        }
+
+        .schedule-day.past {
+            opacity: 0.5;
+        }
+
+        .schedule-weekday {
+            font-size: 9px;
+            font-weight: 600;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+
+        .schedule-shift {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        /* Trend Styles */
+        .trend-up {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .trend-down {
+            color: #ef4444;
+            font-weight: 600;
+        }
+
+        .trend-same {
+            color: var(--muted);
+            font-weight: 600;
         }
 
         .button-grid {
