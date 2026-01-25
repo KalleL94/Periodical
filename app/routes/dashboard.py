@@ -24,7 +24,9 @@ from app.core.schedule import (
     get_user_wage,
     ob_rules,
     rotation_start_date,
+    summarize_month_for_person,
 )
+from app.core.storage import calculate_tax_from_table
 from app.core.utils import get_safe_today, get_today
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, get_db
 from app.routes.shared import templates
@@ -49,6 +51,21 @@ async def read_root(
 
     # Build this week's data for the user (pass session for oncall override support)
     week_data = build_week_data(iso_year, iso_week, person_id=current_user.id, session=db)
+
+    # Create compact week schedule for dashboard display
+    week_schedule = []
+    for day in week_data:
+        shift = day.get("shift")
+        week_schedule.append(
+            {
+                "date": day["date"],
+                "weekday": day["weekday_name"][:3],  # Mon, Tue, etc.
+                "code": shift.code if shift else "?",
+                "color": shift.color if shift else None,
+                "is_today": day["date"] == safe_today,
+                "is_past": day["date"] < safe_today,
+            }
+        )
 
     # Batch fetch overtime shifts for current and next month to avoid N+1 queries
     current_month = safe_today.month
@@ -233,10 +250,12 @@ async def read_root(
 
     month_total_hours = 0.0
     month_ob_hours = 0.0
-    month_total_pay = 0.0
+    month_total_ob_pay = 0.0
     month_oc_pay = 0.0
     month_ot_pay = 0.0
     month_absence_deduction = 0.0
+    month_gross_pay = 0.0
+    month_net_pay = 0.0
 
     # Get OB and oncall rules for month calculation
     special_rules = _cached_special_rules(safe_today.year)
@@ -338,19 +357,76 @@ async def read_root(
 
                     if can_see_salary(current_user, current_user.id):
                         ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, user_wage)
-                        month_total_pay += sum(ob_pay_dict.values())
+                        month_total_ob_pay += sum(ob_pay_dict.values())
 
         current_date += dt.timedelta(days=1)
+
+    # calculate gross pay
+    month_gross_pay = month_total_ob_pay + month_oc_pay + month_ot_pay + user_wage - month_absence_deduction
+
+    # calculate tax using user's tax table
+    month_taxes = 0.0
+    if current_user.tax_table:
+        try:
+            # Payment year is typically next year for December, otherwise current year
+            payment_year = safe_today.year + 1 if safe_today.month == 12 else safe_today.year
+            month_taxes = calculate_tax_from_table(month_gross_pay, current_user.tax_table, year=payment_year)
+        except (ValueError, Exception):
+            pass  # Fall back to 0 if tax table lookup fails
+
+    # calculate net pay (gross pay minus taxes)
+    month_net_pay = month_gross_pay - month_taxes
+
+    # Calculate OB percentage
+    ob_percentage = (month_ob_hours / month_total_hours * 100) if month_total_hours > 0 else 0.0
 
     month_summary = {
         "total_hours": month_total_hours,
         "ob_hours": month_ob_hours,
-        "total_pay": month_total_pay,
+        "ob_percentage": ob_percentage,
+        "total_ob_pay": month_total_ob_pay,
         "oc_pay": month_oc_pay,
         "ot_pay": month_ot_pay,
         "absence_deduction": month_absence_deduction,
         "month_name": safe_today.strftime("%B"),
+        "gross_pay": month_gross_pay,
+        "taxes": month_taxes,
+        "net_pay": month_net_pay,
     }
+
+    # Calculate trend vs last month
+    trend = None
+    if can_see_salary(current_user, current_user.id):
+        try:
+            # Get last month
+            if safe_today.month == 1:
+                last_month_year = safe_today.year - 1
+                last_month = 12
+            else:
+                last_month_year = safe_today.year
+                last_month = safe_today.month - 1
+
+            last_month_data = summarize_month_for_person(
+                last_month_year,
+                last_month,
+                current_user.id,
+                session=db,
+                fetch_tax_table=False,
+            )
+
+            if last_month_data and last_month_data.get("netto_pay", 0) > 0:
+                diff = month_net_pay - last_month_data["netto_pay"]
+                diff_percent = (diff / last_month_data["netto_pay"]) * 100
+                trend = {
+                    "diff": diff,
+                    "diff_percent": diff_percent,
+                    "direction": "up" if diff > 0 else "down" if diff < 0 else "same",
+                    "last_month_name": dt.date(last_month_year, last_month, 1).strftime("%B"),
+                }
+        except Exception:
+            pass  # If trend calculation fails, just skip it
+
+    month_summary["trend"] = trend
 
     # Check for upcoming vacation (within next 30 days, using safe_today for comparison)
     upcoming_vacation = None
@@ -386,6 +462,7 @@ async def read_root(
             "next_shift": next_shift,
             "next_oncall_shift": next_oncall_shift,
             "week_summary": week_summary,
+            "week_schedule": week_schedule,
             "month_summary": month_summary,
             "upcoming_vacation": upcoming_vacation,
             "can_see_salary": can_see_salary(current_user, current_user.id),
