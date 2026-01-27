@@ -50,7 +50,7 @@ pyasn1==0.6.2
     # via
     #   python-jose
     #   rsa
-pycparser==2.23
+pycparser==3.0
     # via cffi
 pydantic==2.12.5
     # via fastapi
