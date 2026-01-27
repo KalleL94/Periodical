@@ -1,0 +1,29 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 9am on monday"],
+  "timezone": "Europe/Stockholm",
+  "pip_requirements": {
+    "enabled": false
+  },
+  "pip-compile": {
+    "enabled": true,
+    "fileMatch": ["(^|/)pyproject\\.toml$"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["pip-compile"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "minor and patch dependencies",
+      "automerge": false
+    },
+    {
+      "matchManagers": ["pip-compile"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "major dependencies"
+    }
+  ]
+}
