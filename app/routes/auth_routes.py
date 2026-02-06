@@ -755,6 +755,7 @@ async def admin_edit_user_page(
 ):
     """Admin: show edit user form."""
     from app.core.schedule import get_wage_history
+    from app.core.schedule.person_history import get_user_history
     from app.core.storage import get_available_tax_tables
 
     edit_user = db.query(User).filter(User.id == user_id).first()
@@ -766,6 +767,9 @@ async def admin_edit_user_page(
     # Get wage history for this user
     wage_history = get_wage_history(db, user_id)
 
+    # Get person history for this user (employment periods)
+    person_history = get_user_history(db, user_id)
+
     return templates.TemplateResponse(
         "admin_user_edit.html",
         {
@@ -774,6 +778,7 @@ async def admin_edit_user_page(
             "edit_user": edit_user,
             "available_tax_tables": available_tax_tables,
             "wage_history": wage_history,
+            "person_history": person_history,
         },
     )
 
@@ -784,6 +789,8 @@ async def admin_update_user(
     user_id: int,
     name: str = Form(...),
     role: str = Form("user"),
+    person_id: int | None = Form(None),
+    tax_table: str | None = Form(None),
     new_password: str = Form(None),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
@@ -795,6 +802,8 @@ async def admin_update_user(
 
     edit_user.name = name
     edit_user.role = UserRole(role)
+    edit_user.person_id = person_id  # Can be None or 1-10
+    edit_user.tax_table = tax_table if tax_table else None
 
     if new_password:
         # Add length validation
@@ -920,6 +929,173 @@ async def admin_delete_wage(
     db.commit()
 
     # Clear schedule cache
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/end-employment", name="admin_end_employment")
+async def admin_end_employment(
+    request: Request,
+    user_id: int,
+    person_id: int = Form(...),
+    end_date: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: end a person's employment."""
+    from datetime import datetime
+
+    from app.core.schedule.person_history import end_employment
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        # Parse end_date
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        # End employment
+        end_employment(
+            session=db,
+            user_id=user_id,
+            person_id=person_id,
+            end_date=end_date_obj,
+        )
+
+        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+    except ValueError as e:
+        # Invalid date format
+        return templates.TemplateResponse(
+            "admin_user_edit.html",
+            {
+                "request": request,
+                "user": current_user,
+                "edit_user": edit_user,
+                "error": f"Ogiltigt datumformat: {e}",
+            },
+            status_code=400,
+        )
+
+
+@router.post("/admin/users/{user_id}/start-employment", name="admin_start_employment")
+async def admin_start_employment(
+    request: Request,
+    user_id: int,
+    person_id: int = Form(...),
+    start_date: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: start a person's employment at a position."""
+    from datetime import datetime
+
+    from app.core.schedule.person_history import start_employment
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        # Parse start_date
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+
+        # Start employment
+        start_employment(
+            session=db,
+            user_id=user_id,
+            person_id=person_id,
+            name=edit_user.name,
+            username=edit_user.username,
+            start_date=start_date_obj,
+            created_by=current_user.id,
+        )
+
+        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+    except ValueError as e:
+        # Invalid date format
+        return templates.TemplateResponse(
+            "admin_user_edit.html",
+            {
+                "request": request,
+                "user": current_user,
+                "edit_user": edit_user,
+                "error": f"Ogiltigt datumformat: {e}",
+            },
+            status_code=400,
+        )
+
+
+@router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
+async def admin_delete_employment(
+    request: Request,
+    user_id: int,
+    history_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete a person history entry."""
+    from app.database.database import PersonHistory
+
+    # Get the history record
+    history_record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+
+    if not history_record:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    # Security check: ensure record belongs to the user_id in the URL
+    if history_record.user_id != user_id:
+        raise HTTPException(status_code=400, detail="Employment record does not belong to this user")
+
+    person_id = history_record.person_id
+
+    # If this was the current employment (effective_to is NULL), we need to handle it
+    if history_record.effective_to is None:
+        # Find the previous employment for this position
+        previous_record = (
+            db.query(PersonHistory)
+            .filter(
+                PersonHistory.person_id == person_id,
+                PersonHistory.id != history_id,
+                PersonHistory.effective_to.isnot(None),
+            )
+            .order_by(PersonHistory.effective_from.desc())
+            .first()
+        )
+
+        if previous_record:
+            # Reopen the previous record
+            previous_record.effective_to = None
+
+        # Clear the user's person_id since they no longer hold this position
+        edit_user = db.query(User).filter(User.id == user_id).first()
+        if edit_user and edit_user.person_id == person_id:
+            edit_user.person_id = None
+
+    # Check if this is the user's only employment record
+    remaining_records = (
+        db.query(PersonHistory).filter(PersonHistory.user_id == user_id, PersonHistory.id != history_id).count()
+    )
+
+    # If no remaining records, set user as inactive
+    if remaining_records == 0:
+        edit_user = db.query(User).filter(User.id == user_id).first()
+        if edit_user:
+            edit_user.is_active = 0
+            edit_user.person_id = None
+
+    # Delete the history record
+    db.delete(history_record)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     clear_schedule_cache()
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)

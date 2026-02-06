@@ -59,7 +59,17 @@
                     <option value="admin" {% if edit_user.role.value == 'admin' %}selected{% endif %}>Admin</option>
                 </select>
             </div>
-            
+
+            <div style="margin-bottom: 16px;">
+                <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">Rotationsposition (person_id)</label>
+                <input type="number" id="person_id" name="person_id"
+                       value="{{ edit_user.person_id if edit_user.person_id is not none else '' }}"
+                       min="1" max="10"
+                       placeholder="1-10 eller tomt"
+                       style="width: 100%; box-sizing: border-box;">
+                <small style="color: var(--muted);">Vilken position (1-10) användaren har i rotationsschemat. Sätts normalt via "Starta anställning".</small>
+            </div>
+
             <div style="margin-bottom: 24px;">
                 <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nytt lösenord</label>
                 <input type="password" id="new_password" name="new_password" minlength="6" style="width: 100%; box-sizing: border-box;">
@@ -160,6 +170,130 @@
             <button type="submit" class="btn">Lägg till lön</button>
         </form>
     </div>
+
+    <!-- Person History (Employment Periods) -->
+    <div class="card" style="margin-top: 16px;">
+        <h3 style="margin-top: 0;">Anställningshistorik</h3>
+        <p style="color: var(--muted); margin-bottom: 16px;">
+            Visar vilka positioner (1-10) denna användare har haft i rotationen och när.
+        </p>
+
+        {% if person_history %}
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Position</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Namn</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Från datum</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
+                        <th style="text-align: center; padding: 8px; color: var(--muted); font-weight: 500;">Ta bort</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in person_history %}
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 8px; font-weight: 500;">{{ record.person_id }}</td>
+                        <td style="padding: 8px;">{{ record.name }}</td>
+                        <td style="padding: 8px;">{{ record.effective_from }}</td>
+                        <td style="padding: 8px;">
+                            {% if record.effective_to %}
+                                {{ record.effective_to }}
+                            {% else %}
+                                <span style="color: var(--muted); font-style: italic;">pågående</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 8px;">
+                            {% if record.is_current %}
+                                <span style="color: var(--success); font-weight: 500;">✓ Aktiv</span>
+                            {% else %}
+                                <span style="color: var(--muted);">Historisk</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 8px; text-align: center;">
+                            <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-employment/{{ record.id }}" style="display: inline;" onsubmit="return confirm('Ta bort anställningsrecord för position {{ record.person_id }} ({{ record.effective_from }})?');">
+                                <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 12px;">🗑️</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p style="color: var(--muted);">Ingen anställningshistorik tillgänglig.</p>
+        {% endif %}
+    </div>
+
+    <!-- End Employment -->
+    {% if person_history and person_history | selectattr('is_current') | list %}
+    <div class="card" style="margin-top: 16px;">
+        <h3 style="margin-top: 0; color: var(--danger);">Avsluta anställning</h3>
+        <p style="color: var(--muted); margin-bottom: 16px;">
+            Avslutar användarens nuvarande anställning. Användaren kan fortfarande logga in för att se historisk data, men kommer markeras som inaktiv.
+        </p>
+
+        {% for record in person_history %}
+            {% if record.is_current %}
+                <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" onsubmit="return confirm('Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?');">
+                    <input type="hidden" name="person_id" value="{{ record.person_id }}">
+                    <div style="margin-bottom: 16px;">
+                        <label for="end_date" style="display: block; margin-bottom: 6px; color: var(--muted);">Sista arbetsdag</label>
+                        <input
+                            type="date"
+                            id="end_date"
+                            name="end_date"
+                            required
+                            style="width: 100%; box-sizing: border-box;"
+                        >
+                    </div>
+                    <button type="submit" class="btn danger">Avsluta anställning på position {{ record.person_id }}</button>
+                </form>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Start Employment (if inactive or no current employment) -->
+    {% set has_current_employment = person_history and (person_history | selectattr('is_current') | list | length > 0) %}
+    {% if edit_user.is_active == 0 or not has_current_employment %}
+    <div class="card" style="margin-top: 16px;">
+        <h3 style="margin-top: 0; color: var(--success);">Starta ny anställning</h3>
+        <p style="color: var(--muted); margin-bottom: 16px;">
+            Aktivera användaren och tilldela en ny position i rotationen.
+        </p>
+
+        <form method="POST" action="/admin/users/{{ edit_user.id }}/start-employment">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                <div>
+                    <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">Position (1-10)</label>
+                    <input
+                        type="number"
+                        id="person_id"
+                        name="person_id"
+                        required
+                        min="1"
+                        max="10"
+                        placeholder="t.ex. 6"
+                        style="width: 100%; box-sizing: border-box;"
+                    >
+                </div>
+
+                <div>
+                    <label for="start_date" style="display: block; margin-bottom: 6px; color: var(--muted);">Första arbetsdag</label>
+                    <input
+                        type="date"
+                        id="start_date"
+                        name="start_date"
+                        required
+                        style="width: 100%; box-sizing: border-box;"
+                    >
+                </div>
+            </div>
+
+            <button type="submit" class="btn">Starta anställning</button>
+        </form>
+    </div>
+    {% endif %}
 
     <!-- Semester info -->
     <div class="card" style="margin-top: 16px;">

@@ -22,6 +22,7 @@ from .core import (
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
 from .overtime import get_overtime_shift_for_date
+from .person_history import get_current_person_for_position
 from .vacation import get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
@@ -415,6 +416,38 @@ def _build_person_day_basic(
     vacation_shift = get_vacation_shift()
     rotation_length = get_rotation_length_for_date(date)
 
+    # Get person name via PersonHistory (shows current holder of position)
+    # Also check if date is before their employment started
+    person_name = persons[person_id - 1].name  # Default fallback
+    show_off_before_employment = False
+
+    if session:
+        # Get the current person at this position
+        current_person = get_current_person_for_position(session, person_id)
+        if current_person:
+            person_name = current_person["name"]
+            # Check if date is before this person's employment started
+            if current_person.get("effective_from") and date < current_person["effective_from"]:
+                show_off_before_employment = True
+
+    # If date is before current person's employment, show OFF
+    if show_off_before_employment:
+        off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+        result = determine_shift_for_date(date, person_id)
+        original_shift, rotation_week = result if result else (None, None)
+        return {
+            "person_id": person_id,
+            "person_name": person_name,
+            "shift": off_shift,
+            "original_shift": original_shift,
+            "rotation_week": rotation_week,
+            "rotation_length": rotation_length,
+            "hours": 0.0,
+            "start": None,
+            "end": None,
+            "before_employment": True,  # Flag to indicate this is before employment
+        }
+
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
     absence = None
     if absence_map is not None:
@@ -432,7 +465,7 @@ def _build_person_day_basic(
             original_shift, rotation_week = result if result else (None, None)
             return {
                 "person_id": person_id,
-                "person_name": persons[person_id - 1].name,
+                "person_name": person_name,
                 "shift": absence_shift,
                 "original_shift": original_shift,  # For coworker matching
                 "rotation_week": rotation_week,
@@ -448,7 +481,7 @@ def _build_person_day_basic(
         original_shift, rotation_week = result if result else (None, None)
         return {
             "person_id": person_id,
-            "person_name": persons[person_id - 1].name,
+            "person_name": person_name,
             "shift": vacation_shift,
             "original_shift": original_shift,  # For coworker matching
             "rotation_week": rotation_week,
@@ -540,7 +573,7 @@ def _build_person_day_basic(
 
     return {
         "person_id": person_id,
-        "person_name": persons[person_id - 1].name,
+        "person_name": person_name,
         "shift": shift,
         "original_shift": original_shift,  # For coworker matching with OT shifts
         "rotation_week": rotation_week,
@@ -570,6 +603,45 @@ def _populate_single_person_day(
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
 
+    # Get person name via PersonHistory (shows current holder of position)
+    person_name = persons[person_id - 1].name  # Default fallback
+    show_off_before_employment = False
+
+    if session:
+        # Get the current person at this position
+        current_person = get_current_person_for_position(session, person_id)
+        if current_person:
+            person_name = current_person["name"]
+            # Check if date is before this person's employment started
+            if current_person.get("effective_from") and current_day < current_person["effective_from"]:
+                show_off_before_employment = True
+
+    # If date is before current person's employment, show OFF
+    if show_off_before_employment:
+        off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+        result = determine_shift_for_date(current_day, person_id)
+        original_shift, rotation_week = result if result else (None, None)
+        day_info.update(
+            {
+                "person_id": person_id,
+                "person_name": person_name,
+                "shift": off_shift,
+                "original_shift": original_shift,
+                "rotation_week": rotation_week,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
+                "ob": {},
+                "oncall_pay": 0.0,
+                "oncall_details": {},
+                "ot_pay": 0.0,
+                "ot_hours": 0.0,
+                "ot_details": {},
+                "before_employment": True,
+            }
+        )
+        return
+
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
     absence = None
     if absence_map is not None:
@@ -598,7 +670,7 @@ def _populate_single_person_day(
             day_info.update(
                 {
                     "person_id": person_id,
-                    "person_name": persons[person_id - 1].name,
+                    "person_name": person_name,
                     "shift": shift,
                     "original_shift": original_shift,  # For coworker matching
                     "rotation_week": rotation_week,
@@ -755,7 +827,7 @@ def _populate_single_person_day(
     day_info.update(
         {
             "person_id": person_id,
-            "person_name": persons[person_id - 1].name,
+            "person_name": person_name,
             "shift": shift,
             "original_shift": original_shift,  # For coworker matching with OT shifts
             "rotation_week": rotation_week,

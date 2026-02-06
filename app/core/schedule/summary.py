@@ -89,6 +89,7 @@ def summarize_month_for_person(
     year_days: list[dict] | None = None,
     fetch_tax_table: bool = True,
     payment_year: int | None = None,
+    wage_user_id: int | None = None,
 ) -> dict:
     """
     Detaljerad månadsöversikt för en person.
@@ -96,10 +97,11 @@ def summarize_month_for_person(
     Args:
         year: År
         month: Månad (1-12)
-        person_id: Person-ID
+        person_id: Rotationsposition (1-10) för schemaberäkning
         session: SQLAlchemy session
         user_wages: Förladdade löner
         year_days: Förgenererad årsdata (optimering)
+        wage_user_id: Användar-ID för löneberäkning (om annan än person_id)
 
     Returns:
         Dict med total_hours, num_shifts, ob_hours, ob_pay, brutto/netto, days
@@ -119,13 +121,19 @@ def summarize_month_for_person(
 
     month_start_date = dt_date(year, month, 1)
 
-    if user_wages and person_id in user_wages:
+    # Use wage_user_id for wage lookup if provided, otherwise use person_id
+    # This allows Rickard (user_id=11, rotation_position=3) to see his own wage
+    uid_for_wages = wage_user_id if wage_user_id is not None else person_id
+
+    if user_wages and uid_for_wages in user_wages:
         # Note: user_wages from get_all_user_wages() returns current wage only
         # For temporal queries, we need to use get_user_wage with effective_date
-        base_salary = get_user_wage(session, person_id, settings.monthly_salary, effective_date=month_start_date)
+        base_salary = get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
     else:
         try:
-            base_salary = get_user_wage(session, person_id, settings.monthly_salary, effective_date=month_start_date)
+            base_salary = get_user_wage(
+                session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
+            )
         except Exception:
             base_salary = settings.monthly_salary
 
@@ -138,14 +146,14 @@ def summarize_month_for_person(
 
         logger = logging.getLogger(__name__)
 
-        user = session.query(User).filter(User.id == person_id).first()
-        logger.info(f"Looking up tax_table for person_id={person_id}, user found: {user is not None}")
+        user = session.query(User).filter(User.id == uid_for_wages).first()
+        logger.info(f"Looking up tax_table for user_id={uid_for_wages}, user found: {user is not None}")
         if user:
             logger.info(f"User {user.username} has tax_table: {user.tax_table}")
             if user.tax_table:
                 tax_table = user.tax_table
         else:
-            logger.warning(f"No user found in database for person_id={person_id}")
+            logger.warning(f"No user found in database for user_id={uid_for_wages}")
 
     # Initiera totaler
     totals = {
@@ -471,6 +479,8 @@ def summarize_year_for_person(
     year: int,
     person_id: int,
     session=None,
+    current_user=None,
+    wage_user_id: int | None = None,
 ) -> dict:
     """
     Bygger årsöversikt för en person baserat på UTBETALNINGS-månader.
@@ -481,10 +491,23 @@ def summarize_year_for_person(
     - ...
     - Dec-utbetalning (för nov 2026 arbete)
 
+    Args:
+        year: År för utbetalningar
+        person_id: Rotationsposition (1-10) för schemaberäkning
+        session: SQLAlchemy session
+        current_user: Inloggad användare (för att filtrera på anställningsperiod)
+        wage_user_id: Användar-ID för löneberäkning (om annan än person_id)
+
     Returns:
         Dict med 'months' (lista med 12 månadsdictar) och 'year_summary'
+
+    Note:
+        För vanliga användare filtreras månaderna baserat på anställningsperiod.
+        Admins ser alla månader.
     """
     import datetime as dt
+
+    from app.database.database import UserRole
 
     settings = get_settings()
     user_wages = get_all_user_wages(session)
@@ -510,14 +533,17 @@ def summarize_year_for_person(
         if work_year == 2025 and work_month == 12:
             from app.database.database import User
 
+            # Use wage_user_id for wage lookup if provided
+            uid_for_wages = wage_user_id if wage_user_id is not None else person_id
+
             base_salary = get_user_wage(
-                session, person_id, settings.monthly_salary, effective_date=dt.date(2025, 12, 1)
+                session, uid_for_wages, settings.monthly_salary, effective_date=dt.date(2025, 12, 1)
             )
 
             # Hämta skattetabell för korrekt netto-beräkning
             tax_table = None
             if session:
-                user = session.query(User).filter(User.id == person_id).first()
+                user = session.query(User).filter(User.id == uid_for_wages).first()
                 if user and user.tax_table:
                     tax_table = user.tax_table
 
@@ -552,6 +578,7 @@ def summarize_year_for_person(
                 user_wages=user_wages,
                 year_days=all_work_days,  # Skicka kombinerad data
                 payment_year=mapping["payment_year"],  # Skicka utbetalningsår för skattetabell
+                wage_user_id=wage_user_id,  # Pass through for wage lookup
             )
 
         # Lägg till utbetalnings-metadata
@@ -565,6 +592,34 @@ def summarize_year_for_person(
         m["total_ob"] = total_ob
 
         months.append(m)
+
+    # Filter months by employment period for non-admin users
+    if current_user and current_user.role != UserRole.ADMIN:
+        import calendar
+
+        from app.core.schedule.person_history import get_employment_period
+
+        start_date, end_date = get_employment_period(session, current_user.id, person_id)
+
+        # Filter months to only include those with ANY overlap with employment period
+        filtered_months = []
+        for m in months:
+            # Get first and last day of the work month
+            month_start = dt.date(m["year"], m["month"], 1)
+            last_day = calendar.monthrange(m["year"], m["month"])[1]
+            month_end = dt.date(m["year"], m["month"], last_day)
+
+            # Check if there's ANY overlap between employment period and this month
+            if start_date > month_end:
+                # Employment started after this month ended
+                continue
+            if end_date and end_date < month_start:
+                # Employment ended before this month started
+                continue
+
+            filtered_months.append(m)
+
+        months = filtered_months
 
     # Årssumman inkluderar alla 12 månader (utbetalningar under året)
     year_summary = _build_year_summary(months)

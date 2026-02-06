@@ -15,6 +15,26 @@ def _get_persons():
     return _persons
 
 
+def _get_person_name_from_db(person_id: int) -> str:
+    """Get current person name from database (respects person_id field)."""
+    from app.database.database import SessionLocal, User
+
+    db = SessionLocal()
+    try:
+        # First check if someone has this person_id explicitly set
+        holder = db.query(User).filter(User.person_id == person_id).first()
+        if holder:
+            return holder.name
+        # Fallback: legacy user where user_id == person_id
+        user = db.query(User).filter(User.id == person_id).first()
+        if user:
+            return user.name
+        # Final fallback: JSON file
+        return _get_persons()[person_id - 1].name
+    finally:
+        db.close()
+
+
 def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
     """
     Räknar hur många pass target_person_id jobbar tillsammans
@@ -32,7 +52,6 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
         Lista med statistik per medarbetare, sorterad på person-ID
     """
     days_in_year = generate_year_data(year, person_id=None)
-    persons = _get_persons()
 
     # Initiera statistik för alla andra personer
     stats: dict[int, dict] = {}
@@ -42,7 +61,7 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
 
         stats[pid] = {
             "other_id": pid,
-            "other_name": persons[pid - 1].name,
+            "other_name": _get_person_name_from_db(pid),
             "total": 0,
             "by_shift": {"N1": 0, "N2": 0, "N3": 0},
         }

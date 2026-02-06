@@ -3,8 +3,11 @@
 Shared helper functions for templates and route handlers.
 """
 
+from datetime import date
+
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
 
 from app.core.utils import get_today
 from app.database.database import User, UserRole
@@ -37,13 +40,58 @@ def can_see_salary(current_user: User | None, target_person_id: int) -> bool:
     Rules:
     - Not logged in: No access
     - Admin: Full access to all
-    - Regular user: Only own data
+    - Regular user: Only own rotation position's data
     """
     if current_user is None:
         return False
     if current_user.role == UserRole.ADMIN:
         return True
-    return current_user.id == target_person_id
+    # Use rotation_person_id to support users like Rickard (user_id=11, person_id=3)
+    return current_user.rotation_person_id == target_person_id
+
+
+def can_see_data_for_date(
+    current_user: User | None,
+    target_person_id: int,
+    target_date: date,
+    session: Session,
+) -> bool:
+    """
+    Check if user can see data for a specific person on a specific date.
+
+    This function considers employment periods tracked in PersonHistory:
+    - Admin: Always yes
+    - Regular user: Only if they held that person_id on that date
+
+    Args:
+        current_user: Current logged-in user (or None)
+        target_person_id: Position being viewed (1-10)
+        target_date: Date of the data being viewed
+        session: Database session for PersonHistory queries
+
+    Returns:
+        True if user can see the data, False otherwise
+
+    Example:
+        >>> # Kalle (user_id=6) held person_id=6 from 2026-01-02 to 2026-03-31
+        >>> can_see_data_for_date(kalle_user, 6, date(2026, 2, 15), db)  # True
+        >>> can_see_data_for_date(kalle_user, 6, date(2026, 5, 1), db)   # False (after employment ended)
+    """
+    if current_user is None:
+        return False
+
+    if current_user.role == UserRole.ADMIN:
+        return True
+
+    # Check if current_user held target_person_id on target_date
+    from app.core.schedule.person_history import get_person_for_date
+
+    person_data = get_person_for_date(session, target_person_id, target_date)
+
+    if person_data:
+        return person_data["user_id"] == current_user.id
+
+    return False
 
 
 def strip_salary_data(data: dict) -> dict:

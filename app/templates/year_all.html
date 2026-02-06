@@ -48,8 +48,10 @@
                         {% for p in days[0].persons %}
                             <th class="person-header">
                                 {# Länka bara till egen sida eller om admin #}
-                                {% if user and (user.role.value == 'admin' or user.id == p.person_id) %}
-                                    <a href="/year/{{ p.person_id }}?year={{ year }}">
+                                {% if user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
+                                    {# Om det är användarens egen position, länka till user.id, annars person_id #}
+                                    {% set link_id = user.id if user.rotation_person_id == p.person_id else p.person_id %}
+                                    <a href="/year/{{ link_id }}?year={{ year }}">
                                         {{ p.person_name }}<br>
                                         <small>(#{{ p.person_id }})</small>
                                     </a>
@@ -71,8 +73,9 @@
                             <td style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                                 {% if person.shift %}
                                     {# Länka till day-sida bara om admin eller egen #}
-                                    {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
-                                        <a href="/day/{{ person.person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                                    {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
+                                        {% set link_id = user.id if user.rotation_person_id == person.person_id else person.person_id %}
+                                        <a href="/day/{{ link_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                            style="text-decoration:none;">
                                     {% endif %}
                                         {% if person.shift.code == 'SEM' %}
@@ -93,7 +96,7 @@
                                                 {{ person.shift.code }}
                                             </span>
                                         {% endif %}
-                                    {% if user and (user.role.value == 'admin' or user.id == person.person_id) %}
+                                    {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
                                         </a>
                                     {% endif %}
                                 {% else %}

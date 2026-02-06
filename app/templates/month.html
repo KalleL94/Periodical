@@ -147,7 +147,7 @@
                                         {% endif %}
                                     {% endif %}
 
-                                    {% if day_data.coworkers %}
+                                    {% if day_data.coworkers and day_data.shift.code != 'OFF' %}
                                         <div class="coworkers-list">Med: {{ day_data.coworkers | join(', ') }}</div>
                                     {% endif %}
                                 </div>

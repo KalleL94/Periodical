@@ -33,7 +33,7 @@ async def get_year_totals(
         return {"total_ob": None}
 
     # Calculate year summary for this person
-    year_summary = summarize_year_for_person(year, person_id, session=db)
+    year_summary = summarize_year_for_person(year, person_id, session=db, current_user=current_user)
     total_ob = year_summary["year_summary"].get("total_ob", 0.0)
 
     return {"person_id": person_id, "total_ob": total_ob, "year": year}
