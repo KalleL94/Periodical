@@ -49,8 +49,11 @@ async def read_root(
     safe_today = get_safe_today(rotation_start_date)
     iso_year, iso_week, _ = safe_today.isocalendar()
 
+    # Get user's rotation position (person_id field, or fallback to user.id)
+    person_id = current_user.rotation_person_id
+
     # Build this week's data for the user (pass session for oncall override support)
-    week_data = build_week_data(iso_year, iso_week, person_id=current_user.id, session=db)
+    week_data = build_week_data(iso_year, iso_week, person_id=person_id, session=db)
 
     # Create compact week schedule for dashboard display
     week_schedule = []
@@ -94,7 +97,7 @@ async def read_root(
         if next_shift and next_oncall_shift:
             break
 
-        check_week_data = build_week_data(check_year, check_week, person_id=current_user.id, session=db)
+        check_week_data = build_week_data(check_year, check_week, person_id=person_id, session=db)
 
         for day in check_week_data:
             if day["date"] < safe_today:
@@ -327,7 +330,7 @@ async def read_root(
         # Handle regular rotation shifts
         from app.core.schedule import determine_shift_for_date
 
-        result = determine_shift_for_date(current_date, start_week=current_user.id)
+        result = determine_shift_for_date(current_date, start_week=person_id)
         if result:
             shift, rotation_week = result
 
@@ -409,7 +412,7 @@ async def read_root(
             last_month_data = summarize_month_for_person(
                 last_month_year,
                 last_month,
-                current_user.id,
+                person_id,
                 session=db,
                 fetch_tax_table=False,
             )

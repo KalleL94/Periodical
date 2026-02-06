@@ -69,8 +69,16 @@ class User(Base):
     must_change_password = Column(
         Integer, default=1, nullable=False
     )  # 1=True, 0=False (SQLite uses integers for booleans)
+    person_id = Column(
+        Integer, nullable=True
+    )  # Rotation position (1-10). If NULL, defaults to user.id for legacy compatibility
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def rotation_person_id(self) -> int:
+        """Get the rotation position for this user. Falls back to user.id if not set."""
+        return self.person_id if self.person_id is not None else self.id
 
     # Relationships
     # Fixed syntax: foreign_keys as a direct string reference avoids evaluation errors

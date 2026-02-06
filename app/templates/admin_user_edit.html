@@ -59,7 +59,17 @@
                     <option value="admin" {% if edit_user.role.value == 'admin' %}selected{% endif %}>Admin</option>
                 </select>
             </div>
-            
+
+            <div style="margin-bottom: 16px;">
+                <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">Rotationsposition (person_id)</label>
+                <input type="number" id="person_id" name="person_id"
+                       value="{{ edit_user.person_id if edit_user.person_id is not none else '' }}"
+                       min="1" max="10"
+                       placeholder="1-10 eller tomt"
+                       style="width: 100%; box-sizing: border-box;">
+                <small style="color: var(--muted);">Vilken position (1-10) användaren har i rotationsschemat. Sätts normalt via "Starta anställning".</small>
+            </div>
+
             <div style="margin-bottom: 24px;">
                 <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nytt lösenord</label>
                 <input type="password" id="new_password" name="new_password" minlength="6" style="width: 100%; box-sizing: border-box;">
@@ -177,6 +187,7 @@
                         <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Från datum</th>
                         <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
                         <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
+                        <th style="text-align: center; padding: 8px; color: var(--muted); font-weight: 500;">Ta bort</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -198,6 +209,11 @@
                             {% else %}
                                 <span style="color: var(--muted);">Historisk</span>
                             {% endif %}
+                        </td>
+                        <td style="padding: 8px; text-align: center;">
+                            <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-employment/{{ record.id }}" style="display: inline;" onsubmit="return confirm('Ta bort anställningsrecord för position {{ record.person_id }} ({{ record.effective_from }})?');">
+                                <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 12px;">🗑️</button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}
@@ -237,8 +253,9 @@
     </div>
     {% endif %}
 
-    <!-- Start Employment (if inactive) -->
-    {% if edit_user.is_active == 0 %}
+    <!-- Start Employment (if inactive or no current employment) -->
+    {% set has_current_employment = person_history and (person_history | selectattr('is_current') | list | length > 0) %}
+    {% if edit_user.is_active == 0 or not has_current_employment %}
     <div class="card" style="margin-top: 16px;">
         <h3 style="margin-top: 0; color: var(--success);">Starta ny anställning</h3>
         <p style="color: var(--muted); margin-bottom: 16px;">

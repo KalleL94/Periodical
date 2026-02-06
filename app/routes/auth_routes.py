@@ -789,6 +789,8 @@ async def admin_update_user(
     user_id: int,
     name: str = Form(...),
     role: str = Form("user"),
+    person_id: int | None = Form(None),
+    tax_table: str | None = Form(None),
     new_password: str = Form(None),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
@@ -800,6 +802,8 @@ async def admin_update_user(
 
     edit_user.name = name
     edit_user.role = UserRole(role)
+    edit_user.person_id = person_id  # Can be None or 1-10
+    edit_user.tax_table = tax_table if tax_table else None
 
     if new_password:
         # Add length validation
@@ -1023,6 +1027,78 @@ async def admin_start_employment(
             },
             status_code=400,
         )
+
+
+@router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
+async def admin_delete_employment(
+    request: Request,
+    user_id: int,
+    history_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete a person history entry."""
+    from app.database.database import PersonHistory
+
+    # Get the history record
+    history_record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+
+    if not history_record:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    # Security check: ensure record belongs to the user_id in the URL
+    if history_record.user_id != user_id:
+        raise HTTPException(status_code=400, detail="Employment record does not belong to this user")
+
+    person_id = history_record.person_id
+
+    # If this was the current employment (effective_to is NULL), we need to handle it
+    if history_record.effective_to is None:
+        # Find the previous employment for this position
+        previous_record = (
+            db.query(PersonHistory)
+            .filter(
+                PersonHistory.person_id == person_id,
+                PersonHistory.id != history_id,
+                PersonHistory.effective_to.isnot(None),
+            )
+            .order_by(PersonHistory.effective_from.desc())
+            .first()
+        )
+
+        if previous_record:
+            # Reopen the previous record
+            previous_record.effective_to = None
+
+        # Clear the user's person_id since they no longer hold this position
+        edit_user = db.query(User).filter(User.id == user_id).first()
+        if edit_user and edit_user.person_id == person_id:
+            edit_user.person_id = None
+
+    # Check if this is the user's only employment record
+    remaining_records = (
+        db.query(PersonHistory).filter(PersonHistory.user_id == user_id, PersonHistory.id != history_id).count()
+    )
+
+    # If no remaining records, set user as inactive
+    if remaining_records == 0:
+        edit_user = db.query(User).filter(User.id == user_id).first()
+        if edit_user:
+            edit_user.is_active = 0
+            edit_user.person_id = None
+
+    # Delete the history record
+    db.delete(history_record)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 @router.post("/admin/users/{user_id}/reset-password", name="admin_reset_password")

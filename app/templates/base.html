@@ -38,7 +38,7 @@
 
                     {% if user %}
                         {% if user.role.value != 'admin' %}
-                            <!-- Personal Views -->
+                            <!-- Personal Views - use user.id so each user sees their own data -->
                             <div class="nav-row">
                                 <a href="/year/{{ user.id }}" class="nav-link">My Year</a>
                                 <a href="/month/{{ user.id }}" class="nav-link">My Month</a>

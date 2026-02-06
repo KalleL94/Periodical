@@ -40,13 +40,14 @@ def can_see_salary(current_user: User | None, target_person_id: int) -> bool:
     Rules:
     - Not logged in: No access
     - Admin: Full access to all
-    - Regular user: Only own data
+    - Regular user: Only own rotation position's data
     """
     if current_user is None:
         return False
     if current_user.role == UserRole.ADMIN:
         return True
-    return current_user.id == target_person_id
+    # Use rotation_person_id to support users like Rickard (user_id=11, person_id=3)
+    return current_user.rotation_person_id == target_person_id
 
 
 def can_see_data_for_date(
