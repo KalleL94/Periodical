@@ -8,6 +8,28 @@ from app.core.constants import PERSON_IDS
 from app.core.utils import get_today
 
 
+def _get_user_id_for_position(session, person_id: int) -> int:
+    """
+    Get the user_id for the current holder of a rotation position.
+
+    Args:
+        session: SQLAlchemy session
+        person_id: Rotation position (1-10)
+
+    Returns:
+        user_id of the current holder, or person_id as fallback (legacy behavior)
+    """
+    from app.database.database import User
+
+    # First check if someone has this person_id explicitly set
+    holder = session.query(User).filter(User.person_id == person_id).first()
+    if holder:
+        return holder.id
+
+    # Fallback: legacy behavior where user_id == person_id
+    return person_id
+
+
 def get_user_wage(session, user_id: int, fallback: int | None = None, effective_date: date | None = None) -> int:
     """
     Hämtar en användares lön från databasen med temporal validity support.
@@ -154,9 +176,17 @@ def get_shift_hours_for_date(session: Session, user_id: int, absence_date: date)
         Antal timmar för skiftet (default 8.5 om inget skift hittas)
     """
     from app.core.schedule import calculate_shift_hours, determine_shift_for_date
+    from app.database.database import User
+
+    # Resolve user_id → rotation position
+    rotation_position = user_id  # fallback
+    if session:
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            rotation_position = user.rotation_person_id
 
     # Hämta vilket skift personen skulle ha jobbat
-    result = determine_shift_for_date(absence_date, start_week=user_id)
+    result = determine_shift_for_date(absence_date, start_week=rotation_position)
 
     if result and result[0]:
         shift, _ = result

@@ -35,25 +35,31 @@ def migrate():
     Base.metadata.create_all(bind=engine, tables=[PersonHistory.__table__])
     print("   ✅ Table created")
 
-    # Add is_active column to users table
-    print("\n2️⃣ Adding is_active column to users table...")
+    # Add new columns to users table
+    print("\n2️⃣ Adding new columns to users table...")
     session = SessionLocal()
     try:
-        # Check if column already exists
+        # Check which columns already exist
         result = session.execute(text("PRAGMA table_info(users)"))
         columns = [row[1] for row in result.fetchall()]
 
         if "is_active" not in columns:
-            # Add the column with default value 1 (active)
             session.execute(text("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1 NOT NULL"))
             session.commit()
-            print("   ✅ Column added (default: 1 = active)")
+            print("   ✅ is_active column added (default: 1 = active)")
         else:
-            print("   ⚠️  Column already exists, skipping")
+            print("   ⚠️  is_active column already exists, skipping")
+
+        if "person_id" not in columns:
+            session.execute(text("ALTER TABLE users ADD COLUMN person_id INTEGER"))
+            session.commit()
+            print("   ✅ person_id column added (default: NULL)")
+        else:
+            print("   ⚠️  person_id column already exists, skipping")
 
     except Exception as e:
         session.rollback()
-        print(f"   ❌ Failed to add column: {e}")
+        print(f"   ❌ Failed to add columns: {e}")
         raise
     finally:
         session.close()
@@ -71,12 +77,8 @@ def migrate():
 
         backfilled_count = 0
         for user in users:
-            # Check if PersonHistory already exists for this user
-            existing = (
-                session.query(PersonHistory)
-                .filter(PersonHistory.user_id == user.id, PersonHistory.effective_to.is_(None))
-                .first()
-            )
+            # Check if PersonHistory already exists for this user (any record, not just active)
+            existing = session.query(PersonHistory).filter(PersonHistory.user_id == user.id).first()
 
             if existing:
                 print(f"   ⚠️  User {user.name} (ID: {user.id}) already has person history, skipping")
@@ -101,13 +103,50 @@ def migrate():
             print(f"   ✅ Backfilled {user.name} (user_id={user.id}, person_id={user.id}) from {rotation_start}")
 
         session.commit()
-        print("\n5️⃣ Migration complete!")
         print(f"   📊 Backfilled {backfilled_count} PersonHistory records")
         print(f"   📊 Skipped {len(users) - backfilled_count} users (already had history)")
 
     except Exception as e:
         session.rollback()
         print(f"\n❌ Migration failed: {e}")
+        raise
+    finally:
+        session.close()
+
+    # Set User.person_id from active PersonHistory records
+    print("\n5️⃣ Setting User.person_id from active PersonHistory records...")
+    session = SessionLocal()
+    try:
+        # Find all active PersonHistory records (effective_to IS NULL)
+        active_records = session.query(PersonHistory).filter(PersonHistory.effective_to.is_(None)).all()
+
+        updated_count = 0
+        for record in active_records:
+            user = session.query(User).filter(User.id == record.user_id).first()
+            if user:
+                if user.person_id == record.person_id:
+                    print(f"   ⚠️  User {user.name} (ID: {user.id}) already has person_id={record.person_id}, skipping")
+                    continue
+                old_value = user.person_id
+                user.person_id = record.person_id
+                updated_count += 1
+                print(f"   ✅ User {user.name} (ID: {user.id}): person_id {old_value} → {record.person_id}")
+
+        # Also clear person_id for inactive users who have no active PersonHistory
+        all_users = session.query(User).all()
+        for user in all_users:
+            has_active_record = any(r.user_id == user.id for r in active_records)
+            if not has_active_record and user.person_id is not None:
+                print(f"   ✅ User {user.name} (ID: {user.id}): person_id {user.person_id} → NULL (no active record)")
+                user.person_id = None
+                updated_count += 1
+
+        session.commit()
+        print(f"   📊 Updated {updated_count} users")
+
+    except Exception as e:
+        session.rollback()
+        print(f"\n❌ Step 5 failed: {e}")
         raise
     finally:
         session.close()

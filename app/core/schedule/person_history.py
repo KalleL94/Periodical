@@ -157,10 +157,11 @@ def add_person_change(
         old_record.effective_to = effective_from - timedelta(days=1)
         old_record.is_active = 0
 
-    # Deactivate old user
+    # Deactivate old user and clear their rotation position
     old_user = session.query(User).filter(User.id == old_user_id).first()
     if old_user:
         old_user.is_active = 0
+        old_user.person_id = None
 
     # Create new person's record
     new_record = PersonHistory(
@@ -175,12 +176,13 @@ def add_person_change(
     )
     session.add(new_record)
 
-    # Activate new user
+    # Activate new user and set their rotation position
     new_user = session.query(User).filter(User.id == new_user_id).first()
     if new_user:
         new_user.is_active = 1
         new_user.name = new_name
         new_user.username = new_username
+        new_user.person_id = person_id
 
     session.commit()
     return new_record
@@ -227,10 +229,11 @@ def end_employment(
         record.effective_to = end_date
         record.is_active = 0
 
-    # Deactivate user
+    # Deactivate user and clear their rotation position
     user = session.query(User).filter(User.id == user_id).first()
     if user:
         user.is_active = 0
+        user.person_id = None
 
     session.commit()
     return record
@@ -286,12 +289,13 @@ def start_employment(
     )
     session.add(new_record)
 
-    # Activate user
+    # Activate user and set their rotation position
     user = session.query(User).filter(User.id == user_id).first()
     if user:
         user.is_active = 1
         user.name = name
         user.username = username
+        user.person_id = person_id  # Set the rotation position
 
     session.commit()
     return new_record
@@ -377,3 +381,154 @@ def get_user_history(session: Session, user_id: int) -> list[dict]:
         }
         for r in records
     ]
+
+
+def get_user_person_id(session: Session, user_id: int) -> int | None:
+    """
+    Get the person_id (rotation position) for a user.
+
+    Looks up PersonHistory to find which position the user occupies or occupied.
+    Returns the most recent person_id assignment.
+
+    Args:
+        session: Database session
+        user_id: User ID
+
+    Returns:
+        The person_id (1-10) or None if no assignment found.
+
+    Example:
+        >>> # Rickard (user_id=11) has person_id=3
+        >>> pid = get_user_person_id(db, user_id=11)
+        >>> print(pid)  # 3
+    """
+    record = (
+        session.query(PersonHistory)
+        .filter(PersonHistory.user_id == user_id)
+        .order_by(PersonHistory.effective_from.desc())
+        .first()
+    )
+
+    if record:
+        return record.person_id
+
+    # Fallback: if no PersonHistory, assume user_id == person_id (legacy behavior)
+    user = session.query(User).filter(User.id == user_id).first()
+    if user and user_id <= 10:
+        return user_id
+
+    return None
+
+
+def user_can_view_person(session: Session, user_id: int, person_id: int) -> bool:
+    """
+    Check if a user is allowed to view a specific person_id's schedule.
+
+    A user can view a person_id if:
+    - They have (or had) that person_id via PersonHistory
+    - Their user_id matches person_id (legacy compatibility)
+
+    Args:
+        session: Database session
+        user_id: User ID of the viewer
+        person_id: Position in rotation (1-10) to view
+
+    Returns:
+        True if user can view, False otherwise.
+
+    Example:
+        >>> # Rickard (user_id=11) can view person_id=3
+        >>> can_view = user_can_view_person(db, user_id=11, person_id=3)
+        >>> print(can_view)  # True
+    """
+    # Check PersonHistory for any assignment to this person_id
+    record = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.user_id == user_id,
+            PersonHistory.person_id == person_id,
+        )
+        .first()
+    )
+
+    if record:
+        return True
+
+    # Legacy fallback: user_id == person_id
+    if user_id == person_id:
+        return True
+
+    return False
+
+
+def get_current_person_for_position(session: Session, person_id: int) -> dict | None:
+    """
+    Get the currently active person at a position.
+
+    Args:
+        session: Database session
+        person_id: Position in rotation (1-10)
+
+    Returns:
+        Dict with person data, or None if position is vacant.
+
+    Example:
+        >>> person = get_current_person_for_position(db, person_id=3)
+        >>> print(person["name"])  # "Rickard" (current holder of position 3)
+    """
+    record = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.person_id == person_id,
+            PersonHistory.effective_to.is_(None),
+        )
+        .first()
+    )
+
+    if record:
+        return {
+            "user_id": record.user_id,
+            "name": record.name,
+            "username": record.username,
+            "effective_from": record.effective_from,
+        }
+
+    # Fallback to User table
+    user = session.query(User).filter(User.id == person_id).first()
+    if user:
+        return {
+            "user_id": user.id,
+            "name": user.name,
+            "username": user.username,
+            "effective_from": None,
+        }
+
+    return None
+
+
+def is_date_before_employment(session: Session, person_id: int, check_date: date) -> bool:
+    """
+    Check if a date is before the current person's employment started at a position.
+
+    Used to determine if "OFF" should be shown for dates before a new employee started.
+
+    Args:
+        session: Database session
+        person_id: Position in rotation (1-10)
+        check_date: Date to check
+
+    Returns:
+        True if the date is before the current person's effective_from.
+
+    Example:
+        >>> # Rickard started 2026-01-26 at position 3
+        >>> is_before = is_date_before_employment(db, person_id=3, check_date=date(2026, 1, 20))
+        >>> print(is_before)  # True
+    """
+    # Get the current (or most recent) person at this position
+    current = get_current_person_for_position(session, person_id)
+
+    if current and current.get("effective_from"):
+        return check_date < current["effective_from"]
+
+    return False
