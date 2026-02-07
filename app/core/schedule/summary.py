@@ -207,11 +207,20 @@ def summarize_month_for_person(
     # Beräkna netto med användarens skattetabell (använd payment_year för rätt skattetabell)
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
 
+    # Get person name from history system if session available
+    if session:
+        from app.core.schedule.person_history import get_person_for_date
+
+        person_info = get_person_for_date(session, person_id, month_start_date)
+        person_name = person_info["name"] if person_info else persons[person_id - 1].name
+    else:
+        person_name = persons[person_id - 1].name
+
     return {
         "year": year,
         "month": month,
         "person_id": person_id,
-        "person_name": persons[person_id - 1].name,
+        "person_name": person_name,
         "total_hours": totals["total_hours"],
         "num_shifts": totals["num_shifts"],
         "ob_hours": totals["ob_hours"],
