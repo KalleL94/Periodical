@@ -782,17 +782,17 @@ def _populate_single_person_day(
             except ValueError:
                 pass
 
+    # Om jour + övertid (samma dag ELLER föregående dag över midnatt), räkna om jour
+    if shift and shift.code == "OC" and ot_shift_for_oncall:
+        oncall_pay, oncall_details = _recalculate_oncall_before_ot(
+            current_day, ot_shift_for_oncall, user_wages, person_id, settings
+        )
+
     ot_pay = 0.0
     ot_hours = 0.0
     ot_details = {}
 
     if ot_shift:
-        # Om jour + övertid, räkna om jour för perioden före/efter övertid
-        if shift and shift.code == "OC" and ot_shift_for_oncall:
-            oncall_pay, oncall_details = _recalculate_oncall_before_ot(
-                current_day, ot_shift_for_oncall, user_wages, person_id, settings
-            )
-
         # Beräkna övertidsersättning med temporal wage query
         from app.core.constants import OT_RATE_DIVISOR
 
