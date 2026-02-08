@@ -50,6 +50,21 @@ footer {
 }
 .day-section h3 { margin-top: 0; margin-bottom: 0.5rem; }
 
+/* Year View Grid Layout */
+.year-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.year-layout > div { overflow-x: auto; }
+.year-monthly  { grid-column: 1 / -1; }
+.year-ob       { grid-row: 2; grid-column: 1; }
+.year-absence  { grid-row: 2; grid-column: 2; }
+.year-overtime { grid-row: 3; grid-column: 1; }
+.year-oncall   { grid-row: 3; grid-column: 2; }
+.year-cowork   { grid-column: 1 / -1; }
+
 /* Responsive Layout */
 @media (max-width: 900px) {
   .day-layout { grid-template-columns: 1fr; }
@@ -62,10 +77,12 @@ footer {
   .page-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   .page-header-left, .page-header-right { width: 100%; }
 
-  /* Year view reordering */
-  .year-layout { flex-direction: column; }
-  .year-layout .year-cowork { order: 2; min-width: 100%; }
-  .year-layout .year-summary { order: 1; min-width: 100%; }
+  /* Year view: single column on narrow screens */
+  .year-layout { grid-template-columns: 1fr; }
+  .year-monthly, .year-ob, .year-oncall, .year-overtime, .year-absence, .year-cowork {
+    grid-column: auto;
+    grid-row: auto;
+  }
 }
 
 @media (max-width: 480px) {

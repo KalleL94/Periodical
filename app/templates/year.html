@@ -26,43 +26,160 @@
 
 <h2 class="page-title">Year {{ year }} - {{ person_name }}</h2>
 
-<div class="row year-layout" style="align-items:flex-start; gap: 24px; flex-wrap: wrap;">
+<div class="year-layout">
 
-    <!-- Vänster kolumn: cowork -->
-    <div class="col year-cowork" style="min-width: 420px; flex: 1 1 0;">
-        <h2 class="page-title">Cowork stats {{ year }} - {{ person_name }}</h2>
+    <!-- 1. Monthly summary (2 wide) -->
+    <div class="year-monthly">
+        <h2 class="page-title">Monthly summary {{ year }} - {{ person_name }}</h2>
+        <p style="font-style: italic; color: #666; margin-bottom: 16px;">
+            Tabellen visar arbete från dec {{ year - 1 }} till nov {{ year }}.
+            Lönen betalas ut den 25:e följande månad (eller första vardagen före om helg/röd dag).
+        </p>
 
         <table class="summary">
             <thead>
-                <tr>
-                    <th class="th_left">Person</th>
-                    <th class="th_right">Total</th>
-                    <th class="th_right">N1</th>
-                    <th class="th_right">N2</th>
-                    <th class="th_right">N3</th>
-                </tr>
+            <tr>
+                <th class="th_center">Payment Date</th>
+                <th class="th_center">Work Month</th>
+                {% if show_salary %}
+                <th class="th_right">Net</th>
+                <th class="th_right">Gross</th>
+                {% endif %}
+                <th class="th_right">Shifts</th>
+                <th class="th_right">Hours</th>
+                {% if show_salary %}
+                <th class="th_right">OB total</th>
+                <th class="th_right">On-call</th>
+                <th class="th_right">OT pay</th>
+                <th class="th_right">Absence</th>
+                {% endif %}
+            </tr>
             </thead>
             <tbody>
-                {% for r in cowork_rows %}
+                {% for m in months_list %}
                 <tr class="shift-row">
-                    <td class="td_left" data-label="Person">
-                        {# Länka till cowork-detaljer endast om det är ens egen sida #}
+                    <td class="td_center" data-label="Utbetalning">
+                        {{ m.payment_date.strftime('%Y-%m-%d') }}
+                    </td>
+                    <td class="td_center" data-label="Arbetsmånad">
                         {% if show_salary %}
-                            <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
-                                {{ r.other_name }} (#{{ r.other_id }})
+                            <a href="/month/{{ person_id }}?year={{ m.year }}&month={{ m.month }}">
+                                {{ m.year }}-{{ '%02d'|format(m.month) }}
                             </a>
                         {% else %}
-                            {{ r.other_name }} (#{{ r.other_id }})
+                            {{ m.year }}-{{ '%02d'|format(m.month) }}
                         {% endif %}
                     </td>
-                    <td class="td_right num" data-label="Totalt">{{ r.total }}</td>
-                    <td class="td_right num" data-label="N1">{{ r.by_shift["N1"] }}</td>
-                    <td class="td_right num" data-label="N2">{{ r.by_shift["N2"] }}</td>
-                    <td class="td_right num" data-label="N3">{{ r.by_shift["N3"] }}</td>
+                    {% if show_salary %}
+                    <td class="td_right num" data-label="Netto">{{ "%.0f"|format(m.netto_pay or 0) }}</td>
+                    <td class="td_right num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay or 0) }}</td>
+                    {% endif %}
+                    <td class="td_right num" data-label="Pass">{{ m.num_shifts }}</td>
+                    <td class="td_right num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
+                    {% if show_salary %}
+                    <td class="td_right num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
+                    <td class="td_right num" data-label="On-call">{{ "%.0f"|format(m.oncall_pay or 0) }}</td>
+                    <td class="td_right num" data-label="OT pay">{{ "%.0f"|format(m.ot_pay or 0) }}</td>
+                    <td class="td_right num" data-label="Absence" style="color: #ef4444;">
+                        {% if m.absence_deduction and m.absence_deduction > 0 %}
+                            -{{ "%.0f"|format(m.absence_deduction) }}
+                        {% else %}
+                            0
+                        {% endif %}
+                    </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
+            <tfoot>
+            <tr>
+                <td class=""></td>
+                <td class="td_center" data-label="Typ"><strong>Total</strong></td>
+                {% if show_salary %}
+                <td class="td_right foot_right num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
+                <td class="td_right foot_right num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
+                {% endif %}
+                <td class="td_right foot_right num" data-label="Pass">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
+                <td class="td_right foot_right num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
+                {% if show_salary %}
+                <td class="td_right foot_right num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                <td class="td_right foot_right num" data-label="On-call">{{ "%.0f"|format(year_summary.total_oncall or 0) }}</td>
+                <td class="td_right foot_right num" data-label="OT pay">{{ "%.0f"|format(year_summary.total_ot or 0) }}</td>
+                <td class="td_right foot_right num" data-label="Absence" style="color: #ef4444;">
+                    {% if year_summary.total_absence_deduction and year_summary.total_absence_deduction > 0 %}
+                        -{{ "%.0f"|format(year_summary.total_absence_deduction) }}
+                    {% else %}
+                        0
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            <tr>
+                <td class=""></td>
+                <td class="td_center" data-label="Typ"><strong>Snitt</strong></td>
+                {% if show_salary %}
+                <td class="td_right foot_right num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
+                <td class="td_right foot_right num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
+                {% endif %}
+                <td class="td_right foot_right num" data-label="Pass">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
+                <td class="td_right foot_right num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
+                {% if show_salary %}
+                <td class="td_right foot_right num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
+                <td class="td_right foot_right num" data-label="On-call">{{ "%.0f"|format(year_summary.avg_oncall or 0) }}</td>
+                <td class="td_right foot_right num" data-label="OT pay">{{ "%.0f"|format(year_summary.avg_ot or 0) }}</td>
+                <td class="td_right foot_right num" data-label="Absence" style="color: #ef4444;">
+                    {% if year_summary.avg_absence_deduction and year_summary.avg_absence_deduction > 0 %}
+                        -{{ "%.0f"|format(year_summary.avg_absence_deduction) }}
+                    {% else %}
+                        0
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            </tfoot>
         </table>
+    </div>
+
+    <!-- 2. Yearly OB breakdown -->
+    {% if show_salary %}
+    <div class="year-ob">
+        <h3 class="page-title">Yearly OB breakdown</h3>
+        {% set ob_labels = {} %}
+        {% for rule in ob_rules %}
+            {% if rule.code not in ob_labels %}
+                {% set _ = ob_labels.update({rule.code: rule.label}) %}
+            {% endif %}
+        {% endfor %}
+        <table class="summary">
+            <thead>
+                <tr>
+                    <th>OB type</th>
+                    <th class="th_right">OB hours</th>
+                    <th class="th_right">OB pay (SEK)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for code, hours in year_summary.ob_hours_by_code.items() %}
+                <tr class="shift-row">
+                    <td data-label="OB-typ">{{ ob_labels.get(code, code) }}</td>
+                    <td class="td_right num" data-label="Timmar">{{ "%.2f"|format(hours or 0) }}</td>
+                    <td class="td_right num" data-label="Belopp">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="foot_left" data-label="Typ"><strong>Total</strong></td>
+                    <td class="td_right foot_right num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_ob_hours or 0) }}</td>
+                    <td class="td_right foot_right num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- 3. Yearly on-call summary -->
+    <div class="year-oncall">
         <h3 class="page-title">Yearly on-call summary</h3>
         <table class="summary">
             <thead>
@@ -85,7 +202,10 @@
                 </tr>
             </tbody>
         </table>
+    </div>
 
+    <!-- 4. Yearly overtime summary -->
+    <div class="year-overtime">
         <h3 class="page-title">Yearly overtime summary</h3>
         <table class="summary">
             <thead>
@@ -105,7 +225,10 @@
                 </tr>
             </tbody>
         </table>
+    </div>
 
+    <!-- 5. Yearly absence summary -->
+    <div class="year-absence">
         <h3 class="page-title">Yearly absence summary</h3>
         <table class="summary">
             <thead>
@@ -145,164 +268,48 @@
             <tfoot>
                 <tr>
                     <td class="td_left foot_left" data-label="Typ"><strong>Total</strong></td>
-                    <td class="td_right num" data-label="Dagar"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) }}</strong></td>
-                    <td class="td_right num" data-label="Timmar"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0)) }}</strong></td>
+                    <td class="td_right foot_right num" data-label="Dagar"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) }}</strong></td>
+                    <td class="td_right foot_right num" data-label="Timmar"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0)) }}</strong></td>
                     <td class="td_right foot_right num" data-label="Avdrag" style="color: #ef4444;"><strong>-{{ "%.0f"|format(year_summary.total_absence_deduction or 0) }} kr</strong></td>
                 </tr>
             </tfoot>
         </table>
     </div>
 
-    <!-- Höger kolumn: årssammanställning -->
-    <div class="col year-summary" style="min-width: 500px; flex: 1 1 0;">
-        <h2 class="page-title">Monthly summary {{ year }} - {{ person_name }}</h2>
-        <p style="font-style: italic; color: #666; margin-bottom: 16px;">
-            Tabellen visar arbete från dec {{ year - 1 }} till nov {{ year }}.
-            Lönen betalas ut den 25:e följande månad (eller första vardagen före om helg/röd dag).
-        </p>
+    <!-- 6. Cowork stats (2 wide) -->
+    <div class="year-cowork">
+        <h2 class="page-title">Cowork stats {{ year }} - {{ person_name }}</h2>
 
         <table class="summary">
             <thead>
-            <tr>
-                <th>Payment Date</th>
-                <th>Work Month</th>
-                {% if show_salary %}
-                <th>Net</th>
-                <th>Gross</th>
-                {% endif %}
-                <th>Shifts</th>
-                <th>Hours</th>
-                {% if show_salary %}
-                <th>OB total</th>
-                <th>On-call</th>
-                <th>OT pay</th>
-                <th>Absence</th>
-                {% endif %}
-            </tr>
+                <tr>
+                    <th class="th_left">Person</th>
+                    <th class="th_right">Total</th>
+                    <th class="th_right">N1</th>
+                    <th class="th_right">N2</th>
+                    <th class="th_right">N3</th>
+                </tr>
             </thead>
             <tbody>
-                {% for m in months_list %}
+                {% for r in cowork_rows %}
                 <tr class="shift-row">
-                    <td class="td_center" data-label="Utbetalning">
-                        {{ m.payment_date.strftime('%Y-%m-%d') }}
-                    </td>
-                    <td class="td_center" data-label="Arbetsmånad">
-                        {# Länka till ARBETS-månad #}
+                    <td class="td_left" data-label="Person">
                         {% if show_salary %}
-                            <a href="/month/{{ person_id }}?year={{ m.year }}&month={{ m.month }}">
-                                {{ m.year }}-{{ '%02d'|format(m.month) }}
+                            <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
+                                {{ r.other_name }} (#{{ r.other_id }})
                             </a>
                         {% else %}
-                            {{ m.year }}-{{ '%02d'|format(m.month) }}
+                            {{ r.other_name }} (#{{ r.other_id }})
                         {% endif %}
                     </td>
-                    {% if show_salary %}
-                    <td class="td_right num" data-label="Netto">{{ "%.0f"|format(m.netto_pay or 0) }}</td>
-                    <td class="td_right num" data-label="Brutto">{{ "%.0f"|format(m.brutto_pay or 0) }}</td>
-                    {% endif %}
-                    <td class="td_right num" data-label="Pass">{{ m.num_shifts }}</td>
-                    <td class="td_right num" data-label="Timmar">{{ "%.0f"|format(m.total_hours or 0) }}</td>
-                    {% if show_salary %}
-                    <td class="td_right num" data-label="OB">{{ "%.0f"|format(m.total_ob or 0) }}</td>
-                    <td class="td_right num" data-label="On-call">{{ "%.0f"|format(m.oncall_pay or 0) }}</td>
-                    <td class="td_right num" data-label="OT pay">{{ "%.0f"|format(m.ot_pay or 0) }}</td>
-                    <td class="td_right num" data-label="Absence" style="color: #ef4444;">
-                        {% if m.absence_deduction and m.absence_deduction > 0 %}
-                            -{{ "%.0f"|format(m.absence_deduction) }}
-                        {% else %}
-                            0
-                        {% endif %}
-                    </td>
-                    {% endif %}
+                    <td class="td_right num" data-label="Totalt">{{ r.total }}</td>
+                    <td class="td_right num" data-label="N1">{{ r.by_shift["N1"] }}</td>
+                    <td class="td_right num" data-label="N2">{{ r.by_shift["N2"] }}</td>
+                    <td class="td_right num" data-label="N3">{{ r.by_shift["N3"] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
-            <tfoot>
-            <tr>
-                <td class=""></td>
-                <td class="td_center" data-label="Typ"><strong>Total</strong></td>
-                {% if show_salary %}
-                <td class="td_right num" data-label="Netto">{{ "%.0f"|format(year_summary.total_netto or 0) }}</td>
-                <td class="td_right num" data-label="Brutto">{{ "%.0f"|format(year_summary.total_brutto or 0) }}</td>
-                {% endif %}
-                <td class="td_right num" data-label="Pass">{{ "%.0f"|format(year_summary.total_shifts or 0) }}</td>
-                <td class="td_right foot_right num" data-label="Timmar">{{ "%.0f"|format(year_summary.total_hours or 0) }}</td>
-                {% if show_salary %}
-                <td class="td_right num" data-label="OB">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
-                <td class="td_right num" data-label="On-call">{{ "%.0f"|format(year_summary.total_oncall or 0) }}</td>
-                <td class="td_right num" data-label="OT pay">{{ "%.0f"|format(year_summary.total_ot or 0) }}</td>
-                <td class="td_right foot_right num" data-label="Absence" style="color: #ef4444;">
-                    {% if year_summary.total_absence_deduction and year_summary.total_absence_deduction > 0 %}
-                        -{{ "%.0f"|format(year_summary.total_absence_deduction) }}
-                    {% else %}
-                        0
-                    {% endif %}
-                </td>
-                {% endif %}
-            </tr>
-            <tr>
-                <td class=""></td>
-                <td class="td_center" data-label="Typ"><strong>Snitt</strong></td>
-                {% if show_salary %}
-                <td class="td_right num" data-label="Netto">{{ "%.0f"|format(year_summary.avg_netto or 0) }}</td>
-                <td class="td_right num" data-label="Brutto">{{ "%.0f"|format(year_summary.avg_brutto or 0) }}</td>
-                {% endif %}
-                <td class="td_right num" data-label="Pass">{{ "%.0f"|format(year_summary.avg_shifts or 0) }}</td>
-                <td class="td_right foot_right num" data-label="Timmar">{{ "%.0f"|format(year_summary.avg_hours or 0) }}</td>
-                {% if show_salary %}
-                <td class="td_right num" data-label="OB">{{ "%.0f"|format(year_summary.avg_ob or 0) }}</td>
-                <td class="td_right num" data-label="On-call">{{ "%.0f"|format(year_summary.avg_oncall or 0) }}</td>
-                <td class="td_right num" data-label="OT pay">{{ "%.0f"|format(year_summary.avg_ot or 0) }}</td>
-                <td class="td_right foot_right num" data-label="Absence" style="color: #ef4444;">
-                    {% if year_summary.avg_absence_deduction and year_summary.avg_absence_deduction > 0 %}
-                        -{{ "%.0f"|format(year_summary.avg_absence_deduction) }}
-                    {% else %}
-                        0
-                    {% endif %}
-                </td>
-                {% endif %}
-            </tr>
-            </tfoot>
         </table>
-
-        {# OB summering - endast om användaren har behörighet #}
-        {% if show_salary %}
-        <h3 class="page-title">Yearly OB breakdown</h3>
-        {# Create a mapping of code to label from ob_rules #}
-        {% set ob_labels = {} %}
-        {% for rule in ob_rules %}
-            {% if rule.code not in ob_labels %}
-                {% set _ = ob_labels.update({rule.code: rule.label}) %}
-            {% endif %}
-        {% endfor %}
-        <table class="summary">
-            <thead>
-                <tr>
-                    <th>OB type</th>
-                    <th class="th_right">OB hours</th>
-                    <th class="th_right">OB pay (SEK)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for code, hours in year_summary.ob_hours_by_code.items() %}
-                <tr class="shift-row">
-                    <td data-label="OB-typ">{{ ob_labels.get(code, code) }}</td>
-                    <td class="td_right num" data-label="Timmar">{{ "%.2f"|format(hours or 0) }}</td>
-                    <td class="td_right num" data-label="Belopp">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            <tfoot>
-                <tr>
-                    <td class="foot_left" data-label="Typ"><strong>Total</strong></td>
-                    <td class="td_right num" data-label="Timmar">{{ "%.2f"|format(year_summary.total_ob_hours or 0) }}</td>
-                    <td class="td_right foot_right num" data-label="Belopp">{{ "%.0f"|format(year_summary.total_ob or 0) }}</td>
-                </tr>
-            </tfoot>
-        </table>
-
-        
-        {% endif %}
     </div>
 
 </div>
