@@ -38,7 +38,14 @@
                 <th class="person-header-column">Person</th>
                 {% for day in days %}
                     <th class="day-column {% if today is defined and day.date == today %}today-column{% endif %}">
-                        <div>{{ weekday_names_short[day.date.weekday()] }}</div>
+                        <div>
+                            {{ weekday_names_short[day.date.weekday()] }}
+                            {% if storhelg_dates is defined and day.date in storhelg_dates %}
+                                <span class="badge badge-ob5" style="font-size:0.55rem;padding:1px 3px;">S</span>
+                            {% elif holiday_dates is defined and day.date in holiday_dates %}
+                                <span class="badge badge-ob4" style="font-size:0.55rem;padding:1px 3px;">H</span>
+                            {% endif %}
+                        </div>
                         <div class="date-small">{{ day.date.day }}/{{ day.date.month }}</div>
                     </th>
                 {% endfor %}

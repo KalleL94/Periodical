@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, render_template, strip_salary_data
+from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import (
     _cached_oncall_rules,
@@ -549,6 +550,9 @@ async def show_week_for_person(
 
     real_today = get_today()
 
+    storhelg_dates = _get_storhelg_dates_for_year(year)
+    holiday_dates = get_holiday_dates_for_year(year)
+
     return render_template(
         templates,
         "week.html",
@@ -559,6 +563,8 @@ async def show_week_for_person(
             "days": days_in_week,
             "person_id": person_id,
             "today": real_today,
+            "storhelg_dates": storhelg_dates,
+            "holiday_dates": holiday_dates,
             **nav,
         },
         user=current_user,
@@ -652,6 +658,9 @@ async def show_month_for_person(
         },
     )
 
+    storhelg_dates = _get_storhelg_dates_for_year(year)
+    holiday_dates = get_holiday_dates_for_year(year)
+
     return render_template(
         templates,
         "month.html",
@@ -664,6 +673,8 @@ async def show_month_for_person(
             "days": days_in_month,
             "calendar_grid": calendar_grid,
             "show_salary": show_salary,
+            "storhelg_dates": storhelg_dates,
+            "holiday_dates": holiday_dates,
         },
         user=current_user,
     )

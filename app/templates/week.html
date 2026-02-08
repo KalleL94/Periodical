@@ -53,6 +53,11 @@
                                class="day-number">
                                 {{ day.date.day }}/{{ day.date.month }}
                             </a>
+                            {% if storhelg_dates is defined and day.date in storhelg_dates %}
+                                <span class="badge badge-ob5" style="font-size:0.6rem;padding:1px 4px;">S</span>
+                            {% elif holiday_dates is defined and day.date in holiday_dates %}
+                                <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
+                            {% endif %}
                             {# Show rotation week on each day for easy reference #}
                             {% if day.date.weekday() == 6 %}
                             <div class="calendar-rotation-week">Rot. v{{ day.rotation_week }}/{{ day.rotation_length }}</div>

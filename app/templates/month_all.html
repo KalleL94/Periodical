@@ -90,7 +90,14 @@
                     {% set day = header_days[i] %}
                     <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
                         <td class="day-cell">{{ day.weekday_name }}</td>
-                        <td class="date-cell">{{ day.date }}</td>
+                        <td class="date-cell">
+                            {{ day.date }}
+                            {% if storhelg_dates is defined and day.date in storhelg_dates %}
+                                <span class="badge badge-ob5" style="font-size:0.55rem;padding:1px 3px;">S</span>
+                            {% elif holiday_dates is defined and day.date in holiday_dates %}
+                                <span class="badge badge-ob4" style="font-size:0.55rem;padding:1px 3px;">H</span>
+                            {% endif %}
+                        </td>
                         {% for p in persons %}
                             {% set d = p.days[i] %}
                             <td class="day-cell"

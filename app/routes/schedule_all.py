@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, render_template, strip_salary_data
+from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
+from app.core.oncall import _get_storhelg_dates_for_year
 from app.core.schedule import (
     build_week_data,
     generate_month_data,
@@ -53,6 +55,9 @@ async def show_week_all(
 
     real_today = get_today()
 
+    storhelg_dates = _get_storhelg_dates_for_year(year)
+    holiday_dates = get_holiday_dates_for_year(year)
+
     return render_template(
         templates,
         "week_all.html",
@@ -62,6 +67,8 @@ async def show_week_all(
             "week": week,
             "days": days_in_week,
             "today": real_today,
+            "storhelg_dates": storhelg_dates,
+            "holiday_dates": holiday_dates,
             **nav,
         },
         user=current_user,
@@ -121,6 +128,9 @@ async def show_month_all(
         extra={"duration_ms": load_time * 1000, "path": "/month", "user_id": current_user.id if current_user else None},
     )
 
+    storhelg_dates = _get_storhelg_dates_for_year(year)
+    holiday_dates = get_holiday_dates_for_year(year)
+
     return render_template(
         templates,
         "month_all.html",
@@ -130,6 +140,8 @@ async def show_month_all(
             "month": month,
             "persons": persons,
             "show_salary": show_salary,
+            "storhelg_dates": storhelg_dates,
+            "holiday_dates": holiday_dates,
         },
         user=current_user,
     )
@@ -168,6 +180,9 @@ async def show_year_all(
         extra={"duration_ms": load_time * 1000, "path": "/year", "user_id": current_user.id if current_user else None},
     )
 
+    storhelg_dates = _get_storhelg_dates_for_year(year)
+    holiday_dates = get_holiday_dates_for_year(year)
+
     return render_template(
         templates,
         "year_all.html",
@@ -177,6 +192,8 @@ async def show_year_all(
             "days": days_in_year,
             "person_ob_totals": person_ob_totals,
             "show_salary": show_salary,
+            "storhelg_dates": storhelg_dates,
+            "holiday_dates": holiday_dates,
         },
         user=current_user,
     )
