@@ -21,6 +21,13 @@
 }
 .badge-off { background: var(--muted-bg); color: var(--muted-text); }
 .badge-sem { box-shadow: 0 0 0 2px rgba(250, 250, 210, 0.7); }
+.badge-ob4 {
+  background: var(--warning);
+  color: var(--bg);
+  padding: 4px 0.625rem;
+  font-weight: 700;
+  margin-left: 0.5rem;
+}
 .badge-ob5 {
   background: var(--danger);
   color: var(--bg);

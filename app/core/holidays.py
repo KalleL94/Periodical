@@ -98,3 +98,19 @@ def nyarsdagen(year: int) -> datetime.date:
 def langfredagen(year: int) -> datetime.date:
     """Good Friday (Långfredagen): Friday before Easter Sunday."""
     return easter_sunday(year) - datetime.timedelta(days=2)
+
+
+def get_holiday_dates_for_year(year: int) -> set[datetime.date]:
+    """
+    Return set of public holidays (röda dagar) that are NOT storhelg.
+
+    These are the OB4 holidays: Trettondagen, Första maj, Nationaldagen,
+    Kristi himmelsfärd, Alla helgons dag.
+    """
+    return {
+        trettondagen(year),
+        forsta_maj(year),
+        nationaldagen(year),
+        kristi_himmelsfardsdag(year),
+        alla_helgons_dag(year),
+    }

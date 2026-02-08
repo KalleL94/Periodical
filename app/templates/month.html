@@ -118,6 +118,11 @@
                                        class="day-number">
                                         {{ day_data.date.day }}
                                     </a>
+                                    {% if storhelg_dates is defined and day_data.date in storhelg_dates %}
+                                        <span class="badge badge-ob5" style="font-size:0.6rem;padding:1px 4px;">S</span>
+                                    {% elif holiday_dates is defined and day_data.date in holiday_dates %}
+                                        <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
+                                    {% endif %}
                                     {% if day_data.date.weekday() == 0 %}
                                         <span class="rotation-week-small">v{{ day_data.date.isocalendar()[1] }}</span>
                                     {% elif day_data.date.weekday() == 6 and day_data.rotation_week %}
