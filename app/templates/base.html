@@ -51,11 +51,13 @@
                         <div class="nav-row">
                             {# <span class="nav-divider"></span> #}
                             <a href="/" class="nav-link">Overview</a>
-                            <a href="/profile" class="nav-link">{{ user.name }}</a>
                             {% if user.role.value == 'admin' %}
                                 <a href="/admin/users" class="nav-link">Users</a>
                                 <a href="/admin/vacation" class="nav-link">Semester</a>
                                 <a href="/admin/settings" class="nav-link">Settings</a>
+                            {% else %}
+                                <a href="/profile" class="nav-link">{{ user.name }}</a>
+                                <a href="/profile/vacation" class="nav-link">Semester</a>
                             {% endif %}
                             <a href="/logout" class="nav-link" style="color: var(--muted);">Log out</a>
                         </div>
