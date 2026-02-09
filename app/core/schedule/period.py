@@ -458,8 +458,13 @@ def _build_person_day_basic(
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == date).first()
 
     if absence:
-        # Hitta rätt shift type för frånvarotypen
-        absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+        # VACATION absences use the SEM shift (same as week-based vacation)
+        from app.database.database import AbsenceType
+
+        if absence.absence_type == AbsenceType.VACATION:
+            absence_shift = vacation_shift
+        else:
+            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
         if absence_shift:
             result = determine_shift_for_date(date, person_id)
             original_shift, rotation_week = result if result else (None, None)
@@ -652,8 +657,13 @@ def _populate_single_person_day(
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == current_day).first()
 
     if absence:
-        # Hitta rätt shift type för frånvarotypen
-        absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+        # VACATION absences use the SEM shift (same as week-based vacation)
+        from app.database.database import AbsenceType
+
+        if absence.absence_type == AbsenceType.VACATION:
+            absence_shift = vacation_shift
+        else:
+            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
         if absence_shift:
             shift = absence_shift
             # Get original shift for coworker matching

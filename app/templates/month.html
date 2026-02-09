@@ -91,6 +91,14 @@
         </tbody>
     </table>
 
+    {% if vacation_month %}
+    <div style="background: rgba(100,200,255,0.08); border: 1px solid var(--accent); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 0.9rem;">
+        <strong>{{ vacation_month.days }} semesterdag{{ 'ar' if vacation_month.days != 1 else '' }}</strong> denna m&aring;nad
+        &rarr; semestertill&auml;gg: <strong style="color: var(--accent-2);">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
+        <span style="color: var(--muted);">({{ "%.0f"|format(vacation_month.supplement_per_day) }} kr/dag)</span>
+    </div>
+    {% endif %}
+
     {# Calendar grid view #}
     {% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
 

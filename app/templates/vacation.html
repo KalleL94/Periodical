@@ -17,21 +17,23 @@
 <h2 class="page-title">Semester {{ year }} - {{ user.name }}</h2>
 
 <div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
-    
-    <!-- Välj veckor -->
+
+    <!-- Left column: week grid + day-level -->
     <div class="col" style="min-width: 400px; flex: 2;">
-        <div class="card">
-            <h3 style="margin-top: 0;">Välj semesterveckor</h3>
-            <p style="color: var(--muted); margin-bottom: 16px;">Klicka på veckor för att markera/avmarkera semester.</p>
-            
+
+        <!-- Week Selection -->
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">V&auml;lj semesterveckor</h3>
+            <p style="color: var(--muted); margin-bottom: 16px;">Klicka p&aring; veckor f&ouml;r att markera/avmarkera semester.</p>
+
             <form method="POST" action="/profile/vacation" id="vacation-form">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="weeks-input" value="{{ vacation_weeks | join(',') }}">
-                
+
                 <div class="week-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px; margin-bottom: 24px;">
                     {% for week in range(1, 53) %}
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             class="week-btn {% if week in vacation_weeks %}selected{% endif %}"
                             data-week="{{ week }}"
                             style="
@@ -49,27 +51,129 @@
                         </button>
                     {% endfor %}
                 </div>
-                
+
                 <button type="submit" class="btn">Spara semester</button>
             </form>
         </div>
-    </div>
-    
-    <!-- Sammanfattning -->
-    <div class="col" style="min-width: 250px; flex: 1;">
+
+        <!-- Day-Level Vacation Calendar -->
         <div class="card">
-            <h3 style="margin-top: 0;">Vald semester</h3>
+            <h3 style="margin-top: 0;">Enskilda semesterdagar</h3>
+            <p style="color: var(--muted); margin-bottom: 16px;">Klicka p&aring; dagar f&ouml;r att markera/avmarkera semester.</p>
+
+            <form method="POST" action="/profile/vacation/days/sync" id="days-form">
+                <input type="hidden" name="year" value="{{ year }}">
+                <input type="hidden" name="dates" id="dates-input"
+                    value="{% for a in day_absences %}{{ a.date.strftime('%Y-%m-%d') }}{% if not loop.last %},{% endif %}{% endfor %}">
+
+                <div id="day-calendar" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span id="day-count" style="color: var(--muted); font-size: 0.85rem;"></span>
+                    <button type="submit" class="btn">Spara dagar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Right column: balance + summary -->
+    <div class="col" style="min-width: 250px; flex: 1;">
+
+        <!-- Balance Card -->
+        {% if balance %}
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Semestersaldo</h3>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Tilldelade</div>
+                    <div style="font-size: 1.4rem; font-weight: 700;">{{ balance.entitled_days }}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Uttagna</div>
+                    <div style="font-size: 1.4rem; font-weight: 700;">{{ balance.used_days }}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Kvar</div>
+                    <div style="font-size: 1.4rem; font-weight: 700; color: {% if balance.remaining_days > 5 %}var(--accent-2){% elif balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+                        {{ balance.remaining_days }}
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 0.75rem; color: var(--muted); text-align: center;">
+                {{ balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ balance.year_end.strftime('%Y-%m-%d') }}
+                {% if balance.is_first_year %}<br><span style="color: var(--warning);">F&ouml;rsta &aring;ret (proportionellt)</span>{% endif %}
+            </div>
+        </div>
+
+        <!-- Vacation Supplement Card -->
+        {% if balance.pay %}
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Semestertill&auml;gg</h3>
+            <div style="font-size: 0.7rem; color: var(--muted); margin-bottom: 10px;">Handelns avtal 2025&ndash;2027</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Fast/dag</div>
+                    <div style="font-size: 1rem; font-weight: 700;">{{ "%.0f"|format(balance.pay.fixed_per_day) }} kr</div>
+                    <div style="color: var(--muted); font-size: 0.65rem;">0,8%</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">R&ouml;rlig/dag</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: var(--accent);">{{ "%.0f"|format(balance.pay.variable_per_day) }} kr</div>
+                    <div style="color: var(--muted); font-size: 0.65rem;">0,5%</div>
+                </div>
+            </div>
+            <div style="text-align: center; padding: 6px; background: rgba(255,255,255,0.03); border-radius: var(--radius); margin-bottom: 10px;">
+                <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 2px;">Tilll&auml;gg per semesterdag</div>
+                <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent-2);">{{ "%.0f"|format(balance.pay.supplement_per_day) }} kr</div>
+                <div style="color: var(--muted); font-size: 0.65rem; margin-top: 2px;">
+                    Totalt {{ balance.entitled_days }} dagar: {{ "{:,.0f}".format(balance.pay.supplement_total).replace(",", " ") }} kr
+                </div>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--muted);">
+                <div style="display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;">
+                    <span>OB/skift:</span>
+                    <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
+                    <span>&Ouml;vertid:</span>
+                    <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.ot_total).replace(",", " ") }} kr</span>
+                    <span>Beredskap:</span>
+                    <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.oncall_total).replace(",", " ") }} kr</span>
+                </div>
+                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--table-border);">
+                    Summa r&ouml;rligt: {{ "{:,.0f}".format(balance.pay.variable_total).replace(",", " ") }} kr
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <!-- Week Summary -->
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Valda veckor</h3>
             <div id="selected-summary">
                 {% if vacation_weeks %}
                     <p><strong>{{ vacation_weeks | length }}</strong> veckor valda:</p>
                     <p style="color: var(--muted);">{{ vacation_weeks | join(', ') }}</p>
                 {% else %}
-                    <p style="color: var(--muted);">Ingen semester vald för {{ year }}.</p>
+                    <p style="color: var(--muted);">Ingen semester vald f&ouml;r {{ year }}.</p>
                 {% endif %}
             </div>
         </div>
+
+        <!-- Employment start date -->
+        <div class="card">
+            <h3 style="margin-top: 0;">Anst&auml;llningsstart</h3>
+            <form method="POST" action="/profile/vacation/settings">
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.85rem;">Startdatum</label>
+                    <input type="date" name="employment_start_date"
+                        value="{{ user.employment_start_date.strftime('%Y-%m-%d') if user.employment_start_date else '' }}"
+                        style="width: 100%; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text); box-sizing: border-box;">
+                </div>
+                <button type="submit" class="btn" style="width: 100%;">Spara</button>
+            </form>
+        </div>
     </div>
-    
+
 </div>
 
 <script>
@@ -77,16 +181,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const weeksInput = document.getElementById('weeks-input');
     const buttons = document.querySelectorAll('.week-btn');
     const summary = document.getElementById('selected-summary');
-    
-    // Parse initial weeks
-    let selectedWeeks = weeksInput.value 
+
+    let selectedWeeks = weeksInput.value
         ? weeksInput.value.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w))
         : [];
-    
+
     function updateSummary() {
         selectedWeeks.sort((a, b) => a - b);
         weeksInput.value = selectedWeeks.join(',');
-        
+
         if (selectedWeeks.length > 0) {
             summary.innerHTML = `
                 <p><strong>${selectedWeeks.length}</strong> veckor valda:</p>
@@ -96,31 +199,123 @@ document.addEventListener('DOMContentLoaded', function() {
             summary.innerHTML = '<p style="color: var(--muted);">Ingen semester vald.</p>';
         }
     }
-    
+
     buttons.forEach(btn => {
         btn.addEventListener('click', function() {
             const week = parseInt(this.dataset.week);
             const index = selectedWeeks.indexOf(week);
-            
+
             if (index > -1) {
-                // Remove
                 selectedWeeks.splice(index, 1);
                 this.classList.remove('selected');
                 this.style.background = 'var(--panel)';
                 this.style.color = 'var(--text)';
                 this.style.fontWeight = '400';
             } else {
-                // Add
                 selectedWeeks.push(week);
                 this.classList.add('selected');
                 this.style.background = 'var(--accent)';
                 this.style.color = 'var(--bg)';
                 this.style.fontWeight = '600';
             }
-            
+
             updateSummary();
         });
     });
+
+    // --- Day-level calendar ---
+    const datesInput = document.getElementById('dates-input');
+    const calendarEl = document.getElementById('day-calendar');
+    const dayCountEl = document.getElementById('day-count');
+    const calYear = {{ year }};
+
+    const monthNames = ['Januari','Februari','Mars','April','Maj','Juni',
+                        'Juli','Augusti','September','Oktober','November','December'];
+    const dayHeaders = ['M\u00e5','Ti','On','To','Fr','L\u00f6','S\u00f6'];
+
+    let selectedDates = new Set(
+        datesInput.value ? datesInput.value.split(',').map(s => s.trim()).filter(Boolean) : []
+    );
+
+    function updateDayCount() {
+        datesInput.value = Array.from(selectedDates).sort().join(',');
+        dayCountEl.textContent = selectedDates.size + ' dag' + (selectedDates.size !== 1 ? 'ar' : '') + ' valda';
+    }
+
+    function renderCalendar() {
+        calendarEl.innerHTML = '';
+        for (let m = 0; m < 12; m++) {
+            const monthDiv = document.createElement('div');
+            monthDiv.style.cssText = 'background: var(--panel); border-radius: var(--radius); padding: 8px; border: 1px solid var(--table-border);';
+
+            const title = document.createElement('div');
+            title.style.cssText = 'text-align: center; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px;';
+            title.textContent = monthNames[m];
+            monthDiv.appendChild(title);
+
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 0.75rem;';
+
+            dayHeaders.forEach(dh => {
+                const hdr = document.createElement('div');
+                hdr.style.cssText = 'text-align: center; color: var(--muted); font-size: 0.65rem; padding: 2px 0;';
+                hdr.textContent = dh;
+                grid.appendChild(hdr);
+            });
+
+            const firstDay = new Date(calYear, m, 1);
+            const daysInMonth = new Date(calYear, m + 1, 0).getDate();
+            let startOffset = (firstDay.getDay() + 6) % 7;
+
+            for (let i = 0; i < startOffset; i++) {
+                grid.appendChild(document.createElement('div'));
+            }
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dt = new Date(calYear, m, d);
+                const iso = calYear + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+                const dayOfWeek = (dt.getDay() + 6) % 7;
+                const isWeekend = dayOfWeek >= 5;
+
+                const cell = document.createElement('div');
+                cell.textContent = d;
+                cell.dataset.date = iso;
+
+                const isSelected = selectedDates.has(iso);
+                cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
+                    + (isSelected ? 'background: var(--accent); color: var(--bg); font-weight: 600;'
+                       : isWeekend ? 'color: var(--muted); opacity: 0.4;'
+                       : 'color: var(--text);');
+
+                cell.addEventListener('click', function() {
+                    const date = this.dataset.date;
+                    if (selectedDates.has(date)) {
+                        selectedDates.delete(date);
+                        const wd = (new Date(date).getDay() + 6) % 7;
+                        this.style.background = 'transparent';
+                        this.style.color = wd >= 5 ? 'var(--muted)' : 'var(--text)';
+                        this.style.fontWeight = '400';
+                        this.style.opacity = wd >= 5 ? '0.4' : '1';
+                    } else {
+                        selectedDates.add(date);
+                        this.style.background = 'var(--accent)';
+                        this.style.color = 'var(--bg)';
+                        this.style.fontWeight = '600';
+                        this.style.opacity = '1';
+                    }
+                    updateDayCount();
+                });
+
+                grid.appendChild(cell);
+            }
+
+            monthDiv.appendChild(grid);
+            calendarEl.appendChild(monthDiv);
+        }
+        updateDayCount();
+    }
+
+    renderCalendar();
 });
 </script>
 

@@ -54,6 +54,7 @@
                             <a href="/profile" class="nav-link">{{ user.name }}</a>
                             {% if user.role.value == 'admin' %}
                                 <a href="/admin/users" class="nav-link">Users</a>
+                                <a href="/admin/vacation" class="nav-link">Semester</a>
                                 <a href="/admin/settings" class="nav-link">Settings</a>
                             {% endif %}
                             <a href="/logout" class="nav-link" style="color: var(--muted);">Log out</a>

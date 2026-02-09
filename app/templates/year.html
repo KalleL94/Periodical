@@ -52,6 +52,7 @@
                 <th class="th_right">On-call</th>
                 <th class="th_right">OT pay</th>
                 <th class="th_right">Absence</th>
+                {% if vacation_pay %}<th class="th_right">Sem.till.</th>{% endif %}
                 {% endif %}
             </tr>
             </thead>
@@ -87,6 +88,11 @@
                             0
                         {% endif %}
                     </td>
+                    {% if vacation_pay %}
+                    <td class="td_right num" data-label="Sem.tillägg" style="{% if m.vacation_supplement %}color: var(--accent-2);{% endif %}">
+                        {% if m.vacation_supplement %}{{ "%.0f"|format(m.vacation_supplement) }}{% else %}0{% endif %}
+                    </td>
+                    {% endif %}
                     {% endif %}
                 </tr>
                 {% endfor %}
@@ -112,6 +118,9 @@
                         0
                     {% endif %}
                 </td>
+                {% if vacation_pay %}
+                <td class="td_right foot_right num" data-label="Sem.tillägg" style="color: var(--accent-2);">{{ "%.0f"|format(year_summary.total_vacation_supplement or 0) }}</td>
+                {% endif %}
                 {% endif %}
             </tr>
             <tr>
@@ -134,6 +143,9 @@
                         0
                     {% endif %}
                 </td>
+                {% if vacation_pay %}
+                <td class="td_right foot_right num" data-label="Sem.tillägg" style="color: var(--accent-2);">{{ "%.0f"|format(year_summary.avg_vacation_supplement or 0) }}</td>
+                {% endif %}
                 {% endif %}
             </tr>
             </tfoot>
@@ -276,7 +288,46 @@
         </table>
     </div>
 
-    <!-- 6. Cowork stats (2 wide) -->
+    <!-- 6. Vacation supplement -->
+    {% if show_salary and vacation_pay and vacation_pay.pay %}
+    <div class="year-vacation">
+        <h3 class="page-title">Semestertill&auml;gg</h3>
+        <table class="summary">
+            <thead>
+                <tr>
+                    <th class="th_left">Komponent</th>
+                    <th class="th_right">Per dag</th>
+                    <th class="th_right">Totalt ({{ vacation_pay.used_days }} dagar)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="shift-row">
+                    <td class="td_left" data-label="Typ">Fast tilll&auml;gg (0,8%)</td>
+                    <td class="td_right num" data-label="Per dag">{{ "%.0f"|format(vacation_pay.pay.fixed_per_day) }} kr</td>
+                    <td class="td_right num" data-label="Totalt">{{ "%.0f"|format(vacation_pay.pay.fixed_per_day * vacation_pay.used_days) }} kr</td>
+                </tr>
+                <tr class="shift-row">
+                    <td class="td_left" data-label="Typ">R&ouml;rligt tilll&auml;gg (0,5%)</td>
+                    <td class="td_right num" data-label="Per dag">{{ "%.0f"|format(vacation_pay.pay.variable_per_day) }} kr</td>
+                    <td class="td_right num" data-label="Totalt">{{ "%.0f"|format(vacation_pay.pay.variable_per_day * vacation_pay.used_days) }} kr</td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="td_left foot_left" data-label="Typ"><strong>Tilll&auml;gg</strong></td>
+                    <td class="td_right foot_right num" data-label="Per dag"><strong>{{ "%.0f"|format(vacation_pay.pay.supplement_per_day) }} kr</strong></td>
+                    <td class="td_right foot_right num" data-label="Totalt" style="color: var(--accent-2);"><strong>{{ "%.0f"|format(vacation_pay.pay.supplement_per_day * vacation_pay.used_days) }} kr</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+        <div style="margin-top: 8px; font-size: 0.8rem; color: var(--muted);">
+            Saldo: {{ vacation_pay.entitled_days }} tilldelade &minus; {{ vacation_pay.used_days }} uttagna = {{ vacation_pay.remaining_days }} kvar
+            &nbsp;&middot;&nbsp; Semester&aring;r: {{ vacation_pay.year_start.strftime('%Y-%m-%d') }} &mdash; {{ vacation_pay.year_end.strftime('%Y-%m-%d') }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 7. Cowork stats (2 wide) -->
     <div class="year-cowork">
         <h2 class="page-title">Cowork stats {{ year }} - {{ person_name }}</h2>
 

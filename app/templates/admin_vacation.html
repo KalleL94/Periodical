@@ -1,0 +1,103 @@
+{# app/templates/admin_vacation.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/admin/vacation?year={{ year - 1 }}" class="btn secondary">{{ year - 1 }}</a>
+        <span style="padding: 8px 16px; font-weight: 600;">{{ year }}</span>
+        <a href="/admin/vacation?year={{ year + 1 }}" class="btn secondary">{{ year + 1 }}</a>
+    </div>
+    <div class="page-header-right">
+        <a href="/admin/users" class="btn secondary">Tillbaka</a>
+    </div>
+</div>
+
+<h2 class="page-title">Semester&ouml;versikt {{ year }}</h2>
+
+<!-- Heatmap Grid -->
+<div class="card" style="overflow-x: auto; margin-bottom: 24px;">
+    <h3 style="margin-top: 0;">Semesterveckor</h3>
+    <table style="min-width: 900px;">
+        <thead>
+            <tr>
+                <th style="position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 120px;">Namn</th>
+                {% for w in weeks_range %}
+                    <th style="text-align: center; padding: 4px 2px; font-size: 0.7rem; min-width: 22px;">{{ w }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in team_data %}
+            <tr>
+                <td style="position: sticky; left: 0; background: var(--panel); z-index: 1;">
+                    <a href="/admin/vacation/{{ entry.user.id }}?year={{ year }}" style="color: var(--accent); text-decoration: none;">
+                        {{ entry.user.name }}
+                    </a>
+                </td>
+                {% for w in weeks_range %}
+                    {% if w in entry.vacation_weeks and w in entry.day_vacation_weeks %}
+                        <td style="background: linear-gradient(135deg, var(--accent) 50%, var(--accent-2) 50%); padding: 2px;" title="v{{ w }}: vecka + dag"></td>
+                    {% elif w in entry.vacation_weeks %}
+                        <td style="background: var(--accent); padding: 2px;" title="v{{ w }}: semestervecka"></td>
+                    {% elif w in entry.day_vacation_weeks %}
+                        <td style="background: var(--accent-2); padding: 2px;" title="v{{ w }}: enskild dag"></td>
+                    {% else %}
+                        <td style="padding: 2px;"></td>
+                    {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div style="margin-top: 12px; display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted);">
+        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent); border-radius: 2px; vertical-align: middle;"></span> Semestervecka</span>
+        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent-2); border-radius: 2px; vertical-align: middle;"></span> Enskild dag</span>
+    </div>
+</div>
+
+<!-- Balance Table -->
+<div class="card">
+    <h3 style="margin-top: 0;">Semestersaldo</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Namn</th>
+                <th class="num">Tilldelade</th>
+                <th class="num">Uttagna</th>
+                <th class="num">Kvar</th>
+                <th>Semester&aring;r</th>
+                <th>Anst&auml;llningsstart</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in team_data %}
+            <tr>
+                <td>
+                    <a href="/admin/vacation/{{ entry.user.id }}?year={{ year }}" style="color: var(--accent); text-decoration: none;">
+                        {{ entry.user.name }}
+                    </a>
+                </td>
+                <td class="num">{{ entry.balance.entitled_days }}</td>
+                <td class="num">{{ entry.balance.used_days }}</td>
+                <td class="num" style="font-weight: 600; color: {% if entry.balance.remaining_days > 5 %}var(--accent-2){% elif entry.balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+                    {{ entry.balance.remaining_days }}
+                </td>
+                <td style="font-size: 0.85rem; color: var(--muted);">
+                    {{ entry.balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ entry.balance.year_end.strftime('%Y-%m-%d') }}
+                </td>
+                <td style="font-size: 0.85rem; color: var(--muted);">
+                    {% if entry.user.employment_start_date %}
+                        {{ entry.user.employment_start_date.strftime('%Y-%m-%d') }}
+                    {% else %}
+                        <span style="color: var(--warning);">Ej satt</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

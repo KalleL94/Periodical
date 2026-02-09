@@ -41,6 +41,7 @@ class AbsenceType(str, enum.Enum):
     VAB = "VAB"  # Vård av barn - ingen extra ersättning
     LEAVE = "LEAVE"  # Ledigt/Permission - ingen extra ersättning
     OFF = "OFF"  # Ledig - inget löneavdrag
+    VACATION = "VACATION"  # Enskild semesterdag
 
 
 class OnCallOverrideType(str, enum.Enum):
@@ -72,6 +73,13 @@ class User(Base):
     person_id = Column(
         Integer, nullable=True
     )  # Rotation position (1-10). If NULL, defaults to user.id for legacy compatibility
+    employment_start_date = Column(Date, nullable=True)  # When employee started working (for vacation balance)
+    vacation_year_start_month = Column(
+        Integer, default=4, nullable=False
+    )  # Brytmånad: month (1-12) when vacation year starts (default April)
+    vacation_days_per_year = Column(
+        Integer, default=25, nullable=False
+    )  # Annual vacation entitlement (Swedish standard: 25)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
