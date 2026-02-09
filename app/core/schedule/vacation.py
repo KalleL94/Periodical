@@ -175,35 +175,108 @@ def _calculate_prorated_days(
     full_year_days: int,
 ) -> int:
     """
-    Pro-rate vacation for partial earning year.
+    Pro-rate vacation for partial earning year (day-based).
 
-    Each calendar month with at least 1 day of employment within the earning year
-    counts as 1/12 of the full entitlement. Result is rounded up (Swedish practice).
+    Per Handelns avtal §9 punkt 2:
+      D = ceil(A × B / C)
+      A = full_year_days (e.g. 25)
+      B = employment days within earning year
+      C = total calendar days in earning year
     """
-    # Start counting from when employment actually began within the earning year
     effective_start = max(employment_start, earning_year_start)
     if effective_start > earning_year_end:
         return 0
 
-    months = 0
-    current = effective_start
-    while current <= earning_year_end:
-        months += 1
-        # Advance to first of next month
-        if current.month == 12:
-            current = datetime.date(current.year + 1, 1, 1)
-        else:
-            current = datetime.date(current.year, current.month + 1, 1)
+    employment_days = (earning_year_end - effective_start).days + 1
+    total_days = (earning_year_end - earning_year_start).days + 1
 
-    return math.ceil(full_year_days * months / 12)
+    return math.ceil(full_year_days * employment_days / total_days)
+
+
+def get_saved_days_balance(user, target_year: int) -> dict:
+    """
+    Sum saved vacation days from previous years available in the given vacation year.
+
+    Per Swedish semesterlag §18, saved days are valid for up to 5 years.
+
+    Args:
+        user: User ORM object with vacation_saved JSON field
+        target_year: The vacation year to check saved days for
+
+    Returns:
+        {"total_saved": int, "breakdown": [{"year": str, "days": int}, ...]}
+    """
+    vacation_saved = user.vacation_saved or {}
+    total = 0
+    breakdown = []
+
+    for y in range(target_year - 5, target_year):
+        entry = vacation_saved.get(str(y))
+        if entry and entry.get("saved", 0) > 0:
+            days = entry["saved"]
+            total += days
+            breakdown.append({"year": str(y), "days": days})
+
+    return {"total_saved": total, "breakdown": breakdown}
+
+
+def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict, db) -> dict:
+    """
+    Close a vacation year by saving up to 5 days and calculating payout for the rest.
+
+    Semesterersättning per Handelns avtal §9.5:
+      4.6% of monthly salary + 0.8% of monthly salary + 0.5% of variable per day
+      = 5.4% of monthly salary + 0.5% of variable per day
+
+    Args:
+        user: User ORM object
+        target_year: The vacation year to close
+        remaining_total: Total remaining days (entitled + saved - used)
+        pay: Result dict from calculate_vacation_pay()
+        db: Database session
+
+    Returns:
+        {"saved": int, "paid_out": int, "payout_amount": float, "payout_per_day": float}
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    monthly_salary = pay.get("monthly_salary", 0)
+    supplement_per_day = pay.get("supplement_per_day", 0)
+
+    # Semesterersättning = 4.6% base + semestertillägg (0.8% + 0.5%)
+    payout_per_day = round(monthly_salary * 0.046 + supplement_per_day, 2)
+
+    if remaining_total <= 0:
+        days_saved = 0
+        days_paid_out = 0
+    else:
+        days_saved = min(remaining_total, 5)
+        days_paid_out = max(remaining_total - 5, 0)
+
+    payout_amount = round(days_paid_out * payout_per_day, 2)
+
+    closed_data = {
+        "saved": days_saved,
+        "paid_out": days_paid_out,
+        "payout_amount": payout_amount,
+        "payout_per_day": payout_per_day,
+    }
+
+    saved = dict(user.vacation_saved or {})
+    saved[str(target_year)] = closed_data
+    user.vacation_saved = saved
+    flag_modified(user, "vacation_saved")
+    db.commit()
+
+    return closed_data
 
 
 def calculate_vacation_balance(user, target_year: int, db) -> dict:
     """
     Calculate complete vacation balance for a user in a given vacation year.
 
-    The vacation year starts at the user's vacation_year_start_month.
-    The earning year is the year before the vacation year.
+    Includes saved days from previous years, projection for open years,
+    and auto-closes past vacation years (lazy close on first access).
 
     Args:
         user: User ORM object (must have vacation fields)
@@ -214,7 +287,7 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         {
             "entitled_days": int,
             "used_days": int,
-            "remaining_days": int,
+            "remaining_days": int,       # entitled + saved - used (total remaining)
             "year_start": date,
             "year_end": date,
             "earning_year_start": date,
@@ -222,6 +295,12 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
             "is_first_year": bool,
             "week_based_used": int,
             "day_level_used": int,
+            "pay": dict,
+            "saved_from_previous": int,
+            "saved_breakdown": list,
+            "total_available": int,       # entitled + saved_from_previous
+            "projection": dict or None,   # For open (current/future) years
+            "closed": dict or None,       # For closed (past) years
         }
     """
     start_month = user.vacation_year_start_month or 4
@@ -253,7 +332,7 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         vacation_json=user.vacation,
     )
 
-    # Calculate vacation pay
+    # Calculate vacation pay (semestertillägg)
     pay = calculate_vacation_pay(
         user=user,
         entitled_days=entitled_days,
@@ -262,10 +341,46 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         db=db,
     )
 
+    # Get saved days from previous closed years
+    saved_info = get_saved_days_balance(user, target_year)
+    saved_from_previous = saved_info["total_saved"]
+
+    total_available = entitled_days + saved_from_previous
+    remaining_total = total_available - used["total"]
+
+    # Auto-close past years / show projection for open years
+    today = datetime.date.today()
+    closed = None
+    projection = None
+    vacation_saved = user.vacation_saved or {}
+    year_key = str(target_year)
+
+    if today > year_end:
+        # Year has ended — check if already closed or auto-close
+        if year_key in vacation_saved:
+            closed = vacation_saved[year_key]
+        else:
+            closed = close_vacation_year(user, target_year, remaining_total, pay, db)
+    else:
+        # Year is open — show projection of what will happen at year-end
+        monthly_salary = pay.get("monthly_salary", 0)
+        supplement_per_day = pay.get("supplement_per_day", 0)
+        payout_per_day = round(monthly_salary * 0.046 + supplement_per_day, 2)
+
+        days_to_save = min(max(remaining_total, 0), 5)
+        days_to_pay_out = max(remaining_total - 5, 0)
+
+        projection = {
+            "days_to_save": days_to_save,
+            "days_to_pay_out": days_to_pay_out,
+            "payout_per_day": payout_per_day,
+            "payout_total": round(days_to_pay_out * payout_per_day, 2),
+        }
+
     return {
         "entitled_days": entitled_days,
         "used_days": used["total"],
-        "remaining_days": entitled_days - used["total"],
+        "remaining_days": remaining_total,
         "year_start": year_start,
         "year_end": year_end,
         "earning_year_start": earning_start,
@@ -274,6 +389,11 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         "week_based_used": used["week_based"],
         "day_level_used": used["day_level"],
         "pay": pay,
+        "saved_from_previous": saved_from_previous,
+        "saved_breakdown": saved_info["breakdown"],
+        "total_available": total_available,
+        "projection": projection,
+        "closed": closed,
     }
 
 

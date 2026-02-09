@@ -645,6 +645,54 @@ async def admin_delete_vacation_day(
     )
 
 
+@router.post("/vacation/{user_id}/saved", name="admin_update_saved_days")
+async def admin_update_saved_days(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: manually update saved vacation days for closed years."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        return RedirectResponse(url="/admin/vacation", status_code=302)
+
+    form_data = await request.form()
+    vacation_saved = dict(edit_user.vacation_saved or {})
+
+    # Process form fields: saved_YYYY = number of saved days for that year
+    for key, value in form_data.items():
+        if key.startswith("saved_") and key[6:].isdigit():
+            year_key = key[6:]
+            try:
+                new_saved = max(0, min(int(value), 25))  # Clamp 0-25
+            except (ValueError, TypeError):
+                continue
+
+            if year_key in vacation_saved:
+                vacation_saved[year_key]["saved"] = new_saved
+            else:
+                # Create new entry for a year that hasn't been auto-closed
+                vacation_saved[year_key] = {
+                    "saved": new_saved,
+                    "paid_out": 0,
+                    "payout_amount": 0.0,
+                    "payout_per_day": 0.0,
+                }
+
+    edit_user.vacation_saved = vacation_saved
+    flag_modified(edit_user, "vacation_saved")
+    db.commit()
+    clear_schedule_cache()
+
+    return RedirectResponse(
+        url=f"/admin/vacation/{user_id}?success=Sparade+dagar+uppdaterade",
+        status_code=303,
+    )
+
+
 @router.post("/vacation/{user_id}/settings", name="admin_update_vacation_settings")
 async def admin_update_vacation_settings(
     user_id: int,
