@@ -80,6 +80,9 @@ class User(Base):
     vacation_days_per_year = Column(
         Integer, default=25, nullable=False
     )  # Annual vacation entitlement (Swedish standard: 25)
+    vacation_saved = Column(
+        JSON, default=dict
+    )  # Saved vacation days per year: {"2025": {"saved": 3, "paid_out": 2, "payout_amount": 3404.0}}
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

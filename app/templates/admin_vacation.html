@@ -65,6 +65,8 @@
             <tr>
                 <th>Namn</th>
                 <th class="num">Tilldelade</th>
+                <th class="num">Sparade</th>
+                <th class="num">Totalt</th>
                 <th class="num">Uttagna</th>
                 <th class="num">Kvar</th>
                 <th>Semester&aring;r</th>
@@ -80,6 +82,8 @@
                     </a>
                 </td>
                 <td class="num">{{ entry.balance.entitled_days }}</td>
+                <td class="num" style="color: {% if entry.balance.saved_from_previous > 0 %}var(--accent){% else %}var(--muted){% endif %};">{{ entry.balance.saved_from_previous }}</td>
+                <td class="num" style="font-weight: 600;">{{ entry.balance.total_available }}</td>
                 <td class="num">{{ entry.balance.used_days }}</td>
                 <td class="num" style="font-weight: 600; color: {% if entry.balance.remaining_days > 5 %}var(--accent-2){% elif entry.balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
                     {{ entry.balance.remaining_days }}

@@ -30,32 +30,89 @@
         <!-- Balance Card -->
         <div class="card" style="margin-bottom: 16px;">
             <h3 style="margin-top: 0;">Semestersaldo</h3>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Tilldelade</div>
-                    <div style="font-size: 1.5rem; font-weight: 700;">{{ balance.entitled_days }}</div>
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Tilldelade</div>
+                    <div style="font-size: 1.3rem; font-weight: 700;">{{ balance.entitled_days }}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Uttagna</div>
-                    <div style="font-size: 1.5rem; font-weight: 700;">{{ balance.used_days }}</div>
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Sparade</div>
+                    <div style="font-size: 1.3rem; font-weight: 700; color: {% if balance.saved_from_previous > 0 %}var(--accent){% else %}var(--muted){% endif %};">{{ balance.saved_from_previous }}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Kvar</div>
-                    <div style="font-size: 1.5rem; font-weight: 700; color: {% if balance.remaining_days > 5 %}var(--accent-2){% elif balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Totalt</div>
+                    <div style="font-size: 1.3rem; font-weight: 700;">{{ balance.total_available }}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Uttagna</div>
+                    <div style="font-size: 1.3rem; font-weight: 700;">{{ balance.used_days }}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">Kvar</div>
+                    <div style="font-size: 1.3rem; font-weight: 700; color: {% if balance.remaining_days > 5 %}var(--accent-2){% elif balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
                         {{ balance.remaining_days }}
                     </div>
                 </div>
             </div>
-            <div style="margin-top: 12px; font-size: 0.8rem; color: var(--muted); text-align: center;">
+            {% if balance.saved_breakdown %}
+            <div style="margin-top: 8px; font-size: 0.75rem; color: var(--muted); text-align: center;">
+                Sparade fr&aring;n: {% for s in balance.saved_breakdown %}{{ s.year }} ({{ s.days }}d){% if not loop.last %}, {% endif %}{% endfor %}
+            </div>
+            {% endif %}
+            <div style="margin-top: 8px; font-size: 0.8rem; color: var(--muted); text-align: center;">
                 Semester&aring;r: {{ balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ balance.year_end.strftime('%Y-%m-%d') }}
                 {% if balance.is_first_year %}<span style="color: var(--warning);"> (f&ouml;rsta &aring;ret, proportionellt)</span>{% endif %}
             </div>
             {% if balance.week_based_used > 0 or balance.day_level_used > 0 %}
-            <div style="margin-top: 8px; font-size: 0.8rem; color: var(--muted); text-align: center;">
+            <div style="margin-top: 6px; font-size: 0.8rem; color: var(--muted); text-align: center;">
                 Veckobaserat: {{ balance.week_based_used }}d | Enskilda dagar: {{ balance.day_level_used }}d
             </div>
             {% endif %}
         </div>
+
+        <!-- Projection Card (open years) -->
+        {% if balance.projection %}
+        <div class="card" style="margin-bottom: 16px; border: 1px solid var(--accent); border-left: 4px solid var(--accent);">
+            <h3 style="margin-top: 0; font-size: 0.95rem;">Vid semesterbryt ({{ balance.year_end.strftime('%Y-%m-%d') }})</h3>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
+                <span style="color: var(--muted);">Kvar vid bryt:</span>
+                <span style="font-weight: 600;">{{ balance.remaining_days }} dagar (projektion)</span>
+                <span style="color: var(--muted);">Sparas:</span>
+                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_save }} dagar &rarr; n&auml;sta &aring;r</span>
+                {% if balance.projection.days_to_pay_out > 0 %}
+                <span style="color: var(--muted);">Betalas ut:</span>
+                <span style="font-weight: 600;">{{ balance.projection.days_to_pay_out }} dagar</span>
+                <span style="color: var(--muted);">Utbetalning:</span>
+                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_pay_out }} &times; {{ "%.0f"|format(balance.projection.payout_per_day) }} kr = {{ "{:,.0f}".format(balance.projection.payout_total).replace(",", " ") }} kr</span>
+                {% endif %}
+            </div>
+            {% if balance.projection.days_to_pay_out > 0 %}
+            <div style="margin-top: 8px; font-size: 0.65rem; color: var(--muted);">
+                Semesterers&auml;ttning: 5,4% av l&ouml;n + 0,5% av r&ouml;rligt per dag (&sect;9.5)
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Closed Year Card (past years) -->
+        {% if balance.closed %}
+        <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent-2);">
+            <h3 style="margin-top: 0; font-size: 0.95rem;">Semester&aring;ret st&auml;ngt</h3>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
+                {% if balance.closed.saved > 0 %}
+                <span style="color: var(--muted);">Sparade:</span>
+                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.closed.saved }} dagar &rarr; &ouml;verf&ouml;rda</span>
+                {% endif %}
+                {% if balance.closed.paid_out > 0 %}
+                <span style="color: var(--muted);">Utbetalda:</span>
+                <span style="font-weight: 600;">{{ balance.closed.paid_out }} dagar &rarr; {{ "{:,.0f}".format(balance.closed.payout_amount).replace(",", " ") }} kr</span>
+                {% endif %}
+                {% if balance.closed.saved == 0 and balance.closed.paid_out == 0 %}
+                <span style="color: var(--muted);">Alla dagar uttagna.</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Vacation Supplement Card -->
         {% if balance.pay %}
@@ -189,6 +246,41 @@
                         style="width: 100%; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text);">
                 </div>
                 <button type="submit" class="btn" style="width: 100%;">Spara inst&auml;llningar</button>
+            </form>
+        </div>
+
+        <!-- Saved Days Editor -->
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Sparade dagar</h3>
+            <p style="color: var(--muted); font-size: 0.8rem; margin-bottom: 12px;">
+                &Auml;ndra antal sparade dagar fr&aring;n tidigare semester&aring;r.
+            </p>
+            <form method="POST" action="/admin/vacation/{{ edit_user.id }}/saved">
+                {% set saved_data = edit_user.vacation_saved or {} %}
+                {% set has_entries = false %}
+                {% for y in range(year - 5, year) %}
+                    {% set yk = y|string %}
+                    {% if yk in saved_data %}
+                    {% set has_entries = true %}
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <label style="color: var(--muted); font-size: 0.85rem; min-width: 50px;">{{ y }}:</label>
+                        <input type="number" name="saved_{{ y }}" min="0" max="25"
+                            value="{{ saved_data[yk].saved }}"
+                            style="width: 60px; padding: 6px 8px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text); text-align: center;">
+                        <span style="color: var(--muted); font-size: 0.75rem;">dagar</span>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+                {% if not has_entries %}
+                <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 8px;">Inga st&auml;ngda semester&aring;r &auml;nnu.</p>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <label style="color: var(--muted); font-size: 0.85rem; min-width: 50px;">{{ year - 1 }}:</label>
+                    <input type="number" name="saved_{{ year - 1 }}" min="0" max="25" value="0"
+                        style="width: 60px; padding: 6px 8px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text); text-align: center;">
+                    <span style="color: var(--muted); font-size: 0.75rem;">dagar</span>
+                </div>
+                {% endif %}
+                <button type="submit" class="btn" style="width: 100%; margin-top: 4px;">Spara</button>
             </form>
         </div>
 
