@@ -295,22 +295,45 @@
     </div>
     {% endif %}
 
-    <!-- Semester info -->
+    <!-- Semester -->
     <div class="card" style="margin-top: 16px;">
         <h3 style="margin-top: 0;">Semester</h3>
+
+        {% if vacation_balance %}
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
+            <div style="text-align: center;">
+                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Tilldelade</div>
+                <div style="font-size: 1.3rem; font-weight: 700;">{{ vacation_balance.entitled_days }}</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Uttagna</div>
+                <div style="font-size: 1.3rem; font-weight: 700;">{{ vacation_balance.used_days }}</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Kvar</div>
+                <div style="font-size: 1.3rem; font-weight: 700; color: {% if vacation_balance.remaining_days > 5 %}var(--accent-2){% elif vacation_balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+                    {{ vacation_balance.remaining_days }}
+                </div>
+            </div>
+        </div>
+        <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 12px;">
+            Semester&aring;r: {{ vacation_balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ vacation_balance.year_end.strftime('%Y-%m-%d') }}
+            {% if vacation_balance.is_first_year %}<span style="color: var(--warning);"> (proportionellt)</span>{% endif %}
+        </div>
+        {% endif %}
+
         {% set vacation = edit_user.vacation or {} %}
         {% if vacation %}
             {% for year, weeks in vacation.items() %}
                 {% if weeks %}
-                    <p><strong>{{ year }}:</strong> vecka {{ weeks | join(', ') }}</p>
+                    <p style="font-size: 0.85rem;"><strong>{{ year }}:</strong> v{{ weeks | join(', v') }}</p>
                 {% endif %}
             {% endfor %}
-            {% if not vacation.values() | select | list %}
-                <p style="color: var(--muted);">Ingen semester registrerad.</p>
-            {% endif %}
-        {% else %}
-            <p style="color: var(--muted);">Ingen semester registrerad.</p>
         {% endif %}
+
+        <a href="/admin/vacation/{{ edit_user.id }}" class="btn secondary" style="margin-top: 8px;">
+            Hantera semester
+        </a>
     </div>
 </div>
 

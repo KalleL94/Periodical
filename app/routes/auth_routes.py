@@ -3,6 +3,7 @@
 Authentication routes: login, logout, registration.
 """
 
+import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
@@ -468,13 +469,34 @@ async def vacation_page(
     request: Request,
     year: int | None = None,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Show vacation management page."""
+    from app.core.schedule.vacation import calculate_vacation_balance
+
     if year is None:
         year = get_today().year
 
     vacation = current_user.vacation or {}
     vacation_weeks = vacation.get(str(year), [])
+
+    # Calculate balance
+    balance = calculate_vacation_balance(current_user, year, db)
+
+    # Get day-level vacation for this year
+    from app.database.database import Absence, AbsenceType
+
+    day_absences = (
+        db.query(Absence)
+        .filter(
+            Absence.user_id == current_user.id,
+            Absence.absence_type == AbsenceType.VACATION,
+            Absence.date >= datetime.date(year, 1, 1),
+            Absence.date <= datetime.date(year, 12, 31),
+        )
+        .order_by(Absence.date)
+        .all()
+    )
 
     return templates.TemplateResponse(
         "vacation.html",
@@ -483,6 +505,8 @@ async def vacation_page(
             "user": current_user,
             "year": year,
             "vacation_weeks": vacation_weeks,
+            "balance": balance,
+            "day_absences": day_absences,
         },
     )
 
@@ -538,6 +562,121 @@ async def update_vacation(
     clear_schedule_cache()
 
     return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
+
+
+@router.post("/profile/vacation/day", name="add_vacation_day")
+async def add_vacation_day(
+    vacation_date: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Add a single vacation day for current user."""
+    try:
+        d = datetime.date.fromisoformat(vacation_date)
+    except ValueError:
+        return RedirectResponse(url="/profile/vacation", status_code=302)
+
+    # Check if absence already exists for this date
+    existing = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == d).first()
+    if existing:
+        existing.absence_type = AbsenceType.VACATION
+    else:
+        db.add(
+            Absence(
+                user_id=current_user.id,
+                date=d,
+                absence_type=AbsenceType.VACATION,
+            )
+        )
+
+    db.commit()
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/profile/vacation?year={d.year}", status_code=302)
+
+
+@router.post("/profile/vacation/days/sync", name="sync_vacation_days")
+async def sync_vacation_days(
+    year: int = Form(...),
+    dates: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Sync day-level vacation for a year. Adds new, removes deselected."""
+    new_dates: set[datetime.date] = set()
+    for s in dates.split(","):
+        s = s.strip()
+        if s:
+            try:
+                new_dates.add(datetime.date.fromisoformat(s))
+            except ValueError:
+                continue
+
+    existing = (
+        db.query(Absence)
+        .filter(
+            Absence.user_id == current_user.id,
+            Absence.absence_type == AbsenceType.VACATION,
+            Absence.date >= datetime.date(year, 1, 1),
+            Absence.date <= datetime.date(year, 12, 31),
+        )
+        .all()
+    )
+    existing_dates = {a.date: a for a in existing}
+
+    for d in new_dates - set(existing_dates.keys()):
+        db.add(Absence(user_id=current_user.id, date=d, absence_type=AbsenceType.VACATION))
+
+    for d in set(existing_dates.keys()) - new_dates:
+        db.delete(existing_dates[d])
+
+    db.commit()
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
+
+
+@router.post("/profile/vacation/day/{absence_id}/delete", name="delete_vacation_day")
+async def delete_vacation_day(
+    absence_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a single vacation day for current user."""
+    absence = (
+        db.query(Absence)
+        .filter(
+            Absence.id == absence_id,
+            Absence.user_id == current_user.id,
+            Absence.absence_type == AbsenceType.VACATION,
+        )
+        .first()
+    )
+    year = get_today().year
+    if absence:
+        year = absence.date.year
+        db.delete(absence)
+        db.commit()
+        clear_schedule_cache()
+    return RedirectResponse(url=f"/profile/vacation?year={year}", status_code=302)
+
+
+@router.post("/profile/vacation/settings", name="update_vacation_settings")
+async def update_vacation_settings(
+    employment_start_date: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update employment start date for current user."""
+    if employment_start_date.strip():
+        try:
+            current_user.employment_start_date = datetime.date.fromisoformat(employment_start_date)
+        except ValueError:
+            pass
+    else:
+        current_user.employment_start_date = None
+
+    db.commit()
+    clear_schedule_cache()
+    return RedirectResponse(url="/profile/vacation", status_code=302)
 
 
 @router.get("/profile/calendar.ics/{lang}", response_class=Response, name="export_calendar")
@@ -756,7 +895,9 @@ async def admin_edit_user_page(
     """Admin: show edit user form."""
     from app.core.schedule import get_wage_history
     from app.core.schedule.person_history import get_user_history
+    from app.core.schedule.vacation import calculate_vacation_balance
     from app.core.storage import get_available_tax_tables
+    from app.core.utils import get_today
 
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
@@ -770,6 +911,9 @@ async def admin_edit_user_page(
     # Get person history for this user (employment periods)
     person_history = get_user_history(db, user_id)
 
+    # Get vacation balance
+    vacation_balance = calculate_vacation_balance(edit_user, get_today().year, db)
+
     return templates.TemplateResponse(
         "admin_user_edit.html",
         {
@@ -779,6 +923,7 @@ async def admin_edit_user_page(
             "available_tax_tables": available_tax_tables,
             "wage_history": wage_history,
             "person_history": person_history,
+            "vacation_balance": vacation_balance,
         },
     )
 

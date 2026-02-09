@@ -42,6 +42,7 @@ from app.core.schedule import (
 from app.core.schedule import (
     persons as person_list,
 )
+from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, UserRole, get_db
@@ -661,6 +662,28 @@ async def show_month_for_person(
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
+    # Count vacation days (SEM shifts) in this month and calculate supplement
+    vacation_month = None
+    if show_salary:
+        sem_count = sum(1 for d in days_in_month.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
+        if sem_count > 0:
+            vac_user = (
+                db.query(User).filter(User.id == user_id_for_wages).first()
+                if user_id_for_wages > 10
+                else db.query(User).filter(User.person_id == rotation_position).first()
+            )
+            if vac_user:
+                try:
+                    balance = calculate_vacation_balance(vac_user, year, db)
+                    pay = balance.get("pay", {})
+                    vacation_month = {
+                        "days": sem_count,
+                        "supplement_per_day": pay.get("supplement_per_day", 0),
+                        "supplement_month": round(pay.get("supplement_per_day", 0) * sem_count, 0),
+                    }
+                except Exception:
+                    pass
+
     return render_template(
         templates,
         "month.html",
@@ -675,6 +698,7 @@ async def show_month_for_person(
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
+            "vacation_month": vacation_month,
         },
         user=current_user,
     )
@@ -776,6 +800,49 @@ async def year_view(
         months = [strip_salary_data(m) for m in months]
         year_summary = strip_salary_data(year_summary)
 
+    # Calculate vacation supplement per month if salary is visible
+    vacation_pay = None
+    if show_salary:
+        vac_user = (
+            db.query(User).filter(User.id == user_id_for_wages).first()
+            if user_id_for_wages > 10
+            else db.query(User).filter(User.person_id == rotation_position).first()
+        )
+        if vac_user:
+            try:
+                vacation_pay = calculate_vacation_balance(vac_user, year, db)
+                supp_per_day = vacation_pay.get("pay", {}).get("supplement_per_day", 0)
+                total_sem_days = 0
+                total_supplement = 0.0
+                for m in months:
+                    sem_days = sum(1 for d in m.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
+                    m["vacation_days"] = sem_days
+                    m["vacation_supplement"] = round(supp_per_day * sem_days, 0)
+                    total_sem_days += sem_days
+                    total_supplement += m["vacation_supplement"]
+
+                    # Include supplement in gross/net so table columns add up
+                    if m["vacation_supplement"] > 0:
+                        supp = m["vacation_supplement"]
+                        brutto_before = m.get("brutto_pay", 0) or 0
+                        netto_before = m.get("netto_pay", 0) or 0
+                        m["brutto_pay"] = brutto_before + supp
+                        if brutto_before > 0:
+                            tax_ratio = netto_before / brutto_before
+                            m["netto_pay"] = round(netto_before + supp * tax_ratio, 0)
+
+                # Recalculate year totals with updated brutto/netto
+                month_count = len(months) or 1
+                year_summary["total_brutto"] = sum((m.get("brutto_pay", 0) or 0) for m in months)
+                year_summary["total_netto"] = sum((m.get("netto_pay", 0) or 0) for m in months)
+                year_summary["avg_brutto"] = round(year_summary["total_brutto"] / month_count, 0)
+                year_summary["avg_netto"] = round(year_summary["total_netto"] / month_count, 0)
+                year_summary["total_vacation_days"] = total_sem_days
+                year_summary["total_vacation_supplement"] = total_supplement
+                year_summary["avg_vacation_supplement"] = round(total_supplement / month_count, 0)
+            except Exception:
+                pass
+
     # Calculate and log load time
     end_time = datetime.now()
     load_time = (end_time - start_time).total_seconds()
@@ -805,6 +872,7 @@ async def year_view(
             "selected_other_name": selected_other_name,
             "show_salary": show_salary,
             "ob_rules": combined_rules,  # All OB rules for label lookup
+            "vacation_pay": vacation_pay,
         },
         user=current_user,
     )
