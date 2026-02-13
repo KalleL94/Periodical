@@ -172,6 +172,166 @@
         </tbody>
     </table>
 
+    {# ── Detailed OB / Beredskap / OT breakdown ── #}
+    {% if show_salary %}
+    <div style="margin-top: 1.5rem; text-align: center;">
+        <button class="btn secondary" id="breakdown-toggle" onclick="toggleBreakdown()">
+            Visa detaljerad uppdelning
+        </button>
+    </div>
+
+    <div id="breakdown-section" style="display: none; margin-top: 1rem;">
+        <h3 style="margin-bottom: 0.5rem;">OB / Beredskap / &Ouml;vertid per dag</h3>
+        <div style="overflow-x: auto;">
+            <table class="breakdown-table">
+                <thead>
+                    <tr>
+                        <th class="th_left">Datum</th>
+                        <th class="th_left">Dag</th>
+                        <th class="th_left">Typ</th>
+                        <th class="th_right">Start</th>
+                        <th class="th_right">Slut</th>
+                        <th class="th_right">Norm</th>
+                        <th class="th_right">OB1</th>
+                        <th class="th_right">OB2</th>
+                        <th class="th_right">OB3</th>
+                        <th class="th_right">OB4</th>
+                        <th class="th_right">OB5</th>
+                        <th class="th_right">B.Vardag</th>
+                        <th class="th_right">B.Helg</th>
+                        <th class="th_right">B.Helgdag</th>
+                        <th class="th_right">B.Storhelg</th>
+                        <th class="th_right">OT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set ns = namespace(
+                        tot_norm=0, tot_ob1=0, tot_ob2=0, tot_ob3=0, tot_ob4=0, tot_ob5=0,
+                        tot_vardag=0, tot_helg=0, tot_helgdag=0, tot_storhelg=0, tot_ot=0,
+                        has_rows=false
+                    ) %}
+
+                    {% for d in days.days %}
+                        {% set ob1 = d.ob_hours.get('OB1', 0) or 0 %}
+                        {% set ob2 = d.ob_hours.get('OB2', 0) or 0 %}
+                        {% set ob3 = d.ob_hours.get('OB3', 0) or 0 %}
+                        {% set ob4 = d.ob_hours.get('OB4', 0) or 0 %}
+                        {% set ob5 = d.ob_hours.get('OB5', 0) or 0 %}
+                        {% set ob_sum = ob1 + ob2 + ob3 + ob4 + ob5 %}
+
+                        {# Non-OB hours: shift hours minus OB hours (only for regular work shifts) #}
+                        {% set is_work_shift = d.shift and d.shift.code not in ('OFF', 'OC', 'OT') %}
+                        {% set norm = (d.hours - ob_sum) if is_work_shift and d.hours else 0 %}
+                        {% if norm < 0 %}{% set norm = 0 %}{% endif %}
+
+                        {% set oc_bd = d.oncall_details.get('breakdown', {}) if d.oncall_details else {} %}
+                        {% set oc_vardag = (oc_bd.get('OC_WEEKDAY', {}).get('hours', 0) or 0) %}
+                        {% set oc_helg = (oc_bd.get('OC_WEEKEND', {}).get('hours', 0) or 0)
+                                       + (oc_bd.get('OC_WEEKEND_SAT', {}).get('hours', 0) or 0)
+                                       + (oc_bd.get('OC_WEEKEND_SUN', {}).get('hours', 0) or 0)
+                                       + (oc_bd.get('OC_WEEKEND_MON', {}).get('hours', 0) or 0) %}
+                        {% set oc_helgdag = (oc_bd.get('OC_HOLIDAY', {}).get('hours', 0) or 0)
+                                          + (oc_bd.get('OC_HOLIDAY_EVE', {}).get('hours', 0) or 0)
+                                          + (oc_bd.get('OC_NATIONALDAGEN', {}).get('hours', 0) or 0) %}
+                        {% set oc_storhelg = (oc_bd.get('OC_SPECIAL', {}).get('hours', 0) or 0) %}
+
+                        {% set ot = d.ot_hours or 0 %}
+
+                        {% set row_total = norm + ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + ot %}
+
+                        {% if row_total > 0 %}
+                            {% set ns.has_rows = true %}
+                            {% set ns.tot_norm = ns.tot_norm + norm %}
+                            {% set ns.tot_ob1 = ns.tot_ob1 + ob1 %}
+                            {% set ns.tot_ob2 = ns.tot_ob2 + ob2 %}
+                            {% set ns.tot_ob3 = ns.tot_ob3 + ob3 %}
+                            {% set ns.tot_ob4 = ns.tot_ob4 + ob4 %}
+                            {% set ns.tot_ob5 = ns.tot_ob5 + ob5 %}
+                            {% set ns.tot_vardag = ns.tot_vardag + oc_vardag %}
+                            {% set ns.tot_helg = ns.tot_helg + oc_helg %}
+                            {% set ns.tot_helgdag = ns.tot_helgdag + oc_helgdag %}
+                            {% set ns.tot_storhelg = ns.tot_storhelg + oc_storhelg %}
+                            {% set ns.tot_ot = ns.tot_ot + ot %}
+
+                            {# Shift type label and times #}
+                            {% set shift_label = d.shift.label if d.shift and d.shift.label else (d.shift.code if d.shift else '') %}
+                            {% if d.start and d.end %}
+                                {% set t_start = d.start.strftime('%H:%M') %}
+                                {% set t_end = d.end.strftime('%H:%M') %}
+                            {% elif d.shift and d.shift.start_time %}
+                                {% set t_start = d.shift.start_time %}
+                                {% set t_end = d.shift.end_time %}
+                            {% else %}
+                                {% set t_start = '' %}
+                                {% set t_end = '' %}
+                            {% endif %}
+
+                            <tr>
+                                <td class="td_left num">{{ d.date }}</td>
+                                <td class="td_left">{{ d.weekday_name }}</td>
+                                <td class="td_left">{{ shift_label }}</td>
+                                <td class="td_right num">{{ t_start }}</td>
+                                <td class="td_right num">{{ t_end }}</td>
+                                <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                <td class="td_right num">{% if ot %}{{ "%.1f"|format(ot) }}{% endif %}</td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if not ns.has_rows %}
+                        <tr>
+                            <td colspan="16" style="text-align: center; color: var(--muted); padding: 1rem;">
+                                Inga OB / beredskap / &ouml;vertid denna m&aring;nad
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+                {% if ns.has_rows %}
+                <tfoot>
+                    <tr>
+                        <td class="td_left" colspan="5"><strong>Total</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_norm %}{{ "%.1f"|format(ns.tot_norm) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob1 %}{{ "%.1f"|format(ns.tot_ob1) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob2 %}{{ "%.1f"|format(ns.tot_ob2) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob3 %}{{ "%.1f"|format(ns.tot_ob3) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob4 %}{{ "%.1f"|format(ns.tot_ob4) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob5 %}{{ "%.1f"|format(ns.tot_ob5) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_vardag %}{{ "%.1f"|format(ns.tot_vardag) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_helg %}{{ "%.1f"|format(ns.tot_helg) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_helgdag %}{{ "%.1f"|format(ns.tot_helgdag) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_storhelg %}{{ "%.1f"|format(ns.tot_storhelg) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ot %}{{ "%.1f"|format(ns.tot_ot) }}{% endif %}</strong></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <script>
+    function toggleBreakdown() {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('breakdown-toggle');
+        if (section.style.display === 'none') {
+            section.style.display = 'block';
+            btn.textContent = 'D\u00f6lj detaljerad uppdelning';
+        } else {
+            section.style.display = 'none';
+            btn.textContent = 'Visa detaljerad uppdelning';
+        }
+    }
+    </script>
+    {% endif %}
+
 {{ super() }}
 
 {% endblock %}
