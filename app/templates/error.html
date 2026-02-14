@@ -1,0 +1,13 @@
+{# app/templates/error.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+<section class="error-page">
+    <div class="error-container">
+        <div class="error-code">{{ status_code }}</div>
+        <h2 class="error-title">{{ title }}</h2>
+        <p class="error-message">{{ message }}</p>
+        <a href="/" class="btn btn-primary">Tillbaka till startsidan</a>
+    </div>
+</section>
+{% endblock %}

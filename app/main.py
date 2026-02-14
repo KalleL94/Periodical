@@ -8,12 +8,13 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging_config import get_logger, setup_logging
 from app.core.request_logging import RequestLoggingMiddleware
@@ -160,6 +161,71 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+# --- Exception Handlers ---
+
+from app.core.utils import get_today  # noqa: E402
+from app.routes.shared import templates as _templates  # noqa: E402
+
+ERROR_MESSAGES = {
+    400: ("Ogiltig förfrågan", "Förfrågan kunde inte behandlas."),
+    403: ("Ingen behörighet", "Du har inte behörighet att se denna sida."),
+    404: ("Sidan hittades inte", "Sidan du letar efter finns inte eller har flyttats."),
+    500: ("Serverfel", "Något gick fel. Försök igen senare."),
+    503: ("Tjänsten otillgänglig", "Servern är tillfälligt otillgänglig. Försök igen senare."),
+}
+
+
+def _wants_json(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    return "application/json" in accept and "text/html" not in accept
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if _wants_json(request):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    title, message = ERROR_MESSAGES.get(
+        exc.status_code,
+        ("Fel", str(exc.detail) if exc.detail else "Ett oväntat fel har inträffat."),
+    )
+
+    return _templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "status_code": exc.status_code,
+            "title": title,
+            "message": message,
+            "user": None,
+            "now": get_today(),
+        },
+        status_code=exc.status_code,
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+
+    if _wants_json(request):
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+    return _templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "status_code": 500,
+            "title": "Serverfel",
+            "message": "Något gick fel. Försök igen senare.",
+            "user": None,
+            "now": get_today(),
+        },
+        status_code=500,
+    )
+
 
 # Include routers
 app.include_router(dashboard_router)

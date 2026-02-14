@@ -264,3 +264,30 @@ input, select {
 @media (max-width: 768px) {
   .dashboard-container { grid-template-columns: 1fr; }
 }
+
+/* Error Pages */
+.error-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+  text-align: center;
+}
+.error-container { max-width: 480px; }
+.error-code {
+  font-size: 6rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+.error-title {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+.error-message {
+  color: var(--muted);
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+
