@@ -1,0 +1,197 @@
+{# app/templates/statistics.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+<section>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <h2>Statistik {{ year }} - {{ person_name }}</h2>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <a href="/statistics/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">&larr; {{ year - 1 }}</a>
+            <a href="/statistics/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">{{ year + 1 }} &rarr;</a>
+            {% if all_persons %}
+            <select onchange="window.location.href='/statistics/' + this.value + '?year={{ year }}'" style="padding: 0.4rem; border-radius: 4px; background: var(--bg-card); color: var(--text); border: 1px solid var(--muted-bg);">
+                {% for p in all_persons %}
+                <option value="{{ p.id }}" {% if p.id == person_id %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if show_salary %}
+    <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1.5rem;">
+
+        {# Pay trend chart - full width #}
+        <div class="card">
+            <h3>Löneutveckling</h3>
+            <canvas id="payChart" style="min-height: 300px;"></canvas>
+        </div>
+
+        {# OB breakdown chart - full width #}
+        <div class="card">
+            <h3>OB-ersättning per månad</h3>
+            <canvas id="obChart" style="min-height: 300px;"></canvas>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+            {# Absence doughnut #}
+            <div class="card">
+                <h3>Frånvaro</h3>
+                {% set total_absence = absence_data.sick + absence_data.vab + absence_data.leave + absence_data.off %}
+                {% if total_absence > 0 %}
+                <canvas id="absenceChart" style="min-height: 280px;"></canvas>
+                {% else %}
+                <p class="info-text">Ingen registrerad frånvaro {{ year }}.</p>
+                {% endif %}
+            </div>
+
+            {# Hours chart #}
+            <div class="card">
+                <h3>Arbetstimmar per månad</h3>
+                <canvas id="hoursChart" style="min-height: 280px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    {# Summary cards #}
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
+        <div class="card" style="text-align: center;">
+            <div style="color: var(--muted); font-size: 0.85rem;">Total brutto</div>
+            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_brutto or 0).replace(",", " ") }} kr</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="color: var(--muted); font-size: 0.85rem;">Total netto</div>
+            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_netto or 0).replace(",", " ") }} kr</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="color: var(--muted); font-size: 0.85rem;">Total OB</div>
+            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_ob or 0).replace(",", " ") }} kr</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="color: var(--muted); font-size: 0.85rem;">Total beredskap</div>
+            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_oncall or 0).replace(",", " ") }} kr</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="color: var(--muted); font-size: 0.85rem;">Totala timmar</div>
+            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_hours or 0).replace(",", " ") }}h</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="color: var(--muted); font-size: 0.85rem;">Antal pass</div>
+            <div style="font-size: 1.4rem; font-weight: bold;">{{ year_summary.total_shifts or 0 }}</div>
+        </div>
+    </div>
+
+    {# Monthly detail table #}
+    <h3 style="margin-top: 2rem;">Månadsöversikt</h3>
+    <table class="summary">
+        <thead>
+            <tr>
+                <th>Månad</th>
+                <th class="th_right">Brutto</th>
+                <th class="th_right">Netto</th>
+                <th class="th_right">OB</th>
+                <th class="th_right">Beredskap</th>
+                <th class="th_right">OT</th>
+                <th class="th_right">Avdrag</th>
+                <th class="th_right">Timmar</th>
+                <th class="th_right">Pass</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in months %}
+            <tr class="shift-row">
+                <td data-label="Månad">{{ m.get('payment_year', m.year) }}-{{ "%02d"|format(m.get('payment_month', m.month)) }}</td>
+                <td data-label="Brutto" class="td_right num">{{ "{:,.0f}".format(m.brutto_pay or 0).replace(",", " ") }}</td>
+                <td data-label="Netto" class="td_right num">{{ "{:,.0f}".format(m.netto_pay or 0).replace(",", " ") }}</td>
+                <td data-label="OB" class="td_right num">{{ "{:,.0f}".format(m.total_ob or 0).replace(",", " ") }}</td>
+                <td data-label="Beredskap" class="td_right num">{{ "{:,.0f}".format(m.oncall_pay or 0).replace(",", " ") }}</td>
+                <td data-label="OT" class="td_right num">{{ "{:,.0f}".format(m.ot_pay or 0).replace(",", " ") }}</td>
+                <td data-label="Avdrag" class="td_right num">{{ "{:,.0f}".format(m.absence_deduction or 0).replace(",", " ") }}</td>
+                <td data-label="Timmar" class="td_right num">{{ "%.1f"|format(m.total_hours or 0) }}</td>
+                <td data-label="Pass" class="td_right num">{{ m.num_shifts or 0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td><strong>Total</strong></td>
+                <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_brutto or 0).replace(",", " ") }}</strong></td>
+                <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_netto or 0).replace(",", " ") }}</strong></td>
+                <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_ob or 0).replace(",", " ") }}</strong></td>
+                <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_oncall or 0).replace(",", " ") }}</strong></td>
+                <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_ot or 0).replace(",", " ") }}</strong></td>
+                <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_absence_deduction or 0).replace(",", " ") }}</strong></td>
+                <td class="td_right num"><strong>{{ "%.1f"|format(year_summary.total_hours or 0) }}</strong></td>
+                <td class="td_right num"><strong>{{ year_summary.total_shifts or 0 }}</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+
+    {% else %}
+    <p class="info-text" style="margin-top: 2rem;">Lönedata visas bara för din egen statistik.</p>
+    {% endif %}
+</section>
+
+{% if show_salary %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+    Chart.defaults.color = '#9aa5b1';
+    const gridColor = 'rgba(154, 165, 177, 0.15)';
+    const labels = {{ chart_labels | tojson }};
+
+    // 1. Pay trend (line)
+    new Chart(document.getElementById('payChart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Brutto', data: {{ chart_brutto | tojson }}, borderColor: '#40a9ff', backgroundColor: 'rgba(64,169,255,0.1)', fill: true, tension: 0.3 },
+                { label: 'Netto', data: {{ chart_netto | tojson }}, borderColor: '#7bd389', backgroundColor: 'rgba(123,211,137,0.1)', fill: true, tension: 0.3 }
+            ]
+        },
+        options: { responsive: true, scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor }, ticks: { callback: v => v.toLocaleString('sv-SE') + ' kr' } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('sv-SE') + ' kr' } } } }
+    });
+
+    // 2. OB stacked bar
+    const obData = {{ chart_ob | tojson }};
+    const obColors = { OB1: '#40a9ff', OB2: '#7bd389', OB3: '#ffa500', OB4: '#ef4444', OB5: '#a855f7' };
+    const obLabels = {{ ob_labels | tojson }};
+    new Chart(document.getElementById('obChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: Object.keys(obData).map(code => ({
+                label: obLabels[code] || code,
+                data: obData[code],
+                backgroundColor: obColors[code] || '#9aa5b1',
+                borderRadius: 2
+            }))
+        },
+        options: { responsive: true, scales: { x: { stacked: true, grid: { color: gridColor } }, y: { stacked: true, grid: { color: gridColor }, ticks: { callback: v => v.toLocaleString('sv-SE') + ' kr' } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('sv-SE') + ' kr' } } } }
+    });
+
+    // 3. Absence doughnut
+    const absenceData = {{ absence_data | tojson }};
+    if (absenceData.sick + absenceData.vab + absenceData.leave + absenceData.off > 0) {
+        new Chart(document.getElementById('absenceChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Sjuk', 'VAB', 'Ledigt', 'Ledig'],
+                datasets: [{ data: [absenceData.sick, absenceData.vab, absenceData.leave, absenceData.off], backgroundColor: ['#ef4444', '#ffa500', '#a855f7', '#9aa5b1'], borderWidth: 0 }]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + ' dagar' } } } }
+        });
+    }
+
+    // 4. Hours bar
+    new Chart(document.getElementById('hoursChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{ label: 'Timmar', data: {{ chart_hours | tojson }}, backgroundColor: 'rgba(64,169,255,0.6)', borderRadius: 3 }]
+        },
+        options: { responsive: true, scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.parsed.y + 'h' } } } }
+    });
+</script>
+{% endif %}
+{% endblock %}
