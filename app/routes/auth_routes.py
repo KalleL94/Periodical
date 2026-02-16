@@ -308,6 +308,7 @@ async def update_profile(
     db: Session = Depends(get_db),
 ):
     """Update user profile."""
+    from app.core.rates import get_all_defaults, get_rate_history
     from app.core.storage import get_available_tax_tables
 
     # Validate tax table
@@ -320,6 +321,9 @@ async def update_profile(
                 "user": current_user,
                 "available_tax_tables": available_tax_tables,
                 "error": f"Ogiltig skattetabell: {tax_table}",
+                "rate_defaults": get_all_defaults(),
+                "custom_rates": current_user.custom_rates or {},
+                "rate_history": get_rate_history(db, current_user.id),
             },
             status_code=400,
         )
@@ -380,21 +384,28 @@ async def change_password(
 ):
     """Change user password."""
     from app.auth.auth import verify_password
+    from app.core.rates import get_all_defaults, get_rate_history
 
-    if not verify_password(current_password, current_user.password_hash):
+    def _profile_error(msg: str):
         return templates.TemplateResponse(
             "profile.html",
-            {"request": request, "user": current_user, "error": "Fel nuvarande lösenord"},
+            {
+                "request": request,
+                "user": current_user,
+                "error": msg,
+                "rate_defaults": get_all_defaults(),
+                "custom_rates": current_user.custom_rates or {},
+                "rate_history": get_rate_history(db, current_user.id),
+            },
             status_code=400,
         )
+
+    if not verify_password(current_password, current_user.password_hash):
+        return _profile_error("Fel nuvarande lösenord")
 
     # Add length validation
     if len(new_password) < 8:
-        return templates.TemplateResponse(
-            "profile.html",
-            {"request": request, "user": current_user, "error": "Nytt lösenord måste vara minst 8 tecken"},
-            status_code=400,
-        )
+        return _profile_error("Nytt lösenord måste vara minst 8 tecken")
 
     current_user.password_hash = get_password_hash(new_password)
     try:
