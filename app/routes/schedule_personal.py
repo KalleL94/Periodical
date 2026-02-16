@@ -172,6 +172,18 @@ async def show_day_for_person(
     # Use user_id_for_wages for wage lookup
     monthly_salary = get_user_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date_obj)
 
+    # Resolve per-user rates for the viewed user
+    from app.core.rates import get_user_rates
+
+    _rate_user = (
+        db.query(User).filter(User.id == user_id_for_wages).first()
+        if user_id_for_wages != current_user.id
+        else current_user
+    )
+    _user_rates = (
+        get_user_rates(_rate_user, session=db, effective_date=date_obj) if _rate_user else get_user_rates(current_user)
+    )
+
     # OT shifts never have OB pay, so check if this will become an OT shift
     # We need to check this before fetching the OT shift
     # OT shifts are stored per user_id
@@ -181,7 +193,7 @@ async def show_day_for_person(
     if start_dt and end_dt and not temp_ot_check and not is_effective_oc:
         # Only calculate OB if there's NO overtime shift AND NOT an OC shift
         ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-        ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary)
+        ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"])
     else:
         # No OB for OT shifts or OC shifts
         ob_hours = {r.code: 0.0 for r in ob_rules}
@@ -267,7 +279,7 @@ async def show_day_for_person(
         # Recalculate overtime pay based on historical wage
         from app.core.constants import OT_RATE_DIVISOR
 
-        hourly_rate = monthly_salary / OT_RATE_DIVISOR
+        hourly_rate = _user_rates["ot"] if _user_rates["ot"] is not None else (monthly_salary / OT_RATE_DIVISOR)
         ot_pay = hourly_rate * ot_shift.hours
 
         ot_details = {
@@ -286,7 +298,7 @@ async def show_day_for_person(
         oncall_rules = _cached_oncall_rules(year)
 
         # Default: Full 24h calculation
-        oc_calc = calculate_oncall_pay(date_obj, monthly_salary, oncall_rules)
+        oc_calc = calculate_oncall_pay(date_obj, monthly_salary, oncall_rules, rate_overrides=_user_rates["oncall"])
 
         # If OT exists (including from previous day), recalculate OC pay for periods BEFORE and AFTER OT
         if ot_shift_for_oncall:
@@ -328,7 +340,9 @@ async def show_day_for_person(
 
             # Period 1: Before OT (00:00 to OT start)
             if ot_start_dt > day_start:
-                period1 = calculate_oncall_pay_for_period(day_start, ot_start_dt, monthly_salary, oncall_rules)
+                period1 = calculate_oncall_pay_for_period(
+                    day_start, ot_start_dt, monthly_salary, oncall_rules, rate_overrides=_user_rates["oncall"]
+                )
                 total_pay += period1["total_pay"]
                 combined_details["periods"].append(
                     {
@@ -350,7 +364,9 @@ async def show_day_for_person(
 
             # Period 2: After OT (OT end to 24:00)
             if ot_end_dt < day_end:
-                period2 = calculate_oncall_pay_for_period(ot_end_dt, day_end, monthly_salary, oncall_rules)
+                period2 = calculate_oncall_pay_for_period(
+                    ot_end_dt, day_end, monthly_salary, oncall_rules, rate_overrides=_user_rates["oncall"]
+                )
                 total_pay += period2["total_pay"]
                 combined_details["periods"].append(
                     {

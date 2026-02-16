@@ -106,12 +106,6 @@ def summarize_month_for_person(
     Returns:
         Dict med total_hours, num_shifts, ob_hours, ob_pay, brutto/netto, days
     """
-    # Använd förgenererad data eller generera ny
-    if year_days is None:
-        days = generate_year_data(year, person_id, session=session, user_wages=user_wages)
-    else:
-        days = year_days
-
     combined_rules = get_combined_rules_for_year(year)
     settings = get_settings()
     persons = _get_persons()
@@ -126,8 +120,6 @@ def summarize_month_for_person(
     uid_for_wages = wage_user_id if wage_user_id is not None else person_id
 
     if user_wages and uid_for_wages in user_wages:
-        # Note: user_wages from get_all_user_wages() returns current wage only
-        # For temporal queries, we need to use get_user_wage with effective_date
         base_salary = get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
     else:
         try:
@@ -137,23 +129,34 @@ def summarize_month_for_person(
         except Exception:
             base_salary = settings.monthly_salary
 
-    # Hämta skattetabell från användare (bara om fetch_tax_table=True)
+    # Hämta användare för skattetabell och per-user rates
     tax_table = None
-    if fetch_tax_table and session:
-        import logging
-
+    user = None
+    if session:
         from app.database.database import User
 
-        logger = logging.getLogger(__name__)
-
         user = session.query(User).filter(User.id == uid_for_wages).first()
+
+    if fetch_tax_table and user:
+        import logging
+
+        logger = logging.getLogger(__name__)
         logger.info(f"Looking up tax_table for user_id={uid_for_wages}, user found: {user is not None}")
-        if user:
-            logger.info(f"User {user.username} has tax_table: {user.tax_table}")
-            if user.tax_table:
-                tax_table = user.tax_table
-        else:
-            logger.warning(f"No user found in database for user_id={uid_for_wages}")
+        logger.info(f"User {user.username} has tax_table: {user.tax_table}")
+        if user.tax_table:
+            tax_table = user.tax_table
+
+    # Resolve per-user rates (OB, OT, oncall, vacation)
+    from app.core.rates import get_user_rates
+
+    user_rates = get_user_rates(user, session=session, effective_date=month_start_date) if user else None
+    _rates_map = {person_id: user_rates} if user_rates else None
+
+    # Använd förgenererad data eller generera ny
+    if year_days is None:
+        days = generate_year_data(year, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map)
+    else:
+        days = year_days
 
     # Initiera totaler
     totals = {
@@ -182,7 +185,13 @@ def summarize_month_for_person(
         if day["date"].year != year or day["date"].month != month:
             continue
 
-        day_data = _process_day_for_summary(day, combined_rules, base_salary, totals)
+        day_data = _process_day_for_summary(
+            day,
+            combined_rules,
+            base_salary,
+            totals,
+            ob_rate_overrides=user_rates.get("ob") if user_rates else None,
+        )
         days_out.append(day_data)
 
     # Hämta frånvaroavdrag för månaden
@@ -377,6 +386,7 @@ def _process_day_for_summary(
     combined_rules: list,
     base_salary: int,
     totals: dict,
+    ob_rate_overrides: dict[str, int] | None = None,
 ) -> dict:
     """Processar en dag och uppdaterar totaler."""
     hours = day.get("hours", 0.0)
@@ -387,7 +397,7 @@ def _process_day_for_summary(
     # Beräkna OB om tillämpligt
     if shift and shift.code not in ("OFF", "OC", "OT") and start and end:
         ob_hours = calculate_ob_hours(start, end, combined_rules)
-        ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary)
+        ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary, rate_overrides=ob_rate_overrides)
     else:
         ob_hours = {r.code: 0.0 for r in combined_rules}
         ob_pay = {r.code: 0.0 for r in combined_rules}
@@ -521,10 +531,26 @@ def summarize_year_for_person(
     settings = get_settings()
     user_wages = get_all_user_wages(session)
 
+    # Resolve per-user rates for schedule generation
+    _rates_map = None
+    if session:
+        from app.core.rates import get_user_rates
+        from app.database.database import User
+
+        _uid = wage_user_id if wage_user_id is not None else person_id
+        _rate_user = session.query(User).filter(User.id == _uid).first()
+        if _rate_user:
+            _user_rates = get_user_rates(_rate_user, session=session)
+            _rates_map = {person_id: _user_rates}
+
     # Hämta data för arbete utfört från dec (year-1) till nov (year)
     # Detta är allt arbete som betalas ut under det angivna året
-    prev_year_dec_days = generate_month_data(year - 1, 12, person_id, session=session, user_wages=user_wages)
-    current_year_days = generate_year_data(year, person_id, session=session, user_wages=user_wages)
+    prev_year_dec_days = generate_month_data(
+        year - 1, 12, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map
+    )
+    current_year_days = generate_year_data(
+        year, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map
+    )
 
     # Kombinera december (year-1) med jan-nov (year) för komplett arbetsdata
     all_work_days = prev_year_dec_days + current_year_days

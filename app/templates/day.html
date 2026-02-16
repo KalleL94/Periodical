@@ -120,7 +120,7 @@
                                 <td>{{ ot_shift.start_time }}</td>
                                 <td>{{ ot_shift.end_time }}</td>
                                 <td>{{ "%.2f"|format(ot_shift.hours) }}</td>
-                                <td>{{ "%.2f"|format(monthly_salary / 72) }} kr/h</td>
+                                <td>{{ "%.2f"|format(ot_shift.hourly_rate) }} kr/h</td>
                                 <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                 <td>
                                     <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">

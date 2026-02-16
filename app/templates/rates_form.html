@@ -1,0 +1,146 @@
+{# Shared rates form — used by admin_user_edit.html and profile.html #}
+{# Expects: rate_defaults, custom_rates, rates_form_action, rates_delete_prefix, rate_history #}
+
+<!-- Rate History -->
+{% if rate_history %}
+<div class="card" style="margin-top: 16px;">
+    <h3 style="margin-top: 0;">Ers&auml;ttningshistorik</h3>
+
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr style="border-bottom: 1px solid var(--border);">
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Fr&aring;n datum</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">&Ouml;versikt</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">&Aring;tg&auml;rd</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in rate_history %}
+            <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 8px;">{{ record.effective_from }}</td>
+                <td style="padding: 8px;">
+                    {% if record.effective_to %}
+                        {{ record.effective_to }}
+                    {% else %}
+                        <span style="color: var(--muted); font-style: italic;">p&aring;g&aring;ende</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 8px; font-size: 0.8rem;">
+                    {% set r = record.rates %}
+                    {% set parts = [] %}
+                    {% if r.get('ob') %}{% set _ = parts.append('OB: ' ~ r.ob.keys()|list|join(', ')) %}{% endif %}
+                    {% if r.get('ot') %}{% set _ = parts.append('&Ouml;T: ' ~ r.ot ~ ' kr/tim') %}{% endif %}
+                    {% if r.get('oncall') %}{% set _ = parts.append('Beredskap') %}{% endif %}
+                    {% if r.get('vacation') %}{% set _ = parts.append('Semester') %}{% endif %}
+                    {% if parts %}
+                        {{ parts|join(' &middot; ') }}
+                    {% else %}
+                        <span style="color: var(--muted);">Standardsatser</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 8px;">
+                    {% if record.status == 'current' %}
+                        <span style="color: var(--success); font-weight: 500;">&check; Aktuell</span>
+                    {% elif record.status == 'future' %}
+                        <span style="color: var(--warning); font-weight: 500;">Kommande</span>
+                    {% else %}
+                        <span style="color: var(--muted);">Historisk</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 8px;">
+                    {% if rate_history | length > 1 %}
+                        <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" style="display: inline;" onsubmit="return confirm('&Auml;r du s&auml;ker p&aring; att du vill ta bort denna ers&auml;ttningspost?');">
+                            <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
+                        </form>
+                    {% else %}
+                        <span style="color: var(--muted); font-size: 0.875rem;">&mdash;</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Add New Rates -->
+<div class="card" style="margin-top: 16px;">
+    <h3 style="margin-top: 0;">{% if rate_history %}L&auml;gg till nya ers&auml;ttningssatser{% else %}Ers&auml;ttningssatser{% endif %}</h3>
+    <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
+        Individuella avvikelser fr&aring;n standardsatser. L&auml;mna tomt f&ouml;r att anv&auml;nda standard (l&ouml;nebaserad ber&auml;kning).
+        {% if rate_history %}Tidigare satser avslutas automatiskt dagen innan nytt fr&aring;n-datum.{% endif %}
+    </p>
+
+    <form method="POST" action="{{ rates_form_action }}">
+
+        <!-- Från datum -->
+        <div style="margin-bottom: 16px;">
+            <label for="effective_from_rates" style="display: block; margin-bottom: 6px; color: var(--muted);">Fr&aring;n datum</label>
+            <input type="date" id="effective_from_rates" name="effective_from" required
+                   style="width: 200px; box-sizing: border-box;">
+        </div>
+
+        <!-- OB-tillägg (kr/tim) -->
+        <h4 style="margin-bottom: 8px; margin-top: 0;">OB-till&auml;gg <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(kr/tim)</span></h4>
+        <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
+            Standard: l&ouml;n / divisor. Fyll i f&ouml;r fast kr/tim ist&auml;llet.
+        </p>
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px;">
+            {% for code, divisor in rate_defaults.ob_divisors.items() %}
+            <div>
+                <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ code }} <span style="font-size: 0.7rem;">(std: l&ouml;n/{{ divisor }})</span></label>
+                <input type="number" step="0.01" name="rate_ob_{{ code }}" min="0"
+                       value="{{ custom_rates.get('ob', {}).get(code, '') }}"
+                       placeholder="kr/tim"
+                       class="input" style="width: 100%; box-sizing: border-box;">
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Övertid (kr/tim) -->
+        <h4 style="margin-bottom: 8px;">&Ouml;vertid <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(kr/tim)</span></h4>
+        <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
+            Standard: l&ouml;n / {{ rate_defaults.ot_divisor }}. Fyll i f&ouml;r fast kr/tim ist&auml;llet.
+        </p>
+        <div style="margin-bottom: 16px;">
+            <input type="number" step="0.01" name="rate_ot" min="0"
+                   value="{{ custom_rates.get('ot', '') }}"
+                   placeholder="kr/tim"
+                   class="input" style="width: 200px;">
+        </div>
+
+        <!-- Beredskap (kr/tim) -->
+        <h4 style="margin-bottom: 8px;">Beredskap <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(kr/tim)</span></h4>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px;">
+            {% set oc_groups = [("OC_WEEKDAY", "Vardag", 75), ("OC_WEEKEND", "Helg", 97), ("OC_HOLIDAY", "R\u00f6d dag", 112), ("OC_SPECIAL", "Storhelg", 192)] %}
+            {% for code, label, default in oc_groups %}
+            <div>
+                <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ label }} (std: {{ default }} kr)</label>
+                <input type="number" step="0.01" name="rate_oc_{{ code }}" min="0"
+                       value="{{ custom_rates.get('oncall', {}).get(code, '') }}"
+                       placeholder="{{ default }}"
+                       class="input" style="width: 100%; box-sizing: border-box;">
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Semester -->
+        <h4 style="margin-bottom: 8px;">Semesterers&auml;ttning <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(decimalform, t.ex. 0.008 = 0.8%)</span></h4>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;">
+            {% set vac_fields = [("fixed_pct", "Fast del", 0.008, "0.8%"), ("variable_pct", "R\u00f6rlig del", 0.005, "0.5%"), ("payout_pct", "Utbetalning", 0.046, "4.6%")] %}
+            {% for key, label, default, pct in vac_fields %}
+            <div>
+                <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ label }} (std: {{ pct }})</label>
+                <input type="number" step="0.001" name="rate_vac_{{ key }}" min="0" max="1"
+                       value="{{ custom_rates.get('vacation', {}).get(key, '') }}"
+                       placeholder="{{ default }}"
+                       class="input" style="width: 100%; box-sizing: border-box;">
+            </div>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="btn">Spara satser</button>
+    </form>
+</div>

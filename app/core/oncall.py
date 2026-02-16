@@ -663,6 +663,7 @@ def calculate_oncall_pay(
     date: datetime.date,
     monthly_salary: int,
     oncall_rules: list[OnCallRule] | None = None,
+    rate_overrides: dict[str, int | float] | None = None,
 ) -> dict:
     """
     Calculate on-call compensation for a 24-hour shift.
@@ -711,8 +712,13 @@ def calculate_oncall_pay(
                 hours = (unc_end - unc_start).total_seconds() / 3600.0
 
                 if hours > 0:
-                    # Calculate pay for this segment
-                    if rule.fixed_hourly_rate is not None:
+                    # Calculate pay for this segment (check per-user override first)
+                    overrides = rate_overrides or {}
+                    override_rate = overrides.get(rule.code)
+                    if override_rate is not None:
+                        segment_pay = override_rate * hours
+                        rate_display = override_rate
+                    elif rule.fixed_hourly_rate is not None:
                         # New system: fixed SEK per hour
                         segment_pay = rule.fixed_hourly_rate * hours
                         rate_display = rule.fixed_hourly_rate
@@ -772,6 +778,7 @@ def calculate_oncall_pay_for_period(
     end_dt: datetime.datetime,
     monthly_salary: int,
     oncall_rules: list[OnCallRule],
+    rate_overrides: dict[str, int | float] | None = None,
 ) -> dict:
     """
     Calculate on-call compensation for a specific time period.
@@ -845,8 +852,13 @@ def calculate_oncall_pay_for_period(
                 # Calculate hours and pay for this segment
                 segment_hours = (uncov_end - uncov_start).total_seconds() / 3600.0
 
-                # Calculate pay based on rule type
-                if rule.fixed_hourly_rate is not None:
+                # Calculate pay based on rule type (check per-user override first)
+                overrides = rate_overrides or {}
+                override_rate = overrides.get(rule.code)
+                if override_rate is not None:
+                    segment_pay = override_rate * segment_hours
+                    rate_display = override_rate
+                elif rule.fixed_hourly_rate is not None:
                     # New system: fixed SEK per hour
                     segment_pay = rule.fixed_hourly_rate * segment_hours
                     rate_display = rule.fixed_hourly_rate

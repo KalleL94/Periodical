@@ -5,19 +5,20 @@ import datetime
 from app.core.constants import OT_RATE_DIVISOR
 
 
-def calculate_overtime_pay(monthly_salary: int, hours: float) -> float:
+def calculate_overtime_pay(monthly_salary: int, hours: float, ot_hourly_rate: float | None = None) -> float:
     """
     Beräknar övertidsersättning.
-
-    Formel: (månadslön / 72) * timmar
 
     Args:
         monthly_salary: Månadslön i SEK
         hours: Antal övertidstimmar
+        ot_hourly_rate: Per-user fixed kr/tim. If None, uses salary / 72.
 
     Returns:
         Övertidsersättning i SEK
     """
+    if ot_hourly_rate is not None:
+        return ot_hourly_rate * hours
     return (monthly_salary / OT_RATE_DIVISOR) * hours
 
 

@@ -161,8 +161,11 @@ async def read_root(
         # Get on-call rules for the year
         oncall_rules = _cached_oncall_rules(safe_today.year)
 
-        # Fetch user wage once to avoid repeated queries
+        # Fetch user wage and rates once to avoid repeated queries
         user_wage = get_user_wage(db, current_user.id)
+        from app.core.rates import get_user_rates
+
+        _user_rates = get_user_rates(current_user, session=db)
 
         for day in week_data:
             # Check for absence first
@@ -208,7 +211,7 @@ async def read_root(
                 total_hours += ot_hours
 
                 if can_see_salary(current_user, current_user.id):
-                    ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours)
+                    ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_user_rates["ot"])
                     ot_pay += ot_ob_pay
 
             # Handle regular rotation shifts
@@ -216,7 +219,9 @@ async def read_root(
                 if day["shift"].code == "OC":
                     # Calculate on-call pay
                     if can_see_salary(current_user, current_user.id):
-                        oc_result = calculate_oncall_pay(day["date"], user_wage, oncall_rules)
+                        oc_result = calculate_oncall_pay(
+                            day["date"], user_wage, oncall_rules, rate_overrides=_user_rates["oncall"]
+                        )
                         oc_pay += oc_result["total_pay"]
 
                 elif day["shift"].code != "OFF":
@@ -230,7 +235,9 @@ async def read_root(
                         ob_hours += sum(ob_hours_dict.values())
 
                         if can_see_salary(current_user, current_user.id):
-                            ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, user_wage)
+                            ob_pay_dict = calculate_ob_pay(
+                                start_dt, end_dt, combined_rules, user_wage, rate_overrides=_user_rates["ob"]
+                            )
                             total_pay += sum(ob_pay_dict.values())
 
         week_summary = {
@@ -324,7 +331,7 @@ async def read_root(
             month_total_hours += ot_hours
 
             if can_see_salary(current_user, current_user.id):
-                ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours)
+                ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_user_rates["ot"])
                 month_ot_pay += ot_ob_pay
 
         # Handle regular rotation shifts
@@ -346,7 +353,9 @@ async def read_root(
             if is_effective_oc:
                 # Calculate on-call pay
                 if can_see_salary(current_user, current_user.id):
-                    oc_result = calculate_oncall_pay(current_date, user_wage, oncall_rules)
+                    oc_result = calculate_oncall_pay(
+                        current_date, user_wage, oncall_rules, rate_overrides=_user_rates["oncall"]
+                    )
                     month_oc_pay += oc_result["total_pay"]
 
             elif shift and shift.code != "OFF" and shift.code != "OC":
@@ -359,7 +368,9 @@ async def read_root(
                     month_ob_hours += sum(ob_hours_dict.values())
 
                     if can_see_salary(current_user, current_user.id):
-                        ob_pay_dict = calculate_ob_pay(start_dt, end_dt, combined_rules, user_wage)
+                        ob_pay_dict = calculate_ob_pay(
+                            start_dt, end_dt, combined_rules, user_wage, rate_overrides=_user_rates["ob"]
+                        )
                         month_total_ob_pay += sum(ob_pay_dict.values())
 
         current_date += dt.timedelta(days=1)

@@ -156,6 +156,7 @@ def generate_period_data(
     person_id: int | None = None,
     session=None,
     user_wages: dict[int, int] | None = None,
+    user_rates_map: dict[int, dict] | None = None,
 ) -> list[dict]:
     """
     Genererar schemadat för en godtycklig period.
@@ -169,6 +170,7 @@ def generate_period_data(
         person_id: Om None, returneras alla personer per dag
         session: SQLAlchemy session
         user_wages: Förladdade löner (undviker N+1 queries)
+        user_rates_map: Per-user rate overrides {person_id: rates_dict}
 
     Returns:
         Lista med dagdata
@@ -248,6 +250,7 @@ def generate_period_data(
                 absence_map,
                 oncall_override_map,
                 swap_map,
+                user_rates_map=user_rates_map,
             )
 
         days_out.append(day_info)
@@ -261,11 +264,12 @@ def generate_year_data(
     person_id: int | None = None,
     session=None,
     user_wages: dict[int, int] | None = None,
+    user_rates_map: dict[int, dict] | None = None,
 ) -> list[dict]:
     """Genererar schemadat för ett helt år."""
     start_date = datetime.date(year, 1, 1)
     end_date = datetime.date(year, 12, 31)
-    return generate_period_data(start_date, end_date, person_id, session, user_wages)
+    return generate_period_data(start_date, end_date, person_id, session, user_wages, user_rates_map)
 
 
 def generate_month_data(
@@ -274,12 +278,13 @@ def generate_month_data(
     person_id: int | None = None,
     session=None,
     user_wages: dict[int, int] | None = None,
+    user_rates_map: dict[int, dict] | None = None,
 ) -> list[dict]:
     """Genererar schemadat för en specifik månad."""
     start_date = datetime.date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
     end_date = datetime.date(year, month, last_day)
-    return generate_period_data(start_date, end_date, person_id, session, user_wages)
+    return generate_period_data(start_date, end_date, person_id, session, user_wages, user_rates_map)
 
 
 # === Privata hjälpfunktioner ===
@@ -707,6 +712,7 @@ def _populate_single_person_day(
     absence_map: dict[tuple[int, datetime.date], object] | None = None,
     oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
     swap_map: dict[tuple[int, datetime.date], str] | None = None,
+    user_rates_map: dict[int, dict] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -876,12 +882,14 @@ def _populate_single_person_day(
     # Beräkna jour-ersättning
     oncall_pay = 0.0
     oncall_details = {}
+    _person_rates = (user_rates_map or {}).get(person_id) or {}
     if shift and shift.code == "OC":
         oncall_rules = get_oncall_rules(current_day.year)
         oncall_calc = calculate_oncall_pay(
             current_day,
             user_wages.get(person_id, settings.monthly_salary),
             oncall_rules,
+            rate_overrides=_person_rates.get("oncall"),
         )
         oncall_pay = oncall_calc["total_pay"]
         oncall_details = oncall_calc
@@ -916,7 +924,12 @@ def _populate_single_person_day(
     # Om jour + övertid (samma dag ELLER föregående dag över midnatt), räkna om jour
     if shift and shift.code == "OC" and ot_shift_for_oncall:
         oncall_pay, oncall_details = _recalculate_oncall_before_ot(
-            current_day, ot_shift_for_oncall, user_wages, person_id, settings
+            current_day,
+            ot_shift_for_oncall,
+            user_wages,
+            person_id,
+            settings,
+            oncall_rate_overrides=_person_rates.get("oncall"),
         )
 
     ot_pay = 0.0
@@ -931,7 +944,8 @@ def _populate_single_person_day(
 
         # Get wage for this specific date (temporal query)
         wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
-        hourly_rate = wage_for_date / OT_RATE_DIVISOR
+        _ot_custom = _person_rates.get("ot")
+        hourly_rate = float(_ot_custom) if _ot_custom is not None else (wage_for_date / OT_RATE_DIVISOR)
 
         # Recalculate overtime pay based on historical wage
         ot_hours = ot_shift.hours
@@ -981,6 +995,7 @@ def _recalculate_oncall_before_ot(
     user_wages: dict[int, int],
     person_id: int,
     settings,
+    oncall_rate_overrides: dict[str, int | float] | None = None,
 ) -> tuple[float, dict]:
     """Räknar om jour-ersättning för perioden före OCH efter övertid.
 
@@ -1015,6 +1030,7 @@ def _recalculate_oncall_before_ot(
             ot_start_dt,
             monthly_salary,
             oncall_rules,
+            rate_overrides=oncall_rate_overrides,
         )
         total_pay += period1["total_pay"]
         combined_details["periods"].append(
@@ -1042,6 +1058,7 @@ def _recalculate_oncall_before_ot(
             day_end,
             monthly_salary,
             oncall_rules,
+            rate_overrides=oncall_rate_overrides,
         )
         total_pay += period2["total_pay"]
         combined_details["periods"].append(
