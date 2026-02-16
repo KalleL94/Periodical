@@ -51,6 +51,15 @@ class OnCallOverrideType(str, enum.Enum):
     REMOVE = "REMOVE"  # Avbokat OC-pass från rotation
 
 
+class SwapStatus(str, enum.Enum):
+    """Status of a shift swap request."""
+
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
 class User(Base):
     """User model with authentication and schedule data."""
 
@@ -241,6 +250,34 @@ class RotationEra(Base):
         return (
             f"<RotationEra(id={self.id}, start_date={self.start_date}, "
             f"end_date={self.end_date}, rotation_length={self.rotation_length})>"
+        )
+
+
+class ShiftSwap(Base):
+    """Shift swap request between two users, potentially on different dates."""
+
+    __tablename__ = "shift_swaps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    target_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    requester_date = Column(Date, nullable=False)  # Date requester gives away
+    target_date = Column(Date, nullable=False)  # Date requester wants from target
+    requester_shift_code = Column(String(10), nullable=True)
+    target_shift_code = Column(String(10), nullable=True)
+    status = Column(SQLEnum(SwapStatus), default=SwapStatus.PENDING, nullable=False)
+    message = Column(String(255), nullable=True)
+    responded_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    requester = relationship("User", foreign_keys=[requester_id])
+    target = relationship("User", foreign_keys=[target_id])
+
+    def __repr__(self):
+        return (
+            f"<ShiftSwap(id={self.id}, requester={self.requester_id}, "
+            f"target={self.target_id}, date={self.date}, status={self.status})>"
         )
 
 

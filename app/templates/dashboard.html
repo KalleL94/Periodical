@@ -6,6 +6,15 @@
         <h2>Welcome, {{ user.name }}</h2>
 
         <div class="dashboard-container">
+            <!-- Pending Swap Notification -->
+            {% if pending_swap_count and pending_swap_count > 0 %}
+            <div class="card" style="border-color: var(--warning); grid-column: 1 / -1;">
+                <h3 style="color: var(--warning); margin-bottom: 0.5rem;">Skiftbyten</h3>
+                <p>Du har <strong>{{ pending_swap_count }}</strong> väntande bytesförfrågan{{ 'gar' if pending_swap_count > 1 }}.</p>
+                <a href="/swaps" class="btn" style="margin-top: 0.5rem;">Visa byten</a>
+            </div>
+            {% endif %}
+
             <!-- Next Shifts Card -->
             {% if next_shift or next_oncall_shift %}
             <div class="card">
