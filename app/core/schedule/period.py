@@ -61,10 +61,11 @@ def build_week_data(
     persons = _get_persons()
     shift_types = get_shift_types()
 
-    # Batch fetch absences, overtime, and oncall overrides for the week to avoid N+1 queries
+    # Batch fetch absences, overtime, oncall overrides, and swaps for the week
     absence_map = _batch_fetch_absences(session, person_ids, monday, sunday)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday)
     oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday)
+    swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday)
 
     days_in_week = []
 
@@ -88,6 +89,7 @@ def build_week_data(
                     ot_shift_map,
                     absence_map,
                     oncall_override_map,
+                    swap_map,
                 )
                 for pid in person_ids
             ]
@@ -103,6 +105,7 @@ def build_week_data(
                     ot_shift_map,
                     absence_map,
                     oncall_override_map,
+                    swap_map,
                 )
             )
 
@@ -195,10 +198,11 @@ def generate_period_data(
     # Förbered person-lista
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
 
-    # Batch fetch absences, overtime shifts, and oncall overrides for the entire period to avoid N+1 queries
+    # Batch fetch absences, overtime shifts, oncall overrides, and swaps for the entire period
     absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date)
     oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, effective_start, end_date)
+    swap_map = _batch_fetch_swap_map(session, person_ids, effective_start, end_date)
 
     # Generera dagdata
     persons = _get_persons()
@@ -225,6 +229,7 @@ def generate_period_data(
                     ot_shift_map,
                     absence_map,
                     oncall_override_map,
+                    swap_map,
                 )
                 for pid in person_ids
             ]
@@ -242,6 +247,7 @@ def generate_period_data(
                 ot_shift_map,
                 absence_map,
                 oncall_override_map,
+                swap_map,
             )
 
         days_out.append(day_info)
@@ -401,6 +407,81 @@ def _batch_fetch_oncall_overrides(
     return {(override.user_id, override.date): override for override in overrides}
 
 
+def _batch_fetch_swap_map(
+    session,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> dict[tuple[int, datetime.date], str]:
+    """
+    Batch-hämtar accepterade skiftbyten för flera personer och en period.
+
+    Returns:
+        Dict med (person_id, date) -> new_shift_code
+        Each accepted swap produces two entries:
+        - (requester_id, requester_date) -> target_shift_code
+        - (target_id, target_date) -> requester_shift_code
+    """
+    if not session:
+        return {}
+
+    from app.database.database import ShiftSwap, SwapStatus
+
+    # A swap affects both people on both dates, so we need swaps where:
+    # - either person is in our person_ids AND either date is in our range
+    swaps = (
+        session.query(ShiftSwap)
+        .filter(
+            ShiftSwap.status == SwapStatus.ACCEPTED,
+            (ShiftSwap.requester_id.in_(person_ids) | ShiftSwap.target_id.in_(person_ids)),
+            (
+                ShiftSwap.requester_date.between(start_date, end_date)
+                | ShiftSwap.target_date.between(start_date, end_date)
+            ),
+        )
+        .all()
+    )
+
+    # Build user_id → rotation_person_id mapping for shift lookups
+    from app.database.database import User
+
+    all_user_ids = set()
+    for swap in swaps:
+        all_user_ids.update([swap.requester_id, swap.target_id])
+    user_rotation = {}
+    if all_user_ids:
+        for u in session.query(User).filter(User.id.in_(all_user_ids)).all():
+            user_rotation[u.id] = u.rotation_person_id
+
+    pid_set = set(person_ids)
+    swap_map = {}
+    for swap in swaps:
+        req_rot = user_rotation.get(swap.requester_id, swap.requester_id)
+        tgt_rot = user_rotation.get(swap.target_id, swap.target_id)
+
+        # On requester_date: they swap shifts
+        if swap.requester_id in pid_set:
+            # Requester gets what target normally has on this date
+            tgt_result = determine_shift_for_date(swap.requester_date, tgt_rot)
+            swap_map[(swap.requester_id, swap.requester_date)] = (
+                tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
+            )
+        if swap.target_id in pid_set:
+            # Target gets requester's shift on this date
+            swap_map[(swap.target_id, swap.requester_date)] = swap.requester_shift_code or "OFF"
+
+        # On target_date: they swap shifts
+        if swap.target_id in pid_set:
+            # Target gets what requester normally has on this date
+            req_result = determine_shift_for_date(swap.target_date, req_rot)
+            swap_map[(swap.target_id, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
+        if swap.requester_id in pid_set:
+            # Requester gets target's shift on this date
+            swap_map[(swap.requester_id, swap.target_date)] = swap.target_shift_code or "OFF"
+
+    return swap_map
+
+
 def _build_person_day_basic(
     date: datetime.date,
     person_id: int,
@@ -411,6 +492,7 @@ def _build_person_day_basic(
     ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
     absence_map: dict[tuple[int, datetime.date], object] | None = None,
     oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
+    swap_map: dict[tuple[int, datetime.date], str] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
@@ -495,6 +577,27 @@ def _build_person_day_basic(
             "start": None,
             "end": None,
         }
+
+    # Kolla skiftbyte
+    if swap_map is not None:
+        new_code = swap_map.get((person_id, date))
+        if new_code:
+            result = determine_shift_for_date(date, person_id)
+            original_shift, rotation_week = result if result else (None, None)
+            swapped_shift = next((s for s in shift_types if s.code == new_code), None)
+            if swapped_shift:
+                hours, start, end = calculate_shift_hours(date, swapped_shift.code)
+                return {
+                    "person_id": person_id,
+                    "person_name": person_name,
+                    "shift": swapped_shift,
+                    "original_shift": original_shift,
+                    "rotation_week": rotation_week,
+                    "rotation_length": rotation_length,
+                    "hours": hours,
+                    "start": start,
+                    "end": end,
+                }
 
     # Normalt skift
     result = determine_shift_for_date(date, person_id)
@@ -603,6 +706,7 @@ def _populate_single_person_day(
     ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
     absence_map: dict[tuple[int, datetime.date], object] | None = None,
     oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
+    swap_map: dict[tuple[int, datetime.date], str] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -703,6 +807,23 @@ def _populate_single_person_day(
         rotation_week = None
         hours, start, end = 0.0, None, None
         ob = {}
+    elif swap_map is not None and (person_id, current_day) in swap_map:
+        # Skiftbyte: ersätt med det nya skiftet
+        new_code = swap_map[(person_id, current_day)]
+        result = determine_shift_for_date(current_day, person_id)
+        rotation_week = result[1] if result else None
+        swapped_shift = next((s for s in shift_types if s.code == new_code), None)
+        if swapped_shift:
+            shift = swapped_shift
+            hours, start, end = calculate_shift_hours(current_day, shift.code)
+            if start is not None and shift.code != "OC":
+                ob = calculate_ob_hours(start, end, combined_ob_rules)
+            else:
+                ob = {}
+        else:
+            shift, rotation_week = None, None
+            hours, start, end = 0.0, None, None
+            ob = {}
     else:
         result = determine_shift_for_date(current_day, person_id)
         if result is None or result[0] is None:

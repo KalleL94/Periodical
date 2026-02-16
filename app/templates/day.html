@@ -393,6 +393,81 @@
                 </tbody>
             </table>
         {% endif %}
+
+        {% if swap_users and user and user.id == person_id %}
+        <h3 style="margin-top: 1.5rem;">Föreslå skiftbyte</h3>
+        <form method="POST" action="/swaps/propose" class="ot-form" id="swap-form">
+            <input type="hidden" name="requester_date" value="{{ date }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="target_id">Byt med:</label>
+                    <select id="target_id" name="target_id" required>
+                        <option value="">-- Välj kollega --</option>
+                        {% for u in swap_users %}
+                        <option value="{{ u.id }}">{{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="target_date">Deras pass:</label>
+                    <select id="target_date" name="target_date" required disabled>
+                        <option value="">-- Välj kollega först --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="swap_message">Meddelande (valfritt):</label>
+                    <input type="text" id="swap_message" name="message" placeholder="T.ex. kan jag ta ditt pass?">
+                </div>
+            </div>
+            <button type="submit" class="btn" id="swap-submit" disabled>Föreslå byte</button>
+            <p class="info-text">
+                Du erbjuder ditt pass denna dag
+                {% if shift %}
+                    ({{ shift.code }}{% if ob_hours %}, {{ "%.1f"|format(ob_hours.values()|sum) }}h OB{% endif %})
+                {% endif %}
+                och väljer vilket av kollegans pass du vill ta.
+            </p>
+        </form>
+        <script>
+            document.getElementById('target_id').addEventListener('change', function() {
+                const userId = this.value;
+                const targetSelect = document.getElementById('target_date');
+                const submitBtn = document.getElementById('swap-submit');
+
+                if (!userId) {
+                    targetSelect.innerHTML = '<option value="">-- Välj kollega först --</option>';
+                    targetSelect.disabled = true;
+                    submitBtn.disabled = true;
+                    return;
+                }
+
+                targetSelect.innerHTML = '<option value="">Laddar pass...</option>';
+                targetSelect.disabled = true;
+
+                const offering = '{{ shift.code if shift else "OFF" }}';
+                const refDate = '{{ date }}';
+                fetch('/swaps/api/shifts/' + userId + '?offering=' + offering + '&ref_date=' + refDate)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.shifts.length === 0) {
+                            targetSelect.innerHTML = '<option value="">Inga kommande pass</option>';
+                            submitBtn.disabled = true;
+                            return;
+                        }
+                        let html = '<option value="">-- Välj pass --</option>';
+                        data.shifts.forEach(s => {
+                            const ob = s.ob_hours > 0 ? ' (' + s.ob_hours + 'h OB)' : '';
+                            html += '<option value="' + s.date + '">' + s.date_display + ' — ' + s.label + ob + '</option>';
+                        });
+                        targetSelect.innerHTML = html;
+                        targetSelect.disabled = false;
+                        submitBtn.disabled = false;
+                    });
+            });
+        </script>
+        {% endif %}
         </section>
 
         {% if show_salary %}

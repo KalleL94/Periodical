@@ -28,7 +28,7 @@ from app.core.schedule import (
 )
 from app.core.storage import calculate_tax_from_table
 from app.core.utils import get_safe_today, get_today
-from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, get_db
+from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftSwap, SwapStatus, User, get_db
 from app.routes.shared import templates
 
 router = APIRouter(tags=["dashboard"])
@@ -457,6 +457,13 @@ async def read_root(
             if upcoming_vacation:
                 break
 
+    # Check for pending shift swap requests
+    pending_swap_count = (
+        db.query(ShiftSwap)
+        .filter(ShiftSwap.target_id == current_user.id, ShiftSwap.status == SwapStatus.PENDING)
+        .count()
+    )
+
     return render_template(
         templates,
         "dashboard.html",
@@ -469,6 +476,7 @@ async def read_root(
             "month_summary": month_summary,
             "upcoming_vacation": upcoming_vacation,
             "can_see_salary": can_see_salary(current_user, current_user.id),
+            "pending_swap_count": pending_swap_count,
         },
         user=current_user,
     )
