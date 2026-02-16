@@ -96,6 +96,7 @@ def calculate_ob_pay(
     end_dt: datetime.datetime,
     rules: list[ObRule],
     monthly_salary: int,
+    rate_overrides: dict[str, float] | None = None,
 ) -> dict[str, float]:
     """
     Beräknar OB-ersättning per kod.
@@ -105,18 +106,26 @@ def calculate_ob_pay(
         end_dt: Passens sluttid
         rules: Lista av OB-regler
         monthly_salary: Månadslön i SEK
+        rate_overrides: Per-user fixed kr/tim overrides, e.g. {"OB1": 61.67}
 
     Returns:
         Dict med OB-kod -> ersättning i SEK
     """
     hours = calculate_ob_hours(start_dt, end_dt, rules)
+    overrides = rate_overrides or {}
 
     pays = {}
     for rule in rules:
         h = hours.get(rule.code, 0.0)
-        rate = getattr(rule, "rate", None)
-        if rate and h > 0:
-            pays[rule.code] = h * (monthly_salary / float(rate))
+        if h > 0:
+            fixed_rate = overrides.get(rule.code)
+            if fixed_rate is not None:
+                # Per-user override: fixed kr/tim
+                pays[rule.code] = h * float(fixed_rate)
+            else:
+                # Default: salary / divisor
+                divisor = getattr(rule, "rate", None)
+                pays[rule.code] = h * (monthly_salary / float(divisor)) if divisor else 0.0
         else:
             pays[rule.code] = 0.0
 

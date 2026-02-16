@@ -40,11 +40,16 @@ async def add_overtime_shift(
     # Parse date first (needed for wage lookup)
     ot_date = datetime.strptime(date, "%Y-%m-%d").date()
 
-    # Get user's wage for the specific date (temporal query)
+    # Get user's wage and rates for the specific date (temporal query)
     monthly_salary = get_user_wage(session, user_id, effective_date=ot_date)
 
+    from app.core.rates import get_user_rates
+
+    ot_user = session.query(User).filter(User.id == user_id).first()
+    _ot_rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
+
     # Calculate OT pay
-    ot_pay = calculate_overtime_pay(monthly_salary, hours)
+    ot_pay = calculate_overtime_pay(monthly_salary, hours, ot_hourly_rate=_ot_rates.get("ot"))
 
     # Parse times
     start_t = datetime.strptime(start_time, "%H:%M").time()

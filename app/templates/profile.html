@@ -194,4 +194,10 @@
             📅 Exportera schema till kalender på engelska
         </a>
     </section>
+
+    <!-- Ersättningssatser -->
+    {% set rates_form_action = "/profile/rates" %}
+    {% set rates_delete_prefix = "/profile/delete-rate/" %}
+    {% include "rates_form.html" with context %}
+
 {% endblock %}

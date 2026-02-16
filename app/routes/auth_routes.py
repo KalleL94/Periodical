@@ -283,6 +283,8 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
     # Get wage history for current user
     wage_history = get_wage_history(db, current_user.id)
 
+    from app.core.rates import get_all_defaults, get_rate_history
+
     return templates.TemplateResponse(
         "profile.html",
         {
@@ -290,6 +292,9 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
             "user": current_user,
             "available_tax_tables": available_tax_tables,
             "wage_history": wage_history,
+            "rate_defaults": get_all_defaults(),
+            "custom_rates": current_user.custom_rates or {},
+            "rate_history": get_rate_history(db, current_user.id),
         },
     )
 
@@ -303,6 +308,7 @@ async def update_profile(
     db: Session = Depends(get_db),
 ):
     """Update user profile."""
+    from app.core.rates import get_all_defaults, get_rate_history
     from app.core.storage import get_available_tax_tables
 
     # Validate tax table
@@ -315,6 +321,9 @@ async def update_profile(
                 "user": current_user,
                 "available_tax_tables": available_tax_tables,
                 "error": f"Ogiltig skattetabell: {tax_table}",
+                "rate_defaults": get_all_defaults(),
+                "custom_rates": current_user.custom_rates or {},
+                "rate_history": get_rate_history(db, current_user.id),
             },
             status_code=400,
         )
@@ -332,6 +341,39 @@ async def update_profile(
     return RedirectResponse(url="/profile", status_code=302)
 
 
+@router.post("/profile/rates", name="profile_update_rates")
+async def profile_update_rates(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: add new rate entry with effective date."""
+    from app.core.rates import add_new_rates
+
+    form = await request.form()
+    rates = _parse_rates_form(form)
+    effective_from = form.get("effective_from", "").strip()
+
+    if not effective_from:
+        raise HTTPException(status_code=400, detail="Från-datum krävs")
+
+    try:
+        effective_date = datetime.datetime.strptime(effective_from, "%Y-%m-%d").date()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Ogiltigt datum: {e}") from e
+
+    add_new_rates(
+        session=db,
+        user_id=current_user.id,
+        rates=rates,
+        effective_from=effective_date,
+        created_by=current_user.id,
+    )
+    clear_schedule_cache()
+
+    return RedirectResponse(url="/profile", status_code=302)
+
+
 @router.post("/profile/password", name="change_password")
 async def change_password(
     request: Request,
@@ -342,21 +384,28 @@ async def change_password(
 ):
     """Change user password."""
     from app.auth.auth import verify_password
+    from app.core.rates import get_all_defaults, get_rate_history
 
-    if not verify_password(current_password, current_user.password_hash):
+    def _profile_error(msg: str):
         return templates.TemplateResponse(
             "profile.html",
-            {"request": request, "user": current_user, "error": "Fel nuvarande lösenord"},
+            {
+                "request": request,
+                "user": current_user,
+                "error": msg,
+                "rate_defaults": get_all_defaults(),
+                "custom_rates": current_user.custom_rates or {},
+                "rate_history": get_rate_history(db, current_user.id),
+            },
             status_code=400,
         )
+
+    if not verify_password(current_password, current_user.password_hash):
+        return _profile_error("Fel nuvarande lösenord")
 
     # Add length validation
     if len(new_password) < 8:
-        return templates.TemplateResponse(
-            "profile.html",
-            {"request": request, "user": current_user, "error": "Nytt lösenord måste vara minst 8 tecken"},
-            status_code=400,
-        )
+        return _profile_error("Nytt lösenord måste vara minst 8 tecken")
 
     current_user.password_hash = get_password_hash(new_password)
     try:
@@ -459,6 +508,21 @@ async def profile_delete_wage(
     db.commit()
 
     # Clear schedule cache
+    clear_schedule_cache()
+
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/delete-rate/{rate_id}", name="profile_delete_rate")
+async def profile_delete_rate(
+    rate_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: delete a rate history entry (only their own)."""
+    from app.core.rates import delete_rate_history
+
+    delete_rate_history(db, rate_id, current_user.id)
     clear_schedule_cache()
 
     return RedirectResponse(url="/profile", status_code=302)
@@ -914,6 +978,8 @@ async def admin_edit_user_page(
     # Get vacation balance
     vacation_balance = calculate_vacation_balance(edit_user, get_today().year, db)
 
+    from app.core.rates import get_all_defaults, get_rate_history
+
     return templates.TemplateResponse(
         "admin_user_edit.html",
         {
@@ -924,6 +990,9 @@ async def admin_edit_user_page(
             "wage_history": wage_history,
             "person_history": person_history,
             "vacation_balance": vacation_balance,
+            "rate_defaults": get_all_defaults(),
+            "custom_rates": edit_user.custom_rates or {},
+            "rate_history": get_rate_history(db, edit_user.id),
         },
     )
 
@@ -973,6 +1042,90 @@ async def admin_update_user(
         raise
 
     return RedirectResponse(url="/admin/users", status_code=302)
+
+
+def _parse_rates_form(form) -> dict:
+    """Parse rate form fields into custom_rates dict."""
+    from app.core.rates import DEFAULT_OB_DIVISORS, DEFAULT_VACATION_RATES
+
+    custom = {}
+
+    # OB rates (kr/tim, fixed)
+    ob = {}
+    for code in DEFAULT_OB_DIVISORS:
+        val = form.get(f"rate_ob_{code}", "").strip()
+        if val:
+            ob[code] = float(val)
+    if ob:
+        custom["ob"] = ob
+
+    # OT rate (kr/tim, fixed)
+    ot_val = form.get("rate_ot", "").strip()
+    if ot_val:
+        custom["ot"] = float(ot_val)
+
+    # On-call rates (fixed SEK/hr) — UI shows 4 groups, fan out weekend to sub-codes
+    oncall = {}
+    for code in ["OC_WEEKDAY", "OC_WEEKEND", "OC_HOLIDAY", "OC_SPECIAL"]:
+        val = form.get(f"rate_oc_{code}", "").strip()
+        if val:
+            rate = float(val)
+            if code == "OC_WEEKEND":
+                for sub in ["OC_WEEKEND", "OC_WEEKEND_SAT", "OC_WEEKEND_SUN", "OC_WEEKEND_MON", "OC_HOLIDAY_EVE"]:
+                    oncall[sub] = rate
+            else:
+                oncall[code] = rate
+    if oncall:
+        custom["oncall"] = oncall
+
+    # Vacation percentages
+    vac = {}
+    for key in DEFAULT_VACATION_RATES:
+        val = form.get(f"rate_vac_{key}", "").strip()
+        if val:
+            vac[key] = float(val)
+    if vac:
+        custom["vacation"] = vac
+
+    return custom
+
+
+@router.post("/admin/users/{user_id}/update-rates", name="admin_update_rates")
+async def admin_update_rates(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: add new rate entry with effective date for a user."""
+    from app.core.rates import add_new_rates
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    form = await request.form()
+    rates = _parse_rates_form(form)
+    effective_from = form.get("effective_from", "").strip()
+
+    if not effective_from:
+        raise HTTPException(status_code=400, detail="Från-datum krävs")
+
+    try:
+        effective_date = datetime.datetime.strptime(effective_from, "%Y-%m-%d").date()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Ogiltigt datum: {e}") from e
+
+    add_new_rates(
+        session=db,
+        user_id=user_id,
+        rates=rates,
+        effective_from=effective_date,
+        created_by=current_user.id,
+    )
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 @router.post("/admin/users/{user_id}/add-wage", name="admin_add_wage")
@@ -1074,6 +1227,22 @@ async def admin_delete_wage(
     db.commit()
 
     # Clear schedule cache
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/delete-rate/{rate_id}", name="admin_delete_rate")
+async def admin_delete_rate(
+    user_id: int,
+    rate_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete a rate history entry for a user."""
+    from app.core.rates import delete_rate_history
+
+    delete_rate_history(db, rate_id, user_id)
     clear_schedule_cache()
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)

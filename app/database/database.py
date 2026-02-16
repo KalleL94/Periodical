@@ -92,6 +92,7 @@ class User(Base):
     vacation_saved = Column(
         JSON, default=dict
     )  # Saved vacation days per year: {"2025": {"saved": 3, "paid_out": 2, "payout_amount": 3404.0}}
+    custom_rates = Column(JSON, default=dict)  # Per-user rate overrides (OB, OT, oncall, vacation)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -187,6 +188,33 @@ class WageHistory(Base):
     def __repr__(self):
         return (
             f"<WageHistory(id={self.id}, user_id={self.user_id}, wage={self.wage}, "
+            f"effective_from={self.effective_from}, effective_to={self.effective_to})>"
+        )
+
+
+class RateHistory(Base):
+    """Rate history model for tracking per-user rate changes over time.
+
+    Mirrors WageHistory pattern: effective_from/effective_to with NULL = current.
+    The rates JSON stores only overrides (same format as User.custom_rates).
+    """
+
+    __tablename__ = "rate_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rates = Column(JSON, nullable=False)  # Same format as User.custom_rates
+    effective_from = Column(Date, nullable=False)
+    effective_to = Column(Date, nullable=True)  # NULL = current
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return (
+            f"<RateHistory(id={self.id}, user_id={self.user_id}, "
             f"effective_from={self.effective_from}, effective_to={self.effective_to})>"
         )
 

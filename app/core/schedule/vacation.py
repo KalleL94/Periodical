@@ -242,9 +242,10 @@ def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict,
 
     monthly_salary = pay.get("monthly_salary", 0)
     supplement_per_day = pay.get("supplement_per_day", 0)
+    payout_pct = pay.get("payout_pct", 0.046)
 
-    # Semesterersättning = 4.6% base + semestertillägg (0.8% + 0.5%)
-    payout_per_day = round(monthly_salary * 0.046 + supplement_per_day, 2)
+    # Semesterersättning = payout_pct base + semestertillägg
+    payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
     if remaining_total <= 0:
         days_saved = 0
@@ -332,13 +333,17 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         vacation_json=user.vacation,
     )
 
-    # Calculate vacation pay (semestertillägg)
+    # Calculate vacation pay (semestertillägg) with per-user rates
+    from app.core.rates import get_user_rates
+
+    user_rates = get_user_rates(user)
     pay = calculate_vacation_pay(
         user=user,
         entitled_days=entitled_days,
         earning_start=earning_start,
         earning_end=earning_end,
         db=db,
+        vacation_rates=user_rates["vacation"],
     )
 
     # Get saved days from previous closed years
@@ -365,7 +370,8 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         # Year is open — show projection of what will happen at year-end
         monthly_salary = pay.get("monthly_salary", 0)
         supplement_per_day = pay.get("supplement_per_day", 0)
-        payout_per_day = round(monthly_salary * 0.046 + supplement_per_day, 2)
+        payout_pct = pay.get("payout_pct", 0.046)
+        payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
         days_to_save = min(max(remaining_total, 0), 5)
         days_to_pay_out = max(remaining_total - 5, 0)
@@ -403,6 +409,7 @@ def calculate_vacation_pay(
     earning_start: datetime.date,
     earning_end: datetime.date,
     db,
+    vacation_rates: dict | None = None,
 ) -> dict:
     """
     Calculate vacation supplement (semestertillägg) per Handelns tjänstemannaavtal 2025-2027.
@@ -437,8 +444,9 @@ def calculate_vacation_pay(
     if monthly_salary == 0:
         monthly_salary = user.wage if hasattr(user, "wage") else 0
 
-    # Fixed supplement: 0.8% of monthly salary per vacation day
-    fixed_per_day = round(monthly_salary * 0.008, 2)
+    # Fixed supplement: 0.8% of monthly salary per vacation day (customizable)
+    vac = vacation_rates or {"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046}
+    fixed_per_day = round(monthly_salary * vac["fixed_pct"], 2)
 
     # Sum ALL variable earnings during earning year
     ob_total = 0.0
@@ -473,8 +481,8 @@ def calculate_vacation_pay(
     # All variable components are included (no exclusion rules for semestertillägg)
     variable_total = ob_total + ot_total + oncall_total
 
-    # Variable supplement: 0.5% of total variable earnings, per vacation day
-    variable_per_day = round(variable_total * 0.005, 2)
+    # Variable supplement: 0.5% of total variable earnings, per vacation day (customizable)
+    variable_per_day = round(variable_total * vac["variable_pct"], 2)
 
     # Total supplement per day
     supplement_per_day = round(fixed_per_day + variable_per_day, 2)
@@ -489,4 +497,5 @@ def calculate_vacation_pay(
         "ot_total": round(ot_total, 2),
         "oncall_total": round(oncall_total, 2),
         "monthly_salary": monthly_salary,
+        "payout_pct": vac["payout_pct"],
     }

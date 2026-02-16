@@ -335,6 +335,11 @@
             Hantera semester
         </a>
     </div>
+
+    <!-- Ersättningssatser -->
+    {% set rates_form_action = "/admin/users/" ~ edit_user.id ~ "/update-rates" %}
+    {% set rates_delete_prefix = "/admin/users/" ~ edit_user.id ~ "/delete-rate/" %}
+    {% include "rates_form.html" with context %}
 </div>
 
 {% endblock %}
