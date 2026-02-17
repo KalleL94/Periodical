@@ -531,29 +531,14 @@ def summarize_year_for_person(
     settings = get_settings()
     user_wages = get_all_user_wages(session)
 
-    # Resolve per-user rates for schedule generation
-    _rates_map = None
+    # Resolve user for per-month rate lookups
+    _rate_user = None
     if session:
         from app.core.rates import get_user_rates
         from app.database.database import User
 
         _uid = wage_user_id if wage_user_id is not None else person_id
         _rate_user = session.query(User).filter(User.id == _uid).first()
-        if _rate_user:
-            _user_rates = get_user_rates(_rate_user, session=session)
-            _rates_map = {person_id: _user_rates}
-
-    # Hämta data för arbete utfört från dec (year-1) till nov (year)
-    # Detta är allt arbete som betalas ut under det angivna året
-    prev_year_dec_days = generate_month_data(
-        year - 1, 12, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map
-    )
-    current_year_days = generate_year_data(
-        year, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map
-    )
-
-    # Kombinera december (year-1) med jan-nov (year) för komplett arbetsdata
-    all_work_days = prev_year_dec_days + current_year_days
 
     # Bygg kartläggning av utbetalnings-månader
     payment_mappings = _build_payment_month_mapping(year)
@@ -604,6 +589,22 @@ def summarize_year_for_person(
                 "off_days": 0,
             }
         else:
+            # Generate per-month data with temporal rates for correct on-call/OT
+            _month_rates_map = None
+            if _rate_user:
+                _month_effective = dt.date(work_year, work_month, 1)
+                _month_rates = get_user_rates(_rate_user, session=session, effective_date=_month_effective)
+                _month_rates_map = {person_id: _month_rates}
+
+            month_days = generate_month_data(
+                work_year,
+                work_month,
+                person_id,
+                session=session,
+                user_wages=user_wages,
+                user_rates_map=_month_rates_map,
+            )
+
             # Sammanfatta baserat på ARBETS-månad, inte utbetalnings-månad
             m = summarize_month_for_person(
                 work_year,
@@ -611,9 +612,9 @@ def summarize_year_for_person(
                 person_id,
                 session=session,
                 user_wages=user_wages,
-                year_days=all_work_days,  # Skicka kombinerad data
-                payment_year=mapping["payment_year"],  # Skicka utbetalningsår för skattetabell
-                wage_user_id=wage_user_id,  # Pass through for wage lookup
+                year_days=month_days,
+                payment_year=mapping["payment_year"],
+                wage_user_id=wage_user_id,
             )
 
         # Lägg till utbetalnings-metadata

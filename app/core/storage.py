@@ -306,6 +306,10 @@ def calculate_tax_from_table(income: float, table_number: str, year: int | None 
         StorageError: If tax table cannot be loaded
         ValueError: If table number is invalid
     """
+    # Round to nearest whole SEK — Swedish tax tables use integer brackets,
+    # and floating point arithmetic can land between boundaries (e.g. 58600.00000000001)
+    income = round(income)
+
     if income <= 0:
         return 0.0
 
