@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -118,6 +119,7 @@ class OvertimeShift(Base):
     end_time = Column(Time, nullable=False)
     hours = Column(Float, nullable=False)
     ot_pay = Column(Float, nullable=False)
+    is_extension = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     created_by = Column(Integer, ForeignKey("users.id"))
 

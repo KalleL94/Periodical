@@ -192,16 +192,16 @@
                         <th class="th_right">Start</th>
                         <th class="th_right">Slut</th>
                         <th class="th_right">Norm</th>
-                        <th class="th_right">OB1(1,12)</th>
-                        <th class="th_right">OB2(1,18)</th>
-                        <th class="th_right">OB3(1,24)</th>
-                        <th class="th_right">OB4(1,24)</th>
-                        <th class="th_right">OB5(1,47)</th>
-                        <th class="th_right">B.Vardag</th>
-                        <th class="th_right">B.Helg</th>
-                        <th class="th_right">B.Helgdag</th>
-                        <th class="th_right">B.Storhelg</th>
-                        <th class="th_right">OT</th>
+                        <th class="th_right">OB1(x1,12)</th>
+                        <th class="th_right">OB2(x1,18)</th>
+                        <th class="th_right">OB3(x1,24)</th>
+                        <th class="th_right">OB4(x1,24)</th>
+                        <th class="th_right">OB5(x1,47)</th>
+                        <th class="th_right">B.Vardag(75)</th>
+                        <th class="th_right">B.Helg(97)</th>
+                        <th class="th_right">B.Helgdag(112)</th>
+                        <th class="th_right">B.Storhelg(192)</th>
+                        <th class="th_right">ÖT(x2)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -264,6 +264,10 @@
                             {% else %}
                                 {% set t_start = '' %}
                                 {% set t_end = '' %}
+                            {% endif %}
+                            {# För förlängningar: visa faktisk sluttid från OT-data #}
+                            {% if d.ot_details and d.ot_details.get('is_extension') %}
+                                {% set t_end = d.ot_details.end_time[:5] %}
                             {% endif %}
 
                             <tr>

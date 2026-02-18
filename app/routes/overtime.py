@@ -23,6 +23,7 @@ async def add_overtime_shift(
     start_time: str = Form(...),
     end_time: str = Form(...),
     hours: float = Form(8.5),
+    is_extension: bool = Form(False),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -63,6 +64,7 @@ async def add_overtime_shift(
         end_time=end_t,
         hours=hours,
         ot_pay=ot_pay,
+        is_extension=is_extension,
         created_by=current_user.id,
     )
 
