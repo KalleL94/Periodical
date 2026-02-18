@@ -235,46 +235,41 @@ async def show_day_for_person(
     absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
 
     if ot_shift and not absence:  # Skip OT if there's an absence
-        # Replace shift display with OT shift
         from app.core.models import ShiftType
         from app.core.storage import load_shift_types
 
-        all_shifts = load_shift_types()
-        ot_shift_type = next((s for s in all_shifts if s.code == "OT"), None)
-        if ot_shift_type:
-            # Create a copy of the OT shift type with actual times from database
-            ot_start_str = str(ot_shift.start_time)
-            ot_end_str = str(ot_shift.end_time)
+        ot_start_str = str(ot_shift.start_time)
+        ot_end_str = str(ot_shift.end_time)
+        if len(ot_start_str.split(":")) == 3:
+            ot_start_str = ":".join(ot_start_str.split(":")[:2])
+        if len(ot_end_str.split(":")) == 3:
+            ot_end_str = ":".join(ot_end_str.split(":")[:2])
 
-            # Remove seconds if present (format as HH:MM)
-            if len(ot_start_str.split(":")) == 3:
-                ot_start_str = ":".join(ot_start_str.split(":")[:2])
-            if len(ot_end_str.split(":")) == 3:
-                ot_end_str = ":".join(ot_end_str.split(":")[:2])
+        if not ot_shift.is_extension:
+            # Replace shift display with OT shift
+            all_shifts = load_shift_types()
+            ot_shift_type = next((s for s in all_shifts if s.code == "OT"), None)
+            if ot_shift_type:
+                shift = ShiftType(
+                    code="OT",
+                    label=ot_shift_type.label,
+                    start_time=ot_start_str,
+                    end_time=ot_end_str,
+                    color=ot_shift_type.color,
+                )
+                hours = ot_shift.hours
 
-            # Create custom shift with actual OT times
-            shift = ShiftType(
-                code="OT",
-                label=ot_shift_type.label,
-                start_time=ot_start_str,
-                end_time=ot_end_str,
-                color=ot_shift_type.color,
-            )
-            hours = ot_shift.hours
-
-            # Parse OT shift times for calculations
-            ot_start_full = ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
-            ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
-
-            try:
-                start_time_obj = datetime.strptime(ot_start_full, "%H:%M:%S").time()
-                end_time_obj = datetime.strptime(ot_end_full, "%H:%M:%S").time()
-                start_dt = datetime.combine(date_obj, start_time_obj)
-                end_dt = datetime.combine(date_obj, end_time_obj)
-                if end_dt <= start_dt:
-                    end_dt = end_dt + timedelta(days=1)
-            except ValueError:
-                pass
+                ot_start_full = ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
+                ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
+                try:
+                    start_time_obj = datetime.strptime(ot_start_full, "%H:%M:%S").time()
+                    end_time_obj = datetime.strptime(ot_end_full, "%H:%M:%S").time()
+                    start_dt = datetime.combine(date_obj, start_time_obj)
+                    end_dt = datetime.combine(date_obj, end_time_obj)
+                    if end_dt <= start_dt:
+                        end_dt = end_dt + timedelta(days=1)
+                except ValueError:
+                    pass
 
         # Recalculate overtime pay based on historical wage
         from app.core.constants import OT_RATE_DIVISOR
@@ -288,6 +283,7 @@ async def show_day_for_person(
             "hours": ot_shift.hours,
             "pay": ot_pay,
             "hourly_rate": hourly_rate,
+            "is_extension": ot_shift.is_extension,
         }
 
     # Calculate on-call pay if this is effectively an on-call shift (considering overrides)

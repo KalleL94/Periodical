@@ -100,66 +100,149 @@
                 </tbody>
             </table>
 
-            <h3>Övertidspass (OT)</h3>
+            <h3>Övertid (OT)</h3>
 
             {% if ot_shift %}
-                <div class="ot-display">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Start</th>
-                                <th>Slut</th>
-                                <th>Timmar</th>
-                                <th>Timlön</th>
-                                <th>OT-lön</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{{ ot_shift.start_time }}</td>
-                                <td>{{ ot_shift.end_time }}</td>
-                                <td>{{ "%.2f"|format(ot_shift.hours) }}</td>
-                                <td>{{ "%.2f"|format(ot_shift.hourly_rate) }} kr/h</td>
-                                <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
-                                <td>
-                                    <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
-                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort övertidspass?')">Ta bort</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                {% if ot_shift.is_extension %}
+                    {# Förlängning av ordinarie skift #}
+                    <div class="ot-display">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Typ</th>
+                                    <th>Start</th>
+                                    <th>Slut</th>
+                                    <th>Extra tid</th>
+                                    <th>Timlön</th>
+                                    <th>OT-lön</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge" style="background:#f59e0b;color:#000;">Förlängning</span></td>
+                                    <td>{{ ot_shift.start_time }}</td>
+                                    <td>{{ ot_shift.end_time }}</td>
+                                    <td>{{ "%.2f"|format(ot_shift.hours) }} h</td>
+                                    <td>{{ "%.2f"|format(ot_shift.hourly_rate) }} kr/h</td>
+                                    <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
+                                    <td>
+                                        <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort förlängning?')">Ta bort</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    {# Inkallat övertidspass #}
+                    <div class="ot-display">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Start</th>
+                                    <th>Slut</th>
+                                    <th>Timmar</th>
+                                    <th>Timlön</th>
+                                    <th>OT-lön</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>{{ ot_shift.start_time }}</td>
+                                    <td>{{ ot_shift.end_time }}</td>
+                                    <td>{{ "%.2f"|format(ot_shift.hours) }}</td>
+                                    <td>{{ "%.2f"|format(ot_shift.hourly_rate) }} kr/h</td>
+                                    <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
+                                    <td>
+                                        <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort övertidspass?')">Ta bort</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
 
-                    {% if original_shift and original_shift.code == 'OC' %}
-                    <p class="info-text">
-                        <strong>OC-pass avslutas:</strong> OC-lön 00:00-{{ ot_shift.start_time }}, sedan OT-lön {{ ot_shift.start_time }}-{{ ot_shift.end_time }}
-                    </p>
-                    {% endif %}
-                </div>
+                        {% if original_shift and original_shift.code == 'OC' %}
+                        <p class="info-text">
+                            <strong>OC-pass avslutas:</strong> OC-lön 00:00-{{ ot_shift.start_time }}, sedan OT-lön {{ ot_shift.start_time }}-{{ ot_shift.end_time }}
+                        </p>
+                        {% endif %}
+                    </div>
+                {% endif %}
             {% else %}
-                <form method="POST" action="/overtime/add" class="ot-form">
+                {# Förlängningsformulär för ordinarie arbetspass #}
+                {% if shift and shift.code in ('N1', 'N2', 'N3') %}
+                    <p class="info-text" style="margin-bottom:0.5rem;">Stannade du kvar efter {{ shift.end_time }}? Logga förlängning:</p>
+                    <form method="POST" action="/overtime/add" class="ot-form" id="ext-form">
+                        <input type="hidden" name="user_id" value="{{ person_id }}">
+                        <input type="hidden" name="date" value="{{ date }}">
+                        <input type="hidden" name="is_extension" value="true">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ext_start_time">Ordinarie slut:</label>
+                                <input type="time" id="ext_start_time" name="start_time" value="{{ shift.end_time }}" readonly style="opacity:0.6;">
+                            </div>
+                            <div class="form-group">
+                                <label for="ext_end_time">Faktisk sluttid:</label>
+                                <input type="time" id="ext_end_time" name="end_time" value="{{ shift.end_time }}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="ext_hours">Timmar:</label>
+                                <input type="number" id="ext_hours" name="hours" value="0" step="0.01" min="0.01" max="8" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Logga förlängning</button>
+                    </form>
+
+                    <script>
+                    (function() {
+                        var startInput = document.getElementById('ext_start_time');
+                        var endInput = document.getElementById('ext_end_time');
+                        var hoursInput = document.getElementById('ext_hours');
+
+                        function updateHours() {
+                            var start = startInput.value, end = endInput.value;
+                            if (!start || !end) return;
+                            var sm = parseInt(start.split(':')[0]) * 60 + parseInt(start.split(':')[1]);
+                            var em = parseInt(end.split(':')[0]) * 60 + parseInt(end.split(':')[1]);
+                            var diff = em - sm;
+                            if (diff > 0) hoursInput.value = (diff / 60).toFixed(2);
+                        }
+                        endInput.addEventListener('change', updateHours);
+                    })();
+                    </script>
+
+                    <p class="info-text">Övertidslön beräknas som månadslön / 72 per timme.</p>
+                {% endif %}
+
+                {# Fullt övertidspass (inkallning) #}
+                <form method="POST" action="/overtime/add" class="ot-form" style="margin-top: {% if shift and shift.code in ('N1', 'N2', 'N3') %}1.5rem{% else %}0{% endif %};">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="start_time">Starttid:</label>
-                            <input type="time" id="start_time" name="start_time" value="14:00" required>
+                    <details>
+                        <summary style="cursor:pointer; color: var(--text-muted); font-size:0.9rem;">Lägg till inkallat övertidspass...</summary>
+                        <div class="form-row" style="margin-top:0.75rem;">
+                            <div class="form-group">
+                                <label for="start_time">Starttid:</label>
+                                <input type="time" id="start_time" name="start_time" value="14:00" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="end_time">Sluttid:</label>
+                                <input type="time" id="end_time" name="end_time" value="22:30" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="hours">Timmar:</label>
+                                <input type="number" id="hours" name="hours" value="8.5" step="0.5" min="0.5" max="24" required>
+                            </div>
                         </div>
-
-                        <div class="form-group">
-                            <label for="end_time">Sluttid:</label>
-                            <input type="time" id="end_time" name="end_time" value="22:30" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="hours">Timmar:</label>
-                            <input type="number" id="hours" name="hours" value="8.5" step="0.5" min="0.5" max="24" required>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">Lägg till övertidspass</button>
+                        <button type="submit" class="btn btn-primary">Lägg till övertidspass</button>
+                    </details>
                 </form>
 
                 <p class="info-text">

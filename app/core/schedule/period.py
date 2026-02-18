@@ -674,7 +674,8 @@ def _build_person_day_basic(
                 pass
 
     # Visa OT som skift bara om det är registrerat på aktuell dag
-    if ot_shift_for_display:
+    # is_extension=True innebär att skiftet förlängs – visa originalskiftet kvar
+    if ot_shift_for_display and not ot_shift_for_display.is_extension:
         ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
         if ot_shift_type:
             shift = ot_shift_type
@@ -957,17 +958,19 @@ def _populate_single_person_day(
             "hours": ot_hours,
             "pay": ot_pay,
             "hourly_rate": hourly_rate,
+            "is_extension": ot_shift.is_extension,
         }
 
-        # Replace shift with OT for display
-        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-        if ot_shift_type:
-            shift = ot_shift_type
-            hours = ot_shift.hours
-            try:
-                start, end = parse_ot_times(ot_shift, current_day)
-            except ValueError:
-                start, end = None, None
+        # Ersätt skift med OT för visning – men inte om det är en förlängning
+        if not ot_shift.is_extension:
+            ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+            if ot_shift_type:
+                shift = ot_shift_type
+                hours = ot_shift.hours
+                try:
+                    start, end = parse_ot_times(ot_shift, current_day)
+                except ValueError:
+                    start, end = None, None
 
     day_info.update(
         {
