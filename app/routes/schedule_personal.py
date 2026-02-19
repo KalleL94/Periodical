@@ -188,14 +188,15 @@ async def show_day_for_person(
     # We need to check this before fetching the OT shift
     # OT shifts are stored per user_id
     temp_ot_check = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
+    # Extensions keep OB on scheduled hours; only full call-in OT removes OB
+    is_full_ot = temp_ot_check and not temp_ot_check.is_extension
 
     # OC shifts also don't have OB - they have oncall pay instead
-    if start_dt and end_dt and not temp_ot_check and not is_effective_oc:
-        # Only calculate OB if there's NO overtime shift AND NOT an OC shift
+    if start_dt and end_dt and not is_full_ot and not is_effective_oc:
         ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
         ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"])
     else:
-        # No OB for OT shifts or OC shifts
+        # No OB for full OT shifts or OC shifts
         ob_hours = {r.code: 0.0 for r in ob_rules}
         ob_pay = {r.code: 0.0 for r in ob_rules}
 
@@ -278,8 +279,8 @@ async def show_day_for_person(
         ot_pay = hourly_rate * ot_shift.hours
 
         ot_details = {
-            "start_time": ot_shift.start_time,
-            "end_time": ot_shift.end_time,
+            "start_time": ot_start_str,
+            "end_time": ot_end_str,
             "hours": ot_shift.hours,
             "pay": ot_pay,
             "hourly_rate": hourly_rate,
