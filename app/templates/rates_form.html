@@ -27,15 +27,48 @@
                         <span style="color: var(--muted); font-style: italic;">p&aring;g&aring;ende</span>
                     {% endif %}
                 </td>
-                <td style="padding: 8px; font-size: 0.8rem;">
+                <td style="padding: 8px; font-size: 0.8rem; line-height: 1.6;">
                     {% set r = record.rates %}
                     {% set parts = [] %}
-                    {% if r.get('ob') %}{% set _ = parts.append('OB: ' ~ r.ob.keys()|list|join(', ')) %}{% endif %}
-                    {% if r.get('ot') %}{% set _ = parts.append('&Ouml;T: ' ~ r.ot ~ ' kr/tim') %}{% endif %}
-                    {% if r.get('oncall') %}{% set _ = parts.append('Beredskap') %}{% endif %}
-                    {% if r.get('vacation') %}{% set _ = parts.append('Semester') %}{% endif %}
+
+                    {# OB – visa varje kods värde #}
+                    {% if r.get('ob') %}
+                        {% set ob_items = [] %}
+                        {% for code, val in r.ob.items() %}
+                            {% set _ = ob_items.append(code ~ ': ' ~ val) %}
+                        {% endfor %}
+                        {% set _ = parts.append('OB: ' ~ ob_items|join(' · ')) %}
+                    {% endif %}
+
+                    {# ÖT – visa värdet #}
+                    {% if r.get('ot') %}
+                        {% set _ = parts.append('ÖT: ' ~ r.ot ~ ' kr/tim') %}
+                    {% endif %}
+
+                    {# Beredskap – deduplera helg-subkoder till "Helg" #}
+                    {% if r.get('oncall') %}
+                        {% set oc = r.oncall %}
+                        {% set oc_items = [] %}
+                        {% if oc.get('OC_WEEKDAY') %}{% set _ = oc_items.append('Vardag: ' ~ oc.OC_WEEKDAY) %}{% endif %}
+                        {% set helg = oc.get('OC_WEEKEND_SAT') or oc.get('OC_WEEKEND') %}
+                        {% if helg %}{% set _ = oc_items.append('Helg: ' ~ helg) %}{% endif %}
+                        {% if oc.get('OC_HOLIDAY') %}{% set _ = oc_items.append('Röd dag: ' ~ oc.OC_HOLIDAY) %}{% endif %}
+                        {% if oc.get('OC_SPECIAL') %}{% set _ = oc_items.append('Storhelg: ' ~ oc.OC_SPECIAL) %}{% endif %}
+                        {% if oc_items %}{% set _ = parts.append('Beredskap: ' ~ oc_items|join(' · ')) %}{% endif %}
+                    {% endif %}
+
+                    {# Semester – visa procentsatserna #}
+                    {% if r.get('vacation') %}
+                        {% set v = r.vacation %}
+                        {% set vac_items = [] %}
+                        {% if v.get('fixed_pct') is not none %}{% set _ = vac_items.append('Fast: ' ~ (v.fixed_pct * 100)|round(2) ~ '%') %}{% endif %}
+                        {% if v.get('variable_pct') is not none %}{% set _ = vac_items.append('Rörlig: ' ~ (v.variable_pct * 100)|round(2) ~ '%') %}{% endif %}
+                        {% if v.get('payout_pct') is not none %}{% set _ = vac_items.append('Utbet: ' ~ (v.payout_pct * 100)|round(2) ~ '%') %}{% endif %}
+                        {% if vac_items %}{% set _ = parts.append('Semester: ' ~ vac_items|join(' · ')) %}{% endif %}
+                    {% endif %}
+
                     {% if parts %}
-                        {{ parts|join(' &middot; ') }}
+                        {{ parts|join('<br>')|safe }}
                     {% else %}
                         <span style="color: var(--muted);">Standardsatser</span>
                     {% endif %}
@@ -70,16 +103,26 @@
     <h3 style="margin-top: 0;">{% if rate_history %}L&auml;gg till nya ers&auml;ttningssatser{% else %}Ers&auml;ttningssatser{% endif %}</h3>
     <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
         Individuella avvikelser fr&aring;n standardsatser. L&auml;mna tomt f&ouml;r att anv&auml;nda standard (l&ouml;nebaserad ber&auml;kning).
+        Ange direkt kr/tim <em>eller</em> tryck <strong>&times;f</strong> f&ouml;r att r&auml;kna via timl&ouml;n&times;faktor.
         {% if rate_history %}Tidigare satser avslutas automatiskt dagen innan nytt fr&aring;n-datum.{% endif %}
     </p>
 
-    <form method="POST" action="{{ rates_form_action }}">
+    <form method="POST" action="{{ rates_form_action }}" class="rates-form-instance">
 
-        <!-- Från datum -->
-        <div style="margin-bottom: 16px;">
-            <label for="effective_from_rates" style="display: block; margin-bottom: 6px; color: var(--muted);">Fr&aring;n datum</label>
-            <input type="date" id="effective_from_rates" name="effective_from" required
-                   style="width: 200px; box-sizing: border-box;">
+        <!-- Från datum + timlön -->
+        <div style="display: flex; gap: 24px; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap;">
+            <div>
+                <label for="effective_from_rates" style="display: block; margin-bottom: 6px; color: var(--muted);">Fr&aring;n datum</label>
+                <input type="date" id="effective_from_rates" name="effective_from" required
+                       style="width: 200px; box-sizing: border-box;">
+            </div>
+            <div>
+                <label for="rates_base_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">
+                    Timl&ouml;n <span style="font-size: 0.8rem;">(anv&auml;nds f&ouml;r &times;f-ber&auml;kning)</span>
+                </label>
+                <input type="number" id="rates_base_wage" step="0.01" min="0" placeholder="kr/tim"
+                       class="input" style="width: 160px; box-sizing: border-box;">
+            </div>
         </div>
 
         <!-- OB-tillägg (kr/tim) -->
@@ -89,12 +132,23 @@
         </p>
         <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px;">
             {% for code, divisor in rate_defaults.ob_divisors.items() %}
-            <div>
-                <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ code }} <span style="font-size: 0.7rem;">(std: l&ouml;n/{{ divisor }})</span></label>
+            <div class="rate-field">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px;">
+                    <label style="font-size: 0.75rem; color: var(--muted);">{{ code }} <span style="font-size: 0.7rem;">(std: l&ouml;n/{{ divisor }})</span></label>
+                    <button type="button" class="rate-factor-toggle" title="Ange som timl&ouml;n &times; faktor">&times;f</button>
+                </div>
                 <input type="number" step="0.01" name="rate_ob_{{ code }}" min="0"
                        value="{{ custom_rates.get('ob', {}).get(code, '') }}"
                        placeholder="kr/tim"
-                       class="input" style="width: 100%; box-sizing: border-box;">
+                       class="rate-value-input input" style="width: 100%; box-sizing: border-box;">
+                <div class="rate-factor-row" style="display: none; margin-top: 4px;">
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="number" class="input rate-factor" placeholder="&times; faktor" step="0.01" min="0"
+                               style="flex: 1; min-width: 0;">
+                        <span style="color: var(--muted); font-size: 0.8rem;">=</span>
+                        <span class="rate-computed" style="font-size: 0.75rem; font-weight: 600; color: var(--accent); white-space: nowrap; min-width: 28px;">&#8212;</span>
+                    </div>
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -104,11 +158,22 @@
         <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
             Standard: l&ouml;n / {{ rate_defaults.ot_divisor }}. Fyll i f&ouml;r fast kr/tim ist&auml;llet.
         </p>
-        <div style="margin-bottom: 16px;">
-            <input type="number" step="0.01" name="rate_ot" min="0"
-                   value="{{ custom_rates.get('ot', '') }}"
-                   placeholder="kr/tim"
-                   class="input" style="width: 200px;">
+        <div class="rate-field" style="margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="number" step="0.01" name="rate_ot" min="0"
+                       value="{{ custom_rates.get('ot', '') }}"
+                       placeholder="kr/tim"
+                       class="rate-value-input input" style="width: 200px;">
+                <button type="button" class="rate-factor-toggle" title="Ange som timl&ouml;n &times; faktor">&times;f</button>
+            </div>
+            <div class="rate-factor-row" style="display: none; margin-top: 6px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <input type="number" class="input rate-factor" placeholder="faktor" step="0.01" min="0" style="width: 100px;">
+                    <span style="color: var(--muted);">=</span>
+                    <span class="rate-computed" style="font-weight: 600; color: var(--accent);">&#8212;</span>
+                    <span style="color: var(--muted); font-size: 0.85rem;">kr/tim</span>
+                </div>
+            </div>
         </div>
 
         <!-- Beredskap (kr/tim) -->
@@ -116,12 +181,23 @@
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px;">
             {% set oc_groups = [("OC_WEEKDAY", "Vardag", 75), ("OC_WEEKEND", "Helg", 97), ("OC_HOLIDAY", "R\u00f6d dag", 112), ("OC_SPECIAL", "Storhelg", 192)] %}
             {% for code, label, default in oc_groups %}
-            <div>
-                <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ label }} (std: {{ default }} kr)</label>
+            <div class="rate-field">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px;">
+                    <label style="font-size: 0.75rem; color: var(--muted);">{{ label }} (std: {{ default }} kr)</label>
+                    <button type="button" class="rate-factor-toggle" title="Ange som timl&ouml;n &times; faktor">&times;f</button>
+                </div>
                 <input type="number" step="0.01" name="rate_oc_{{ code }}" min="0"
                        value="{{ custom_rates.get('oncall', {}).get(code, '') }}"
                        placeholder="{{ default }}"
-                       class="input" style="width: 100%; box-sizing: border-box;">
+                       class="rate-value-input input" style="width: 100%; box-sizing: border-box;">
+                <div class="rate-factor-row" style="display: none; margin-top: 4px;">
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="number" class="input rate-factor" placeholder="&times; faktor" step="0.01" min="0"
+                               style="flex: 1; min-width: 0;">
+                        <span style="color: var(--muted); font-size: 0.8rem;">=</span>
+                        <span class="rate-computed" style="font-size: 0.75rem; font-weight: 600; color: var(--accent); white-space: nowrap; min-width: 28px;">&#8212;</span>
+                    </div>
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -144,3 +220,99 @@
         <button type="submit" class="btn">Spara satser</button>
     </form>
 </div>
+
+<style>
+.rate-factor-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.65rem;
+    font-family: inherit;
+    padding: 1px 4px;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+.rate-factor-toggle:hover,
+.rate-factor-toggle.active {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+</style>
+
+<script>
+(function () {
+    var form = document.querySelector('.rates-form-instance');
+    var baseWageInput = document.getElementById('rates_base_wage');
+    if (!form) return;
+
+    function getBaseWage() {
+        return parseFloat(baseWageInput.value) || 0;
+    }
+
+    function updateComputed(field) {
+        var wage = getBaseWage();
+        var factor = parseFloat(field.querySelector('.rate-factor').value) || 0;
+        var computed = field.querySelector('.rate-computed');
+        var valueInput = field.querySelector('.rate-value-input');
+        if (wage > 0 && factor > 0) {
+            var result = Math.round(wage * factor * 100) / 100;
+            computed.textContent = result.toFixed(2);
+            valueInput.value = result.toFixed(2);
+        } else {
+            computed.textContent = '\u2014';
+            if (wage === 0 && factor > 0) {
+                computed.textContent = '?';
+            }
+            valueInput.value = '';
+        }
+    }
+
+    function updateAllActiveFields() {
+        form.querySelectorAll('.rate-field').forEach(function (field) {
+            var factorRow = field.querySelector('.rate-factor-row');
+            if (factorRow && factorRow.style.display !== 'none') {
+                updateComputed(field);
+            }
+        });
+    }
+
+    baseWageInput.addEventListener('input', updateAllActiveFields);
+
+    form.querySelectorAll('.rate-factor-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var field = btn.closest('.rate-field');
+            var factorRow = field.querySelector('.rate-factor-row');
+            var valueInput = field.querySelector('.rate-value-input');
+            var inFactorMode = factorRow.style.display !== 'none';
+
+            if (inFactorMode) {
+                factorRow.style.display = 'none';
+                valueInput.style.display = '';
+                btn.classList.remove('active');
+            } else {
+                factorRow.style.display = '';
+                valueInput.style.display = 'none';
+                btn.classList.add('active');
+                updateComputed(field);
+            }
+        });
+    });
+
+    form.querySelectorAll('.rate-factor').forEach(function (input) {
+        input.addEventListener('input', function () {
+            updateComputed(input.closest('.rate-field'));
+        });
+    });
+
+    form.addEventListener('submit', function () {
+        form.querySelectorAll('.rate-field').forEach(function (field) {
+            var factorRow = field.querySelector('.rate-factor-row');
+            if (factorRow && factorRow.style.display !== 'none') {
+                updateComputed(field);
+            }
+        });
+    });
+})();
+</script>
