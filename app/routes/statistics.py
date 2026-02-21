@@ -114,6 +114,31 @@ async def statistics_view(
             except Exception:
                 pass
 
+        # Add employment transition payout for the transition month
+        if vac_user and vac_user.employment_transition:
+            t = vac_user.employment_transition
+            if t.transition_date.year == year:
+                try:
+                    from app.core.schedule.transition import calculate_transition_month_summary
+
+                    transition_data = calculate_transition_month_summary(t, vac_user, db)
+                    vac_payout = float(transition_data["consultant_employer"]["vacation_payout"]["total"])
+                    direct_salary = float(transition_data["direct_employer"]["base_salary"])
+                    t_month = transition_data["transition_month"]
+                    for m in months:
+                        if m.get("payment_date") and m["payment_date"].month == t_month:
+                            brutto = float(m.get("brutto_pay") or 0)
+                            netto = float(m.get("netto_pay") or 0)
+                            tax_ratio = (netto / brutto) if brutto > 0 else 0.72
+                            extra = vac_payout + direct_salary
+                            m["brutto_pay"] = round(brutto + extra, 0)
+                            m["netto_pay"] = round(netto + extra * tax_ratio, 0)
+                            break
+                    year_summary["total_brutto"] = sum((m.get("brutto_pay", 0) or 0) for m in months)
+                    year_summary["total_netto"] = sum((m.get("netto_pay", 0) or 0) for m in months)
+                except Exception:
+                    pass
+
     # Build chart data for template
     chart_labels = []
     chart_brutto = []

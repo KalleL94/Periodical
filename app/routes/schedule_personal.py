@@ -866,6 +866,77 @@ async def year_view(
             except Exception:
                 pass
 
+    # Check for employment transition in this year
+    transition_data = None
+    if show_salary:
+        t_user = (
+            db.query(User).filter(User.id == user_id_for_wages).first()
+            if user_id_for_wages > 10
+            else db.query(User).filter(User.person_id == rotation_position).first()
+        )
+        if t_user and t_user.employment_transition:
+            t = t_user.employment_transition
+            if t.transition_date.year == year:
+                try:
+                    from app.core.schedule.transition import calculate_transition_month_summary
+
+                    transition_data = calculate_transition_month_summary(t, t_user, db)
+                except Exception:
+                    pass
+
+    # Inject employment transition into months list
+    if transition_data and show_salary:
+        vac_payout = float(transition_data["consultant_employer"]["vacation_payout"]["total"])
+        direct_salary = float(transition_data["direct_employer"]["base_salary"])
+        t_year = transition_data["transition_year"]
+        t_month = transition_data["transition_month"]
+
+        for i, m in enumerate(months):
+            if m["payment_date"].year == t_year and m["payment_date"].month == t_month:
+                brutto = float(m.get("brutto_pay") or 0)
+                netto = float(m.get("netto_pay") or 0)
+                tax_ratio = (netto / brutto) if brutto > 0 else 0.72
+
+                # Add vacation payout to Sem.till. and Gross on the trailing consultant row
+                m["vacation_supplement"] = round((m.get("vacation_supplement") or 0) + vac_payout, 0)
+                m["brutto_pay"] = round(brutto + vac_payout, 0)
+                m["netto_pay"] = round(netto + vac_payout * tax_ratio, 0)
+
+                # Extra row: direct employer innestående base salary
+                original_count = len(months)  # before insert
+                months.insert(
+                    i + 1,
+                    {
+                        "payment_date": m["payment_date"],
+                        "year": t_year,
+                        "month": t_month,
+                        "transition_direct": True,
+                        "netto_pay": round(direct_salary * tax_ratio, 0),
+                        "brutto_pay": direct_salary,
+                        "num_shifts": 0,
+                        "total_hours": 0,
+                        "total_ob": 0,
+                        "oncall_pay": 0,
+                        "ot_pay": 0,
+                        "absence_deduction": 0,
+                        "vacation_supplement": 0,
+                    },
+                )
+
+                # Update year totals and averages — average uses original month count
+                year_summary["total_brutto"] = sum(float(m2.get("brutto_pay") or 0) for m2 in months)
+                year_summary["total_netto"] = sum(float(m2.get("netto_pay") or 0) for m2 in months)
+                year_summary["avg_brutto"] = round(year_summary["total_brutto"] / original_count, 0)
+                year_summary["avg_netto"] = round(year_summary["total_netto"] / original_count, 0)
+                if "total_vacation_supplement" in year_summary:
+                    year_summary["total_vacation_supplement"] = sum(
+                        float(m2.get("vacation_supplement") or 0) for m2 in months
+                    )
+                    year_summary["avg_vacation_supplement"] = round(
+                        year_summary["total_vacation_supplement"] / original_count, 0
+                    )
+                break
+
     # Calculate and log load time
     end_time = datetime.now()
     load_time = (end_time - start_time).total_seconds()

@@ -315,6 +315,14 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
     # Determine entitled days
     full_days = user.vacation_days_per_year or 25
     employment_start = user.employment_start_date
+    # If user has an employment transition, Handels accrual starts at transition_date
+    if (
+        employment_start
+        and hasattr(user, "employment_transition")
+        and user.employment_transition
+        and user.employment_transition.transition_date > employment_start
+    ):
+        employment_start = user.employment_transition.transition_date
 
     is_first_year = False
     if employment_start and employment_start > earning_start:
@@ -323,6 +331,8 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         entitled_days = _calculate_prorated_days(employment_start, earning_start, earning_end, full_days)
     else:
         entitled_days = full_days
+
+    transition = getattr(user, "employment_transition", None)
 
     # Count used days in this vacation year
     used = count_vacation_days_used(
@@ -345,6 +355,19 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         db=db,
         vacation_rates=user_rates["vacation"],
     )
+
+    # Förskottssemester: ICA fyller upp till full kvot det första direktanställningsåret.
+    # Antal förskottsdagar = faktiskt använda dagar utöver intjänade, max (full_days - entitled_days).
+    # Förskottsdagar ger inget rörligt tillägg, blend:a semestertillägget.
+    if is_first_year and transition and used["total"] > 0:
+        max_advance = max(0, full_days - entitled_days)
+        advance_used = max(0, min(used["total"] - entitled_days, max_advance))
+        if advance_used > 0:
+            normal_used = used["total"] - advance_used
+            blended = (normal_used * pay["supplement_per_day"] + advance_used * pay["fixed_per_day"]) / used["total"]
+            pay = dict(pay)
+            pay["supplement_per_day"] = round(blended, 2)
+            pay["advance_used"] = advance_used
 
     # Get saved days from previous closed years
     saved_info = get_saved_days_balance(user, target_year)

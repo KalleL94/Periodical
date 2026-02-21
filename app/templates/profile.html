@@ -82,6 +82,16 @@
             <p style="color: var(--muted);">Hantera dina semesterveckor.</p>
             <a href="/profile/vacation" class="btn">Hantera semester</a>
         </div>
+
+        <!-- Övertag länk -->
+        <div class="card" style="margin-top: 16px;">
+            <h3 style="margin-top: 0;">&#214;vertag</h3>
+            <p style="color: var(--muted);">Konfigurera &#246;vertag fr&#229;n konsult till direktanst&#228;llning.</p>
+            {% if user.employment_transition %}
+            <span class="badge" style="margin-bottom: 0.75rem; display: inline-block;">Konfigurerad</span><br>
+            {% endif %}
+            <a href="/profile/transition" class="btn">{{ "Redigera" if user.employment_transition else "Konfigurera" }}</a>
+        </div>
     </div>
 
 </div>
@@ -127,7 +137,7 @@
                                         <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
                                     </form>
                                 {% else %}
-                                    <span style="color: var(--muted); font-size: 0.875rem;">—</span>
+                                    <span style="color: var(--muted); font-size: 0.875rem;">-</span>
                                 {% endif %}
                             </td>
                         </tr>
