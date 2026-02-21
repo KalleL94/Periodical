@@ -30,6 +30,7 @@ from app.routes.schedule_api import router as schedule_api_router
 from app.routes.schedule_personal import router as schedule_personal_router
 from app.routes.shift_swap import router as shift_swap_router
 from app.routes.statistics import router as statistics_router
+from app.routes.transition import router as transition_router
 
 # Setup logging FIRST (before any other imports that might log)
 setup_logging()
@@ -240,6 +241,7 @@ app.include_router(shift_swap_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(transition_router)
 
 
 @app.get("/health", tags=["health"])

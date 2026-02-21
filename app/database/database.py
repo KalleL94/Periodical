@@ -16,7 +16,9 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     Time,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy import Enum as SQLEnum
@@ -50,6 +52,13 @@ class OnCallOverrideType(str, enum.Enum):
 
     ADD = "ADD"  # Manuellt tillagt OC-pass
     REMOVE = "REMOVE"  # Avbokat OC-pass från rotation
+
+
+class ConsultantSalaryType(str, enum.Enum):
+    """Whether the consultant's salary is paid for the current or previous month."""
+
+    TRAILING = "trailing"  # Släpande — lön för föregående månad
+    CURRENT = "current"  # Innestående — lön för aktuell månad
 
 
 class SwapStatus(str, enum.Enum):
@@ -105,6 +114,9 @@ class User(Base):
     # Relationships
     # Fixed syntax: foreign_keys as a direct string reference avoids evaluation errors
     overtime_shifts = relationship("OvertimeShift", foreign_keys="OvertimeShift.user_id", back_populates="user")
+    employment_transition = relationship(
+        "EmploymentTransition", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class OvertimeShift(Base):
@@ -308,6 +320,40 @@ class ShiftSwap(Base):
         return (
             f"<ShiftSwap(id={self.id}, requester={self.requester_id}, "
             f"target={self.target_id}, date={self.date}, status={self.status})>"
+        )
+
+
+class EmploymentTransition(Base):
+    """Configuration for a user's transition from consultant to direct employment.
+
+    Stores all parameters needed to calculate the one-time vacation payout (semesterlagen)
+    and the split-employer salary in the transition month. One record per user (unique).
+    """
+
+    __tablename__ = "employment_transitions"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_employment_transitions_user_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    transition_date = Column(Date, nullable=False)  # First day as direct employee (Handels)
+    consultant_salary_type = Column(SQLEnum(ConsultantSalaryType), nullable=False)  # TRAILING or CURRENT
+    consultant_vacation_days = Column(Float, nullable=False, default=0.0)  # Days to pay out
+    consultant_supplement_pct = Column(Float, nullable=False, default=0.0043)  # Semesterlagen minimum: 0.43% per dag
+    variable_avg_daily_override = Column(Float, nullable=True)  # Manual override; NULL = auto-calculate from history
+    earning_year_start = Column(Date, nullable=True)  # NULL = auto: April 1 two years back
+    earning_year_end = Column(Date, nullable=True)  # NULL = auto: day before transition_date
+    advance_vacation_days = Column(Integer, nullable=True, default=None)  # Forskottsemester fran Handels
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="employment_transition")
+
+    def __repr__(self):
+        return (
+            f"<EmploymentTransition(id={self.id}, user_id={self.user_id}, "
+            f"transition_date={self.transition_date}, type={self.consultant_salary_type})>"
         )
 
 

@@ -59,12 +59,14 @@
             </thead>
             <tbody>
                 {% for m in months_list %}
-                <tr class="shift-row">
+                <tr class="shift-row{% if m.transition_direct %} transition-year-row{% endif %}">
                     <td class="td_center" data-label="Utbetalning">
                         {{ m.payment_date.strftime('%Y-%m-%d') }}
                     </td>
                     <td class="td_center" data-label="Arbetsmånad">
-                        {% if show_salary %}
+                        {% if m.transition_direct %}
+                            <a href="/profile/transition">Direktl&#246;n (&#246;verg.) &#8594;</a>
+                        {% elif show_salary %}
                             <a href="/month/{{ person_id }}?year={{ m.year }}&month={{ m.month }}">
                                 {{ m.year }}-{{ '%02d'|format(m.month) }}
                             </a>

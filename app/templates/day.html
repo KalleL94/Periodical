@@ -542,7 +542,7 @@
                         let html = '<option value="">-- Välj pass --</option>';
                         data.shifts.forEach(s => {
                             const ob = s.ob_hours > 0 ? ' (' + s.ob_hours + 'h OB)' : '';
-                            html += '<option value="' + s.date + '">' + s.date_display + ' — ' + s.label + ob + '</option>';
+                            html += '<option value="' + s.date + '">' + s.date_display + ': ' + s.label + ob + '</option>';
                         });
                         targetSelect.innerHTML = html;
                         targetSelect.disabled = false;

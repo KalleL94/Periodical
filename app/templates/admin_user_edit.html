@@ -120,7 +120,7 @@
                                     <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
                                 </form>
                             {% else %}
-                                <span style="color: var(--muted); font-size: 0.875rem;">—</span>
+                                <span style="color: var(--muted); font-size: 0.875rem;">-</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -340,6 +340,137 @@
     {% set rates_form_action = "/admin/users/" ~ edit_user.id ~ "/update-rates" %}
     {% set rates_delete_prefix = "/admin/users/" ~ edit_user.id ~ "/delete-rate/" %}
     {% include "rates_form.html" with context %}
+
+    <!-- Övertag -->
+    <div class="card" style="margin-top: 16px;">
+        <h3>&#214;vertag</h3>
+
+        {% if edit_transition %}
+        <p class="form-hint">
+            &#214;vertagsdatum: <strong>{{ edit_transition.transition_date }}</strong>,
+            {{ "Sl&#228;pande" if edit_transition.consultant_salary_type.value == "trailing" else "Innest&#229;ende" }} konsultl&#246;n
+        </p>
+        {% if admin_auto_variable_avg is not none %}
+        <div class="auto-hint">
+            Auto-ber&#228;knad r&#246;rlig genomsnittsl&#246;n: <strong>{{ "%.2f"|format(admin_auto_variable_avg) }} kr/dag</strong>
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="form-hint">Inget &#246;vertag konfigurerat.</p>
+        {% endif %}
+
+        <form method="POST" action="/admin/users/{{ edit_user.id }}/transition">
+
+            <div class="form-group">
+                <label for="adm_transition_date" class="form-label">&#214;vertagsdatum</label>
+                <input type="date" id="adm_transition_date" name="transition_date" class="form-input"
+                       value="{{ edit_transition.transition_date.isoformat() if edit_transition else '' }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="adm_salary_type" class="form-label">Konsultl&#246;netyp</label>
+                <select id="adm_salary_type" name="consultant_salary_type" class="form-input">
+                    {% for value, label in salary_types %}
+                    <option value="{{ value }}"
+                        {% if edit_transition and edit_transition.consultant_salary_type.value == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Intj&#228;nade semesterdagar (fr&#229;n konsultanst&#228;llningen)</label>
+                {% if admin_auto_vacation_days is not none %}
+                <div class="auto-hint">
+                    Auto-ber&#228;knat: <strong>{{ admin_auto_vacation_days }} dagar</strong>
+                    <span class="form-hint">Pro-ratat fr&#229;n anst&#228;llningsdagen inom intj&#228;nande&#229;ret</span>
+                </div>
+                {% elif edit_transition %}
+                <div class="auto-hint auto-hint--missing">
+                    Kan inte ber&#228;knas, saknar anst&#228;llningsdatum. Sparat: {{ edit_transition.consultant_vacation_days }} dagar.
+                </div>
+                {% endif %}
+                <label class="form-label" style="margin-top: 0.4rem;">
+                    Manuell override (tomt = anv&#228;nd auto)
+                </label>
+                <input type="number" id="adm_vacation_days" name="consultant_vacation_days" class="form-input"
+                       value="{{ edit_transition.consultant_vacation_days if edit_transition and edit_transition.consultant_vacation_days != admin_auto_vacation_days else '' }}"
+                       min="0" step="0.5"
+                       placeholder="{{ admin_auto_vacation_days if admin_auto_vacation_days is not none else '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="adm_supplement_pct" class="form-label">Semestertill&#228;ggsprocent (semesterlagen)</label>
+                <input type="number" id="adm_supplement_pct" name="consultant_supplement_pct" class="form-input"
+                       value="{{ edit_transition.consultant_supplement_pct if edit_transition else 0.0043 }}"
+                       min="0" max="0.99" step="0.0001" required>
+            </div>
+
+            <div class="form-group">
+                <label for="adm_variable_override" class="form-label">R&#246;rlig genomsnittsl&#246;n override kr/dag (tomt = auto)</label>
+                <input type="number" id="adm_variable_override" name="variable_avg_daily_override" class="form-input"
+                       value="{{ edit_transition.variable_avg_daily_override if edit_transition and edit_transition.variable_avg_daily_override is not none else '' }}"
+                       min="0" step="0.01"
+                       placeholder="{{ '%.2f'|format(admin_auto_variable_avg) if admin_auto_variable_avg else '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="adm_earning_start" class="form-label">Intj&#228;nande&#229;r start (tomt = auto)</label>
+                <input type="date" id="adm_earning_start" name="earning_year_start" class="form-input"
+                       value="{{ edit_transition.earning_year_start.isoformat() if edit_transition and edit_transition.earning_year_start else '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="adm_earning_end" class="form-label">Intj&#228;nande&#229;r slut (tomt = auto)</label>
+                <input type="date" id="adm_earning_end" name="earning_year_end" class="form-input"
+                       value="{{ edit_transition.earning_year_end.isoformat() if edit_transition and edit_transition.earning_year_end else '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="adm_notes" class="form-label">Anteckningar</label>
+                <textarea id="adm_notes" name="notes" rows="2" class="form-input"
+                          style="padding: 0.5rem; resize: vertical;">{{ edit_transition.notes if edit_transition and edit_transition.notes else '' }}</textarea>
+            </div>
+
+            <hr class="form-section-divider">
+            <p class="form-section-title">Vid sparande (eng&#229;ngs&#229;tg&#228;rder)</p>
+
+            <div class="form-group">
+                <label for="adm_new_direct_salary" class="form-label">S&#228;tt ny direktl&#246;n fr&#229;n &#246;vertagsdatum (kr/m&#229;nad, tomt = ingen &#228;ndring)</label>
+                <input type="number" id="adm_new_direct_salary" name="new_direct_salary" class="form-input"
+                       min="1" step="1" placeholder="t.ex. 32000">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" name="reset_rates_to_default" value="on">
+                    &#197;terg&#229; till standard OB/OT/beredskap-satser fr&#229;n &#246;vertagsdatum
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Spara &#246;vertag</button>
+        </form>
+
+        {% if edit_transition %}
+        <hr class="form-section-divider">
+        <form method="POST" action="/admin/users/{{ edit_user.id }}/transition/delete">
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" name="cleanup_wage" value="on" checked>
+                    Ta &#228;ven bort l&#246;nepost fr&#229;n &#246;vertagsdatumet ({{ edit_transition.transition_date }})
+                </label>
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" name="cleanup_rates" value="on" checked>
+                    Ta &#228;ven bort satspost fr&#229;n &#246;vertagsdatumet ({{ edit_transition.transition_date }})
+                </label>
+            </div>
+            <button type="submit" class="btn btn-danger">Ta bort inst&#228;llningar</button>
+        </form>
+        {% endif %}
+    </div>
 </div>
 
 {% endblock %}

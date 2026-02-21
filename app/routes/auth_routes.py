@@ -979,6 +979,21 @@ async def admin_edit_user_page(
     vacation_balance = calculate_vacation_balance(edit_user, get_today().year, db)
 
     from app.core.rates import get_all_defaults, get_rate_history
+    from app.core.schedule.transition import (
+        calculate_consultant_vacation_days,
+        calculate_variable_avg_daily,
+        get_earning_year,
+    )
+    from app.database.database import EmploymentTransition
+
+    edit_transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == edit_user.id).first()
+    admin_auto_variable_avg = None
+    admin_auto_vacation_days = None
+    if edit_transition:
+        if edit_transition.variable_avg_daily_override is None:
+            earning_start, earning_end = get_earning_year(edit_transition)
+            admin_auto_variable_avg = calculate_variable_avg_daily(edit_user, db, earning_start, earning_end)
+        admin_auto_vacation_days = calculate_consultant_vacation_days(edit_user, edit_transition)
 
     return templates.TemplateResponse(
         "admin_user_edit.html",
@@ -993,6 +1008,13 @@ async def admin_edit_user_page(
             "rate_defaults": get_all_defaults(),
             "custom_rates": edit_user.custom_rates or {},
             "rate_history": get_rate_history(db, edit_user.id),
+            "edit_transition": edit_transition,
+            "admin_auto_variable_avg": admin_auto_variable_avg,
+            "admin_auto_vacation_days": admin_auto_vacation_days,
+            "salary_types": [
+                ("trailing", "Släpande (lön för föregående månad)"),
+                ("current", "Innestående (lön för aktuell månad)"),
+            ],
         },
     )
 
@@ -1042,6 +1064,184 @@ async def admin_update_user(
         raise
 
     return RedirectResponse(url="/admin/users", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/transition", name="admin_transition_save")
+async def admin_transition_save(
+    request: Request,
+    user_id: int,
+    transition_date: str = Form(...),
+    consultant_salary_type: str = Form(...),
+    consultant_vacation_days: str = Form(""),
+    consultant_supplement_pct: float = Form(...),
+    variable_avg_daily_override: str = Form(""),
+    earning_year_start: str = Form(""),
+    earning_year_end: str = Form(""),
+    notes: str = Form(""),
+    new_direct_salary: str = Form(""),
+    reset_rates_to_default: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: spara anställningsövergång för en användare."""
+    import datetime as _dt
+
+    from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        t_date = _dt.date.fromisoformat(transition_date)
+    except ValueError:
+        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+    if consultant_salary_type not in ("trailing", "current"):
+        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+    salary_type = ConsultantSalaryType(consultant_salary_type)
+
+    # Semesterdagar: manuell override eller auto-beräknat
+    if consultant_vacation_days.strip():
+        try:
+            parsed_vacation_days = float(consultant_vacation_days.strip())
+        except ValueError:
+            parsed_vacation_days = 0.0
+    else:
+        from types import SimpleNamespace
+
+        from app.core.schedule.transition import calculate_consultant_vacation_days
+
+        temp = SimpleNamespace(
+            transition_date=t_date,
+            earning_year_start=None,
+            earning_year_end=None,
+        )
+        parsed_vacation_days = float(calculate_consultant_vacation_days(edit_user, temp) or 0)
+
+    variable_override: float | None = None
+    if variable_avg_daily_override.strip():
+        try:
+            variable_override = float(variable_avg_daily_override.strip())
+        except ValueError:
+            pass
+
+    earning_start: _dt.date | None = None
+    earning_end: _dt.date | None = None
+    if earning_year_start.strip():
+        try:
+            earning_start = _dt.date.fromisoformat(earning_year_start.strip())
+        except ValueError:
+            pass
+    if earning_year_end.strip():
+        try:
+            earning_end = _dt.date.fromisoformat(earning_year_end.strip())
+        except ValueError:
+            pass
+
+    transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == user_id).first()
+    if transition is None:
+        transition = EmploymentTransition(user_id=user_id)
+        db.add(transition)
+
+    transition.transition_date = t_date
+    transition.consultant_salary_type = salary_type
+    transition.consultant_vacation_days = parsed_vacation_days
+    transition.consultant_supplement_pct = consultant_supplement_pct
+    transition.variable_avg_daily_override = variable_override
+    transition.earning_year_start = earning_start
+    transition.earning_year_end = earning_end
+    transition.notes = notes.strip() or None
+    transition.updated_at = _dt.datetime.utcnow()
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    # Sätt ny direktlön från övergångsdatum
+    if new_direct_salary.strip():
+        try:
+            salary_int = int(new_direct_salary.strip())
+            from app.core.schedule import add_new_wage, clear_schedule_cache
+            from app.database.database import WageHistory
+
+            existing_wage = (
+                db.query(WageHistory)
+                .filter(
+                    WageHistory.user_id == user_id,
+                    WageHistory.effective_from == t_date,
+                )
+                .first()
+            )
+            if existing_wage:
+                existing_wage.wage = salary_int
+                db.commit()
+            else:
+                add_new_wage(
+                    session=db,
+                    user_id=user_id,
+                    new_wage=salary_int,
+                    effective_from=t_date,
+                    created_by=current_user.id,
+                )
+            clear_schedule_cache()
+        except (ValueError, Exception):
+            pass
+
+    # Återgå till standardsatser (OB/OT/beredskap) från övergångsdatum
+    if reset_rates_to_default.strip():
+        from app.core.rates import add_new_rates
+        from app.core.schedule import clear_schedule_cache
+
+        add_new_rates(
+            session=db,
+            user_id=user_id,
+            rates={},
+            effective_from=t_date,
+            created_by=current_user.id,
+        )
+        clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/transition/delete", name="admin_transition_delete")
+async def admin_transition_delete(
+    user_id: int,
+    cleanup_wage: str = Form(""),
+    cleanup_rates: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: ta bort anstallningsorvergång for en anvandare."""
+    from app.core.schedule import clear_schedule_cache
+    from app.database.database import EmploymentTransition, RateHistory, WageHistory
+
+    transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == user_id).first()
+    if transition:
+        t_date = transition.transition_date
+        if cleanup_wage.strip():
+            db.query(WageHistory).filter(
+                WageHistory.user_id == user_id,
+                WageHistory.effective_from == t_date,
+            ).delete()
+        if cleanup_rates.strip():
+            db.query(RateHistory).filter(
+                RateHistory.user_id == user_id,
+                RateHistory.effective_from == t_date,
+            ).delete()
+        db.delete(transition)
+        try:
+            db.commit()
+            clear_schedule_cache()
+        except Exception:
+            db.rollback()
+            raise
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 def _parse_rates_form(form) -> dict:

@@ -421,11 +421,13 @@ def _process_day_for_summary(
     oncall_details = day.get("oncall_details", {})
     oncall_hours = oncall_details.get("total_hours", 0.0) if oncall_details else 0.0
     ot_pay = day.get("ot_pay", 0.0)
+    ot_hours = day.get("ot_hours", 0.0)
 
     totals["brutto_pay"] += oncall_pay + ot_pay
     totals["oncall_pay"] += oncall_pay
     totals["oncall_hours"] += oncall_hours
     totals["ot_pay"] += ot_pay
+    totals["total_hours"] += ot_hours
 
     return {
         "date": day["date"],
