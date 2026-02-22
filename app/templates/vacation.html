@@ -64,7 +64,7 @@
             <form method="POST" action="/profile/vacation/days/sync" id="days-form">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="dates" id="dates-input"
-                    value="{% for a in day_absences %}{{ a.date.strftime('%Y-%m-%d') }}{% if not loop.last %},{% endif %}{% endfor %}">
+                    value="{% for a in day_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
 
                 <div id="day-calendar" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
 
@@ -113,7 +113,7 @@
             </div>
             {% endif %}
             <div style="margin-top: 6px; font-size: 0.75rem; color: var(--muted); text-align: center;">
-                {{ balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ balance.year_end.strftime('%Y-%m-%d') }}
+                {{ balance.year_start | date_format }} &mdash; {{ balance.year_end | date_format }}
                 {% if balance.is_first_year %}<br><span style="color: var(--warning);">F&ouml;rsta &aring;ret (proportionellt)</span>{% endif %}
             </div>
         </div>
@@ -121,7 +121,7 @@
         <!-- Projection Card (open years) -->
         {% if balance.projection %}
         <div class="card" style="margin-bottom: 16px; border: 1px solid var(--accent); border-left: 4px solid var(--accent);">
-            <h3 style="margin-top: 0; font-size: 0.95rem;">Vid semesterbryt ({{ balance.year_end.strftime('%Y-%m-%d') }})</h3>
+            <h3 style="margin-top: 0; font-size: 0.95rem;">Vid semesterbryt ({{ balance.year_end | date_format }})</h3>
             <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
                 <span style="color: var(--muted);">Kvar vid bryt:</span>
                 <span style="font-weight: 600;">{{ balance.remaining_days }} dagar (projektion)</span>
@@ -223,7 +223,7 @@
                 <div style="margin-bottom: 12px;">
                     <label style="display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.85rem;">Startdatum</label>
                     <input type="date" name="employment_start_date"
-                        value="{{ user.employment_start_date.strftime('%Y-%m-%d') if user.employment_start_date else '' }}"
+                        value="{{ user.employment_start_date | date_format }}"
                         style="width: 100%; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text); box-sizing: border-box;">
                 </div>
                 <button type="submit" class="btn" style="width: 100%;">Spara</button>

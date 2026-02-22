@@ -15,7 +15,7 @@
     <div class="page-header-right">
         {# Visa bara länk till egen week-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
-            {% for i in range(1, 11) %}
+            {% for i in person_ids %}
                 <a href="/week/{{ i }}?year={{ year }}&week={{ week }}" class="btn secondary">
                     {{ i }}
                 </a>
@@ -52,8 +52,8 @@
             </tr>
         </thead>
         <tbody>
-            {# Build rows for each person (1-10) #}
-            {% for person_id in range(1, 11) %}
+            {# Build rows for each person #}
+            {% for person_id in person_ids %}
                 <tr class="person-row">
                     {# Person name column (sticky left) #}
                     <td class="person-name-cell">
@@ -113,7 +113,7 @@
                                 {# Show times for OT shifts #}
                                 {% if ns.person.shift.code == 'OT' and ns.person.start and ns.person.end %}
                                     <div class="shift-time" style="color: var(--muted); font-size: 0.7rem; margin-top: 2px;">
-                                        {{ ns.person.start.strftime('%H:%M') }}-{{ ns.person.end.strftime('%H:%M') }}
+                                        {{ ns.person.start | time_format }}-{{ ns.person.end | time_format }}
                                     </div>
                                 {% endif %}
 

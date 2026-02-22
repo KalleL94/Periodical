@@ -13,7 +13,7 @@
     <div class="page-header-right">
         {# Visa bara länk till egen year-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
-            {% for i in range(1, 11) %}
+            {% for i in person_ids %}
                 <a href="/year/{{ i }}?year={{ year }}" class="btn secondary">{{ i }}</a>
             {% endfor %}
         {% elif user %}
@@ -93,7 +93,7 @@
                                             </span>
                                         {% elif person.shift.code == 'OT' %}
                                             <span class="badge"
-                                                  {% if person.start and person.end %}title="Övertid: {{ person.start.strftime('%H:%M') }} - {{ person.end.strftime('%H:%M') }}"{% endif %}
+                                                  {% if person.start and person.end %}title="Övertid: {{ person.start | time_format }} - {{ person.end | time_format }}"{% endif %}
                                                   style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
                                                 OT
                                             </span>
