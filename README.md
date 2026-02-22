@@ -582,4 +582,3 @@ Kalle L - [@KalleL94](https://github.com/KalleL94)
 
 ---
 
-**Built with ❤️ for efficient shift scheduling and accurate OB calculations**
