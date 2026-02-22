@@ -5,6 +5,7 @@ Shared utilities and templates for route modules.
 
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from app.core.constants import MAX_PERSONS, PERSON_IDS
 from app.core.helpers import contrast_color
@@ -36,3 +37,73 @@ def redirect_if_not_own_data(current_user, user_id: int, redirect_url: str) -> R
     if current_user.role != UserRole.ADMIN and current_user.id != user_id:
         return RedirectResponse(url=redirect_url, status_code=302)
     return None
+
+
+# ============ Pydantic schemas ============
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    name: str
+    wage: int
+
+
+class UserUpdate(BaseModel):
+    name: str | None = None
+    wage: int | None = None
+    vacation: dict | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+# ============ Shared form helpers ============
+
+
+def _parse_rates_form(form) -> dict:
+    """Parse rate form fields into custom_rates dict."""
+    from app.core.rates import DEFAULT_OB_DIVISORS, DEFAULT_VACATION_RATES
+
+    custom = {}
+
+    # OB rates (kr/tim, fixed)
+    ob = {}
+    for code in DEFAULT_OB_DIVISORS:
+        val = form.get(f"rate_ob_{code}", "").strip()
+        if val:
+            ob[code] = float(val)
+    if ob:
+        custom["ob"] = ob
+
+    # OT rate (kr/tim, fixed)
+    ot_val = form.get("rate_ot", "").strip()
+    if ot_val:
+        custom["ot"] = float(ot_val)
+
+    # On-call rates (fixed SEK/hr) — UI shows 4 groups, fan out weekend to sub-codes
+    oncall = {}
+    for code in ["OC_WEEKDAY", "OC_WEEKEND", "OC_HOLIDAY", "OC_SPECIAL"]:
+        val = form.get(f"rate_oc_{code}", "").strip()
+        if val:
+            rate = float(val)
+            if code == "OC_WEEKEND":
+                for sub in ["OC_WEEKEND", "OC_WEEKEND_SAT", "OC_WEEKEND_SUN", "OC_WEEKEND_MON", "OC_HOLIDAY_EVE"]:
+                    oncall[sub] = rate
+            else:
+                oncall[code] = rate
+    if oncall:
+        custom["oncall"] = oncall
+
+    # Vacation percentages
+    vac = {}
+    for key in DEFAULT_VACATION_RATES:
+        val = form.get(f"rate_vac_{key}", "").strip()
+        if val:
+            vac[key] = float(val)
+    if vac:
+        custom["vacation"] = vac
+
+    return custom

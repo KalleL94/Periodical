@@ -21,10 +21,12 @@ from app.core.request_logging import RequestLoggingMiddleware
 from app.core.sentry_config import init_sentry
 from app.database.database import create_tables, get_db
 from app.routes.admin import router as admin_router
+from app.routes.admin_users import router as admin_users_router
 from app.routes.auth_routes import router as auth_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.oncall import router as oncall_router
 from app.routes.overtime import router as overtime_router
+from app.routes.profile import router as profile_router
 from app.routes.schedule_all import router as schedule_all_router
 from app.routes.schedule_api import router as schedule_api_router
 from app.routes.schedule_personal import router as schedule_personal_router
@@ -240,6 +242,8 @@ app.include_router(oncall_router)
 app.include_router(shift_swap_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
+app.include_router(profile_router)
+app.include_router(admin_users_router)
 app.include_router(admin_router)
 app.include_router(transition_router)
 
