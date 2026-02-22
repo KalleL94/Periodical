@@ -118,7 +118,7 @@
                                             </span>
                                         {% elif d.shift.code == 'OT' %}
                                             <span class="badge"
-                                                  {% if d.start and d.end %}title="Övertid: {{ d.start.strftime('%H:%M') }} - {{ d.end.strftime('%H:%M') }}"{% endif %}
+                                                  {% if d.start and d.end %}title="Övertid: {{ d.start | time_format }} - {{ d.end | time_format }}"{% endif %}
                                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
                                                 OT
                                             </span>

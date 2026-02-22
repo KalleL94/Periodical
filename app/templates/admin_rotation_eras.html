@@ -61,7 +61,7 @@
                     {% endif %}
                 </td>
                 <td data-label="Created">
-                    <small style="color: var(--muted);">{{ era.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                    <small style="color: var(--muted);">{{ era.created_at | date_format }} {{ era.created_at | time_format }}</small>
                 </td>
                 <td data-label="Actions">
                     <form method="POST" action="/admin/rotation-eras/delete/{{ era.id }}"

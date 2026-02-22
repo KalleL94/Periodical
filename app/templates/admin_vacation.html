@@ -89,11 +89,11 @@
                     {{ entry.balance.remaining_days }}
                 </td>
                 <td style="font-size: 0.85rem; color: var(--muted);">
-                    {{ entry.balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ entry.balance.year_end.strftime('%Y-%m-%d') }}
+                    {{ entry.balance.year_start | date_format }} &mdash; {{ entry.balance.year_end | date_format }}
                 </td>
                 <td style="font-size: 0.85rem; color: var(--muted);">
                     {% if entry.user.employment_start_date %}
-                        {{ entry.user.employment_start_date.strftime('%Y-%m-%d') }}
+                        {{ entry.user.employment_start_date | date_format }}
                     {% else %}
                         <span style="color: var(--warning);">Ej satt</span>
                     {% endif %}

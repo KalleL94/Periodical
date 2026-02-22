@@ -46,7 +46,7 @@ from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, UserRole, get_db
-from app.routes.shared import templates
+from app.routes.shared import redirect_if_not_own_data, templates
 
 logger = get_logger(__name__)
 
@@ -85,12 +85,10 @@ async def show_day_for_person(
         user_id_for_wages = person_id
         rotation_position = person_id
 
-    # Non-admin users can only view their own data
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id_for_wages:
-        return RedirectResponse(
-            url=f"/day/{current_user.id}/{year}/{month}/{day}",
-            status_code=302,
-        )
+    if redirect := redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/day/{current_user.id}/{year}/{month}/{day}"
+    ):
+        return redirect
 
     date_obj = validate_date_params(year, month, day)
     nav = get_navigation_dates("day", date_obj)
@@ -562,12 +560,10 @@ async def show_week_for_person(
     year = year or iso_year
     week = week or iso_week
 
-    # Non-admin users can only view their own data
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id_for_wages:
-        return RedirectResponse(
-            url=f"/week/{current_user.id}?year={year}&week={week}",
-            status_code=302,
-        )
+    if redirect := redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/week/{current_user.id}?year={year}&week={week}"
+    ):
+        return redirect
 
     # Use rotation_position for schedule calculation
     days_in_week = build_week_data(year, week, person_id=rotation_position, session=db, include_coworkers=True)
@@ -640,12 +636,10 @@ async def show_month_for_person(
     year = year or safe_today.year
     month = month or safe_today.month
 
-    # Non-admin users can only view their own data
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id_for_wages:
-        return RedirectResponse(
-            url=f"/month/{current_user.id}?year={year}&month={month}",
-            status_code=302,
-        )
+    if redirect := redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
+    ):
+        return redirect
 
     validate_date_params(year, month, None)
 
@@ -771,12 +765,10 @@ async def year_view(
         rotation_position = person_id
         person_name = None  # Will be looked up below
 
-    # Non-admin users can only view their own data
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id_for_wages:
-        return RedirectResponse(
-            url=f"/year/{current_user.id}?year={year or ''}",
-            status_code=302,
-        )
+    if redirect := redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/year/{current_user.id}?year={year or ''}"
+    ):
+        return redirect
 
     if with_person_id is not None:
         with_person_id = validate_person_id(with_person_id)

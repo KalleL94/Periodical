@@ -8,7 +8,6 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -30,15 +29,11 @@ from app.core.schedule import clear_schedule_cache
 from app.core.sentry_config import add_breadcrumb, clear_user_context, set_user_context
 from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, User, UserRole, get_db
+from app.routes.shared import templates
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["auth"])
-templates = Jinja2Templates(directory="app/templates")
-
-# Add now (today's date) as a global callable for templates
-
-templates.env.globals["now"] = get_today()
 
 
 # ============ Pydantic schemas ============

@@ -16,7 +16,7 @@
         <a href="/week?year={{ year }}&week={{ week }}" class="btn secondary">All</a>
         {# Navigering mellan personer - endast för admin #}
         {% if user and user.role.value == 'admin' %}
-            {% for i in range(1, 11) %}
+            {% for i in person_ids %}
                 <a href="/week/{{ i }}?year={{ year }}&week={{ week }}"
                    class="btn secondary {% if i == person_id %}btn-person-active{% endif %}">
                     {{ i }}
@@ -81,7 +81,7 @@
 
                             {% if day.shift and day.shift.code != 'OC' %}
                                 {% if day.shift.code == 'OT' and day.start and day.end %}
-                                    <div class="calendar-time">{{ day.start.strftime('%H:%M') }} - {{ day.end.strftime('%H:%M') }}</div>
+                                    <div class="calendar-time">{{ day.start | time_format }} - {{ day.end | time_format }}</div>
                                 {% elif day.shift.start_time is not none %}
                                     <div class="calendar-time">{{ day.shift.start_time }} - {{ day.shift.end_time }}</div>
                                 {% endif %}

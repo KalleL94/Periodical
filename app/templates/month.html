@@ -34,11 +34,11 @@
         <div class="page-header-right">
             {# Navigering mellan personer - endast för admin #}
             {% if user and user.role.value == 'admin' %}
-                <a href="/month/{{ person_id - 1 if person_id != 1 else 10 }}?year={{ year }}&month={{ month }}" class="btn secondary">&lt-</a>
+                <a href="/month/{{ person_id - 1 if person_id != 1 else max_persons }}?year={{ year }}&month={{ month }}" class="btn secondary">&lt-</a>
             {% endif %}
             <a href="/month?year={{ year }}&month={{ month }}" class="btn secondary">All</a>
             {% if user and user.role.value == 'admin' %}
-                <a href="/month/{{ person_id + 1 if person_id != 10 else 1 }}?year={{ year }}&month={{ month }}" class="btn secondary">-&gt</a>
+                <a href="/month/{{ person_id + 1 if person_id != max_persons else 1 }}?year={{ year }}&month={{ month }}" class="btn secondary">-&gt</a>
             {% endif %}
         </div>
     </div>
@@ -154,7 +154,7 @@
 
                                     {% if day_data.shift and day_data.shift.code != 'OC' %}
                                         {% if day_data.shift.code == 'OT' and day_data.start and day_data.end %}
-                                            <div class="calendar-time">{{ day_data.start.strftime('%H:%M') }} - {{ day_data.end.strftime('%H:%M') }}</div>
+                                            <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.end | time_format }}</div>
                                         {% elif day_data.shift.start_time is not none %}
                                             <div class="calendar-time">{{ day_data.shift.start_time }} - {{ day_data.shift.end_time }}</div>
                                         {% endif %}
@@ -256,8 +256,8 @@
                             {# Shift type label and times #}
                             {% set shift_label = d.shift.label if d.shift and d.shift.label else (d.shift.code if d.shift else '') %}
                             {% if d.start and d.end %}
-                                {% set t_start = d.start.strftime('%H:%M') %}
-                                {% set t_end = d.end.strftime('%H:%M') %}
+                                {% set t_start = d.start | time_format %}
+                                {% set t_end = d.end | time_format %}
                             {% elif d.shift and d.shift.start_time %}
                                 {% set t_start = d.shift.start_time %}
                                 {% set t_end = d.shift.end_time %}

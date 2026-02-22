@@ -317,7 +317,7 @@
             </div>
         </div>
         <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 12px;">
-            Semester&aring;r: {{ vacation_balance.year_start.strftime('%Y-%m-%d') }} &mdash; {{ vacation_balance.year_end.strftime('%Y-%m-%d') }}
+            Semester&aring;r: {{ vacation_balance.year_start | date_format }} &mdash; {{ vacation_balance.year_end | date_format }}
             {% if vacation_balance.is_first_year %}<span style="color: var(--warning);"> (proportionellt)</span>{% endif %}
         </div>
         {% endif %}
