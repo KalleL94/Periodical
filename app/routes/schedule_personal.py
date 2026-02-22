@@ -548,10 +548,13 @@ async def show_week_for_person(
 
         user_id_for_wages = person_id
         rotation_position = target_user.rotation_person_id
+        person_name = target_user.name
     else:
         person_id = validate_person_id(person_id)
         user_id_for_wages = person_id
         rotation_position = person_id
+        pos_user = db.query(User).filter(User.person_id == rotation_position, User.is_active == 1).first()
+        person_name = pos_user.name if pos_user else None
 
     safe_today = get_safe_today(rotation_start_date)
     iso_year, iso_week, _ = safe_today.isocalendar()
@@ -586,6 +589,7 @@ async def show_week_for_person(
             "week": week,
             "days": days_in_week,
             "person_id": person_id,
+            "person_name": person_name,
             "today": real_today,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,

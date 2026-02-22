@@ -26,7 +26,7 @@
     </div>
 </div>
 
-<h2 class="page-title">Week {{ week }} {{ year }} - Person {{ person_id }}</h2>
+<h2 class="page-title">Week {{ week }} {{ year }}{% if person_name %} - {{ person_name }}{% endif %}</h2>
 
 {# Calendar grid view for week #}
 {% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
