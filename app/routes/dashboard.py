@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, render_template
 from app.core.oncall import _cached_oncall_rules, calculate_oncall_pay
+from app.core.rates import get_user_rates
 from app.core.schedule import (
     _cached_special_rules,
     build_week_data,
@@ -20,18 +21,50 @@ from app.core.schedule import (
     calculate_ob_pay,
     calculate_overtime_pay,
     calculate_shift_hours,
+    determine_shift_for_date,
     get_overtime_shifts_for_month,
     get_user_wage,
     ob_rules,
     rotation_start_date,
     summarize_month_for_person,
 )
+from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
 from app.core.storage import calculate_tax_from_table
 from app.core.utils import get_safe_today, get_today
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftSwap, SwapStatus, User, get_db
 from app.routes.shared import templates
 
 router = APIRouter(tags=["dashboard"])
+
+
+def _query_absence_and_deduction(
+    db: Session,
+    user_id: int,
+    check_date: date,
+    user_wage: float,
+    show_salary: bool,
+) -> tuple[Absence | None, float]:
+    """Query absence for a date and compute the wage deduction when salary is visible."""
+    absence = db.query(Absence).filter(Absence.user_id == user_id, Absence.date == check_date).first()
+    deduction = 0.0
+    if absence and show_salary:
+        shift_hours = get_shift_hours_for_date(db, user_id, check_date)
+        five_days_ago = check_date - timedelta(days=5)
+        previous_sick = None
+        if absence.absence_type.value == "SICK":
+            previous_sick = (
+                db.query(Absence)
+                .filter(
+                    Absence.user_id == user_id,
+                    Absence.date >= five_days_ago,
+                    Absence.date < check_date,
+                    Absence.absence_type == absence.absence_type,
+                )
+                .first()
+            )
+        is_karens = previous_sick is None if absence.absence_type.value == "SICK" else False
+        deduction = calculate_absence_deduction(user_wage, absence.absence_type.value, shift_hours, is_karens)
+    return absence, deduction
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -144,6 +177,14 @@ async def read_root(
                     "days_until": days_until,
                 }
 
+    # Shared setup for week and month pay calculations
+    special_rules = _cached_special_rules(safe_today.year)
+    combined_rules = ob_rules + special_rules
+    oncall_rules = _cached_oncall_rules(safe_today.year)
+    user_wage = get_user_wage(db, current_user.id)
+    _user_rates = get_user_rates(current_user, session=db)
+    show_salary = can_see_salary(current_user, current_user.id)
+
     # Calculate week summary
     week_summary = None
     if week_data:
@@ -154,46 +195,10 @@ async def read_root(
         ot_pay = 0.0
         absence_deduction = 0.0
 
-        # Get OB rules for the year
-        special_rules = _cached_special_rules(safe_today.year)
-        combined_rules = ob_rules + special_rules
-
-        # Get on-call rules for the year
-        oncall_rules = _cached_oncall_rules(safe_today.year)
-
-        # Fetch user wage and rates once to avoid repeated queries
-        user_wage = get_user_wage(db, current_user.id)
-        from app.core.rates import get_user_rates
-
-        _user_rates = get_user_rates(current_user, session=db)
-
         for day in week_data:
             # Check for absence first
-            absence = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == day["date"]).first()
-
-            if absence and can_see_salary(current_user, current_user.id):
-                from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
-
-                shift_hours = get_shift_hours_for_date(db, current_user.id, day["date"])
-
-                # Check if karensdag
-                five_days_ago = day["date"] - timedelta(days=5)
-                previous_sick = None
-                if absence.absence_type.value == "SICK":
-                    previous_sick = (
-                        db.query(Absence)
-                        .filter(
-                            Absence.user_id == current_user.id,
-                            Absence.date >= five_days_ago,
-                            Absence.date < day["date"],
-                            Absence.absence_type == absence.absence_type,
-                        )
-                        .first()
-                    )
-
-                is_karens = previous_sick is None if absence.absence_type.value == "SICK" else False
-                deduction = calculate_absence_deduction(user_wage, absence.absence_type.value, shift_hours, is_karens)
-                absence_deduction += deduction
+            absence, deduction = _query_absence_and_deduction(db, current_user.id, day["date"], user_wage, show_salary)
+            absence_deduction += deduction
 
             # Check for overtime shift first (use dictionary lookup)
             ot_shift = ot_shift_map.get(day["date"])
@@ -210,7 +215,7 @@ async def read_root(
                 ot_hours = (ot_end - ot_start).total_seconds() / 3600.0
                 total_hours += ot_hours
 
-                if can_see_salary(current_user, current_user.id):
+                if show_salary:
                     ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_user_rates["ot"])
                     ot_pay += ot_ob_pay
 
@@ -218,13 +223,13 @@ async def read_root(
             if day["shift"]:
                 if day["shift"].code == "OC":
                     # Calculate on-call pay
-                    if can_see_salary(current_user, current_user.id):
+                    if show_salary:
                         oc_result = calculate_oncall_pay(
                             day["date"], user_wage, oncall_rules, rate_overrides=_user_rates["oncall"]
                         )
                         oc_pay += oc_result["total_pay"]
 
-                elif day["shift"].code != "OFF":
+                elif day["shift"].code != "OFF" and day["shift"].start_time is not None:
                     # Calculate regular shift hours
                     hours, start_dt, end_dt = calculate_shift_hours(day["date"], day["shift"])
                     total_hours += hours
@@ -234,7 +239,7 @@ async def read_root(
                         ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
                         ob_hours += sum(ob_hours_dict.values())
 
-                        if can_see_salary(current_user, current_user.id):
+                        if show_salary:
                             ob_pay_dict = calculate_ob_pay(
                                 start_dt, end_dt, combined_rules, user_wage, rate_overrides=_user_rates["ob"]
                             )
@@ -267,12 +272,6 @@ async def read_root(
     month_gross_pay = 0.0
     month_net_pay = 0.0
 
-    # Get OB and oncall rules for month calculation
-    special_rules = _cached_special_rules(safe_today.year)
-    combined_rules = ob_rules + special_rules
-    oncall_rules = _cached_oncall_rules(safe_today.year)
-    user_wage = get_user_wage(db, current_user.id)
-
     # Batch fetch oncall overrides for the month
     month_oncall_overrides = (
         db.query(OnCallOverride)
@@ -288,32 +287,8 @@ async def read_root(
     current_date = current_month_start
     while current_date <= current_month_end:
         # Check for absence first
-        absence = db.query(Absence).filter(Absence.user_id == current_user.id, Absence.date == current_date).first()
-
-        if absence and can_see_salary(current_user, current_user.id):
-            from app.core.schedule import determine_shift_for_date
-            from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
-
-            shift_hours = get_shift_hours_for_date(db, current_user.id, current_date)
-
-            # Check if karensdag
-            five_days_ago = current_date - timedelta(days=5)
-            previous_sick = None
-            if absence.absence_type.value == "SICK":
-                previous_sick = (
-                    db.query(Absence)
-                    .filter(
-                        Absence.user_id == current_user.id,
-                        Absence.date >= five_days_ago,
-                        Absence.date < current_date,
-                        Absence.absence_type == absence.absence_type,
-                    )
-                    .first()
-                )
-
-            is_karens = previous_sick is None if absence.absence_type.value == "SICK" else False
-            deduction = calculate_absence_deduction(user_wage, absence.absence_type.value, shift_hours, is_karens)
-            month_absence_deduction += deduction
+        absence, deduction = _query_absence_and_deduction(db, current_user.id, current_date, user_wage, show_salary)
+        month_absence_deduction += deduction
 
         # Check for overtime shift first (use dictionary lookup)
         ot_shift = ot_shift_map.get(current_date)
@@ -330,13 +305,11 @@ async def read_root(
             ot_hours = (ot_end - ot_start).total_seconds() / 3600.0
             month_total_hours += ot_hours
 
-            if can_see_salary(current_user, current_user.id):
+            if show_salary:
                 ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_user_rates["ot"])
                 month_ot_pay += ot_ob_pay
 
         # Handle regular rotation shifts
-        from app.core.schedule import determine_shift_for_date
-
         result = determine_shift_for_date(current_date, start_week=person_id)
         if result:
             shift, rotation_week = result
@@ -352,7 +325,7 @@ async def read_root(
 
             if is_effective_oc:
                 # Calculate on-call pay
-                if can_see_salary(current_user, current_user.id):
+                if show_salary:
                     oc_result = calculate_oncall_pay(
                         current_date, user_wage, oncall_rules, rate_overrides=_user_rates["oncall"]
                     )
@@ -367,7 +340,7 @@ async def read_root(
                     ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules)
                     month_ob_hours += sum(ob_hours_dict.values())
 
-                    if can_see_salary(current_user, current_user.id):
+                    if show_salary:
                         ob_pay_dict = calculate_ob_pay(
                             start_dt, end_dt, combined_rules, user_wage, rate_overrides=_user_rates["ob"]
                         )
@@ -410,7 +383,7 @@ async def read_root(
 
     # Calculate trend vs last month
     trend = None
-    if can_see_salary(current_user, current_user.id):
+    if show_salary:
         try:
             # Get last month
             if safe_today.month == 1:
@@ -486,7 +459,7 @@ async def read_root(
             "week_schedule": week_schedule,
             "month_summary": month_summary,
             "upcoming_vacation": upcoming_vacation,
-            "can_see_salary": can_see_salary(current_user, current_user.id),
+            "can_see_salary": show_salary,
             "pending_swap_count": pending_swap_count,
         },
         user=current_user,
