@@ -6,6 +6,7 @@
 {% set month_names = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Maj", 6: "Jun",
                       7: "Jul", 8: "Aug", 9: "Sep", 10: "Okt", 11: "Nov", 12: "Dec"} %}
 
+<div class="cowork-page">
 <div class="page-header">
     <div class="page-header-left">
         <a href="/cowork/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
@@ -17,8 +18,22 @@
 
 <h2 class="page-title">Samarbetsstatistik {{ year }} - {{ person_name }}</h2>
 
+{% set ns = namespace(total_shared=0, total_handovers=0, n1=0, n2=0, n3=0) %}
+{% for r in cowork_rows %}
+{% set ns.total_shared = ns.total_shared + r.total %}
+{% set ns.total_handovers = ns.total_handovers + r.handovers %}
+{% set ns.n1 = ns.n1 + r.by_shift['N1'] %}
+{% set ns.n2 = ns.n2 + r.by_shift['N2'] %}
+{% set ns.n3 = ns.n3 + r.by_shift['N3'] %}
+{% endfor %}
+{% set top_sorted = cowork_rows | sort(attribute='total', reverse=True) | list %}
+{% set max_bar = [[ns.n1, ns.n2, ns.n3] | max, 1] | max %}
+
+<div class="cowork-top-layout">
+
 <!-- Cowork stats-tabell -->
-<table class="summary" id="cowork-table">
+<div style="overflow-x:auto; flex:0 1 auto;">
+<table class="summary" id="cowork-table" style="width:fit-content;">
     <thead>
         <tr>
             <th class="th_left sortable" data-col="name" data-type="str">Person <span class="sort-arrow"></span></th>
@@ -57,6 +72,54 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
+
+<!-- Alltid synlig sammanfattning -->
+<div class="cowork-sidebar">
+
+    <div style="margin-bottom:1.75rem;">
+        <div class="sidebar-label">Totalt {{ year }}</div>
+        <div style="display:flex; gap:2rem; flex-wrap:wrap; margin-top:.5rem;">
+            <div>
+                <div style="font-size:1.6em; font-weight:700; color:var(--text); line-height:1.1;">{{ ns.total_shared }}</div>
+                <div style="font-size:.8em; color:var(--muted);">gemensamma pass</div>
+            </div>
+            <div>
+                <div style="font-size:1.6em; font-weight:700; color:var(--text); line-height:1.1;">{{ ns.total_handovers }}</div>
+                <div style="font-size:.8em; color:var(--muted);">överlämningar</div>
+            </div>
+        </div>
+    </div>
+
+    {% if top_sorted %}
+    <div style="margin-bottom:1.75rem;">
+        <div class="sidebar-label">Topp 3 kollegor</div>
+        {% for r in top_sorted[:3] %}
+        <div style="display:flex; justify-content:space-between; align-items:baseline; padding:.3rem 0; border-bottom:1px solid var(--table-border);">
+            <a href="/cowork/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}#detail" style="font-size:.9em;">{{ r.other_name }}</a>
+            <span style="font-size:.82em; color:var(--muted); white-space:nowrap; margin-left:.5rem;">{{ r.total }} pass</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div>
+        <div class="sidebar-label">Skiftfördelning totalt</div>
+        {% for s, val in [('N1', ns.n1), ('N2', ns.n2), ('N3', ns.n3)] %}
+        {% set pct = (val / max_bar * 100) | round | int %}
+        <div style="display:flex; align-items:center; gap:.5rem; margin-top:.4rem;">
+            <span style="font-size:.8em; color:var(--muted); width:1.8rem; flex-shrink:0;">{{ s }}</span>
+            <div style="flex:1; height:6px; background:var(--muted-bg); border-radius:3px; min-width:0;">
+                <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:3px; {% if val == 0 %}opacity:0;{% endif %}"></div>
+            </div>
+            <span style="font-size:.8em; color:var(--muted); width:2.5rem; text-align:right; flex-shrink:0;">{{ val }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+</div>
+
+</div>{# /cowork-top-layout #}
 
 {# Detaljvy för vald kollega #}
 {% if selected_other_id %}
@@ -65,154 +128,189 @@
 </h2>
 
 {% if selected_cowork_row %}
-<div style="display:flex; gap:2rem; margin-bottom:1.5rem; font-size:.9em; color:var(--muted);">
-    <span>Nästa pass: <strong style="color:var(--text)">{{ selected_cowork_row.next_shared_date or "–" }}</strong></span>
-    <span>Nästa överlämning: <strong style="color:var(--text)">{{ selected_cowork_row.next_handover_date or "–" }}</strong></span>
-</div>
-{% endif %}
-
-{% if selected_cowork_row %}
 {% set wd_names = {0: "Mån", 1: "Tis", 2: "Ons", 3: "Tor", 4: "Fre", 5: "Lör", 6: "Sön"} %}
 {% set max_shift = [selected_cowork_row.by_shift.values() | max, 1] | max %}
 {% set max_month = [selected_cowork_row.by_month.values() | max, 1] | max %}
 {% set max_wd    = [selected_cowork_row.by_weekday.values() | max, 1] | max %}
 
-<!-- Skiftfördelning N1/N2/N3 -->
-<div style="display:flex; gap:1.5rem; align-items:flex-end; margin-bottom:1.75rem;">
-    {% for s in ["N1", "N2", "N3"] %}
-    {% set val = selected_cowork_row.by_shift[s] %}
-    {% set bar_h = (val / max_shift * 48) | round | int %}
-    <div style="text-align:center; min-width:2.5rem;">
-        <div style="font-size:1em; font-weight:600; color:var(--text)">{{ val }}</div>
-        <div style="width:2.5rem; height:48px; background:var(--muted-bg); border-radius:4px 4px 0 0; display:flex; align-items:flex-end; margin:4px auto 0;">
-            <div style="width:100%; height:{{ [bar_h, 2 if val > 0 else 0] | max }}px; background:var(--accent); border-radius:4px 4px 0 0;"></div>
+<div class="cowork-detail-grid">
+
+    <!-- Vänster kolumn: statistik och diagram -->
+    <div>
+
+        <!-- Nästa datum -->
+        <div style="margin-bottom:1.5rem; font-size:.9em; color:var(--muted); display:flex; flex-direction:column; gap:.4rem;">
+            <span>Nästa pass: <strong style="color:var(--text)">{{ selected_cowork_row.next_shared_date or "–" }}</strong></span>
+            <span>Nästa överlämning: <strong style="color:var(--text)">{{ selected_cowork_row.next_handover_date or "–" }}</strong></span>
         </div>
-        <div style="font-size:.8em; color:var(--muted); margin-top:4px">{{ s }}</div>
+
+        <!-- Skiftfördelning N1/N2/N3 -->
+        <div style="display:flex; gap:1.5rem; align-items:flex-end; margin-bottom:1.75rem;">
+            {% for s in ["N1", "N2", "N3"] %}
+            {% set val = selected_cowork_row.by_shift[s] %}
+            {% set bar_h = (val / max_shift * 48) | round | int %}
+            <div style="text-align:center; min-width:2.5rem;">
+                <div style="font-size:1em; font-weight:600; color:var(--text)">{{ val }}</div>
+                <div style="width:2.5rem; height:48px; background:var(--muted-bg); border-radius:4px 4px 0 0; display:flex; align-items:flex-end; margin:4px auto 0;">
+                    <div style="width:100%; height:{{ [bar_h, 2 if val > 0 else 0] | max }}px; background:var(--accent); border-radius:4px 4px 0 0;"></div>
+                </div>
+                <div style="font-size:.8em; color:var(--muted); margin-top:4px">{{ s }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Månadsfördelning -->
+        <h3 style="margin-bottom:.5rem;">Fördelning per månad</h3>
+        <div style="overflow-x:auto; margin-bottom:1rem;">
+        <table class="summary">
+            <thead><tr>
+                {% for m in range(1, 13) %}
+                <th style="text-align:right; font-size:.8em">{{ month_names[m] }}</th>
+                {% endfor %}
+            </tr></thead>
+            <tbody><tr>
+                {% for m in range(1, 13) %}
+                {% set val = selected_cowork_row.by_month[m] %}
+                {% set pct = (val / max_month * 100) | round | int %}
+                <td style="text-align:right; padding:6px 8px 6px;">
+                    <div style="font-size:.9em; line-height:1.4">{{ val }}</div>
+                    <div style="height:3px; background:var(--muted-bg); border-radius:2px; margin-top:3px; min-width:1.5rem;">
+                        <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:2px; {% if val == 0 %}opacity:0;{% endif %}"></div>
+                    </div>
+                </td>
+                {% endfor %}
+            </tr></tbody>
+        </table>
+        </div>
+
+        <!-- Veckodagsfördelning -->
+        <h3 style="margin-bottom:.5rem;">Fördelning per veckodag</h3>
+        <div style="overflow-x:auto;">
+        <table class="summary">
+            <thead><tr>
+                {% for d in range(7) %}
+                <th style="text-align:right; font-size:.8em">{{ wd_names[d] }}</th>
+                {% endfor %}
+            </tr></thead>
+            <tbody><tr>
+                {% for d in range(7) %}
+                {% set val = selected_cowork_row.by_weekday[d] %}
+                {% set pct = (val / max_wd * 100) | round | int %}
+                <td style="text-align:right; padding:6px 8px 6px;">
+                    <div style="font-size:.9em; line-height:1.4">{{ val }}</div>
+                    <div style="height:3px; background:var(--muted-bg); border-radius:2px; margin-top:3px; min-width:1.5rem;">
+                        <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:2px; {% if val == 0 %}opacity:0;{% endif %}"></div>
+                    </div>
+                </td>
+                {% endfor %}
+            </tr></tbody>
+        </table>
+        </div>
+
     </div>
-    {% endfor %}
+
+    <!-- Höger kolumn: kronologiska listor -->
+    <div>
+
+        <!-- Toggle för passerande rader -->
+        <div style="display:flex; align-items:center; gap:1rem; margin-bottom:.75rem;">
+            <button id="toggle-past" class="btn secondary">Visa tidigare</button>
+            <span id="past-count" style="color:var(--muted); font-size:.9em;"></span>
+        </div>
+
+        <!-- Gemensamma pass -->
+        {% if cowork_details %}
+        <div style="overflow-x:auto;">
+        <table class="summary" id="cowork-details-table" style="margin-bottom:.5rem;">
+            <thead><tr>
+                <th>Datum</th>
+                <th>Veckodag</th>
+                <th>Rotv.</th>
+                <th>Pass</th>
+            </tr></thead>
+            <tbody>
+                {% for d in cowork_details %}
+                <tr class="shift-row" data-date="{{ d.date }}">
+                    <td><a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">{{ d.date }}</a></td>
+                    <td>{{ d.weekday_name }}</td>
+                    <td>{{ d.rotation_week }}/{{ d.rotation_length }}</td>
+                    <td>{{ d.target_shift.code }} {{ d.target_shift.label }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div id="cowork-details-pag" style="margin-bottom:1.5rem;"></div>
+        {% endif %}
+
+        <!-- Överlämningar -->
+        {% if handover_details %}
+        <h3 style="margin-bottom:.5rem;">Överlämningar</h3>
+        <div style="overflow-x:auto;">
+        <table class="summary" id="handover-details-table" style="margin-bottom:.5rem;">
+            <thead><tr>
+                <th>Datum</th>
+                <th>Veckodag</th>
+                <th>Mitt pass</th>
+                <th>{{ selected_other_name }}s pass</th>
+            </tr></thead>
+            <tbody>
+                {% for h in handover_details %}
+                <tr class="shift-row" data-date="{{ h.date }}">
+                    <td><a href="/day/{{ person_id }}/{{ h.date.year }}/{{ "%02d"|format(h.date.month) }}/{{ "%02d"|format(h.date.day) }}">{{ h.date }}</a></td>
+                    <td>{{ h.weekday_name }}</td>
+                    <td>{% if h.i_lamnar %}{{ h.from_shift }}{% else %}{{ h.to_shift }}{% endif %}</td>
+                    <td>{% if h.i_lamnar %}{{ h.to_shift }}{% else %}{{ h.from_shift }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div id="handover-details-pag" style="margin-bottom:1.5rem;"></div>
+        {% endif %}
+
+    </div>
 </div>
-
-<!-- Månadsfördelning -->
-<h3 style="margin-bottom: 0.5rem;">Fördelning per månad</h3>
-<table class="summary" style="margin-bottom: 1rem;">
-    <thead>
-        <tr>
-            {% for m in range(1, 13) %}
-            <th style="text-align:right; font-size:.8em">{{ month_names[m] }}</th>
-            {% endfor %}
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            {% for m in range(1, 13) %}
-            {% set val = selected_cowork_row.by_month[m] %}
-            {% set pct = (val / max_month * 100) | round | int %}
-            <td style="text-align:right; padding:6px 8px 6px;">
-                <div style="font-size:.9em; line-height:1.4">{{ val }}</div>
-                <div style="height:3px; background:var(--muted-bg); border-radius:2px; margin-top:3px; min-width:1.5rem;">
-                    <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:2px; {% if val == 0 %}opacity:0;{% endif %}"></div>
-                </div>
-            </td>
-            {% endfor %}
-        </tr>
-    </tbody>
-</table>
-
-<!-- Veckodagsfördelning -->
-<h3 style="margin-bottom: 0.5rem;">Fördelning per veckodag</h3>
-<table class="summary" style="margin-bottom: 1.5rem;">
-    <thead>
-        <tr>
-            {% for d in range(7) %}
-            <th style="text-align:right; font-size:.8em">{{ wd_names[d] }}</th>
-            {% endfor %}
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            {% for d in range(7) %}
-            {% set val = selected_cowork_row.by_weekday[d] %}
-            {% set pct = (val / max_wd * 100) | round | int %}
-            <td style="text-align:right; padding:6px 8px 6px;">
-                <div style="font-size:.9em; line-height:1.4">{{ val }}</div>
-                <div style="height:3px; background:var(--muted-bg); border-radius:2px; margin-top:3px; min-width:1.5rem;">
-                    <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:2px; {% if val == 0 %}opacity:0;{% endif %}"></div>
-                </div>
-            </td>
-            {% endfor %}
-        </tr>
-    </tbody>
-</table>
+{% endif %}
 {% endif %}
 
-<!-- Toggle för passerande rader -->
-<div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
-    <button id="toggle-past" class="btn secondary">Visa tidigare</button>
-    <span id="past-count" style="color: var(--muted); font-size: 0.9em;"></span>
-</div>
-
-<!-- Lista gemensamma pass -->
-{% if cowork_details %}
-<table class="summary" id="cowork-details-table" style="margin-bottom: 0.5rem;">
-    <thead>
-        <tr>
-            <th>Datum</th>
-            <th>Veckodag</th>
-            <th>Rotationsvecka</th>
-            <th>Pass</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for d in cowork_details %}
-        <tr class="shift-row" data-date="{{ d.date }}">
-            <td>
-                <a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">
-                    {{ d.date }}
-                </a>
-            </td>
-            <td>{{ d.weekday_name }}</td>
-            <td>{{ d.rotation_week }}/{{ d.rotation_length }}</td>
-            <td>{{ d.target_shift.code }} {{ d.target_shift.label }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-<div id="cowork-details-pag" style="margin-bottom: 2rem;"></div>
-{% endif %}
-
-<!-- Överlämningar -->
-{% if handover_details %}
-<h2 class="page-title">
-    Överlämningar med {{ selected_other_name }} (#{{ selected_other_id }}) - {{ year }}
-</h2>
-<table class="summary" id="handover-details-table" style="margin-bottom: 0.5rem;">
-    <thead>
-        <tr>
-            <th>Datum</th>
-            <th>Veckodag</th>
-            <th>Mitt pass</th>
-            <th>{{ selected_other_name }}s pass</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for h in handover_details %}
-        <tr class="shift-row" data-date="{{ h.date }}">
-            <td>
-                <a href="/day/{{ person_id }}/{{ h.date.year }}/{{ "%02d"|format(h.date.month) }}/{{ "%02d"|format(h.date.day) }}">
-                    {{ h.date }}
-                </a>
-            </td>
-            <td>{{ h.weekday_name }}</td>
-            <td>{% if h.i_lamnar %}{{ h.from_shift }}{% else %}{{ h.to_shift }}{% endif %}</td>
-            <td>{% if h.i_lamnar %}{{ h.to_shift }}{% else %}{{ h.from_shift }}{% endif %}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-<div id="handover-details-pag" style="margin-bottom: 2rem;"></div>
-{% endif %}
-
-{% endif %}
+<style>
+.cowork-top-layout {
+    display: flex;
+    gap: 2rem;
+    align-items: start;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+}
+.cowork-sidebar {
+    flex: 1 1 220px;
+    max-width: 280px;
+    padding: 1rem 1.25rem;
+    background: var(--panel);
+    border: 1px solid var(--table-border);
+    border-radius: var(--radius);
+}
+.sidebar-label {
+    font-size: .72em;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+    margin-bottom: .25rem;
+}
+@media (max-width: 600px) {
+    .cowork-sidebar { max-width: 100%; }
+}
+.cowork-detail-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 2.5rem;
+    align-items: start;
+    margin-top: 1rem;
+}
+@media (max-width: 750px) {
+    .cowork-detail-grid { grid-template-columns: 1fr; }
+}
+</style>
 
 <script>
 (function () {
@@ -332,5 +430,7 @@
     });
 })();
 </script>
+
+</div>{# /cowork-page #}
 
 {% endblock %}
