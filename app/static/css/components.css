@@ -45,6 +45,10 @@ button, .btn {
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 0.2s ease;
+}
+button:hover, .btn:hover {
+  background: var(--primary-dark);
 }
 
 /* Date Picker */
