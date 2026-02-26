@@ -18,21 +18,32 @@
 <h2 class="page-title">Samarbetsstatistik {{ year }} - {{ person_name }}</h2>
 
 <!-- Cowork stats-tabell -->
-<table class="summary">
+<table class="summary" id="cowork-table">
     <thead>
         <tr>
-            <th class="th_left">Person</th>
-            <th class="th_right">Totalt</th>
-            <th class="th_right">%</th>
-            <th class="th_right">N1</th>
-            <th class="th_right">N2</th>
-            <th class="th_right">N3</th>
-            <th class="th_right">Överlämn.</th>
+            <th class="th_left sortable" data-col="name" data-type="str">Person <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="total" data-type="num">Totalt <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="pct" data-type="num">% <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n1" data-type="num">N1 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n2" data-type="num">N2 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n3" data-type="num">N3 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="handovers" data-type="num">Överlämn. <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="next-shared" data-type="date">Nästa pass <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="next-handover" data-type="date">Nästa överlämn. <span class="sort-arrow"></span></th>
         </tr>
     </thead>
     <tbody>
         {% for r in cowork_rows %}
-        <tr class="shift-row">
+        <tr class="shift-row"
+            data-name="{{ r.other_name }}"
+            data-total="{{ r.total }}"
+            data-pct="{{ r.pct }}"
+            data-n1="{{ r.by_shift['N1'] }}"
+            data-n2="{{ r.by_shift['N2'] }}"
+            data-n3="{{ r.by_shift['N3'] }}"
+            data-handovers="{{ r.handovers }}"
+            data-next-shared="{{ r.next_shared_date or '' }}"
+            data-next-handover="{{ r.next_handover_date or '' }}">
             <td class="td_left" data-label="Person">
                 <a href="/cowork/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
                     {{ r.other_name }} (#{{ r.other_id }})
@@ -44,6 +55,8 @@
             <td class="td_right num" data-label="N2">{{ r.by_shift["N2"] }}</td>
             <td class="td_right num" data-label="N3">{{ r.by_shift["N3"] }}</td>
             <td class="td_right num" data-label="Överlämn.">{{ r.handovers }}</td>
+            <td class="td_right" data-label="Nästa pass">{{ r.next_shared_date or "-" }}</td>
+            <td class="td_right" data-label="Nästa överlämn.">{{ r.next_handover_date or "-" }}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -56,9 +69,11 @@
 </h2>
 
 {% if selected_cowork_row %}
+{% set wd_names = {0: "Mån", 1: "Tis", 2: "Ons", 3: "Tor", 4: "Fre", 5: "Lör", 6: "Sön"} %}
+
 <!-- Månadsfördelning -->
 <h3 style="margin-bottom: 0.5rem;">Fördelning per månad</h3>
-<table class="summary" style="margin-bottom: 1.5rem;">
+<table class="summary" style="margin-bottom: 1rem;">
     <thead>
         <tr>
             {% for m in range(1, 13) %}
@@ -70,6 +85,25 @@
         <tr>
             {% for m in range(1, 13) %}
             <td class="td_right num">{{ selected_cowork_row.by_month[m] }}</td>
+            {% endfor %}
+        </tr>
+    </tbody>
+</table>
+
+<!-- Veckodagsfördelning -->
+<h3 style="margin-bottom: 0.5rem;">Fördelning per veckodag</h3>
+<table class="summary" style="margin-bottom: 1.5rem;">
+    <thead>
+        <tr>
+            {% for d in range(7) %}
+            <th class="th_right">{{ wd_names[d] }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            {% for d in range(7) %}
+            <td class="td_right num">{{ selected_cowork_row.by_weekday[d] }}</td>
             {% endfor %}
         </tr>
     </tbody>
@@ -145,30 +179,71 @@
 
 <script>
 (function () {
+    // --- Dölj passerande rader ---
     const today = new Date().toISOString().slice(0, 10);
     const btn = document.getElementById('toggle-past');
     const countEl = document.getElementById('past-count');
 
-    if (!btn) return;
+    if (btn) {
+        const pastRows = Array.from(document.querySelectorAll('tr.past-row[data-date]'))
+            .filter(row => row.dataset.date < today);
 
-    const pastRows = Array.from(document.querySelectorAll('tr.past-row[data-date]'))
-        .filter(row => row.dataset.date < today);
+        function updateCount(showing) {
+            countEl.textContent = showing ? '' : `${pastRows.length} tidigare dold${pastRows.length === 1 ? '' : 'a'}`;
+        }
 
-    function updateCount(showing) {
-        countEl.textContent = showing ? '' : `${pastRows.length} tidigare dold${pastRows.length === 1 ? '' : 'a'}`;
+        function applyFilter(showing) {
+            pastRows.forEach(row => { row.style.display = showing ? '' : 'none'; });
+            btn.textContent = showing ? 'Dölj tidigare' : 'Visa tidigare';
+            btn.dataset.showing = showing;
+            updateCount(showing);
+        }
+
+        applyFilter(false);
+        btn.addEventListener('click', function () { applyFilter(this.dataset.showing !== 'true'); });
     }
 
-    function applyFilter(showing) {
-        pastRows.forEach(row => { row.style.display = showing ? '' : 'none'; });
-        btn.textContent = showing ? 'Dölj tidigare' : 'Visa tidigare';
-        btn.dataset.showing = showing;
-        updateCount(showing);
-    }
+    // --- Sorterbar tabell ---
+    const table = document.getElementById('cowork-table');
+    if (!table) return;
 
-    applyFilter(false);
+    let sortCol = null;
+    let sortAsc = true;
 
-    btn.addEventListener('click', function () {
-        applyFilter(this.dataset.showing !== 'true');
+    table.querySelectorAll('th.sortable').forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            const type = th.dataset.type;
+            sortAsc = sortCol === col ? !sortAsc : true;
+            sortCol = col;
+
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            rows.sort((a, b) => {
+                const av = a.dataset[col.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] ?? '';
+                const bv = b.dataset[col.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] ?? '';
+                if (type === 'num') {
+                    return (parseFloat(av) || 0) - (parseFloat(bv) || 0);
+                }
+                if (type === 'date') {
+                    // Tom sträng sorteras sist
+                    if (!av && !bv) return 0;
+                    if (!av) return 1;
+                    if (!bv) return -1;
+                    return av < bv ? -1 : av > bv ? 1 : 0;
+                }
+                return av.localeCompare(bv, 'sv');
+            });
+
+            if (!sortAsc) rows.reverse();
+            rows.forEach(r => tbody.appendChild(r));
+
+            // Uppdatera pilar
+            table.querySelectorAll('th.sortable .sort-arrow').forEach(el => { el.textContent = ''; });
+            th.querySelector('.sort-arrow').textContent = sortAsc ? ' ↑' : ' ↓';
+        });
     });
 })();
 </script>

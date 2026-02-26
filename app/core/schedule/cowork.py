@@ -1,5 +1,7 @@
 """Samarbetsstatistik - vem jobbar med vem."""
 
+import datetime
+
 from app.core.constants import PERSON_IDS
 from app.core.storage import load_persons
 
@@ -55,6 +57,7 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
     Returns:
         Lista med statistik per medarbetare, sorterad på person-ID
     """
+    today = datetime.date.today()
     days_in_year = generate_year_data(year, person_id=None)
 
     total_target_work_days = 0
@@ -71,8 +74,11 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
             "total": 0,
             "by_shift": {"N1": 0, "N2": 0, "N3": 0},
             "by_month": {m: 0 for m in range(1, 13)},
+            "by_weekday": {d: 0 for d in range(7)},
             "handovers": 0,
             "pct": 0.0,
+            "next_shared_date": None,
+            "next_handover_date": None,
         }
 
     # Överlämningspar samma dag: skiftet till vänster lämnar till skiftet till höger
@@ -96,7 +102,9 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
         if target and target.get("shift"):
             target_code = target["shift"].code
 
-        month = day["date"].month
+        date_val = day["date"]
+        month = date_val.month
+        weekday = date_val.weekday()
 
         # Korsdag N3→N1: kontrollera mot gårdagens skift
         for pid in stats:
@@ -104,6 +112,8 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
             other_curr = current_day_shifts.get(pid, "OFF")
             if (target_prev == "N3" and other_curr == "N1") or (other_prev == "N3" and target_code == "N1"):
                 stats[pid]["handovers"] += 1
+                if date_val >= today and stats[pid]["next_handover_date"] is None:
+                    stats[pid]["next_handover_date"] = date_val
 
         # Uppdatera prev innan eventuellt skip
         prev_day_shifts = current_day_shifts
@@ -130,12 +140,17 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
                 stats[pid]["total"] += 1
                 stats[pid]["by_shift"][target_code] += 1
                 stats[pid]["by_month"][month] += 1
+                stats[pid]["by_weekday"][weekday] += 1
+                if date_val >= today and stats[pid]["next_shared_date"] is None:
+                    stats[pid]["next_shared_date"] = date_val
 
             # Överlämning samma dag: N1↔N2 eller N2↔N3
             pair = (target_code, other_code)
             pair_rev = (other_code, target_code)
             if pair in _HANDOVER_PAIRS or pair_rev in _HANDOVER_PAIRS:
                 stats[pid]["handovers"] += 1
+                if date_val >= today and stats[pid]["next_handover_date"] is None:
+                    stats[pid]["next_handover_date"] = date_val
 
     # Beräkna procentandelar
     rows = list(stats.values())
