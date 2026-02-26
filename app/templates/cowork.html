@@ -112,13 +112,13 @@
 
 <!-- Toggle för passerande rader -->
 <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
-    <button id="toggle-past" class="btn secondary" data-showing="false">Visa tidigare</button>
+    <button id="toggle-past" class="btn secondary">Visa tidigare</button>
     <span id="past-count" style="color: var(--muted); font-size: 0.9em;"></span>
 </div>
 
 <!-- Lista gemensamma pass -->
 {% if cowork_details %}
-<table class="summary" style="margin-bottom: 2rem;">
+<table class="summary" id="cowork-details-table" style="margin-bottom: 0.5rem;">
     <thead>
         <tr>
             <th>Datum</th>
@@ -129,7 +129,7 @@
     </thead>
     <tbody>
         {% for d in cowork_details %}
-        <tr class="shift-row past-row" data-date="{{ d.date }}">
+        <tr class="shift-row" data-date="{{ d.date }}">
             <td>
                 <a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">
                     {{ d.date }}
@@ -142,6 +142,7 @@
         {% endfor %}
     </tbody>
 </table>
+<div id="cowork-details-pag" style="margin-bottom: 2rem;"></div>
 {% endif %}
 
 <!-- Överlämningar -->
@@ -149,7 +150,7 @@
 <h2 class="page-title">
     Överlämningar med {{ selected_other_name }} (#{{ selected_other_id }}) - {{ year }}
 </h2>
-<table class="summary">
+<table class="summary" id="handover-details-table" style="margin-bottom: 0.5rem;">
     <thead>
         <tr>
             <th>Datum</th>
@@ -160,7 +161,7 @@
     </thead>
     <tbody>
         {% for h in handover_details %}
-        <tr class="shift-row past-row" data-date="{{ h.date }}">
+        <tr class="shift-row" data-date="{{ h.date }}">
             <td>
                 <a href="/day/{{ person_id }}/{{ h.date.year }}/{{ "%02d"|format(h.date.month) }}/{{ "%02d"|format(h.date.day) }}">
                     {{ h.date }}
@@ -173,37 +174,90 @@
         {% endfor %}
     </tbody>
 </table>
+<div id="handover-details-pag" style="margin-bottom: 2rem;"></div>
 {% endif %}
 
 {% endif %}
 
 <script>
 (function () {
-    // --- Dölj passerande rader ---
     const today = new Date().toISOString().slice(0, 10);
+    const PAGE_SIZE = 10;
+    let showPast = false;
+
+    // --- Paginering ---
+    // Skapar ett pagineringsobjekt för en tabell.
+    // render() gömmer alla rader, visar sedan sida-intervallet av filtrerade rader.
+    function initPaginator(tableId, pagId) {
+        const tbody = document.querySelector('#' + tableId + ' tbody');
+        const pagEl = document.getElementById(pagId);
+        if (!tbody) return null;
+
+        let page = 1;
+
+        function render() {
+            const all = Array.from(tbody.querySelectorAll('tr[data-date]'));
+            const filtered = showPast ? all : all.filter(r => r.dataset.date >= today);
+            const total = filtered.length;
+            const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+            if (page > totalPages) page = 1;
+
+            const start = (page - 1) * PAGE_SIZE;
+
+            // Göm alla, visa sedan bara aktuell sida
+            all.forEach(r => { r.style.display = 'none'; });
+            filtered.slice(start, start + PAGE_SIZE).forEach(r => { r.style.display = ''; });
+
+            if (!pagEl) return;
+            if (totalPages <= 1) {
+                pagEl.innerHTML = total > 0
+                    ? `<span style="color:var(--muted);font-size:.9em">${total} poster</span>`
+                    : '';
+                return;
+            }
+            const from = start + 1, to = Math.min(start + PAGE_SIZE, total);
+            pagEl.innerHTML = `
+                <button class="btn secondary" id="${pagId}-prev" ${page <= 1 ? 'disabled' : ''}>Föregående</button>
+                <span style="color:var(--muted);font-size:.9em;margin:0 .75rem">Sida ${page} av ${totalPages} &nbsp;(${from}–${to} av ${total})</span>
+                <button class="btn secondary" id="${pagId}-next" ${page >= totalPages ? 'disabled' : ''}>Nästa</button>
+            `;
+            document.getElementById(pagId + '-prev').addEventListener('click', () => { page--; render(); });
+            document.getElementById(pagId + '-next').addEventListener('click', () => { page++; render(); });
+        }
+
+        return { render, reset() { page = 1; } };
+    }
+
+    const paginators = [
+        initPaginator('cowork-details-table', 'cowork-details-pag'),
+        initPaginator('handover-details-table', 'handover-details-pag'),
+    ].filter(Boolean);
+
+    paginators.forEach(p => p.render());
+
+    // --- Toggle passerande ---
     const btn = document.getElementById('toggle-past');
     const countEl = document.getElementById('past-count');
 
     if (btn) {
-        const pastRows = Array.from(document.querySelectorAll('tr.past-row[data-date]'))
-            .filter(row => row.dataset.date < today);
-
-        function updateCount(showing) {
-            countEl.textContent = showing ? '' : `${pastRows.length} tidigare dold${pastRows.length === 1 ? '' : 'a'}`;
+        function pastCount() {
+            return document.querySelectorAll('tr[data-date]').length -
+                Array.from(document.querySelectorAll('tr[data-date]')).filter(r => r.dataset.date >= today).length;
         }
-
-        function applyFilter(showing) {
-            pastRows.forEach(row => { row.style.display = showing ? '' : 'none'; });
-            btn.textContent = showing ? 'Dölj tidigare' : 'Visa tidigare';
-            btn.dataset.showing = showing;
-            updateCount(showing);
+        function updateToggle() {
+            const n = pastCount();
+            btn.textContent = showPast ? 'Dölj tidigare' : 'Visa tidigare';
+            countEl.textContent = (!showPast && n > 0) ? `${n} tidigare dold${n === 1 ? '' : 'a'}` : '';
         }
-
-        applyFilter(false);
-        btn.addEventListener('click', function () { applyFilter(this.dataset.showing !== 'true'); });
+        btn.addEventListener('click', () => {
+            showPast = !showPast;
+            paginators.forEach(p => { p.reset(); p.render(); });
+            updateToggle();
+        });
+        updateToggle();
     }
 
-    // --- Sorterbar tabell ---
+    // --- Sorterbar huvudtabell ---
     const table = document.getElementById('cowork-table');
     if (!table) return;
 
@@ -220,15 +274,12 @@
 
             const tbody = table.querySelector('tbody');
             const rows = Array.from(tbody.querySelectorAll('tr'));
+            const key = col.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
             rows.sort((a, b) => {
-                const av = a.dataset[col.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] ?? '';
-                const bv = b.dataset[col.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] ?? '';
-                if (type === 'num') {
-                    return (parseFloat(av) || 0) - (parseFloat(bv) || 0);
-                }
+                const av = a.dataset[key] ?? '', bv = b.dataset[key] ?? '';
+                if (type === 'num') return (parseFloat(av) || 0) - (parseFloat(bv) || 0);
                 if (type === 'date') {
-                    // Tom sträng sorteras sist
                     if (!av && !bv) return 0;
                     if (!av) return 1;
                     if (!bv) return -1;
@@ -240,7 +291,6 @@
             if (!sortAsc) rows.reverse();
             rows.forEach(r => tbody.appendChild(r));
 
-            // Uppdatera pilar
             table.querySelectorAll('th.sortable .sort-arrow').forEach(el => { el.textContent = ''; });
             th.querySelector('.sort-arrow').textContent = sortAsc ? ' ↑' : ' ↓';
         });
