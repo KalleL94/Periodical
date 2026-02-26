@@ -17,6 +17,7 @@
   --radius: 0.5rem;
 
   /* Alias-variabler för komponenter */
+  --background: var(--bg);
   --success: var(--accent-2);
   --primary: var(--accent);
   --primary-dark: #1890ff;
