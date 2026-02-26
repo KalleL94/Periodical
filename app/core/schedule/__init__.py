@@ -19,7 +19,7 @@ from .core import (
     get_vacation_shift,
     weekday_names,
 )
-from .cowork import build_cowork_details, build_cowork_stats
+from .cowork import build_cowork_details, build_cowork_stats, build_handover_details
 from .holidays_ob import build_special_ob_rules_for_year
 from .ob import (
     calculate_ob_hours,
@@ -113,6 +113,7 @@ __all__ = [
     # cowork
     "build_cowork_stats",
     "build_cowork_details",
+    "build_handover_details",
     # Bakåtkompatibilitet (deprecated)
     "settings",
     "tax_brackets",

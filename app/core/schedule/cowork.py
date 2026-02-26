@@ -38,11 +38,15 @@ def _get_person_name_from_db(person_id: int) -> str:
 def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
     """
     Räknar hur många pass target_person_id jobbar tillsammans
-    med varje annan person.
+    med varje annan person, samt beräknar överlämnings- och månadsstatistik.
 
-    En dag räknas bara om båda:
+    En dag räknas som samarbete bara om båda:
       - jobbar (inte OFF)
       - har SAMMA passtyp (N1, N2 eller N3)
+
+    Överlämningar räknas för:
+      - Samma dag: N1↔N2 eller N2↔N3
+      - Korsdag: N3 (dag D) → N1 (dag D+1)
 
     Args:
         year: År att analysera
@@ -52,6 +56,8 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
         Lista med statistik per medarbetare, sorterad på person-ID
     """
     days_in_year = generate_year_data(year, person_id=None)
+
+    total_target_work_days = 0
 
     # Initiera statistik för alla andra personer
     stats: dict[int, dict] = {}
@@ -64,45 +70,78 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
             "other_name": _get_person_name_from_db(pid),
             "total": 0,
             "by_shift": {"N1": 0, "N2": 0, "N3": 0},
+            "by_month": {m: 0 for m in range(1, 13)},
+            "handovers": 0,
+            "pct": 0.0,
         }
 
-    # Gå igenom alla dagar
+    # Överlämningspar samma dag: skiftet till vänster lämnar till skiftet till höger
+    _HANDOVER_PAIRS = {("N1", "N2"), ("N2", "N3")}
+
+    prev_day_shifts: dict[int, str] = {}  # person_id -> skiftkod föregående dag
+
     for day in days_in_year:
         persons_today = day.get("persons", [])
-        if not persons_today:
-            continue
 
-        # Hitta target-personens skift
+        # Bygg dagens skiftkarta
+        current_day_shifts: dict[int, str] = {
+            p["person_id"]: (p["shift"].code if p.get("shift") else "OFF") for p in persons_today
+        }
+
+        target_prev = prev_day_shifts.get(target_person_id, "OFF")
+
+        # Hitta target-personens skift idag
         target = _find_person_in_day(persons_today, target_person_id)
-        if not target:
+        target_code = "OFF"
+        if target and target.get("shift"):
+            target_code = target["shift"].code
+
+        month = day["date"].month
+
+        # Korsdag N3→N1: kontrollera mot gårdagens skift
+        for pid in stats:
+            other_prev = prev_day_shifts.get(pid, "OFF")
+            other_curr = current_day_shifts.get(pid, "OFF")
+            if (target_prev == "N3" and other_curr == "N1") or (other_prev == "N3" and target_code == "N1"):
+                stats[pid]["handovers"] += 1
+
+        # Uppdatera prev innan eventuellt skip
+        prev_day_shifts = current_day_shifts
+
+        if target_code not in ("N1", "N2", "N3"):
             continue
 
-        target_shift = target.get("shift")
-        if not target_shift or target_shift.code == "OFF":
-            continue
-
-        target_code = target_shift.code
+        total_target_work_days += 1
 
         # Jämför med alla andra
         for p in persons_today:
             pid = p["person_id"]
-            if pid == target_person_id:
+            if pid == target_person_id or pid not in stats:
                 continue
 
             other_shift = p.get("shift")
-            if not other_shift or other_shift.code == "OFF":
+            if not other_shift:
                 continue
 
-            # Bara samma skifttyp räknas
-            if other_shift.code != target_code:
-                continue
+            other_code = other_shift.code
 
-            stats[pid]["total"] += 1
-            if target_code in stats[pid]["by_shift"]:
+            # Samarbete: samma skifttyp
+            if other_code == target_code:
+                stats[pid]["total"] += 1
                 stats[pid]["by_shift"][target_code] += 1
+                stats[pid]["by_month"][month] += 1
 
-    # Sortera och returnera
+            # Överlämning samma dag: N1↔N2 eller N2↔N3
+            pair = (target_code, other_code)
+            pair_rev = (other_code, target_code)
+            if pair in _HANDOVER_PAIRS or pair_rev in _HANDOVER_PAIRS:
+                stats[pid]["handovers"] += 1
+
+    # Beräkna procentandelar
     rows = list(stats.values())
+    for r in rows:
+        r["pct"] = round(r["total"] / total_target_work_days * 100, 1) if total_target_work_days > 0 else 0.0
+
     rows.sort(key=lambda r: r["other_id"])
     return rows
 
@@ -155,6 +194,7 @@ def build_cowork_details(
                 "date": day["date"],
                 "weekday_name": day["weekday_name"],
                 "rotation_week": target.get("rotation_week"),
+                "rotation_length": target.get("rotation_length"),
                 "target_id": target_person_id,
                 "target_name": target["person_name"],
                 "target_shift": target_shift,
@@ -163,6 +203,109 @@ def build_cowork_details(
                 "other_shift": other_shift,
             }
         )
+
+    details.sort(key=lambda r: r["date"])
+    return details
+
+
+def build_handover_details(
+    year: int,
+    target_person_id: int,
+    other_person_id: int,
+) -> list[dict]:
+    """
+    Returnerar alla överlämningar mellan två personer under ett år.
+
+    En överlämning räknas när:
+      - Samma dag: ett pass avslutas och nästa startar (N1→N2 eller N2→N3)
+      - Korsdag: N3 (dag D) → N1 (dag D+1), datum sätts till dag D+1
+
+    Varje post innehåller:
+      - date, weekday_name: när överlämningen sker
+      - from_shift: skiftet som lämnar (t.ex. "N1")
+      - to_shift: skiftet som tar emot (t.ex. "N2")
+      - i_lamnar: True om target är den som lämnar, False om other lämnar
+
+    Args:
+        year: År att analysera
+        target_person_id: "Jag"-personen
+        other_person_id: Den andra personen
+
+    Returns:
+        Lista med överlämningar, sorterad på datum
+    """
+    days_in_year = generate_year_data(year, person_id=None)
+    details: list[dict] = []
+
+    _HANDOVER_PAIRS = {("N1", "N2"), ("N2", "N3")}
+
+    prev_target_code = "OFF"
+    prev_other_code = "OFF"
+
+    for day in days_in_year:
+        persons_today = day.get("persons", [])
+
+        target = _find_person_in_day(persons_today, target_person_id)
+        other = _find_person_in_day(persons_today, other_person_id)
+
+        target_code = target["shift"].code if target and target.get("shift") else "OFF"
+        other_code = other["shift"].code if other and other.get("shift") else "OFF"
+
+        date = day["date"]
+        weekday_name = day["weekday_name"]
+
+        # Korsdag N3→N1: använder dagens datum (när N1 börjar)
+        if prev_target_code == "N3" and other_code == "N1":
+            details.append(
+                {
+                    "date": date,
+                    "weekday_name": weekday_name,
+                    "from_shift": "N3",
+                    "to_shift": "N1",
+                    "i_lamnar": True,  # target (N3 igår) lämnade till other (N1 idag)
+                    "cross_day": True,
+                }
+            )
+        elif prev_other_code == "N3" and target_code == "N1":
+            details.append(
+                {
+                    "date": date,
+                    "weekday_name": weekday_name,
+                    "from_shift": "N3",
+                    "to_shift": "N1",
+                    "i_lamnar": False,  # other (N3 igår) lämnade till target (N1 idag)
+                    "cross_day": True,
+                }
+            )
+
+        # Samma dag: N1→N2 eller N2→N3
+        pair = (target_code, other_code)
+        pair_rev = (other_code, target_code)
+        if pair in _HANDOVER_PAIRS:
+            details.append(
+                {
+                    "date": date,
+                    "weekday_name": weekday_name,
+                    "from_shift": target_code,
+                    "to_shift": other_code,
+                    "i_lamnar": True,  # target lämnar till other
+                    "cross_day": False,
+                }
+            )
+        elif pair_rev in _HANDOVER_PAIRS:
+            details.append(
+                {
+                    "date": date,
+                    "weekday_name": weekday_name,
+                    "from_shift": other_code,
+                    "to_shift": target_code,
+                    "i_lamnar": False,  # other lämnar till target
+                    "cross_day": False,
+                }
+            )
+
+        prev_target_code = target_code
+        prev_other_code = other_code
 
     details.sort(key=lambda r: r["date"])
     return details

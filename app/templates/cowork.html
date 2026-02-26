@@ -1,0 +1,176 @@
+{# app/templates/cowork.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+{% set month_names = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Maj", 6: "Jun",
+                      7: "Jul", 8: "Aug", 9: "Sep", 10: "Okt", 11: "Nov", 12: "Dec"} %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/cowork/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
+        <a href="/cowork/{{ person_id }}" class="btn btn-primary">Today</a>
+        <a href="/cowork/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">Next year</a>
+        <a href="/year/{{ person_id }}?year={{ year }}" class="btn secondary">Year</a>
+    </div>
+</div>
+
+<h2 class="page-title">Samarbetsstatistik {{ year }} - {{ person_name }}</h2>
+
+<!-- Cowork stats-tabell -->
+<table class="summary">
+    <thead>
+        <tr>
+            <th class="th_left">Person</th>
+            <th class="th_right">Totalt</th>
+            <th class="th_right">%</th>
+            <th class="th_right">N1</th>
+            <th class="th_right">N2</th>
+            <th class="th_right">N3</th>
+            <th class="th_right">Överlämn.</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in cowork_rows %}
+        <tr class="shift-row">
+            <td class="td_left" data-label="Person">
+                <a href="/cowork/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
+                    {{ r.other_name }} (#{{ r.other_id }})
+                </a>
+            </td>
+            <td class="td_right num" data-label="Totalt">{{ r.total }}</td>
+            <td class="td_right num" data-label="%">{{ r.pct }}%</td>
+            <td class="td_right num" data-label="N1">{{ r.by_shift["N1"] }}</td>
+            <td class="td_right num" data-label="N2">{{ r.by_shift["N2"] }}</td>
+            <td class="td_right num" data-label="N3">{{ r.by_shift["N3"] }}</td>
+            <td class="td_right num" data-label="Överlämn.">{{ r.handovers }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{# Detaljvy för vald kollega #}
+{% if selected_other_id %}
+<h2 class="page-title" style="margin-top: 2rem;">
+    Gemensamma pass med {{ selected_other_name }} (#{{ selected_other_id }}) - {{ year }}
+</h2>
+
+{% if selected_cowork_row %}
+<!-- Månadsfördelning -->
+<h3 style="margin-bottom: 0.5rem;">Fördelning per månad</h3>
+<table class="summary" style="margin-bottom: 1.5rem;">
+    <thead>
+        <tr>
+            {% for m in range(1, 13) %}
+            <th class="th_right">{{ month_names[m] }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            {% for m in range(1, 13) %}
+            <td class="td_right num">{{ selected_cowork_row.by_month[m] }}</td>
+            {% endfor %}
+        </tr>
+    </tbody>
+</table>
+{% endif %}
+
+<!-- Toggle för passerande rader -->
+<div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+    <button id="toggle-past" class="btn secondary" data-showing="false">Visa tidigare</button>
+    <span id="past-count" style="color: var(--muted); font-size: 0.9em;"></span>
+</div>
+
+<!-- Lista gemensamma pass -->
+{% if cowork_details %}
+<table class="summary" style="margin-bottom: 2rem;">
+    <thead>
+        <tr>
+            <th>Datum</th>
+            <th>Veckodag</th>
+            <th>Rotationsvecka</th>
+            <th>Pass</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for d in cowork_details %}
+        <tr class="shift-row past-row" data-date="{{ d.date }}">
+            <td>
+                <a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">
+                    {{ d.date }}
+                </a>
+            </td>
+            <td>{{ d.weekday_name }}</td>
+            <td>{{ d.rotation_week }}/{{ d.rotation_length }}</td>
+            <td>{{ d.target_shift.code }} {{ d.target_shift.label }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- Överlämningar -->
+{% if handover_details %}
+<h2 class="page-title">
+    Överlämningar med {{ selected_other_name }} (#{{ selected_other_id }}) - {{ year }}
+</h2>
+<table class="summary">
+    <thead>
+        <tr>
+            <th>Datum</th>
+            <th>Veckodag</th>
+            <th>Mitt pass</th>
+            <th>{{ selected_other_name }}s pass</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in handover_details %}
+        <tr class="shift-row past-row" data-date="{{ h.date }}">
+            <td>
+                <a href="/day/{{ person_id }}/{{ h.date.year }}/{{ "%02d"|format(h.date.month) }}/{{ "%02d"|format(h.date.day) }}">
+                    {{ h.date }}
+                </a>
+            </td>
+            <td>{{ h.weekday_name }}</td>
+            <td>{% if h.i_lamnar %}{{ h.from_shift }}{% else %}{{ h.to_shift }}{% endif %}</td>
+            <td>{% if h.i_lamnar %}{{ h.to_shift }}{% else %}{{ h.from_shift }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% endif %}
+
+<script>
+(function () {
+    const today = new Date().toISOString().slice(0, 10);
+    const btn = document.getElementById('toggle-past');
+    const countEl = document.getElementById('past-count');
+
+    if (!btn) return;
+
+    const pastRows = Array.from(document.querySelectorAll('tr.past-row[data-date]'))
+        .filter(row => row.dataset.date < today);
+
+    function updateCount(showing) {
+        countEl.textContent = showing ? '' : `${pastRows.length} tidigare dold${pastRows.length === 1 ? '' : 'a'}`;
+    }
+
+    function applyFilter(showing) {
+        pastRows.forEach(row => { row.style.display = showing ? '' : 'none'; });
+        btn.textContent = showing ? 'Dölj tidigare' : 'Visa tidigare';
+        btn.dataset.showing = showing;
+        updateCount(showing);
+    }
+
+    applyFilter(false);
+
+    btn.addEventListener('click', function () {
+        applyFilter(this.dataset.showing !== 'true');
+    });
+})();
+</script>
+
+{% endblock %}

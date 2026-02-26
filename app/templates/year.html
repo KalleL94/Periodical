@@ -332,7 +332,10 @@
 
     <!-- 7. Cowork stats (2 wide) -->
     <div class="year-cowork">
-        <h2 class="page-title">Cowork stats {{ year }} - {{ person_name }}</h2>
+        <h2 class="page-title">
+            Cowork stats {{ year }} - {{ person_name }}
+            <a href="/cowork/{{ person_id }}?year={{ year }}" class="btn secondary" style="font-size: 0.8em; margin-left: 0.75rem;">Detaljerad statistik</a>
+        </h2>
 
         <table class="summary">
             <thead>
