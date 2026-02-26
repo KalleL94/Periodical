@@ -24,9 +24,10 @@
             <th class="th_left sortable" data-col="name" data-type="str">Person <span class="sort-arrow"></span></th>
             <th class="th_right sortable" data-col="total" data-type="num">Totalt <span class="sort-arrow"></span></th>
             <th class="th_right sortable" data-col="pct" data-type="num">% <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n1" data-type="num">N1 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n2" data-type="num">N2 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n3" data-type="num">N3 <span class="sort-arrow"></span></th>
             <th class="th_right sortable" data-col="handovers" data-type="num">Överlämn. <span class="sort-arrow"></span></th>
-            <th class="th_right sortable" data-col="next-shared" data-type="date">Nästa pass <span class="sort-arrow"></span></th>
-            <th class="th_right sortable" data-col="next-handover" data-type="date">Nästa överlämn. <span class="sort-arrow"></span></th>
         </tr>
     </thead>
     <tbody>
@@ -35,6 +36,9 @@
             data-name="{{ r.other_name }}"
             data-total="{{ r.total }}"
             data-pct="{{ r.pct }}"
+            data-n1="{{ r.by_shift['N1'] }}"
+            data-n2="{{ r.by_shift['N2'] }}"
+            data-n3="{{ r.by_shift['N3'] }}"
             data-handovers="{{ r.handovers }}"
             data-next-shared="{{ r.next_shared_date or '' }}"
             data-next-handover="{{ r.next_handover_date or '' }}">
@@ -45,9 +49,10 @@
             </td>
             <td class="td_right num" data-label="Totalt">{{ r.total }}</td>
             <td class="td_right num" data-label="%">{{ r.pct }}%</td>
+            <td class="td_right num" data-label="N1">{{ r.by_shift["N1"] }}</td>
+            <td class="td_right num" data-label="N2">{{ r.by_shift["N2"] }}</td>
+            <td class="td_right num" data-label="N3">{{ r.by_shift["N3"] }}</td>
             <td class="td_right num" data-label="Överlämn.">{{ r.handovers }}</td>
-            <td class="td_right" data-label="Nästa pass">{{ r.next_shared_date or "-" }}</td>
-            <td class="td_right" data-label="Nästa överlämn.">{{ r.next_handover_date or "-" }}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -58,6 +63,13 @@
 <h2 id="detail" class="page-title" style="margin-top: 2rem;">
     Gemensamma pass med {{ selected_other_name }} (#{{ selected_other_id }}) - {{ year }}
 </h2>
+
+{% if selected_cowork_row %}
+<div style="display:flex; gap:2rem; margin-bottom:1.5rem; font-size:.9em; color:var(--muted);">
+    <span>Nästa pass: <strong style="color:var(--text)">{{ selected_cowork_row.next_shared_date or "–" }}</strong></span>
+    <span>Nästa överlämning: <strong style="color:var(--text)">{{ selected_cowork_row.next_handover_date or "–" }}</strong></span>
+</div>
+{% endif %}
 
 {% if selected_cowork_row %}
 {% set wd_names = {0: "Mån", 1: "Tis", 2: "Ons", 3: "Tor", 4: "Fre", 5: "Lör", 6: "Sön"} %}
