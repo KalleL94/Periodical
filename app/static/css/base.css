@@ -15,6 +15,14 @@
   --table-border: rgba(255,255,255,0.06);
   --glass: rgba(255,255,255,0.03);
   --radius: 0.5rem;
+
+  /* Alias-variabler för komponenter */
+  --success: var(--accent-2);
+  --primary: var(--accent);
+  --primary-dark: #1890ff;
+  --info: var(--accent);
+  --info-bg: rgba(64,169,255,0.08);
+  --table-stripe: rgba(255,255,255,0.02);
 }
 
 * { box-sizing: border-box; }
