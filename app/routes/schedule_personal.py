@@ -25,6 +25,7 @@ from app.core.schedule import (
     build_calendar_grid_for_month,
     build_cowork_details,
     build_cowork_stats,
+    build_handover_details,
     build_week_data,
     calculate_ob_hours,
     calculate_ob_pay,
@@ -799,7 +800,8 @@ async def year_view(
 
     if with_person_id:
         selected_other_id = with_person_id
-        selected_other_name = person_list[with_person_id - 1].name
+        _other_row = next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
+        selected_other_name = _other_row["other_name"] if _other_row else str(with_person_id)
         cowork_details = build_cowork_details(year, rotation_position, with_person_id)
 
     # Use rotation_position for schedule, user_id_for_wages for wage lookup
@@ -963,6 +965,89 @@ async def year_view(
             "show_salary": show_salary,
             "ob_rules": combined_rules,  # All OB rules for label lookup
             "vacation_pay": vacation_pay,
+        },
+        user=current_user,
+    )
+
+
+@router.get("/cowork/{person_id}", response_class=HTMLResponse, name="cowork_person")
+async def cowork_view(
+    request: Request,
+    person_id: int,
+    year: int = Query(None),
+    with_person_id: int | None = Query(None, alias="with_person_id"),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Dedikerad sida för co-work-statistik för en specifik person."""
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
+    # Hantera user_id (>10) vs rotationsposition (1-10)
+    if person_id > 10:
+        target_user = db.query(User).filter(User.id == person_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id_for_wages = person_id
+        rotation_position = target_user.rotation_person_id
+        person_name = target_user.name
+    else:
+        person_id = validate_person_id(person_id)
+        user_id_for_wages = person_id
+        rotation_position = person_id
+        person_name = None
+
+    if redirect := redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/cowork/{current_user.id}?year={year or ''}"
+    ):
+        return redirect
+
+    if with_person_id is not None:
+        with_person_id = validate_person_id(with_person_id)
+
+    safe_today = get_safe_today(rotation_start_date)
+    year = year or safe_today.year
+
+    if person_name is None:
+        if current_user.rotation_person_id == rotation_position:
+            person_name = current_user.name
+        else:
+            holder = db.query(User).filter(User.person_id == rotation_position).first()
+            if holder:
+                person_name = holder.name
+            else:
+                holder = db.query(User).filter(User.id == rotation_position).first()
+                person_name = holder.name if holder else person_list[rotation_position - 1].name
+
+    cowork_rows = build_cowork_stats(year, rotation_position)
+
+    selected_other_id = None
+    selected_other_name = None
+    selected_cowork_row = None
+    cowork_details: list[dict] = []
+    handover_details: list[dict] = []
+
+    if with_person_id:
+        selected_other_id = with_person_id
+        selected_cowork_row = next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
+        selected_other_name = selected_cowork_row["other_name"] if selected_cowork_row else str(with_person_id)
+        cowork_details = build_cowork_details(year, rotation_position, with_person_id)
+        handover_details = build_handover_details(year, rotation_position, with_person_id)
+
+    return render_template(
+        templates,
+        "cowork.html",
+        request,
+        {
+            "year": year,
+            "person_id": person_id,
+            "person_name": person_name,
+            "cowork_rows": cowork_rows,
+            "cowork_details": cowork_details,
+            "handover_details": handover_details,
+            "selected_other_id": selected_other_id,
+            "selected_other_name": selected_other_name,
+            "selected_cowork_row": selected_cowork_row,
         },
         user=current_user,
     )

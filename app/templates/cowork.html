@@ -1,0 +1,436 @@
+{# app/templates/cowork.html #}
+{% extends "base.html" %}
+
+{% block page_content %}
+
+{% set month_names = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Maj", 6: "Jun",
+                      7: "Jul", 8: "Aug", 9: "Sep", 10: "Okt", 11: "Nov", 12: "Dec"} %}
+
+<div class="cowork-page">
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/cowork/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
+        <a href="/cowork/{{ person_id }}" class="btn btn-primary">Today</a>
+        <a href="/cowork/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">Next year</a>
+        <a href="/year/{{ person_id }}?year={{ year }}" class="btn secondary">Year</a>
+    </div>
+</div>
+
+<h2 class="page-title">Samarbetsstatistik {{ year }} - {{ person_name }}</h2>
+
+{% set ns = namespace(total_shared=0, total_handovers=0, n1=0, n2=0, n3=0) %}
+{% for r in cowork_rows %}
+{% set ns.total_shared = ns.total_shared + r.total %}
+{% set ns.total_handovers = ns.total_handovers + r.handovers %}
+{% set ns.n1 = ns.n1 + r.by_shift['N1'] %}
+{% set ns.n2 = ns.n2 + r.by_shift['N2'] %}
+{% set ns.n3 = ns.n3 + r.by_shift['N3'] %}
+{% endfor %}
+{% set top_sorted = cowork_rows | sort(attribute='total', reverse=True) | list %}
+{% set max_bar = [[ns.n1, ns.n2, ns.n3] | max, 1] | max %}
+
+<div class="cowork-top-layout">
+
+<!-- Cowork stats-tabell -->
+<div style="overflow-x:auto; flex:0 1 auto;">
+<table class="summary" id="cowork-table" style="width:fit-content;">
+    <thead>
+        <tr>
+            <th class="th_left sortable" data-col="name" data-type="str">Person <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="total" data-type="num">Totalt <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="pct" data-type="num">% <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n1" data-type="num">N1 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n2" data-type="num">N2 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="n3" data-type="num">N3 <span class="sort-arrow"></span></th>
+            <th class="th_right sortable" data-col="handovers" data-type="num">Överlämn. <span class="sort-arrow"></span></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in cowork_rows %}
+        <tr class="shift-row"
+            data-name="{{ r.other_name }}"
+            data-total="{{ r.total }}"
+            data-pct="{{ r.pct }}"
+            data-n1="{{ r.by_shift['N1'] }}"
+            data-n2="{{ r.by_shift['N2'] }}"
+            data-n3="{{ r.by_shift['N3'] }}"
+            data-handovers="{{ r.handovers }}"
+            data-next-shared="{{ r.next_shared_date or '' }}"
+            data-next-handover="{{ r.next_handover_date or '' }}">
+            <td class="td_left" data-label="Person">
+                <a href="/cowork/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}#detail">
+                    {{ r.other_name }} (#{{ r.other_id }})
+                </a>
+            </td>
+            <td class="td_right num" data-label="Totalt">{{ r.total }}</td>
+            <td class="td_right num" data-label="%">{{ r.pct }}%</td>
+            <td class="td_right num" data-label="N1">{{ r.by_shift["N1"] }}</td>
+            <td class="td_right num" data-label="N2">{{ r.by_shift["N2"] }}</td>
+            <td class="td_right num" data-label="N3">{{ r.by_shift["N3"] }}</td>
+            <td class="td_right num" data-label="Överlämn.">{{ r.handovers }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- Alltid synlig sammanfattning -->
+<div class="cowork-sidebar">
+
+    <div style="margin-bottom:1.75rem;">
+        <div class="sidebar-label">Totalt {{ year }}</div>
+        <div style="display:flex; gap:2rem; flex-wrap:wrap; margin-top:.5rem;">
+            <div>
+                <div style="font-size:1.6em; font-weight:700; color:var(--text); line-height:1.1;">{{ ns.total_shared }}</div>
+                <div style="font-size:.8em; color:var(--muted);">gemensamma pass</div>
+            </div>
+            <div>
+                <div style="font-size:1.6em; font-weight:700; color:var(--text); line-height:1.1;">{{ ns.total_handovers }}</div>
+                <div style="font-size:.8em; color:var(--muted);">överlämningar</div>
+            </div>
+        </div>
+    </div>
+
+    {% if top_sorted %}
+    <div style="margin-bottom:1.75rem;">
+        <div class="sidebar-label">Topp 3 kollegor</div>
+        {% for r in top_sorted[:3] %}
+        <div style="display:flex; justify-content:space-between; align-items:baseline; padding:.3rem 0; border-bottom:1px solid var(--table-border);">
+            <a href="/cowork/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}#detail" style="font-size:.9em;">{{ r.other_name }}</a>
+            <span style="font-size:.82em; color:var(--muted); white-space:nowrap; margin-left:.5rem;">{{ r.total }} pass</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div>
+        <div class="sidebar-label">Skiftfördelning totalt</div>
+        {% for s, val in [('N1', ns.n1), ('N2', ns.n2), ('N3', ns.n3)] %}
+        {% set pct = (val / max_bar * 100) | round | int %}
+        <div style="display:flex; align-items:center; gap:.5rem; margin-top:.4rem;">
+            <span style="font-size:.8em; color:var(--muted); width:1.8rem; flex-shrink:0;">{{ s }}</span>
+            <div style="flex:1; height:6px; background:var(--muted-bg); border-radius:3px; min-width:0;">
+                <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:3px; {% if val == 0 %}opacity:0;{% endif %}"></div>
+            </div>
+            <span style="font-size:.8em; color:var(--muted); width:2.5rem; text-align:right; flex-shrink:0;">{{ val }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+</div>
+
+</div>{# /cowork-top-layout #}
+
+{# Detaljvy för vald kollega #}
+{% if selected_other_id %}
+<h2 id="detail" class="page-title" style="margin-top: 2rem;">
+    Gemensamma pass med {{ selected_other_name }} (#{{ selected_other_id }}) - {{ year }}
+</h2>
+
+{% if selected_cowork_row %}
+{% set wd_names = {0: "Mån", 1: "Tis", 2: "Ons", 3: "Tor", 4: "Fre", 5: "Lör", 6: "Sön"} %}
+{% set max_shift = [selected_cowork_row.by_shift.values() | max, 1] | max %}
+{% set max_month = [selected_cowork_row.by_month.values() | max, 1] | max %}
+{% set max_wd    = [selected_cowork_row.by_weekday.values() | max, 1] | max %}
+
+<div class="cowork-detail-grid">
+
+    <!-- Vänster kolumn: statistik och diagram -->
+    <div>
+
+        <!-- Nästa datum -->
+        <div style="margin-bottom:1.5rem; font-size:.9em; color:var(--muted); display:flex; flex-direction:column; gap:.4rem;">
+            <span>Nästa pass: <strong style="color:var(--text)">{{ selected_cowork_row.next_shared_date or "–" }}</strong></span>
+            <span>Nästa överlämning: <strong style="color:var(--text)">{{ selected_cowork_row.next_handover_date or "–" }}</strong></span>
+        </div>
+
+        <!-- Skiftfördelning N1/N2/N3 -->
+        <div style="display:flex; gap:1.5rem; align-items:flex-end; margin-bottom:1.75rem;">
+            {% for s in ["N1", "N2", "N3"] %}
+            {% set val = selected_cowork_row.by_shift[s] %}
+            {% set bar_h = (val / max_shift * 48) | round | int %}
+            <div style="text-align:center; min-width:2.5rem;">
+                <div style="font-size:1em; font-weight:600; color:var(--text)">{{ val }}</div>
+                <div style="width:2.5rem; height:48px; background:var(--muted-bg); border-radius:4px 4px 0 0; display:flex; align-items:flex-end; margin:4px auto 0;">
+                    <div style="width:100%; height:{{ [bar_h, 2 if val > 0 else 0] | max }}px; background:var(--accent); border-radius:4px 4px 0 0;"></div>
+                </div>
+                <div style="font-size:.8em; color:var(--muted); margin-top:4px">{{ s }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Månadsfördelning -->
+        <h3 style="margin-bottom:.5rem;">Fördelning per månad</h3>
+        <div style="overflow-x:auto; margin-bottom:1rem;">
+        <table class="summary">
+            <thead><tr>
+                {% for m in range(1, 13) %}
+                <th style="text-align:right; font-size:.8em">{{ month_names[m] }}</th>
+                {% endfor %}
+            </tr></thead>
+            <tbody><tr>
+                {% for m in range(1, 13) %}
+                {% set val = selected_cowork_row.by_month[m] %}
+                {% set pct = (val / max_month * 100) | round | int %}
+                <td style="text-align:right; padding:6px 8px 6px;">
+                    <div style="font-size:.9em; line-height:1.4">{{ val }}</div>
+                    <div style="height:3px; background:var(--muted-bg); border-radius:2px; margin-top:3px; min-width:1.5rem;">
+                        <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:2px; {% if val == 0 %}opacity:0;{% endif %}"></div>
+                    </div>
+                </td>
+                {% endfor %}
+            </tr></tbody>
+        </table>
+        </div>
+
+        <!-- Veckodagsfördelning -->
+        <h3 style="margin-bottom:.5rem;">Fördelning per veckodag</h3>
+        <div style="overflow-x:auto;">
+        <table class="summary">
+            <thead><tr>
+                {% for d in range(7) %}
+                <th style="text-align:right; font-size:.8em">{{ wd_names[d] }}</th>
+                {% endfor %}
+            </tr></thead>
+            <tbody><tr>
+                {% for d in range(7) %}
+                {% set val = selected_cowork_row.by_weekday[d] %}
+                {% set pct = (val / max_wd * 100) | round | int %}
+                <td style="text-align:right; padding:6px 8px 6px;">
+                    <div style="font-size:.9em; line-height:1.4">{{ val }}</div>
+                    <div style="height:3px; background:var(--muted-bg); border-radius:2px; margin-top:3px; min-width:1.5rem;">
+                        <div style="width:{{ pct }}%; height:100%; background:var(--accent); border-radius:2px; {% if val == 0 %}opacity:0;{% endif %}"></div>
+                    </div>
+                </td>
+                {% endfor %}
+            </tr></tbody>
+        </table>
+        </div>
+
+    </div>
+
+    <!-- Höger kolumn: kronologiska listor -->
+    <div>
+
+        <!-- Toggle för passerande rader -->
+        <div style="display:flex; align-items:center; gap:1rem; margin-bottom:.75rem;">
+            <button id="toggle-past" class="btn secondary">Visa tidigare</button>
+            <span id="past-count" style="color:var(--muted); font-size:.9em;"></span>
+        </div>
+
+        <!-- Gemensamma pass -->
+        {% if cowork_details %}
+        <div style="overflow-x:auto;">
+        <table class="summary" id="cowork-details-table" style="margin-bottom:.5rem;">
+            <thead><tr>
+                <th>Datum</th>
+                <th>Veckodag</th>
+                <th>Rotv.</th>
+                <th>Pass</th>
+            </tr></thead>
+            <tbody>
+                {% for d in cowork_details %}
+                <tr class="shift-row" data-date="{{ d.date }}">
+                    <td><a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">{{ d.date }}</a></td>
+                    <td>{{ d.weekday_name }}</td>
+                    <td>{{ d.rotation_week }}/{{ d.rotation_length }}</td>
+                    <td>{{ d.target_shift.code }} {{ d.target_shift.label }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div id="cowork-details-pag" style="margin-bottom:1.5rem;"></div>
+        {% endif %}
+
+        <!-- Överlämningar -->
+        {% if handover_details %}
+        <h3 style="margin-bottom:.5rem;">Överlämningar</h3>
+        <div style="overflow-x:auto;">
+        <table class="summary" id="handover-details-table" style="margin-bottom:.5rem;">
+            <thead><tr>
+                <th>Datum</th>
+                <th>Veckodag</th>
+                <th>Mitt pass</th>
+                <th>{{ selected_other_name }}s pass</th>
+            </tr></thead>
+            <tbody>
+                {% for h in handover_details %}
+                <tr class="shift-row" data-date="{{ h.date }}">
+                    <td><a href="/day/{{ person_id }}/{{ h.date.year }}/{{ "%02d"|format(h.date.month) }}/{{ "%02d"|format(h.date.day) }}">{{ h.date }}</a></td>
+                    <td>{{ h.weekday_name }}</td>
+                    <td>{% if h.i_lamnar %}{{ h.from_shift }}{% else %}{{ h.to_shift }}{% endif %}</td>
+                    <td>{% if h.i_lamnar %}{{ h.to_shift }}{% else %}{{ h.from_shift }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div id="handover-details-pag" style="margin-bottom:1.5rem;"></div>
+        {% endif %}
+
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<style>
+.cowork-top-layout {
+    display: flex;
+    gap: 2rem;
+    align-items: start;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+}
+.cowork-sidebar {
+    flex: 1 1 220px;
+    max-width: 280px;
+    padding: 1rem 1.25rem;
+    background: var(--panel);
+    border: 1px solid var(--table-border);
+    border-radius: var(--radius);
+}
+.sidebar-label {
+    font-size: .72em;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+    margin-bottom: .25rem;
+}
+@media (max-width: 600px) {
+    .cowork-sidebar { max-width: 100%; }
+}
+.cowork-detail-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 2.5rem;
+    align-items: start;
+    margin-top: 1rem;
+}
+@media (max-width: 750px) {
+    .cowork-detail-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+(function () {
+    const today = new Date().toISOString().slice(0, 10);
+    const PAGE_SIZE = 10;
+    let showPast = false;
+
+    // --- Paginering ---
+    // Skapar ett pagineringsobjekt för en tabell.
+    // render() gömmer alla rader, visar sedan sida-intervallet av filtrerade rader.
+    function initPaginator(tableId, pagId) {
+        const tbody = document.querySelector('#' + tableId + ' tbody');
+        const pagEl = document.getElementById(pagId);
+        if (!tbody) return null;
+
+        let page = 1;
+
+        function render() {
+            const all = Array.from(tbody.querySelectorAll('tr[data-date]'));
+            const filtered = showPast ? all : all.filter(r => r.dataset.date >= today);
+            const total = filtered.length;
+            const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+            if (page > totalPages) page = 1;
+
+            const start = (page - 1) * PAGE_SIZE;
+
+            // Göm alla, visa sedan bara aktuell sida
+            all.forEach(r => { r.style.display = 'none'; });
+            filtered.slice(start, start + PAGE_SIZE).forEach(r => { r.style.display = ''; });
+
+            if (!pagEl) return;
+            if (totalPages <= 1) {
+                pagEl.innerHTML = total > 0
+                    ? `<span style="color:var(--muted);font-size:.9em">${total} poster</span>`
+                    : '';
+                return;
+            }
+            const from = start + 1, to = Math.min(start + PAGE_SIZE, total);
+            pagEl.innerHTML = `
+                <button class="btn secondary" id="${pagId}-prev" ${page <= 1 ? 'disabled' : ''}>Föregående</button>
+                <span style="color:var(--muted);font-size:.9em;margin:0 .75rem">Sida ${page} av ${totalPages} &nbsp;(${from}–${to} av ${total})</span>
+                <button class="btn secondary" id="${pagId}-next" ${page >= totalPages ? 'disabled' : ''}>Nästa</button>
+            `;
+            document.getElementById(pagId + '-prev').addEventListener('click', () => { page--; render(); });
+            document.getElementById(pagId + '-next').addEventListener('click', () => { page++; render(); });
+        }
+
+        return { render, reset() { page = 1; } };
+    }
+
+    const paginators = [
+        initPaginator('cowork-details-table', 'cowork-details-pag'),
+        initPaginator('handover-details-table', 'handover-details-pag'),
+    ].filter(Boolean);
+
+    paginators.forEach(p => p.render());
+
+    // --- Toggle passerande ---
+    const btn = document.getElementById('toggle-past');
+    const countEl = document.getElementById('past-count');
+
+    if (btn) {
+        function pastCount() {
+            return document.querySelectorAll('tr[data-date]').length -
+                Array.from(document.querySelectorAll('tr[data-date]')).filter(r => r.dataset.date >= today).length;
+        }
+        function updateToggle() {
+            const n = pastCount();
+            btn.textContent = showPast ? 'Dölj tidigare' : 'Visa tidigare';
+            countEl.textContent = (!showPast && n > 0) ? `${n} tidigare dold${n === 1 ? '' : 'a'}` : '';
+        }
+        btn.addEventListener('click', () => {
+            showPast = !showPast;
+            paginators.forEach(p => { p.reset(); p.render(); });
+            updateToggle();
+        });
+        updateToggle();
+    }
+
+    // --- Sorterbar huvudtabell ---
+    const table = document.getElementById('cowork-table');
+    if (!table) return;
+
+    let sortCol = null;
+    let sortAsc = true;
+
+    table.querySelectorAll('th.sortable').forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            const type = th.dataset.type;
+            sortAsc = sortCol === col ? !sortAsc : true;
+            sortCol = col;
+
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const key = col.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+            rows.sort((a, b) => {
+                const av = a.dataset[key] ?? '', bv = b.dataset[key] ?? '';
+                if (type === 'num') return (parseFloat(av) || 0) - (parseFloat(bv) || 0);
+                if (type === 'date') {
+                    if (!av && !bv) return 0;
+                    if (!av) return 1;
+                    if (!bv) return -1;
+                    return av < bv ? -1 : av > bv ? 1 : 0;
+                }
+                return av.localeCompare(bv, 'sv');
+            });
+
+            if (!sortAsc) rows.reverse();
+            rows.forEach(r => tbody.appendChild(r));
+
+            table.querySelectorAll('th.sortable .sort-arrow').forEach(el => { el.textContent = ''; });
+            th.querySelector('.sort-arrow').textContent = sortAsc ? ' ↑' : ' ↓';
+        });
+    });
+})();
+</script>
+
+</div>{# /cowork-page #}
+
+{% endblock %}
