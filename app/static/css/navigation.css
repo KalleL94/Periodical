@@ -18,6 +18,11 @@
   border-color: var(--accent);
   background: rgba(255,255,255,0.03);
 }
+.nav-link--active {
+  color: var(--accent);
+  background: rgba(64,169,255,0.08);
+  border-color: rgba(64,169,255,0.3);
+}
 
 /* Hamburger menu */
 .hamburger {

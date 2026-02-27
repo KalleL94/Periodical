@@ -1,12 +1,14 @@
 {# app/templates/dashboard.html #}
 {% extends "base.html" %}
 
+{% block title %}Periodical – Översikt{% endblock %}
+
 {% block page_content %}
     <section>
-        <h2>Welcome, {{ user.name }}</h2>
+        <h2>Välkommen, {{ user.name }}</h2>
 
         <div class="dashboard-container">
-            <!-- Pending Swap Notification -->
+            <!-- Väntande bytesförfrågningar -->
             {% if pending_swap_count and pending_swap_count > 0 %}
             <div class="card" style="border-color: var(--warning); grid-column: 1 / -1;">
                 <h3 style="color: var(--warning); margin-bottom: 0.5rem;">Skiftbyten</h3>
@@ -15,46 +17,46 @@
             </div>
             {% endif %}
 
-            <!-- Next Shifts Card -->
+            <!-- Kommande pass -->
             {% if next_shift or next_oncall_shift %}
             <div class="card">
-                <h3>Upcoming Shifts</h3>
-                
+                <h3>Kommande pass</h3>
+
                 {% if next_shift %}
-                <h4>Next Shift</h4>
+                <h4>Nästa pass</h4>
                 <div class="shift-info">
                     <div class="shift-badge" style="background-color: {{ next_shift.color }}; color: {{ next_shift.color|contrast }};">
                         {{ next_shift.shift_type }}
                     </div>
                     <div class="shift-details">
-                        <strong>{{ next_shift.date.strftime('%A, %B %d, %Y') }}</strong>
+                        <strong>{{ next_shift.date.strftime('%A %d %B %Y') }}</strong>
                         <div>{{ next_shift.time_range }}</div>
                         {% if next_shift.days_until == 0 %}
-                            <div class="shift-countdown" style="color: var(--success);">Today</div>
+                            <div class="shift-countdown" style="color: var(--success);">Idag</div>
                         {% elif next_shift.days_until == 1 %}
-                            <div class="shift-countdown" style="color: var(--success);">Tomorrow</div>
+                            <div class="shift-countdown" style="color: var(--success);">Imorgon</div>
                         {% else %}
-                            <div class="shift-countdown">In {{ next_shift.days_until }} days</div>
+                            <div class="shift-countdown">Om {{ next_shift.days_until }} dagar</div>
                         {% endif %}
                     </div>
                 </div>
                 {% endif %}
 
                 {% if next_oncall_shift %}
-                <h4 style="margin-top: 1.5rem;">Next On-Call</h4>
+                <h4 style="margin-top: 1.5rem;">Nästa jour</h4>
                 <div class="shift-info">
                     <div class="shift-badge" style="background-color: {{ next_oncall_shift.color }}; color: {{ next_oncall_shift.color|contrast }};">
                         {{ next_oncall_shift.shift_type }}
                     </div>
                     <div class="shift-details">
-                        <strong>{{ next_oncall_shift.date.strftime('%A, %B %d, %Y') }}</strong>
+                        <strong>{{ next_oncall_shift.date.strftime('%A %d %B %Y') }}</strong>
                         <div>{{ next_oncall_shift.time_range }}</div>
                         {% if next_oncall_shift.days_until == 0 %}
-                            <div class="shift-countdown" style="color: var(--success);">Today</div>
+                            <div class="shift-countdown" style="color: var(--success);">Idag</div>
                         {% elif next_oncall_shift.days_until == 1 %}
-                            <div class="shift-countdown" style="color: var(--success);">Tomorrow</div>
+                            <div class="shift-countdown" style="color: var(--success);">Imorgon</div>
                         {% else %}
-                            <div class="shift-countdown">In {{ next_oncall_shift.days_until }} days</div>
+                            <div class="shift-countdown">Om {{ next_oncall_shift.days_until }} dagar</div>
                         {% endif %}
                     </div>
                 </div>
@@ -62,10 +64,10 @@
             </div>
             {% endif %}
 
-            <!-- Week Summary Card -->
+            <!-- Veckosummering -->
             {% if week_summary %}
             <div class="card">
-                <h3>This Week</h3>
+                <h3>Denna vecka</h3>
                 {% if week_schedule %}
                 <div class="week-schedule">
                     {% for day in week_schedule %}
@@ -80,32 +82,32 @@
                 {% endif %}
                 <div class="week-grid">
                     <div class="summary-item">
-                        <div class="summary-label">Total Hours</div>
+                        <div class="summary-label">Totalt timmar</div>
                         <div class="summary-value">{{ "%.1f"|format(week_summary.total_hours) }}h</div>
                     </div>
                     <div class="summary-item">
-                        <div class="summary-label">OB Hours</div>
+                        <div class="summary-label">OB-timmar</div>
                         <div class="summary-value">{{ "%.1f"|format(week_summary.ob_hours) }}h</div>
                     </div>
                     {% if can_see_salary %}
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OB Pay</div>
+                        <div class="summary-label">Beräknad OB</div>
                         <div class="summary-value">{{ "{:,.0f}".format(week_summary.total_pay) }}kr</div>
                     </div>
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OC Pay</div>
+                        <div class="summary-label">Beräknad jour</div>
                         <div class="summary-value">{{ "{:,.0f}".format(week_summary.oc_pay) }}kr</div>
                     </div>
                     {% if week_summary.ot_pay > 0 %}
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OT Pay</div>
+                        <div class="summary-label">Beräknad övertid</div>
                         <div class="summary-value">{{ "{:,.0f}".format(week_summary.ot_pay) }}kr</div>
                     </div>
                     {% endif %}
                     {% if week_summary.absence_deduction and week_summary.absence_deduction > 0 %}
                     <div class="summary-item">
-                        <div class="summary-label">Absence Deduction</div>
-                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(week_summary.absence_deduction) }}kr</div>
+                        <div class="summary-label">Frånvaroavdrag</div>
+                        <div class="summary-value" style="color: var(--danger);">-{{ "{:,.0f}".format(week_summary.absence_deduction) }}kr</div>
                     </div>
                     {% endif %}
                     {% endif %}
@@ -113,38 +115,38 @@
             </div>
             {% endif %}
 
-            <!-- Month Summary Card -->
+            <!-- Månadsummering -->
             {% if month_summary %}
             <div class="card">
-                <h3>This Month ({{ month_summary.month_name }})</h3>
+                <h3>Denna månad ({{ month_summary.month_name }})</h3>
                 <div class="summary-grid">
                     <div class="summary-item">
-                        <div class="summary-label">Total Hours</div>
+                        <div class="summary-label">Totalt timmar</div>
                         <div class="summary-value">{{ "%.1f"|format(month_summary.total_hours) }}h</div>
                     </div>
                     <div class="summary-item">
-                        <div class="summary-label">OB Hours</div>
+                        <div class="summary-label">OB-timmar</div>
                         <div class="summary-value">{{ "%.1f"|format(month_summary.ob_hours) }}h</div>
                     </div>
                     {% if can_see_salary %}
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OB</div>
+                        <div class="summary-label">Beräknad OB</div>
                         <div class="summary-value">{{ "{:,.0f}".format(month_summary.total_ob_pay) }}kr</div>
                     </div>
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OC</div>
+                        <div class="summary-label">Beräknad jour</div>
                         <div class="summary-value">{{ "{:,.0f}".format(month_summary.oc_pay) }}kr</div>
                     </div>
                     {% if month_summary.ot_pay > 0 %}
                     <div class="summary-item">
-                        <div class="summary-label">Estimated OT</div>
+                        <div class="summary-label">Beräknad övertid</div>
                         <div class="summary-value">{{ "{:,.0f}".format(month_summary.ot_pay) }}kr</div>
                     </div>
                     {% endif %}
                     {% if month_summary.absence_deduction and month_summary.absence_deduction > 0 %}
                     <div class="summary-item">
-                        <div class="summary-label">Absence Deduction</div>
-                        <div class="summary-value" style="color: #ef4444;">-{{ "{:,.0f}".format(month_summary.absence_deduction) }}kr</div>
+                        <div class="summary-label">Frånvaroavdrag</div>
+                        <div class="summary-value" style="color: var(--danger);">-{{ "{:,.0f}".format(month_summary.absence_deduction) }}kr</div>
                     </div>
                     {% endif %}
                     {% if month_summary.total_hours > 0 %}
@@ -152,38 +154,38 @@
                         {% set has_absence = month_summary.absence_deduction and month_summary.absence_deduction > 0 %}
                         {% if not has_ot and not has_absence %}
                         <div class="summary-item">
-                            <div class="summary-label">Pay per hour</div>
+                            <div class="summary-label">Lön per timme</div>
                             <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
                         </div>
                         <div class="summary-item">
-                            <div class="summary-label">Pay per day</div>
+                            <div class="summary-label">Lön per dag</div>
                             <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / (month_summary.total_hours / 8.5)) }}kr</div>
                         </div>
                         {% elif not (has_ot and has_absence) %}
                         <div class="summary-item">
-                            <div class="summary-label">Pay per hour</div>
+                            <div class="summary-label">Lön per timme</div>
                             <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
                         </div>
                         {% endif %}
                     {% endif %}
                     <div class="summary-item">
-                        <div class="summary-label">Gross Pay</div>
+                        <div class="summary-label">Bruttolön</div>
                         <div class="summary-value">{{ "{:,.0f}".format(month_summary.gross_pay) }}kr</div>
                     </div>
                     <div class="summary-item">
-                        <div class="summary-label">Net Pay</div>
+                        <div class="summary-label">Nettolön</div>
                         <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.net_pay) }}kr</div>
                     </div>
                     {% if month_summary.trend %}
                     <div class="summary-item trend-item">
-                        <div class="summary-label">vs {{ month_summary.trend.last_month_name }}</div>
+                        <div class="summary-label">jfr {{ month_summary.trend.last_month_name }}</div>
                         <div class="summary-value">
                             {% if month_summary.trend.direction == 'up' %}
-                            <span class="trend-up" style="color: #60d302;">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↑</span>
+                            <span class="trend-up">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↑</span>
                             {% elif month_summary.trend.direction == 'down' %}
-                            <span class="trend-down" style="color: #ef4444;">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↓</span>
+                            <span class="trend-down">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↓</span>
                             {% else %}
-                            <span class="trend-same"> Same as last month</span>
+                            <span class="trend-same">Samma som förra månaden</span>
                             {% endif %}
                         </div>
                     </div>
@@ -193,33 +195,15 @@
             </div>
             {% endif %}
 
-            <!-- Upcoming Vacation Alert -->
+            <!-- Kommande semester -->
             {% if upcoming_vacation %}
             <div class="card vacation-alert">
-                <h3>Upcoming Vacation</h3>
-                <p><strong>Week {{ upcoming_vacation.week }}, {{ upcoming_vacation.year }}</strong></p>
+                <h3>Kommande semester</h3>
+                <p><strong>Vecka {{ upcoming_vacation.week }}, {{ upcoming_vacation.year }}</strong></p>
                 <p>{{ upcoming_vacation.date_range }}</p>
             </div>
             {% endif %}
 
-            {# <!-- Quick Navigation -->
-            <div class="card quick-links">
-                <h3>Quick Links</h3>
-                <div class="button-grid">
-                    <a href="/week/{{ user.id }}" class="button">My Week</a>
-                    <a href="/month/{{ user.id }}" class="button">My Month</a>
-                    <a href="/year/{{ user.id }}" class="button">My Year</a>
-                    <a href="/profile" class="button">Vacation</a>
-                </div>
-                {% if user.role.value == 'admin' %}
-                <hr style="margin: 16px 0;">
-                <div class="button-grid">
-                    <a href="/admin/users" class="button button-admin">Manage Users</a>
-                    <a href="/admin/settings" class="button button-admin">Settings</a>
-                    <a href="/week" class="button button-admin">All Team View</a>
-                </div>
-                {% endif %}
-            </div> #}
         </div>
     </section>
 {% endblock %}

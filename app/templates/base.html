@@ -4,7 +4,7 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Periodical</title>
+        <title>{% block title %}Periodical{% endblock %}</title>
         <link rel="stylesheet" href="/static/css/base.css">
         <link rel="stylesheet" href="/static/css/layout.css">
         <link rel="stylesheet" href="/static/css/components.css">
@@ -13,60 +13,60 @@
         <link rel="stylesheet" href="/static/css/calendar.css">
     </head>
     <body>
+        {% set path = request.url.path %}
         <header>
             <div class="row" style="justify-content: space-between;">
                 <div class="col" style="flex: none;">
                     <h1 style="margin:0; font-size: 22px;">Periodical</h1>
                     <div style="color: var(--muted); font-size: 13px; margin-top:2px;">
-                        Rotation and OB pay
+                        Rotation och OB-ersättning
                     </div>
                 </div>
 
-                <button class="hamburger" id="hamburger" aria-label="Menu">
+                <button class="hamburger" id="hamburger" aria-label="Meny">
                     <span></span>
                     <span></span>
                     <span></span>
                 </button>
 
                 <nav class="main-nav" id="main-nav">
-                    <!-- General Views -->
+                    <!-- Teamvyer -->
                     <div class="nav-row">
-                        <a href="/year" class="nav-link">Year</a>
-                        <a href="/month" class="nav-link">Month</a>
-                        <a href="/week" class="nav-link">Week</a>
+                        <a href="/year" class="nav-link {% if path == '/year' %}nav-link--active{% endif %}" {% if path == '/year' %}aria-current="page"{% endif %}>År</a>
+                        <a href="/month" class="nav-link {% if path == '/month' %}nav-link--active{% endif %}" {% if path == '/month' %}aria-current="page"{% endif %}>Månad</a>
+                        <a href="/week" class="nav-link {% if path == '/week' %}nav-link--active{% endif %}" {% if path == '/week' %}aria-current="page"{% endif %}>Vecka</a>
                     </div>
 
                     {% if user %}
                         {% if user.role.value != 'admin' %}
-                            <!-- Personal Views - use user.id so each user sees their own data -->
+                            <!-- Personliga vyer -->
                             <div class="nav-row">
-                                <a href="/year/{{ user.id }}" class="nav-link">My Year</a>
-                                <a href="/month/{{ user.id }}" class="nav-link">My Month</a>
-                                <a href="/week/{{ user.id }}" class="nav-link">My Week</a>
-                                <a href="/day/{{ user.id }}/{{ now.year }}/{{ now.month }}/{{ now.day }}" class="nav-link">My Day</a>
+                                <a href="/year/{{ user.id }}" class="nav-link {% if path.startswith('/year/') %}nav-link--active{% endif %}" {% if path.startswith('/year/') %}aria-current="page"{% endif %}>Mitt år</a>
+                                <a href="/month/{{ user.id }}" class="nav-link {% if path.startswith('/month/') %}nav-link--active{% endif %}" {% if path.startswith('/month/') %}aria-current="page"{% endif %}>Min månad</a>
+                                <a href="/week/{{ user.id }}" class="nav-link {% if path.startswith('/week/') %}nav-link--active{% endif %}" {% if path.startswith('/week/') %}aria-current="page"{% endif %}>Min vecka</a>
+                                <a href="/day/{{ user.id }}/{{ now.year }}/{{ now.month }}/{{ now.day }}" class="nav-link {% if path.startswith('/day/') %}nav-link--active{% endif %}" {% if path.startswith('/day/') %}aria-current="page"{% endif %}>Min dag</a>
                             </div>
                         {% endif %}
 
-                        <!-- User Menu -->
+                        <!-- Användarmeny -->
                         <div class="nav-row">
-                            {# <span class="nav-divider"></span> #}
-                            <a href="/" class="nav-link">Overview</a>
-                            <a href="/swaps" class="nav-link">Byten</a>
+                            <a href="/" class="nav-link {% if path == '/' %}nav-link--active{% endif %}" {% if path == '/' %}aria-current="page"{% endif %}>Översikt</a>
+                            <a href="/swaps" class="nav-link {% if path.startswith('/swaps') %}nav-link--active{% endif %}" {% if path.startswith('/swaps') %}aria-current="page"{% endif %}>Byten</a>
                             {% if user.role.value == 'admin' %}
-                                <a href="/admin/users" class="nav-link">Users</a>
-                                <a href="/admin/vacation" class="nav-link">Semester</a>
-                                <a href="/admin/settings" class="nav-link">Settings</a>
+                                <a href="/admin/users" class="nav-link {% if path.startswith('/admin/users') %}nav-link--active{% endif %}" {% if path.startswith('/admin/users') %}aria-current="page"{% endif %}>Användare</a>
+                                <a href="/admin/vacation" class="nav-link {% if path.startswith('/admin/vacation') %}nav-link--active{% endif %}" {% if path.startswith('/admin/vacation') %}aria-current="page"{% endif %}>Semester</a>
+                                <a href="/admin/settings" class="nav-link {% if path.startswith('/admin/settings') or path.startswith('/admin/rotation') %}nav-link--active{% endif %}" {% if path.startswith('/admin/settings') or path.startswith('/admin/rotation') %}aria-current="page"{% endif %}>Inställningar</a>
                             {% else %}
-                                <a href="/profile" class="nav-link">{{ user.name }}</a>
-                                <a href="/profile/vacation" class="nav-link">Semester</a>
+                                <a href="/profile" class="nav-link {% if path == '/profile' or path.startswith('/profile/') and not path.startswith('/profile/vacation') %}nav-link--active{% endif %}" {% if path == '/profile' %}aria-current="page"{% endif %}>{{ user.name }}</a>
+                                <a href="/profile/vacation" class="nav-link {% if path.startswith('/profile/vacation') %}nav-link--active{% endif %}" {% if path.startswith('/profile/vacation') %}aria-current="page"{% endif %}>Semester</a>
                             {% endif %}
-                            <a href="/logout" class="nav-link" style="color: var(--muted);">Log out</a>
+                            <a href="/logout" class="nav-link" style="color: var(--muted);">Logga ut</a>
                         </div>
                     {% else %}
-                        <!-- Login Link -->
+                        <!-- Inloggning -->
                         <div class="nav-row">
                             <span class="nav-divider"></span>
-                            <a href="/login" class="nav-link">Log in</a>
+                            <a href="/login" class="nav-link {% if path == '/login' %}nav-link--active{% endif %}">Logga in</a>
                         </div>
                     {% endif %}
                 </nav>
@@ -82,7 +82,7 @@
                 nav.classList.toggle('active');
             });
 
-            // Close menu when clicking a link
+            // Stäng menyn när en länk klickas
             document.querySelectorAll('.nav-link').forEach(link => {
                 link.addEventListener('click', () => {
                     hamburger.classList.remove('active');
