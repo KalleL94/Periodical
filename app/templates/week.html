@@ -1,6 +1,8 @@
 {# app/templates/week.html #}
 {% extends "base.html" %}
 
+{% block title %}Periodical – Veckovy v{{ week }} {{ year }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
+
 {% block page_content %}
 
 <div class="page-header">

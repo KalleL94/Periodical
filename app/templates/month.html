@@ -1,6 +1,8 @@
 {# app/templates/month.html #}
 {% extends "base.html" %}
 
+{% block title %}Periodical – Månadsvy {{ year }}-{{ '%02d'|format(month) }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
+
 {% block page_content %}
 
     {# Compute prev/next month + year here in the template #}

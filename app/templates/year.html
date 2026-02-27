@@ -1,6 +1,8 @@
 {# app/templates/year.html #}
 {% extends "base.html" %}
 
+{% block title %}Periodical – Årsvy {{ year }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
+
 {% block page_content %}
 
     {% set months_list = months or [] %}

@@ -1,6 +1,8 @@
 {# app/templates/statistics.html #}
 {% extends "base.html" %}
 
+{% block title %}Periodical – Statistik {{ year }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
+
 {% block page_content %}
 <section>
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
