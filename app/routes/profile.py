@@ -13,7 +13,7 @@ from app.auth.auth import get_current_user, get_password_hash
 from app.core.schedule import clear_schedule_cache
 from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, User, UserRole, get_db
-from app.routes.shared import _parse_rates_form, templates
+from app.routes.shared import _parse_rates_form, render
 
 router = APIRouter(tags=["profile"])
 
@@ -28,7 +28,7 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
     available_tax_tables = get_available_tax_tables()
     wage_history = get_wage_history(db, current_user.id)
 
-    return templates.TemplateResponse(
+    return render(
         "profile.html",
         {
             "request": request,
@@ -56,7 +56,7 @@ async def update_profile(
 
     available_tax_tables = get_available_tax_tables()
     if tax_table not in available_tax_tables:
-        return templates.TemplateResponse(
+        return render(
             "profile.html",
             {
                 "request": request,
@@ -96,7 +96,7 @@ async def change_password(
     from app.core.rates import get_all_defaults, get_rate_history
 
     def _profile_error(msg: str):
-        return templates.TemplateResponse(
+        return render(
             "profile.html",
             {
                 "request": request,
@@ -251,6 +251,24 @@ async def profile_delete_rate(
     return RedirectResponse(url="/profile", status_code=302)
 
 
+@router.post("/profile/language", name="set_language")
+async def set_language(
+    lang: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update UI language for the current user."""
+    if lang not in ["sv", "en"]:
+        raise HTTPException(status_code=400, detail="Ogiltigt språk")
+    current_user.language = lang
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
+
+
 @router.get("/profile/calendar.ics/{lang}", response_class=Response, name="export_calendar")
 async def export_calendar(
     current_user: User = Depends(get_current_user),
@@ -312,7 +330,7 @@ async def vacation_page(
         .all()
     )
 
-    return templates.TemplateResponse(
+    return render(
         "vacation.html",
         {
             "request": request,
@@ -335,7 +353,7 @@ async def update_vacation(
 ):
     """Update vacation weeks for a year."""
     if not (2020 <= year <= 2100):
-        return templates.TemplateResponse(
+        return render(
             "vacation.html",
             {
                 "request": request,

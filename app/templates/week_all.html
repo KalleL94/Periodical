@@ -8,9 +8,9 @@
 <div class="page-header">
     <div class="page-header-left">
         {# <a href="/week?year={{ year - 1 }}&week={{ week }}" class="btn btn-primary">Previous year</a> #}
-        <a href="/week?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">Prev week</a>
-        <a href="/week" class="btn btn-primary">Today</a>
-        <a href="/week?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">Next week</a>
+        <a href="/week?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">{{ t.week_prev_week }}</a>
+        <a href="/week" class="btn btn-primary">{{ t.week_today }}</a>
+        <a href="/week?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">{{ t.week_next_week }}</a>
         {# <a href="/week?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">Next year</a> #}
     </div>
 
@@ -23,21 +23,21 @@
                 </a>
             {% endfor %}
         {% elif user %}
-            <a href="/week/{{ user.id }}?year={{ year }}&week={{ week }}" class="btn secondary">Min vecka</a>
+            <a href="/week/{{ user.id }}?year={{ year }}&week={{ week }}" class="btn secondary">{{ t.week_all_my_week }}</a>
         {% endif %}
     </div>
 </div>
 
-<h2 class="page-title">Week {{ week }} {{ year }} - All persons</h2>
+<h2 class="page-title">{{ t.week_all_page_title.replace('{week}', week|string).replace('{year}', year|string) }}</h2>
 
 {# Grid calendar view: persons as rows, days as columns #}
-{% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
+{% set weekday_names_short = t.week_day_names | from_json %}
 
 <div class="week-grid-wrapper">
     <table class="week-grid-all">
         <thead>
             <tr>
-                <th class="person-header-column">Person</th>
+                <th class="person-header-column">{{ t.week_all_person_header }}</th>
                 {% for day in days %}
                     <th class="day-column {% if today is defined and day.date == today %}today-column{% endif %}">
                         <div>
@@ -100,15 +100,15 @@
 
                                 <div class="shift-name" style="color: {{ ns.person.shift.color }}; font-weight: 500; font-size: 0.85rem;">
                                     {% if ns.person.shift.code == 'SEM' %}
-                                        Semester
+                                        {{ t.week_shift_sem }}
                                     {% elif ns.person.shift.code == 'OT' %}
-                                        Övertid
+                                        {{ t.week_shift_ot }}
                                     {% elif ns.person.shift.code == 'OC' %}
-                                        Beredskap
+                                        {{ t.week_shift_oc }}
                                     {% elif ns.person.shift.code == 'OFF' %}
-                                        Ledig
+                                        {{ t.week_shift_off }}
                                     {% else %}
-                                        {{ ns.person.shift.label or ns.person.shift.code }}
+                                        {{ t.shift_labels.get(ns.person.shift.code, ns.person.shift.label or ns.person.shift.code) }}
                                     {% endif %}
                                 </div>
 
@@ -123,7 +123,7 @@
                                     </a>
                                 {% endif %}
                             {% else %}
-                                <span class="shift-name" style="color: var(--muted); font-size: 0.85rem;">Ledig</span>
+                                <span class="shift-name" style="color: var(--muted); font-size: 0.85rem;">{{ t.week_shift_off }}</span>
                             {% endif %}
                         </td>
                     {% endfor %}

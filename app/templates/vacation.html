@@ -1,7 +1,7 @@
 {# app/templates/vacation.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Min semester{% endblock %}
+{% block title %}Periodical – {{ t.profile_vacation_title }}{% endblock %}
 
 {% block page_content %}
 
@@ -12,11 +12,11 @@
         <a href="/profile/vacation?year={{ year + 1 }}" class="btn secondary">{{ year + 1 }}</a>
     </div>
     <div class="page-header-right">
-        <a href="/profile" class="btn secondary">Tillbaka till profil</a>
+        <a href="/profile" class="btn secondary">{{ t.vacation_back_to_profile }}</a>
     </div>
 </div>
 
-<h2 class="page-title">Semester {{ year }} - {{ user.name }}</h2>
+<h2 class="page-title">{{ t.profile_vacation_title }} {{ year }} - {{ user.name }}</h2>
 
 <div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
 
@@ -25,8 +25,8 @@
 
         <!-- Week Selection -->
         <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">V&auml;lj semesterveckor</h3>
-            <p style="color: var(--muted); margin-bottom: 16px;">Klicka p&aring; veckor f&ouml;r att markera/avmarkera semester.</p>
+            <h3 style="margin-top: 0;">{{ t.vacation_choose_weeks }}</h3>
+            <p style="color: var(--muted); margin-bottom: 16px;">{{ t.vacation_choose_weeks_hint }}</p>
 
             <form method="POST" action="/profile/vacation" id="vacation-form">
                 <input type="hidden" name="year" value="{{ year }}">
@@ -54,14 +54,14 @@
                     {% endfor %}
                 </div>
 
-                <button type="submit" class="btn">Spara semester</button>
+                <button type="submit" class="btn">{{ t.vacation_save }}</button>
             </form>
         </div>
 
         <!-- Day-Level Vacation Calendar -->
         <div class="card">
-            <h3 style="margin-top: 0;">Enskilda semesterdagar</h3>
-            <p style="color: var(--muted); margin-bottom: 16px;">Klicka p&aring; dagar f&ouml;r att markera/avmarkera semester.</p>
+            <h3 style="margin-top: 0;">{{ t.vacation_day_level }}</h3>
+            <p style="color: var(--muted); margin-bottom: 16px;">{{ t.vacation_day_level_hint }}</p>
 
             <form method="POST" action="/profile/vacation/days/sync" id="days-form">
                 <input type="hidden" name="year" value="{{ year }}">
@@ -72,7 +72,7 @@
 
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span id="day-count" style="color: var(--muted); font-size: 0.85rem;"></span>
-                    <button type="submit" class="btn">Spara dagar</button>
+                    <button type="submit" class="btn">{{ t.vacation_save_days }}</button>
                 </div>
             </form>
         </div>
@@ -84,26 +84,26 @@
         <!-- Balance Card -->
         {% if balance %}
         <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">Semestersaldo</h3>
+            <h3 style="margin-top: 0;">{{ t.vacation_balance_title }}</h3>
             <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Tilldelade</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_entitled }}</div>
                     <div style="font-size: 1.2rem; font-weight: 700;">{{ balance.entitled_days }}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Sparade</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_saved }}</div>
                     <div style="font-size: 1.2rem; font-weight: 700; color: {% if balance.saved_from_previous > 0 %}var(--accent){% else %}var(--muted){% endif %};">{{ balance.saved_from_previous }}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Totalt</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_total }}</div>
                     <div style="font-size: 1.2rem; font-weight: 700;">{{ balance.total_available }}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Uttagna</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_used }}</div>
                     <div style="font-size: 1.2rem; font-weight: 700;">{{ balance.used_days }}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Kvar</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_remaining }}</div>
                     <div style="font-size: 1.2rem; font-weight: 700; color: {% if balance.remaining_days > 5 %}var(--accent-2){% elif balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
                         {{ balance.remaining_days }}
                     </div>
@@ -111,34 +111,34 @@
             </div>
             {% if balance.saved_breakdown %}
             <div style="margin-top: 8px; font-size: 0.7rem; color: var(--muted); text-align: center;">
-                Sparade fr&aring;n: {% for s in balance.saved_breakdown %}{{ s.year }} ({{ s.days }}d){% if not loop.last %}, {% endif %}{% endfor %}
+                {{ t.vacation_saved_from }} {% for s in balance.saved_breakdown %}{{ s.year }} ({{ s.days }}d){% if not loop.last %}, {% endif %}{% endfor %}
             </div>
             {% endif %}
             <div style="margin-top: 6px; font-size: 0.75rem; color: var(--muted); text-align: center;">
                 {{ balance.year_start | date_format }} &mdash; {{ balance.year_end | date_format }}
-                {% if balance.is_first_year %}<br><span style="color: var(--warning);">F&ouml;rsta &aring;ret (proportionellt)</span>{% endif %}
+                {% if balance.is_first_year %}<br><span style="color: var(--warning);">{{ t.vacation_first_year }}</span>{% endif %}
             </div>
         </div>
 
         <!-- Projection Card (open years) -->
         {% if balance.projection %}
         <div class="card" style="margin-bottom: 16px; border: 1px solid var(--accent); border-left: 4px solid var(--accent);">
-            <h3 style="margin-top: 0; font-size: 0.95rem;">Vid semesterbryt ({{ balance.year_end | date_format }})</h3>
+            <h3 style="margin-top: 0; font-size: 0.95rem;">{{ t.vacation_at_break.replace('{date}', balance.year_end | date_format) }}</h3>
             <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
-                <span style="color: var(--muted);">Kvar vid bryt:</span>
-                <span style="font-weight: 600;">{{ balance.remaining_days }} dagar (projektion)</span>
-                <span style="color: var(--muted);">Sparas:</span>
-                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_save }} dagar &rarr; n&auml;sta &aring;r</span>
+                <span style="color: var(--muted);">{{ t.vacation_remaining_at_break }}</span>
+                <span style="font-weight: 600;">{{ balance.remaining_days }} {{ t.vacation_days_projection }}</span>
+                <span style="color: var(--muted);">{{ t.vacation_saved_next }}</span>
+                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_save }} {{ t.vacation_days_next_year }}</span>
                 {% if balance.projection.days_to_pay_out > 0 %}
-                <span style="color: var(--muted);">Betalas ut:</span>
+                <span style="color: var(--muted);">{{ t.vacation_paid_out }}</span>
                 <span style="font-weight: 600;">{{ balance.projection.days_to_pay_out }} dagar</span>
-                <span style="color: var(--muted);">Utbetalning:</span>
+                <span style="color: var(--muted);">{{ t.vacation_payout_amount }}</span>
                 <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_pay_out }} &times; {{ "%.0f"|format(balance.projection.payout_per_day) }} kr = {{ "{:,.0f}".format(balance.projection.payout_total).replace(",", " ") }} kr</span>
                 {% endif %}
             </div>
             {% if balance.projection.days_to_pay_out > 0 %}
             <div style="margin-top: 8px; font-size: 0.65rem; color: var(--muted);">
-                Semesterers&auml;ttning: 5,4% av l&ouml;n + 0,5% av r&ouml;rligt per dag (&sect;9.5)
+                {{ t.vacation_payout_formula }}
             </div>
             {% endif %}
         </div>
@@ -147,18 +147,18 @@
         <!-- Closed Year Card (past years) -->
         {% if balance.closed %}
         <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent-2);">
-            <h3 style="margin-top: 0; font-size: 0.95rem;">Semester&aring;ret st&auml;ngt</h3>
+            <h3 style="margin-top: 0; font-size: 0.95rem;">{{ t.vacation_year_closed }}</h3>
             <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
                 {% if balance.closed.saved > 0 %}
-                <span style="color: var(--muted);">Sparade:</span>
-                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.closed.saved }} dagar &rarr; &ouml;verf&ouml;rda</span>
+                <span style="color: var(--muted);">{{ t.vacation_saved_label }}</span>
+                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.closed.saved }} {{ t.vacation_days_transferred }}</span>
                 {% endif %}
                 {% if balance.closed.paid_out > 0 %}
-                <span style="color: var(--muted);">Utbetalda:</span>
+                <span style="color: var(--muted);">{{ t.vacation_paid_out_label }}</span>
                 <span style="font-weight: 600;">{{ balance.closed.paid_out }} dagar &rarr; {{ "{:,.0f}".format(balance.closed.payout_amount).replace(",", " ") }} kr</span>
                 {% endif %}
                 {% if balance.closed.saved == 0 and balance.closed.paid_out == 0 %}
-                <span style="color: var(--muted);" colspan="2">Alla dagar uttagna.</span>
+                <span style="color: var(--muted);" colspan="2">{{ t.vacation_all_used }}</span>
                 {% endif %}
             </div>
         </div>
@@ -167,38 +167,38 @@
         <!-- Vacation Supplement Card -->
         {% if balance.pay %}
         <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">Semestertill&auml;gg</h3>
-            <div style="font-size: 0.7rem; color: var(--muted); margin-bottom: 10px;">Handelns avtal 2025&ndash;2027</div>
+            <h3 style="margin-top: 0;">{{ t.vacation_supplement_title }}</h3>
+            <div style="font-size: 0.7rem; color: var(--muted); margin-bottom: 10px;">{{ t.vacation_supplement_agreement }}</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">Fast/dag</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_fixed_per_day }}</div>
                     <div style="font-size: 1rem; font-weight: 700;">{{ "%.0f"|format(balance.pay.fixed_per_day) }} kr</div>
                     <div style="color: var(--muted); font-size: 0.65rem;">0,8%</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">R&ouml;rlig/dag</div>
+                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_variable_per_day }}</div>
                     <div style="font-size: 1rem; font-weight: 700; color: var(--accent);">{{ "%.0f"|format(balance.pay.variable_per_day) }} kr</div>
                     <div style="color: var(--muted); font-size: 0.65rem;">0,5%</div>
                 </div>
             </div>
             <div style="text-align: center; padding: 6px; background: rgba(255,255,255,0.03); border-radius: var(--radius); margin-bottom: 10px;">
-                <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 2px;">Tilll&auml;gg per semesterdag</div>
+                <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 2px;">{{ t.vacation_supplement_per_day }}</div>
                 <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent-2);">{{ "%.0f"|format(balance.pay.supplement_per_day) }} kr</div>
                 <div style="color: var(--muted); font-size: 0.65rem; margin-top: 2px;">
-                    Totalt {{ balance.entitled_days }} dagar: {{ "{:,.0f}".format(balance.pay.supplement_total).replace(",", " ") }} kr
+                    {{ t.vacation_supplement_total.replace('{n}', balance.entitled_days|string) }}: {{ "{:,.0f}".format(balance.pay.supplement_total).replace(",", " ") }} kr
                 </div>
             </div>
             <div style="font-size: 0.7rem; color: var(--muted);">
                 <div style="display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;">
-                    <span>OB/skift:</span>
+                    <span>{{ t.vacation_ob_shifts }}</span>
                     <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
-                    <span>&Ouml;vertid:</span>
+                    <span>{{ t.vacation_overtime }}</span>
                     <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.ot_total).replace(",", " ") }} kr</span>
-                    <span>Beredskap:</span>
+                    <span>{{ t.vacation_standby }}</span>
                     <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.oncall_total).replace(",", " ") }} kr</span>
                 </div>
                 <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--table-border);">
-                    Summa r&ouml;rligt: {{ "{:,.0f}".format(balance.pay.variable_total).replace(",", " ") }} kr
+                    {{ t.vacation_variable_sum }} {{ "{:,.0f}".format(balance.pay.variable_total).replace(",", " ") }} kr
                 </div>
             </div>
         </div>
@@ -207,28 +207,28 @@
 
         <!-- Week Summary -->
         <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">Valda veckor</h3>
+            <h3 style="margin-top: 0;">{{ t.vacation_selected_weeks }}</h3>
             <div id="selected-summary">
                 {% if vacation_weeks %}
-                    <p><strong>{{ vacation_weeks | length }}</strong> veckor valda:</p>
+                    <p><strong>{{ vacation_weeks | length }}</strong> {{ t.vacation_weeks_selected_js }}</p>
                     <p style="color: var(--muted);">{{ vacation_weeks | join(', ') }}</p>
                 {% else %}
-                    <p style="color: var(--muted);">Ingen semester vald f&ouml;r {{ year }}.</p>
+                    <p style="color: var(--muted);">{{ t.vacation_none_selected.replace('{year}', year|string) }}</p>
                 {% endif %}
             </div>
         </div>
 
         <!-- Employment start date -->
         <div class="card">
-            <h3 style="margin-top: 0;">Anst&auml;llningsstart</h3>
+            <h3 style="margin-top: 0;">{{ t.vacation_employment_start }}</h3>
             <form method="POST" action="/profile/vacation/settings">
                 <div style="margin-bottom: 12px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.85rem;">Startdatum</label>
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.85rem;">{{ t.vacation_start_date }}</label>
                     <input type="date" name="employment_start_date"
                         value="{{ user.employment_start_date | date_format }}"
                         style="width: 100%; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text); box-sizing: border-box;">
                 </div>
-                <button type="submit" class="btn" style="width: 100%;">Spara</button>
+                <button type="submit" class="btn" style="width: 100%;">{{ t.vacation_save_button }}</button>
             </form>
         </div>
     </div>
@@ -251,11 +251,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (selectedWeeks.length > 0) {
             summary.innerHTML = `
-                <p><strong>${selectedWeeks.length}</strong> veckor valda:</p>
+                <p><strong>${selectedWeeks.length}</strong> {{ t.vacation_weeks_selected_js }}</p>
                 <p style="color: var(--muted);">${selectedWeeks.join(', ')}</p>
             `;
         } else {
-            summary.innerHTML = '<p style="color: var(--muted);">Ingen semester vald.</p>';
+            summary.innerHTML = '<p style="color: var(--muted);">{{ t.vacation_none_selected_js }}</p>';
         }
     }
 
@@ -288,9 +288,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const dayCountEl = document.getElementById('day-count');
     const calYear = {{ year }};
 
-    const monthNames = ['Januari','Februari','Mars','April','Maj','Juni',
-                        'Juli','Augusti','September','Oktober','November','December'];
-    const dayHeaders = ['M\u00e5','Ti','On','To','Fr','L\u00f6','S\u00f6'];
+    const monthNames = {{ t.month_names_json }};
+    const dayHeaders = {{ t.day_headers_json }};
 
     let selectedDates = new Set(
         datesInput.value ? datesInput.value.split(',').map(s => s.trim()).filter(Boolean) : []
@@ -298,7 +297,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateDayCount() {
         datesInput.value = Array.from(selectedDates).sort().join(',');
-        dayCountEl.textContent = selectedDates.size + ' dag' + (selectedDates.size !== 1 ? 'ar' : '') + ' valda';
+        const daySuffix = selectedDates.size !== 1 ? '{% if t.html_lang == "en" %}s{% else %}ar{% endif %}' : '';
+        dayCountEl.textContent = selectedDates.size + ' {{ t.vacation_day_count_js }}' + daySuffix + ' {{ t.vacation_days_selected_js }}';
     }
 
     function renderCalendar() {

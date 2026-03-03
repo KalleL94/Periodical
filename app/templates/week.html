@@ -7,15 +7,15 @@
 
 <div class="page-header">
     <div class="page-header-left">
-        <a href="/week/{{ person_id }}?year={{ year - 1 }}&week={{ week }}" class="btn btn-primary">Prev year</a>
-        <a href="/week/{{ person_id }}?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">Prev week</a>
-        <a href="/week/{{ person_id }}" class="btn btn-primary">Today</a>
-        <a href="/week/{{ person_id }}?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">Next week</a>
-        <a href="/week/{{ person_id }}?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">Next year</a>
+        <a href="/week/{{ person_id }}?year={{ year - 1 }}&week={{ week }}" class="btn btn-primary">{{ t.week_prev_year }}</a>
+        <a href="/week/{{ person_id }}?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">{{ t.week_prev_week }}</a>
+        <a href="/week/{{ person_id }}" class="btn btn-primary">{{ t.week_today }}</a>
+        <a href="/week/{{ person_id }}?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">{{ t.week_next_week }}</a>
+        <a href="/week/{{ person_id }}?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">{{ t.week_next_year }}</a>
     </div>
 
     <div class="page-header-right">
-        <a href="/week?year={{ year }}&week={{ week }}" class="btn secondary">All</a>
+        <a href="/week?year={{ year }}&week={{ week }}" class="btn secondary">{{ t.week_all }}</a>
         {# Navigering mellan personer - endast för admin #}
         {% if user and user.role.value == 'admin' %}
             {% for i in person_ids %}
@@ -28,10 +28,10 @@
     </div>
 </div>
 
-<h2 class="page-title">Week {{ week }} {{ year }}{% if person_name %} - {{ person_name }}{% endif %}</h2>
+<h2 class="page-title">{{ t.week_page_title.replace('{week}', week|string).replace('{year}', year|string).replace('{name}', person_name if person_name else '') }}</h2>
 
 {# Calendar grid view for week #}
-{% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
+{% set weekday_names_short = t.week_day_names | from_json %}
 
 <table class="calendar-grid week-grid-single">
     <thead>
@@ -90,7 +90,7 @@
                             {% endif %}
 
                             {% if day.coworkers %}
-                                <div class="coworkers-list">Med: {{ day.coworkers | join(', ') }}</div>
+                                <div class="coworkers-list">{{ t.week_with }} {{ day.coworkers | join(', ') }}</div>
                             {% endif %}
                         </div>
                     </div>

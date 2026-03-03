@@ -1,17 +1,17 @@
 {# app/templates/admin_user_edit.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Admin: Redigera {{ edit_user.name }}{% endblock %}
+{% block title %}Periodical – Admin: {{ t.admin_edit_title.replace('{name}', edit_user.name) }}{% endblock %}
 
 {% block page_content %}
 
 <div class="page-header">
     <div class="page-header-left">
-        <a href="/admin/users" class="btn secondary">← Tillbaka</a>
+        <a href="/admin/users" class="btn secondary">{{ t.admin_back }}</a>
     </div>
 </div>
 
-<h2 class="page-title">Redigera: {{ edit_user.name }}</h2>
+<h2 class="page-title">{{ t.admin_edit_title.replace('{name}', edit_user.name) }}</h2>
 
 <div style="max-width: 500px;">
     <div class="card">
@@ -20,42 +20,42 @@
                 {{ error }}
             </div>
         {% endif %}
-        
+
         <form method="POST" action="/admin/users/{{ edit_user.id }}">
             <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">ID</label>
+                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_id }}</label>
                 <input type="text" value="{{ edit_user.id }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
             </div>
-            
+
             <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">Användarnamn</label>
+                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_username }}</label>
                 <input type="text" value="{{ edit_user.username }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                <small style="color: var(--muted);">Kan inte ändras</small>
+                <small style="color: var(--muted);">{{ t.admin_field_username_hint }}</small>
             </div>
-            
+
             <div style="margin-bottom: 16px;">
-                <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">Namn</label>
+                <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_name }}</label>
                 <input type="text" id="name" name="name" value="{{ edit_user.name }}" required style="width: 100%; box-sizing: border-box;">
             </div>
 
             <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">Nuvarande månadslön</label>
+                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_wage }}</label>
                 <input type="text" value="{{ '{:,}'.format(edit_user.wage).replace(',', ' ') }} SEK" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                <small style="color: var(--muted);">Hantera lönehistorik längre ner på sidan</small>
+                <small style="color: var(--muted);">{{ t.admin_field_wage_hint }}</small>
             </div>
 
             <div style="margin-bottom: 16px;">
-                <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">Skattetabell</label>
+                <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_tax }}</label>
                 <select id="tax_table" name="tax_table" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);">
                     {% for table in available_tax_tables %}
                     <option value="{{ table }}" {% if edit_user.tax_table == table %}selected{% endif %}>Tabell {{ table }}</option>
                     {% endfor %}
                 </select>
-                <small style="color: var(--muted);">Skattetabell enligt Skatteverket</small>
+                <small style="color: var(--muted);">{{ t.admin_field_tax_hint }}</small>
             </div>
-            
+
             <div style="margin-bottom: 16px;">
-                <label for="role" style="display: block; margin-bottom: 6px; color: var(--muted);">Roll</label>
+                <label for="role" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_role }}</label>
                 <select id="role" name="role" style="width: 100%; box-sizing: border-box;">
                     <option value="user" {% if edit_user.role.value == 'user' %}selected{% endif %}>User</option>
                     <option value="admin" {% if edit_user.role.value == 'admin' %}selected{% endif %}>Admin</option>
@@ -63,38 +63,38 @@
             </div>
 
             <div style="margin-bottom: 16px;">
-                <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">Rotationsposition (person_id)</label>
+                <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_person_id }}</label>
                 <input type="number" id="person_id" name="person_id"
                        value="{{ edit_user.person_id if edit_user.person_id is not none else '' }}"
                        min="1" max="10"
                        placeholder="1-10 eller tomt"
                        style="width: 100%; box-sizing: border-box;">
-                <small style="color: var(--muted);">Vilken position (1-10) användaren har i rotationsschemat. Sätts normalt via "Starta anställning".</small>
+                <small style="color: var(--muted);">{{ t.admin_field_person_id_hint }}</small>
             </div>
 
             <div style="margin-bottom: 24px;">
-                <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nytt lösenord</label>
+                <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_new_password }}</label>
                 <input type="password" id="new_password" name="new_password" minlength="6" style="width: 100%; box-sizing: border-box;">
-                <small style="color: var(--muted);">Lämna tomt för att behålla nuvarande lösenord</small>
+                <small style="color: var(--muted);">{{ t.admin_field_new_password_hint }}</small>
             </div>
-            
-            <button type="submit" class="btn">Spara ändringar</button>
+
+            <button type="submit" class="btn">{{ t.admin_save }}</button>
         </form>
     </div>
-    
+
     <!-- Wage History -->
     <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">Lönehistorik</h3>
+        <h3 style="margin-top: 0;">{{ t.admin_wage_history }}</h3>
 
         {% if wage_history %}
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
                     <tr style="border-bottom: 1px solid var(--border);">
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Lön (SEK)</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Från datum</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Åtgärd</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_wage_col }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_from_date }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_to_date }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_status }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_action }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -106,20 +106,20 @@
                             {% if record.effective_to %}
                                 {{ record.effective_to }}
                             {% else %}
-                                <span style="color: var(--muted); font-style: italic;">pågående</span>
+                                <span style="color: var(--muted); font-style: italic;">{{ t.profile_ongoing }}</span>
                             {% endif %}
                         </td>
                         <td style="padding: 8px;">
                             {% if record.is_current %}
-                                <span style="color: var(--success); font-weight: 500;">✓ Aktuell</span>
+                                <span style="color: var(--success); font-weight: 500;">{{ t.profile_current }}</span>
                             {% else %}
-                                <span style="color: var(--muted);">Historisk</span>
+                                <span style="color: var(--muted);">{{ t.profile_historical }}</span>
                             {% endif %}
                         </td>
                         <td style="padding: 8px;">
                             {% if wage_history | length > 1 %}
-                                <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('Är du säker på att du vill ta bort denna lönepost?');">
-                                    <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
+                                <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('{{ t.admin_delete_wage_confirm }}');">
+                                    <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">{{ t.profile_delete }}</button>
                                 </form>
                             {% else %}
                                 <span style="color: var(--muted); font-size: 0.875rem;">-</span>
@@ -130,21 +130,21 @@
                 </tbody>
             </table>
         {% else %}
-            <p style="color: var(--muted);">Ingen lönehistorik tillgänglig.</p>
+            <p style="color: var(--muted);">{{ t.admin_no_wage_history }}</p>
         {% endif %}
     </div>
 
     <!-- Add New Wage -->
     <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">Lägg till ny lön</h3>
+        <h3 style="margin-top: 0;">{{ t.admin_add_wage }}</h3>
         <p style="color: var(--muted); margin-bottom: 16px;">
-            Lägg till en ny lön med ett effektivt datum. Tidigare lön kommer automatiskt att avslutas dagen innan.
+            {{ t.admin_add_wage_desc }}
         </p>
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/add-wage">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
                 <div>
-                    <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">Ny lön (SEK)</label>
+                    <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_new_wage }}</label>
                     <input
                         type="number"
                         id="new_wage"
@@ -158,7 +158,7 @@
                 </div>
 
                 <div>
-                    <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">Från datum</label>
+                    <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_from_date }}</label>
                     <input
                         type="date"
                         id="effective_from"
@@ -169,27 +169,27 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn">Lägg till lön</button>
+            <button type="submit" class="btn">{{ t.admin_add_wage_button }}</button>
         </form>
     </div>
 
     <!-- Person History (Employment Periods) -->
     <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">Anställningshistorik</h3>
+        <h3 style="margin-top: 0;">{{ t.admin_employment_history }}</h3>
         <p style="color: var(--muted); margin-bottom: 16px;">
-            Visar vilka positioner (1-10) denna användare har haft i rotationen och när.
+            {{ t.admin_employment_history_desc }}
         </p>
 
         {% if person_history %}
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
                     <tr style="border-bottom: 1px solid var(--border);">
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Position</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Namn</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Från datum</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
-                        <th style="text-align: center; padding: 8px; color: var(--muted); font-weight: 500;">Ta bort</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_position }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_name }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_from }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_to }}</th>
+                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_status }}</th>
+                        <th style="text-align: center; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_delete }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -202,14 +202,14 @@
                             {% if record.effective_to %}
                                 {{ record.effective_to }}
                             {% else %}
-                                <span style="color: var(--muted); font-style: italic;">pågående</span>
+                                <span style="color: var(--muted); font-style: italic;">{{ t.profile_ongoing }}</span>
                             {% endif %}
                         </td>
                         <td style="padding: 8px;">
                             {% if record.is_current %}
-                                <span style="color: var(--success); font-weight: 500;">✓ Aktiv</span>
+                                <span style="color: var(--success); font-weight: 500;">{{ t.admin_col_active }}</span>
                             {% else %}
-                                <span style="color: var(--muted);">Historisk</span>
+                                <span style="color: var(--muted);">{{ t.profile_historical }}</span>
                             {% endif %}
                         </td>
                         <td style="padding: 8px; text-align: center;">
@@ -222,24 +222,24 @@
                 </tbody>
             </table>
         {% else %}
-            <p style="color: var(--muted);">Ingen anställningshistorik tillgänglig.</p>
+            <p style="color: var(--muted);">{{ t.admin_no_employment }}</p>
         {% endif %}
     </div>
 
     <!-- End Employment -->
     {% if person_history and person_history | selectattr('is_current') | list %}
     <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0; color: var(--danger);">Avsluta anställning</h3>
+        <h3 style="margin-top: 0; color: var(--danger);">{{ t.admin_end_employment }}</h3>
         <p style="color: var(--muted); margin-bottom: 16px;">
-            Avslutar användarens nuvarande anställning. Användaren kan fortfarande logga in för att se historisk data, men kommer markeras som inaktiv.
+            {{ t.admin_end_employment_desc }}
         </p>
 
         {% for record in person_history %}
             {% if record.is_current %}
-                <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" onsubmit="return confirm('Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?');">
+                <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" onsubmit="return confirm('{% if t.html_lang == "en" %}Are you sure you want to end {{ edit_user.name }}\'s employment at position {{ record.person_id }}?{% else %}Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?{% endif %}');">
                     <input type="hidden" name="person_id" value="{{ record.person_id }}">
                     <div style="margin-bottom: 16px;">
-                        <label for="end_date" style="display: block; margin-bottom: 6px; color: var(--muted);">Sista arbetsdag</label>
+                        <label for="end_date" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_last_day }}</label>
                         <input
                             type="date"
                             id="end_date"
@@ -248,7 +248,7 @@
                             style="width: 100%; box-sizing: border-box;"
                         >
                     </div>
-                    <button type="submit" class="btn danger">Avsluta anställning på position {{ record.person_id }}</button>
+                    <button type="submit" class="btn danger">{{ t.admin_end_employment_button.replace('{n}', record.person_id|string) }}</button>
                 </form>
             {% endif %}
         {% endfor %}
@@ -259,15 +259,15 @@
     {% set has_current_employment = person_history and (person_history | selectattr('is_current') | list | length > 0) %}
     {% if edit_user.is_active == 0 or not has_current_employment %}
     <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0; color: var(--success);">Starta ny anställning</h3>
+        <h3 style="margin-top: 0; color: var(--success);">{{ t.admin_start_employment }}</h3>
         <p style="color: var(--muted); margin-bottom: 16px;">
-            Aktivera användaren och tilldela en ny position i rotationen.
+            {{ t.admin_start_employment_desc }}
         </p>
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/start-employment">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
                 <div>
-                    <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">Position (1-10)</label>
+                    <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_position }}</label>
                     <input
                         type="number"
                         id="person_id"
@@ -281,7 +281,7 @@
                 </div>
 
                 <div>
-                    <label for="start_date" style="display: block; margin-bottom: 6px; color: var(--muted);">Första arbetsdag</label>
+                    <label for="start_date" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_first_day }}</label>
                     <input
                         type="date"
                         id="start_date"
@@ -292,27 +292,27 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn">Starta anställning</button>
+            <button type="submit" class="btn">{{ t.admin_start_employment_button }}</button>
         </form>
     </div>
     {% endif %}
 
     <!-- Semester -->
     <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">Semester</h3>
+        <h3 style="margin-top: 0;">{{ t.admin_vacation_section }}</h3>
 
         {% if vacation_balance %}
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
             <div style="text-align: center;">
-                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Tilldelade</div>
+                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">{{ t.admin_vacation_entitled }}</div>
                 <div style="font-size: 1.3rem; font-weight: 700;">{{ vacation_balance.entitled_days }}</div>
             </div>
             <div style="text-align: center;">
-                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Uttagna</div>
+                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">{{ t.admin_vacation_used }}</div>
                 <div style="font-size: 1.3rem; font-weight: 700;">{{ vacation_balance.used_days }}</div>
             </div>
             <div style="text-align: center;">
-                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">Kvar</div>
+                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">{{ t.admin_vacation_remaining }}</div>
                 <div style="font-size: 1.3rem; font-weight: 700; color: {% if vacation_balance.remaining_days > 5 %}var(--accent-2){% elif vacation_balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
                     {{ vacation_balance.remaining_days }}
                 </div>
@@ -334,7 +334,7 @@
         {% endif %}
 
         <a href="/admin/vacation/{{ edit_user.id }}" class="btn secondary" style="margin-top: 8px;">
-            Hantera semester
+            {{ t.admin_manage_vacation }}
         </a>
     </div>
 
@@ -345,32 +345,32 @@
 
     <!-- Övertag -->
     <div class="card" style="margin-top: 16px;">
-        <h3>&#214;vertag</h3>
+        <h3>{{ t.adm_transition_title }}</h3>
 
         {% if edit_transition %}
         <p class="form-hint">
-            &#214;vertagsdatum: <strong>{{ edit_transition.transition_date }}</strong>,
-            {{ "Sl&#228;pande" if edit_transition.consultant_salary_type.value == "trailing" else "Innest&#229;ende" }} konsultl&#246;n
+            {{ t.adm_transition_date_hint }} <strong>{{ edit_transition.transition_date }}</strong>,
+            {{ t.adm_transition_trailing if edit_transition.consultant_salary_type.value == "trailing" else t.adm_transition_current }} {{ t.adm_transition_consultant_pay }}
         </p>
         {% if admin_auto_variable_avg is not none %}
         <div class="auto-hint">
-            Auto-ber&#228;knad r&#246;rlig genomsnittsl&#246;n: <strong>{{ "%.2f"|format(admin_auto_variable_avg) }} kr/dag</strong>
+            {{ t.adm_transition_auto_variable }} <strong>{{ "%.2f"|format(admin_auto_variable_avg) }} {{ t.adm_transition_per_day }}</strong>
         </div>
         {% endif %}
         {% else %}
-        <p class="form-hint">Inget &#246;vertag konfigurerat.</p>
+        <p class="form-hint">{{ t.adm_transition_none }}</p>
         {% endif %}
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/transition">
 
             <div class="form-group">
-                <label for="adm_transition_date" class="form-label">&#214;vertagsdatum</label>
+                <label for="adm_transition_date" class="form-label">{{ t.adm_transition_date_label }}</label>
                 <input type="date" id="adm_transition_date" name="transition_date" class="form-input"
                        value="{{ edit_transition.transition_date.isoformat() if edit_transition else '' }}" required>
             </div>
 
             <div class="form-group">
-                <label for="adm_salary_type" class="form-label">Konsultl&#246;netyp</label>
+                <label for="adm_salary_type" class="form-label">{{ t.adm_transition_salary_type_label }}</label>
                 <select id="adm_salary_type" name="consultant_salary_type" class="form-input">
                     {% for value, label in salary_types %}
                     <option value="{{ value }}"
@@ -382,19 +382,19 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">Intj&#228;nade semesterdagar (fr&#229;n konsultanst&#228;llningen)</label>
+                <label class="form-label">{{ t.adm_transition_vacation_days_label }}</label>
                 {% if admin_auto_vacation_days is not none %}
                 <div class="auto-hint">
-                    Auto-ber&#228;knat: <strong>{{ admin_auto_vacation_days }} dagar</strong>
-                    <span class="form-hint">Pro-ratat fr&#229;n anst&#228;llningsdagen inom intj&#228;nande&#229;ret</span>
+                    {{ t.adm_transition_auto_calculated }} <strong>{{ admin_auto_vacation_days }} {{ t.adm_transition_days }}</strong>
+                    <span class="form-hint">{{ t.adm_transition_pro_rated }}</span>
                 </div>
                 {% elif edit_transition %}
                 <div class="auto-hint auto-hint--missing">
-                    Kan inte ber&#228;knas, saknar anst&#228;llningsdatum. Sparat: {{ edit_transition.consultant_vacation_days }} dagar.
+                    {{ t.adm_transition_cannot_calculate }} {{ edit_transition.consultant_vacation_days }} {{ t.adm_transition_days }}.
                 </div>
                 {% endif %}
                 <label class="form-label" style="margin-top: 0.4rem;">
-                    Manuell override (tomt = anv&#228;nd auto)
+                    {{ t.adm_transition_manual_override }}
                 </label>
                 <input type="number" id="adm_vacation_days" name="consultant_vacation_days" class="form-input"
                        value="{{ edit_transition.consultant_vacation_days if edit_transition and edit_transition.consultant_vacation_days != admin_auto_vacation_days else '' }}"
@@ -403,14 +403,14 @@
             </div>
 
             <div class="form-group">
-                <label for="adm_supplement_pct" class="form-label">Semestertill&#228;ggsprocent (semesterlagen)</label>
+                <label for="adm_supplement_pct" class="form-label">{{ t.adm_transition_supplement_pct_label }}</label>
                 <input type="number" id="adm_supplement_pct" name="consultant_supplement_pct" class="form-input"
                        value="{{ edit_transition.consultant_supplement_pct if edit_transition else 0.0043 }}"
                        min="0" max="0.99" step="0.0001" required>
             </div>
 
             <div class="form-group">
-                <label for="adm_variable_override" class="form-label">R&#246;rlig genomsnittsl&#246;n override kr/dag (tomt = auto)</label>
+                <label for="adm_variable_override" class="form-label">{{ t.adm_transition_variable_override_label }}</label>
                 <input type="number" id="adm_variable_override" name="variable_avg_daily_override" class="form-input"
                        value="{{ edit_transition.variable_avg_daily_override if edit_transition and edit_transition.variable_avg_daily_override is not none else '' }}"
                        min="0" step="0.01"
@@ -418,28 +418,28 @@
             </div>
 
             <div class="form-group">
-                <label for="adm_earning_start" class="form-label">Intj&#228;nande&#229;r start (tomt = auto)</label>
+                <label for="adm_earning_start" class="form-label">{{ t.adm_transition_earning_start_label }}</label>
                 <input type="date" id="adm_earning_start" name="earning_year_start" class="form-input"
                        value="{{ edit_transition.earning_year_start.isoformat() if edit_transition and edit_transition.earning_year_start else '' }}">
             </div>
 
             <div class="form-group">
-                <label for="adm_earning_end" class="form-label">Intj&#228;nande&#229;r slut (tomt = auto)</label>
+                <label for="adm_earning_end" class="form-label">{{ t.adm_transition_earning_end_label }}</label>
                 <input type="date" id="adm_earning_end" name="earning_year_end" class="form-input"
                        value="{{ edit_transition.earning_year_end.isoformat() if edit_transition and edit_transition.earning_year_end else '' }}">
             </div>
 
             <div class="form-group">
-                <label for="adm_notes" class="form-label">Anteckningar</label>
+                <label for="adm_notes" class="form-label">{{ t.adm_transition_notes_label }}</label>
                 <textarea id="adm_notes" name="notes" rows="2" class="form-input"
                           style="padding: 0.5rem; resize: vertical;">{{ edit_transition.notes if edit_transition and edit_transition.notes else '' }}</textarea>
             </div>
 
             <hr class="form-section-divider">
-            <p class="form-section-title">Vid sparande (eng&#229;ngs&#229;tg&#228;rder)</p>
+            <p class="form-section-title">{{ t.adm_transition_on_save_title }}</p>
 
             <div class="form-group">
-                <label for="adm_new_direct_salary" class="form-label">S&#228;tt ny direktl&#246;n fr&#229;n &#246;vertagsdatum (kr/m&#229;nad, tomt = ingen &#228;ndring)</label>
+                <label for="adm_new_direct_salary" class="form-label">{{ t.adm_transition_direct_salary_label }}</label>
                 <input type="number" id="adm_new_direct_salary" name="new_direct_salary" class="form-input"
                        min="1" step="1" placeholder="t.ex. 32000">
             </div>
@@ -447,11 +447,11 @@
             <div class="form-group">
                 <label class="form-label">
                     <input type="checkbox" name="reset_rates_to_default" value="on">
-                    &#197;terg&#229; till standard OB/OT/beredskap-satser fr&#229;n &#246;vertagsdatum
+                    {{ t.adm_transition_reset_rates_label }}
                 </label>
             </div>
 
-            <button type="submit" class="btn btn-primary">Spara &#246;vertag</button>
+            <button type="submit" class="btn btn-primary">{{ t.adm_transition_save_button }}</button>
         </form>
 
         {% if edit_transition %}
@@ -460,16 +460,16 @@
             <div class="form-group">
                 <label class="form-label">
                     <input type="checkbox" name="cleanup_wage" value="on" checked>
-                    Ta &#228;ven bort l&#246;nepost fr&#229;n &#246;vertagsdatumet ({{ edit_transition.transition_date }})
+                    {{ t.adm_transition_delete_wage_label.replace('{date}', edit_transition.transition_date|string) }}
                 </label>
             </div>
             <div class="form-group">
                 <label class="form-label">
                     <input type="checkbox" name="cleanup_rates" value="on" checked>
-                    Ta &#228;ven bort satspost fr&#229;n &#246;vertagsdatumet ({{ edit_transition.transition_date }})
+                    {{ t.adm_transition_delete_rates_label.replace('{date}', edit_transition.transition_date|string) }}
                 </label>
             </div>
-            <button type="submit" class="btn btn-danger">Ta bort inst&#228;llningar</button>
+            <button type="submit" class="btn btn-danger">{{ t.adm_transition_delete_button }}</button>
         </form>
         {% endif %}
     </div>

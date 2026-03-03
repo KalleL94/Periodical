@@ -1,117 +1,118 @@
 {# app/templates/profile.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Min profil{% endblock %}
+{% block title %}Periodical – {{ t.profile_title }}{% endblock %}
 
 {% block page_content %}
 
-<h2 class="page-title">Min profil</h2>
+<h2 class="page-title">{{ t.profile_title }}</h2>
 
 <div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
-    
+
     <!-- Profil info -->
     <div class="col" style="min-width: 300px; flex: 1;">
         <div class="card">
-            <h3 style="margin-top: 0;">Personuppgifter</h3>
-            
+            <h3 style="margin-top: 0;">{{ t.profile_personal_info }}</h3>
+
             {% if error %}
                 <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
                     {{ error }}
                 </div>
             {% endif %}
-            
+
             <form method="POST" action="/profile">
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">Användarnamn</label>
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_username }}</label>
                     <input type="text" value="{{ user.username }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                    <small style="color: var(--muted);">Kan inte ändras</small>
+                    <small style="color: var(--muted);">{{ t.profile_username_hint }}</small>
                 </div>
-                
+
                 <div style="margin-bottom: 16px;">
-                    <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">Namn</label>
+                    <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_name }}</label>
                     <input type="text" id="name" name="name" value="{{ user.name }}" required style="width: 100%; box-sizing: border-box;">
                 </div>
 
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">Nuvarande månadslön</label>
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_current_wage }}</label>
                     <input type="text" value="{{ '{:,}'.format(user.wage).replace(',', ' ') }} SEK" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                    <small style="color: var(--muted);">Hantera lönehistorik längre ner på sidan</small>
+                    <small style="color: var(--muted);">{{ t.profile_wage_hint }}</small>
                 </div>
 
                 <div style="margin-bottom: 16px;">
-                    <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">Skattetabell (Nuvarande: {{ user.tax_table }})</label>
+                    <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_tax_table }} ({{ user.tax_table }})</label>
                     <select id="tax_table" name="tax_table" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);">
                         {% for table in available_tax_tables %}
                         <option value="{{ table }}" {% if user.tax_table == table %}selected{% endif %}>Tabell {{ table }}</option>
                         {% endfor %}
                     </select>
-                    <small style="color: var(--muted);">Välj din skattetabell enligt Skatteverket</small>
+                    <small style="color: var(--muted);">{{ t.profile_tax_hint }}</small>
                 </div>
-                
+
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">Roll</label>
+                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_role }}</label>
                     <input type="text" value="{{ user.role.value }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
                 </div>
-                
-                <button type="submit" class="btn">Spara ändringar</button>
+
+                <button type="submit" class="btn">{{ t.profile_save }}</button>
             </form>
         </div>
     </div>
-    
+
     <!-- Byt lösenord -->
     <div class="col" style="min-width: 300px; flex: 1;">
         <div class="card">
-            <h3 style="margin-top: 0;">Byt lösenord</h3>
-            
+            <h3 style="margin-top: 0;">{{ t.profile_change_password }}</h3>
+
             <form method="POST" action="/profile/password">
                 <div style="margin-bottom: 16px;">
-                    <label for="current_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nuvarande lösenord</label>
+                    <label for="current_password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_current_pw }}</label>
                     <input type="password" id="current_password" name="current_password" required style="width: 100%; box-sizing: border-box;">
                 </div>
-                
+
                 <div style="margin-bottom: 24px;">
-                    <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">Nytt lösenord</label>
+                    <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_new_pw }}</label>
                     <input type="password" id="new_password" name="new_password" required minlength="6" style="width: 100%; box-sizing: border-box;">
                 </div>
-                
-                <button type="submit" class="btn secondary">Byt lösenord</button>
+
+                <button type="submit" class="btn secondary">{{ t.profile_change_pw_button }}</button>
             </form>
         </div>
-        
+
         <!-- Semester länk -->
         <div class="card" style="margin-top: 16px;">
-            <h3 style="margin-top: 0;">Semester</h3>
-            <p style="color: var(--muted);">Hantera dina semesterveckor.</p>
-            <a href="/profile/vacation" class="btn">Hantera semester</a>
+            <h3 style="margin-top: 0;">{{ t.profile_vacation_title }}</h3>
+            <p style="color: var(--muted);">{{ t.profile_vacation_desc }}</p>
+            <a href="/profile/vacation" class="btn">{{ t.profile_vacation_link }}</a>
         </div>
 
         <!-- Övertag länk -->
         <div class="card" style="margin-top: 16px;">
-            <h3 style="margin-top: 0;">&#214;vertag</h3>
-            <p style="color: var(--muted);">Konfigurera &#246;vertag fr&#229;n konsult till direktanst&#228;llning.</p>
+            <h3 style="margin-top: 0;">{{ t.profile_transition_title }}</h3>
+            <p style="color: var(--muted);">{{ t.profile_transition_desc }}</p>
             {% if user.employment_transition %}
-            <span class="badge" style="margin-bottom: 0.75rem; display: inline-block;">Konfigurerad</span><br>
+            <span class="badge" style="margin-bottom: 0.75rem; display: inline-block;">{{ t.profile_transition_configured }}</span><br>
             {% endif %}
-            <a href="/profile/transition" class="btn">{{ "Redigera" if user.employment_transition else "Konfigurera" }}</a>
+            <a href="/profile/transition" class="btn">{{ t.profile_transition_edit if user.employment_transition else t.profile_transition_configure }}</a>
         </div>
+
     </div>
 
 </div>
 
     <!-- Lönehistorik -->
     <section style="margin-top: 32px;">
-        <h2>Lönehistorik</h2>
+        <h2>{{ t.profile_wage_history }}</h2>
 
         {% if wage_history %}
             <div class="card">
                 <table style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr style="border-bottom: 1px solid var(--border);">
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Lön (SEK)</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Från datum</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Åtgärd</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_wage_col }}</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_from_date }}</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_to_date }}</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_status }}</th>
+                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_action }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -123,20 +124,20 @@
                                 {% if record.effective_to %}
                                     {{ record.effective_to }}
                                 {% else %}
-                                    <span style="color: var(--muted); font-style: italic;">pågående</span>
+                                    <span style="color: var(--muted); font-style: italic;">{{ t.profile_ongoing }}</span>
                                 {% endif %}
                             </td>
                             <td style="padding: 8px;">
                                 {% if record.is_current %}
-                                    <span style="color: var(--success); font-weight: 500;">✓ Aktuell</span>
+                                    <span style="color: var(--success); font-weight: 500;">{{ t.profile_current }}</span>
                                 {% else %}
-                                    <span style="color: var(--muted);">Historisk</span>
+                                    <span style="color: var(--muted);">{{ t.profile_historical }}</span>
                                 {% endif %}
                             </td>
                             <td style="padding: 8px;">
                                 {% if wage_history | length > 1 %}
-                                    <form method="POST" action="/profile/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('Är du säker på att du vill ta bort denna lönepost?');">
-                                        <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
+                                    <form method="POST" action="/profile/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('{{ t.profile_delete_wage_confirm }}');">
+                                        <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">{{ t.profile_delete }}</button>
                                     </form>
                                 {% else %}
                                     <span style="color: var(--muted); font-size: 0.875rem;">-</span>
@@ -149,21 +150,21 @@
             </div>
         {% else %}
             <div class="card">
-                <p style="color: var(--muted);">Ingen lönehistorik tillgänglig.</p>
+                <p style="color: var(--muted);">{{ t.profile_no_wage_history }}</p>
             </div>
         {% endif %}
 
         <!-- Add New Wage -->
         <div class="card" style="margin-top: 16px;">
-            <h3 style="margin-top: 0;">Lägg till ny lön</h3>
+            <h3 style="margin-top: 0;">{{ t.profile_add_wage_title }}</h3>
             <p style="color: var(--muted); margin-bottom: 16px;">
-                Lägg till en ny lön med ett effektivt datum. Tidigare lön kommer automatiskt att avslutas dagen innan. Detta är användbart vid lönerevision eller förhandling.
+                {{ t.profile_add_wage_desc }}
             </p>
 
             <form method="POST" action="/profile/add-wage">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
                     <div>
-                        <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">Ny lön (SEK)</label>
+                        <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_new_wage }}</label>
                         <input
                             type="number"
                             id="new_wage"
@@ -177,7 +178,7 @@
                     </div>
 
                     <div>
-                        <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">Från datum</label>
+                        <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_from_date }}</label>
                         <input
                             type="date"
                             id="effective_from"
@@ -188,22 +189,22 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn">Lägg till lön</button>
+                <button type="submit" class="btn">{{ t.profile_add_wage_button }}</button>
             </form>
         </div>
     </section>
 
     <!-- Kalenderexport -->
     <section class="calendar-export">
-        <h2>Kalenderexport</h2>
+        <h2>{{ t.profile_calendar_export }}</h2>
         <p class="export-description">
-            Ladda ner ditt schema som .ics-fil för att importera till Google Calendar, Outlook eller Apple Calendar.
+            {{ t.profile_calendar_desc }}
         </p>
         <a href="/profile/calendar.ics/sv" class="btn btn-secondary">
-            📅 Exportera schema till kalender på svenska
+            {{ t.profile_calendar_sv }}
         </a>
         <a href="/profile/calendar.ics/en" class="btn btn-secondary">
-            📅 Exportera schema till kalender på engelska
+            {{ t.profile_calendar_en }}
         </a>
     </section>
 

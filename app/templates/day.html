@@ -9,15 +9,15 @@
         <div class="day-buttons-left">
             <a href="/day/{{ person_id }}/{{ prev_year }}/{{ prev_month }}/{{ prev_day }}"
                class="btn btn-primary">
-                Previous day
+                {{ t.day_prev }}
             </a>
             <a href="/week/{{ person_id }}?year={{ iso_year }}&week={{ iso_week }}"
                class="btn btn-primary">
-                Back to week
+                {{ t.day_back_week }}
             </a>
             <a href="/day/{{ person_id }}/{{ next_year }}/{{ next_month }}/{{ next_day }}"
                class="btn btn-primary">
-                Next day
+                {{ t.day_next }}
             </a>
             <input type="date"
                    id="date-picker"
@@ -43,7 +43,7 @@
         <h2>
             {{ weekday_name }} {{ date }} - {{ person_name }} ({{ person_id }})
             {% if show_salary and is_storhelg %}
-                <span class="badge-ob5">Storhelg</span>
+                <span class="badge-ob5">{{ t.day_holiday }}</span>
             {% endif %}
         </h2>
     </div>
@@ -51,15 +51,15 @@
     <!-- Shift -->
     <div class="day-layout">
         <section class="day-section">
-            <h3>Shift</h3>
+            <h3>{{ t.day_shift_section }}</h3>
             <table>
                 <thead>
                     <tr>
-                        <th>Rotation week</th>
-                        <th>Shift code</th>
-                        <th>Name</th>
-                        <th>Time</th>
-                        <th>Total hours</th>
+                        <th>{{ t.day_rotation_week }}</th>
+                        <th>{{ t.day_shift_code }}</th>
+                        <th>{{ t.day_shift_name }}</th>
+                        <th>{{ t.day_time }}</th>
+                        <th>{{ t.day_total_hours }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -80,12 +80,12 @@
                             {% if shift %}
                                 {{ shift.label }}
                             {% else %}
-                                No shift
+                                {{ t.day_no_shift }}
                             {% endif %}
                         </td>
                         <td>
                             {% if shift and shift.start_time %}
-                                {{ shift.start_time }} to {{ shift.end_time }}
+                                {{ shift.start_time }} {{ t.day_time_to }} {{ shift.end_time }}
                             {% else %}
                                 -
                             {% endif %}
@@ -95,14 +95,14 @@
                     {% if coworkers %}
                     <tr>
                         <td colspan="5" class="coworkers-row">
-                            <strong>Arbetar med:</strong> {{ coworkers | join(', ') }}
+                            <strong>{{ t.day_working_with }}</strong> {{ coworkers | join(', ') }}
                         </td>
                     </tr>
                     {% endif %}
                 </tbody>
             </table>
 
-            <h3>Övertid (OT)</h3>
+            <h3>{{ t.day_overtime }}</h3>
 
             {% if ot_shift %}
                 {% if ot_shift.is_extension %}
@@ -111,18 +111,18 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Typ</th>
-                                    <th>Start</th>
-                                    <th>Slut</th>
-                                    <th>Extra tid</th>
-                                    <th>Timlön</th>
-                                    <th>OT-lön</th>
+                                    <th>{{ t.day_extension_type }}</th>
+                                    <th>{{ t.day_ext_start }}</th>
+                                    <th>{{ t.day_ext_end }}</th>
+                                    <th>{{ t.day_ext_extra }}</th>
+                                    <th>{{ t.day_ext_hourly }}</th>
+                                    <th>{{ t.day_ext_pay }}</th>
                                     <th></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><span class="badge" style="background:#f59e0b;color:#000;">Förlängning</span></td>
+                                    <td><span class="badge" style="background:#f59e0b;color:#000;">{{ t.day_extension_type }}</span></td>
                                     <td>{{ ot_shift.start_time }}</td>
                                     <td>{{ ot_shift.end_time }}</td>
                                     <td>{{ "%.2f"|format(ot_shift.hours) }} h</td>
@@ -130,7 +130,7 @@
                                     <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                     <td>
                                         <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
-                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort förlängning?')">Ta bort</button>
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_extension_confirm }}')">{{ t.day_delete }}</button>
                                         </form>
                                     </td>
                                 </tr>
@@ -143,11 +143,11 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Start</th>
-                                    <th>Slut</th>
-                                    <th>Timmar</th>
-                                    <th>Timlön</th>
-                                    <th>OT-lön</th>
+                                    <th>{{ t.day_ext_start }}</th>
+                                    <th>{{ t.day_ext_end }}</th>
+                                    <th>{{ t.day_ext_hours }}</th>
+                                    <th>{{ t.day_ext_hourly }}</th>
+                                    <th>{{ t.day_ext_pay }}</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -160,7 +160,7 @@
                                     <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                     <td>
                                         <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
-                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort övertidspass?')">Ta bort</button>
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_ot_confirm }}')">{{ t.day_delete }}</button>
                                         </form>
                                     </td>
                                 </tr>
@@ -169,7 +169,7 @@
 
                         {% if original_shift and original_shift.code == 'OC' %}
                         <p class="info-text">
-                            <strong>OC-pass avslutas:</strong> OC-lön 00:00-{{ ot_shift.start_time }}, sedan OT-lön {{ ot_shift.start_time }}-{{ ot_shift.end_time }}
+                            {{ t.day_ot_note_oc.replace('{start}', ot_shift.start_time).replace('{end}', ot_shift.end_time) }}
                         </p>
                         {% endif %}
                     </div>
@@ -177,7 +177,7 @@
             {% else %}
                 {# Förlängningsformulär för ordinarie arbetspass #}
                 {% if shift and shift.code in ('N1', 'N2', 'N3') %}
-                    <p class="info-text" style="margin-bottom:0.5rem;">Stannade du kvar efter {{ shift.end_time }}? Logga förlängning:</p>
+                    <p class="info-text" style="margin-bottom:0.5rem;">{{ t.day_ext_stayed.replace('{time}', shift.end_time) }}</p>
                     <form method="POST" action="/overtime/add" class="ot-form" id="ext-form">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         <input type="hidden" name="date" value="{{ date }}">
@@ -185,20 +185,20 @@
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="ext_start_time">Ordinarie slut:</label>
+                                <label for="ext_start_time">{{ t.day_ext_normal_end }}</label>
                                 <input type="time" id="ext_start_time" name="start_time" value="{{ shift.end_time }}" readonly style="opacity:0.6;">
                             </div>
                             <div class="form-group">
-                                <label for="ext_end_time">Faktisk sluttid:</label>
+                                <label for="ext_end_time">{{ t.day_ext_actual_end }}</label>
                                 <input type="time" id="ext_end_time" name="end_time" value="{{ shift.end_time }}" required>
                             </div>
                             <div class="form-group">
-                                <label for="ext_hours">Timmar:</label>
+                                <label for="ext_hours">{{ t.day_ext_hours }}</label>
                                 <input type="number" id="ext_hours" name="hours" value="0" step="0.01" min="0.01" max="8" required>
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">Logga förlängning</button>
+                        <button type="submit" class="btn btn-primary">{{ t.day_log_extension }}</button>
                     </form>
 
                     <script>
@@ -219,7 +219,7 @@
                     })();
                     </script>
 
-                    <p class="info-text">Övertidslön beräknas som månadslön / 72 per timme.</p>
+                    <p class="info-text">{{ t.day_ot_rate_note }}</p>
                 {% endif %}
 
                 {# Fullt övertidspass (inkallning) #}
@@ -228,41 +228,41 @@
                     <input type="hidden" name="date" value="{{ date }}">
 
                     <details>
-                        <summary style="cursor:pointer; color: var(--text-muted); font-size:0.9rem;">Lägg till inkallat övertidspass...</summary>
+                        <summary style="cursor:pointer; color: var(--text-muted); font-size:0.9rem;">{{ t.day_add_called_ot }}</summary>
                         <div class="form-row" style="margin-top:0.75rem;">
                             <div class="form-group">
-                                <label for="start_time">Starttid:</label>
+                                <label for="start_time">{{ t.day_start_time }}</label>
                                 <input type="time" id="start_time" name="start_time" value="14:00" required>
                             </div>
                             <div class="form-group">
-                                <label for="end_time">Sluttid:</label>
+                                <label for="end_time">{{ t.day_end_time }}</label>
                                 <input type="time" id="end_time" name="end_time" value="22:30" required>
                             </div>
                             <div class="form-group">
-                                <label for="hours">Timmar:</label>
+                                <label for="hours">{{ t.day_ext_hours }}</label>
                                 <input type="number" id="hours" name="hours" value="8.5" step="0.5" min="0.5" max="24" required>
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-primary">Lägg till övertidspass</button>
+                        <button type="submit" class="btn btn-primary">{{ t.day_add_ot_button }}</button>
                     </details>
                 </form>
 
                 <p class="info-text">
-                    Övertidslön beräknas som månadslön / 72 per timme.
+                    {{ t.day_ot_rate_note }}
                 </p>
             {% endif %}
 
         {# Frånvarosection - endast för egen sida när inloggad #}
         {% if user and user.id == person_id or user.id == 0 %}
-            <h3>Frånvaro</h3>
-            
+            <h3>{{ t.day_absence_title }}</h3>
+
             {% if absence %}
                 <div class="absence-display">
                     <table>
                         <thead>
                             <tr>
-                                <th>Typ</th>
-                                <th>Färg</th>
+                                <th>{{ t.day_absence_type_col }}</th>
+                                <th>{{ t.day_absence_color_col }}</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -270,45 +270,45 @@
                             <tr>
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
-                                        Sjuk
+                                        {{ t.day_absence_sick }}
                                     {% elif absence.absence_type.value == 'VAB' %}
-                                        VAB (Vård av barn)
+                                        {{ t.day_absence_vab }}
                                     {% elif absence.absence_type.value == 'LEAVE' %}
-                                        Ledigt (obetald)
+                                        {{ t.day_absence_leave }}
                                     {% elif absence.absence_type.value == 'OFF' %}
-                                        Ledig (betald)
+                                        {{ t.day_absence_off }}
                                     {% else %}
                                         {{ absence.absence_type.value }}
                                     {% endif %}
                                 </td>
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
-                                        <span class="badge" style="background: #ef4444; color: white;">Sjuk</span>
+                                        <span class="badge" style="background: #ef4444; color: white;">{{ t.day_absence_sick }}</span>
                                     {% elif absence.absence_type.value == 'VAB' %}
                                         <span class="badge" style="background: #f97316; color: white;">VAB</span>
                                     {% elif absence.absence_type.value == 'LEAVE' %}
-                                        <span class="badge" style="background: #a855f7; color: white;">Ledigt</span>
+                                        <span class="badge" style="background: #a855f7; color: white;">{{ t.day_absence_leave }}</span>
                                     {% elif absence.absence_type.value == 'OFF' %}
-                                        <span class="badge" style="background: #888888; color: white;">Ledig</span>
+                                        <span class="badge" style="background: #888888; color: white;">{{ t.day_absence_off }}</span>
                                     {% endif %}
                                 </td>
                                 <td>
                                     <form method="POST" action="/absence/{{ absence.id }}/delete" style="display: inline;">
-                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Ta bort frånvaro?')">Ta bort</button>
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_absence_confirm }}')">{{ t.day_delete }}</button>
                                     </form>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
-                    
+
                     {% if show_salary and absence_deduction > 0 %}
-                    <h3>Löneavdrag</h3>
+                    <h3>{{ t.day_salary_deduction }}</h3>
                     <table>
                         <thead>
                             <tr>
-                                <th>Timmar</th>
-                                <th>Avdrag</th>
-                                <th>Info</th>
+                                <th>{{ t.day_absence_deduction_hours }}</th>
+                                <th>{{ t.day_absence_deduction_amount }}</th>
+                                <th>{{ t.day_absence_deduction_info }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -318,71 +318,71 @@
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
                                         {% if is_karens %}
-                                            <span class="badge" style="background: #dc2626; color: white;">Karensdag (100% avdrag)</span>
+                                            <span class="badge" style="background: #dc2626; color: white;">{{ t.day_karens }}</span>
                                         {% else %}
-                                            20% avdrag (80% sjuklön från arbetsgivaren)
+                                            {{ t.day_sick_deduction }}
                                         {% endif %}
                                     {% elif absence.absence_type.value == 'VAB' %}
-                                        100% avdrag (ersättning från Försäkringskassan)
+                                        {{ t.day_vab_deduction }}
                                     {% elif absence.absence_type.value == 'LEAVE' %}
-                                        100% avdrag (obetald ledighet)
+                                        {{ t.day_leave_deduction }}
                                     {% endif %}
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                     {% endif %}
-                    
+
                     <p class="info-text">
-                        Frånvaro registrerad. Detta ersätter det schemalagda skiftet för denna dag.
+                        {{ t.day_absence_registered }}
                     </p>
                 </div>
             {% else %}
                 <form method="POST" action="/absence/add" class="absence-form">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
-                    
+
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="absence_type">Typ av frånvaro:</label>
+                            <label for="absence_type">{{ t.day_absence_type_label }}</label>
                             <select id="absence_type" name="absence_type" required>
-                                <option value="">-- Välj typ --</option>
-                                <option value="SICK">Sjuk</option>
-                                <option value="VAB">VAB (Vård av barn)</option>
-                                <option value="LEAVE">Ledigt (obetald)</option>
-                                <option value="OFF">Ledig (betald)</option>
+                                <option value="">{{ t.day_choose_type }}</option>
+                                <option value="SICK">{{ t.day_absence_sick }}</option>
+                                <option value="VAB">{{ t.day_absence_vab }}</option>
+                                <option value="LEAVE">{{ t.day_absence_leave }}</option>
+                                <option value="OFF">{{ t.day_absence_off }}</option>
                             </select>
                         </div>
                     </div>
-                    
-                    <button type="submit" class="btn btn-primary">Lägg till frånvaro</button>
+
+                    <button type="submit" class="btn btn-primary">{{ t.day_add_absence }}</button>
                 </form>
-                
+
                 <p class="info-text">
-                    Registrera frånvaro för att ersätta det schemalagda skiftet.
+                    {{ t.day_absence_info }}
                     <br>
-                    <strong>Sjuk:</strong> Ger sjuklön efter första dagen (röd färg)
+                    <strong>{{ t.day_absence_sick }}:</strong> {{ t.day_absence_sick_note }}
                     <br>
-                    <strong>VAB:</strong> Vård av barn (orange färg)
+                    <strong>VAB:</strong> {{ t.day_absence_vab_note }}
                     <br>
-                    <strong>Ledigt (obetald):</strong> Permission eller annan ledighet med löneavdrag (lila färg)
+                    <strong>{{ t.day_absence_leave }}:</strong> {{ t.day_absence_leave_note }}
                     <br>
-                    <strong>Ledig (betald):</strong> Ledig dag utan löneavdrag (grå färg)
+                    <strong>{{ t.day_absence_off }}:</strong> {{ t.day_absence_off_note }}
                 </p>
             {% endif %}
         {% endif %}
 
         {# Beredskapssection - endast för egen sida när inloggad #}
         {% if user and user.id == person_id or user.id == 0 %}
-            <h3>Beredskap (On-call)</h3>
+            <h3>{{ t.day_oncall_title }}</h3>
 
             {% if oncall_override %}
                 <div class="oncall-override-display">
                     <table>
                         <thead>
                             <tr>
-                                <th>Typ</th>
-                                <th>Anledning</th>
+                                <th>{{ t.day_oncall_type_col }}</th>
+                                <th>{{ t.day_oncall_reason_col }}</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -390,15 +390,15 @@
                             <tr>
                                 <td>
                                     {% if oncall_override.override_type.value == 'ADD' %}
-                                        <span class="badge" style="background: #22c55e; color: white;">Tillagd OC</span>
+                                        <span class="badge" style="background: #22c55e; color: white;">{{ t.day_oncall_added }}</span>
                                     {% else %}
-                                        <span class="badge" style="background: #ef4444; color: white;">Borttagen OC</span>
+                                        <span class="badge" style="background: #ef4444; color: white;">{{ t.day_oncall_removed }}</span>
                                     {% endif %}
                                 </td>
                                 <td>{{ oncall_override.reason or '-' }}</td>
                                 <td>
                                     <form method="POST" action="/oncall/{{ oncall_override.id }}/delete" style="display: inline;">
-                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Ångra ändringen och återställ till rotation?')">Ångra</button>
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_oncall_undo_confirm }}')">{{ t.day_oncall_undo }}</button>
                                     </form>
                                 </td>
                             </tr>
@@ -406,9 +406,9 @@
                     </table>
                     <p class="info-text">
                         {% if oncall_override.override_type.value == 'ADD' %}
-                            Beredskapspass har lagts till manuellt. Klicka "Ångra" för att ta bort.
+                            {{ t.day_oncall_added_note }}
                         {% else %}
-                            Beredskapspass har tagits bort manuellt från rotationen. Klicka "Ångra" för att återställa.
+                            {{ t.day_oncall_removed_note }}
                         {% endif %}
                     </p>
                 </div>
@@ -421,18 +421,18 @@
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="reason">Anledning (valfritt):</label>
+                                <label for="reason">{{ t.day_oncall_reason_label }}</label>
                                 <input type="text" id="reason" name="reason" placeholder="T.ex. sjuk, byte med kollega">
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-danger">Ta bort beredskapspass</button>
+                        <button type="submit" class="btn btn-danger">{{ t.day_oncall_remove_button }}</button>
                     </form>
 
                     <p class="info-text">
-                        Du har beredskap denna dag enligt rotationsschemat.
+                        {{ t.day_oncall_rotation_note }}
                         <br>
-                        Ta bort om du inte kan ha beredskap (t.ex. vid sjukdom eller byte med kollega).
+                        {{ t.day_oncall_remove_note }}
                     </p>
                 {% else %}
                     {# Person har inte OC - visa lägg till-knapp #}
@@ -442,30 +442,30 @@
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="reason">Anledning (valfritt):</label>
+                                <label for="reason">{{ t.day_oncall_reason_label }}</label>
                                 <input type="text" id="reason" name="reason" placeholder="T.ex. byte med kollega">
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">Lägg till beredskapspass</button>
+                        <button type="submit" class="btn btn-primary">{{ t.day_oncall_add_button }}</button>
                     </form>
 
                     <p class="info-text">
-                        Du har inte beredskap denna dag enligt rotationsschemat.
+                        {{ t.day_oncall_no_rotation }}
                         <br>
-                        Lägg till om du tar över beredskap från en kollega.
+                        {{ t.day_oncall_add_note }}
                     </p>
                 {% endif %}
             {% endif %}
         {% endif %}
 
-        <h3>Alla som arbetar denna dag</h3>
+        <h3>{{ t.day_all_working }}</h3>
         {% if all_working_persons and all_working_persons|length > 0 %}
             <table>
                 <thead>
                     <tr>
-                        <th>Namn</th>
-                        <th>Skift</th>
+                        <th>{{ t.day_col_name }}</th>
+                        <th>{{ t.day_col_shift }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -480,39 +480,39 @@
         {% endif %}
 
         {% if swap_users and user and user.id == person_id %}
-        <h3 style="margin-top: 1.5rem;">Föreslå skiftbyte</h3>
+        <h3 style="margin-top: 1.5rem;">{{ t.day_propose_swap }}</h3>
         <form method="POST" action="/swaps/propose" class="ot-form" id="swap-form">
             <input type="hidden" name="requester_date" value="{{ date }}">
             <div class="form-row">
                 <div class="form-group">
-                    <label for="target_id">Byt med:</label>
+                    <label for="target_id">{{ t.day_swap_with }}</label>
                     <select id="target_id" name="target_id" required>
-                        <option value="">-- Välj kollega --</option>
+                        <option value="">{{ t.day_swap_choose_colleague }}</option>
                         {% for u in swap_users %}
                         <option value="{{ u.id }}">{{ u.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="target_date">Deras pass:</label>
+                    <label for="target_date">{{ t.day_swap_their_shift }}</label>
                     <select id="target_date" name="target_date" required disabled>
-                        <option value="">-- Välj kollega först --</option>
+                        <option value="">{{ t.day_swap_choose_first }}</option>
                     </select>
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label for="swap_message">Meddelande (valfritt):</label>
+                    <label for="swap_message">{{ t.day_swap_message }}</label>
                     <input type="text" id="swap_message" name="message" placeholder="T.ex. kan jag ta ditt pass?">
                 </div>
             </div>
-            <button type="submit" class="btn" id="swap-submit" disabled>Föreslå byte</button>
+            <button type="submit" class="btn" id="swap-submit" disabled>{{ t.day_swap_submit }}</button>
             <p class="info-text">
-                Du erbjuder ditt pass denna dag
+                {{ t.day_swap_offering }}
                 {% if shift %}
                     ({{ shift.code }}{% if ob_hours %}, {{ "%.1f"|format(ob_hours.values()|sum) }}h OB{% endif %})
                 {% endif %}
-                och väljer vilket av kollegans pass du vill ta.
+                {{ t.day_swap_offering_suffix }}
             </p>
         </form>
         <script>
@@ -520,15 +520,19 @@
                 const userId = this.value;
                 const targetSelect = document.getElementById('target_date');
                 const submitBtn = document.getElementById('swap-submit');
+                const msgChooseFirst = "{{ t.day_swap_choose_first }}";
+                const msgLoading = "{{ t.day_swap_loading }}";
+                const msgNoShifts = "{{ t.day_swap_no_shifts }}";
+                const msgChooseShift = "{{ t.day_swap_choose_shift }}";
 
                 if (!userId) {
-                    targetSelect.innerHTML = '<option value="">-- Välj kollega först --</option>';
+                    targetSelect.innerHTML = '<option value="">' + msgChooseFirst + '</option>';
                     targetSelect.disabled = true;
                     submitBtn.disabled = true;
                     return;
                 }
 
-                targetSelect.innerHTML = '<option value="">Laddar pass...</option>';
+                targetSelect.innerHTML = '<option value="">' + msgLoading + '</option>';
                 targetSelect.disabled = true;
 
                 const offering = '{{ shift.code if shift else "OFF" }}';
@@ -537,11 +541,11 @@
                     .then(r => r.json())
                     .then(data => {
                         if (data.shifts.length === 0) {
-                            targetSelect.innerHTML = '<option value="">Inga kommande pass</option>';
+                            targetSelect.innerHTML = '<option value="">' + msgNoShifts + '</option>';
                             submitBtn.disabled = true;
                             return;
                         }
-                        let html = '<option value="">-- Välj pass --</option>';
+                        let html = '<option value="">' + msgChooseShift + '</option>';
                         data.shifts.forEach(s => {
                             const ob = s.ob_hours > 0 ? ' (' + s.ob_hours + 'h OB)' : '';
                             html += '<option value="' + s.date + '">' + s.date_display + ': ' + s.label + ob + '</option>';
@@ -559,15 +563,15 @@
             <section class="day-section">
             {% if is_effective_oc %}
             {# On-call compensation section - for effective OC shifts (including ADD overrides) #}
-                <h3>Oncall pay</h3>
+                <h3>{{ t.day_oncall_pay_title }}</h3>
                 {% set oncall = oncall_details %}
                 {% if oncall and oncall.breakdown %}
                     <table>
                         <thead>
                             <tr>
-                                <th class="th_left">Type</th>
-                                <th class="th_center">Hours</th>
-                                <th class="th_center">Pay</th>
+                                <th class="th_left">{{ t.day_oncall_type_header }}</th>
+                                <th class="th_center">{{ t.day_oncall_hours_header }}</th>
+                                <th class="th_center">{{ t.day_oncall_pay_header }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -581,18 +585,18 @@
                         </tbody>
                         <tfoot>
                             <tr>
-                                <td class="td_left foot_left"><strong>Total</strong></td>
+                                <td class="td_left foot_left"><strong>{{ t.day_oncall_total_row }}</strong></td>
                                 <td class="td_right foot_right num"><strong>{{ "%.2f"|format(oncall.total_hours) }}</strong></td>
                                 <td class="td_right foot_right num"><strong>{{ "%.2f"|format(oncall_pay) }} kr</strong></td>
                             </tr>
                         </tfoot>
                     </table>
                 {% else %}
-                    <p>No on-call compensation details available.</p>
+                    <p>{{ t.day_no_oncall_details }}</p>
                 {% endif %}
             {% else %}
             {# Regular OB section for non-OC shifts #}
-                <h3>OB hours</h3>
+                <h3>{{ t.day_ob_hours_title }}</h3>
                 {% if ob_codes %}
                     {% set total_ob_hours = ob_hours.values() | sum %}
                     {# Create a mapping of code to label from ob_rules #}
@@ -605,8 +609,8 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>OB type</th>
-                                <th class="th_right">Hours</th>
+                                <th>{{ t.day_ob_type }}</th>
+                                <th class="th_right">{{ t.day_oncall_hours_header }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -619,16 +623,16 @@
                         </tbody>
                         <tfoot>
                             <tr>
-                                <td class="foot_left"><strong>Total OB hours</strong></td>
+                                <td class="foot_left"><strong>{{ t.day_total_ob_hours }}</strong></td>
                                 <td class="td_right foot_right num"><strong>{{ "%.2f"|format(total_ob_hours) }}</strong></td>
                             </tr>
                         </tfoot>
                     </table>
                 {% else %}
-                    <p>No OB hours this day.</p>
+                    <p>{{ t.day_no_ob_hours }}</p>
                 {% endif %}
 
-            <h3>OB pay</h3>
+            <h3>{{ t.day_ob_pay_title }}</h3>
             {% if ob_codes %}
                 {% set total_ob_pay = ob_pay.values() | sum %}
                 {# Create a mapping of code to label from ob_rules #}
@@ -641,8 +645,8 @@
                 <table>
                     <thead>
                         <tr>
-                            <th class="th_left">OB type</th>
-                            <th class="th_right">Amount (SEK)</th>
+                            <th class="th_left">{{ t.day_ob_type }}</th>
+                            <th class="th_right">{{ t.day_ob_amount_sek }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -655,24 +659,24 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td class="foot_left num"><strong>Total OB pay</strong></td>
+                            <td class="foot_left num"><strong>{{ t.day_total_ob_pay }}</strong></td>
                             <td class="td_right foot_right num"><strong>{{ "%.2f"|format(total_ob_pay) }}</strong></td>
                         </tr>
                     </tfoot>
                 </table>
             {% else %}
-                <p>No OB compensation this day.</p>
+                <p>{{ t.day_no_ob_pay }}</p>
             {% endif %}
 
-            <h3>Active OB rules</h3>
+            <h3>{{ t.day_ob_rules_title }}</h3>
             {% if active_special_rules and active_special_rules|length > 0 %}
                 <table>
                     <thead>
                         <tr>
-                            <th class="th_left">Code</th>
-                            <th class="th_left">Label</th>
-                            <th class="th_left">Time</th>
-                            <th class="th_right">Rate</th>
+                            <th class="th_left">{{ t.day_ob_code }}</th>
+                            <th class="th_left">{{ t.day_ob_label }}</th>
+                            <th class="th_left">{{ t.day_ob_time }}</th>
+                            <th class="th_right">{{ t.day_ob_rate }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -680,14 +684,14 @@
                             <tr>
                                 <td class="td_left num">{{ rule.code }}</td>
                                 <td class="td_left num">{{ rule.label }}</td>
-                                <td class="td_left num">{{ rule.start_time }} to {{ rule.end_time }}</td>
+                                <td class="td_left num">{{ rule.start_time }} {{ t.day_time_to }} {{ rule.end_time }}</td>
                                 <td class="td_right num">{{ rule.rate }}</td>
                             </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             {% else %}
-                <p>No special OB rules active this day.</p>
+                <p>{{ t.day_no_ob_rules }}</p>
             {% endif %}
         </section>
         {% endif %}

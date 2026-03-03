@@ -3,12 +3,15 @@
 Shared utilities and templates for route modules.
 """
 
+import json as _json
+
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from app.core.constants import MAX_PERSONS, PERSON_IDS
 from app.core.helpers import contrast_color
+from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 
 # Shared Jinja2 templates instance
@@ -21,6 +24,9 @@ templates.env.filters["contrast"] = contrast_color
 templates.env.filters["date_format"] = lambda v: v.strftime("%Y-%m-%d") if v else ""
 templates.env.filters["time_format"] = lambda v: v.strftime("%H:%M") if v else ""
 
+# JSON parse filter – use {{ t.some_json_key | from_json }} in templates
+templates.env.filters["from_json"] = _json.loads
+
 # Add now (today's date) as a global for templates
 # Note: This is set once at module load. For dynamic "today", use get_today() in routes.
 templates.env.globals["now"] = get_today()
@@ -28,6 +34,16 @@ templates.env.globals["now"] = get_today()
 # Expose person/rotation constants so templates don't need to hardcode range(1, 11)
 templates.env.globals["person_ids"] = PERSON_IDS
 templates.env.globals["max_persons"] = MAX_PERSONS
+
+
+def render(template_name: str, context: dict, status_code: int = 200, headers: dict | None = None):
+    """Render a template, injecting the correct translation dict based on user.language."""
+    user = context.get("user")
+    lang = "sv"
+    if user and hasattr(user, "language") and user.language:
+        lang = user.language
+    context["t"] = TRANSLATIONS.get(lang, TRANSLATIONS["sv"])
+    return templates.TemplateResponse(template_name, context, status_code=status_code, headers=headers)
 
 
 def redirect_if_not_own_data(current_user, user_id: int, redirect_url: str) -> RedirectResponse | None:

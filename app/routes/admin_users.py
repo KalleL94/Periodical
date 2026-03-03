@@ -15,7 +15,7 @@ from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
 from app.database.database import User, UserRole, get_db
-from app.routes.shared import _parse_rates_form, templates
+from app.routes.shared import _parse_rates_form, render
 
 logger = get_logger(__name__)
 
@@ -31,7 +31,7 @@ async def admin_users_page(
 ):
     """Admin: list all users."""
     users = db.query(User).order_by(User.id).all()
-    return templates.TemplateResponse(
+    return render(
         "admin_users.html",
         {
             "request": request,
@@ -48,7 +48,7 @@ async def admin_create_user_page(
     current_user: User = Depends(get_admin_user),
 ):
     """Admin: show create user form."""
-    return templates.TemplateResponse(
+    return render(
         "admin_user_create.html",
         {
             "request": request,
@@ -70,7 +70,7 @@ async def admin_create_user(
 ):
     """Admin: create new user."""
     if get_user_by_username(db, username):
-        return templates.TemplateResponse(
+        return render(
             "admin_user_create.html",
             {"request": request, "user": current_user, "error": "Användarnamnet finns redan"},
             status_code=400,
@@ -134,7 +134,7 @@ async def admin_edit_user_page(
             admin_auto_variable_avg = calculate_variable_avg_daily(edit_user, db, earning_start, earning_end)
         admin_auto_vacation_days = calculate_consultant_vacation_days(edit_user, edit_transition)
 
-    return templates.TemplateResponse(
+    return render(
         "admin_user_edit.html",
         {
             "request": request,
@@ -182,7 +182,7 @@ async def admin_update_user(
 
     if new_password:
         if len(new_password) < 8:
-            return templates.TemplateResponse(
+            return render(
                 "admin_user_edit.html",
                 {
                     "request": request,
@@ -412,7 +412,7 @@ async def admin_start_employment(
         return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
     except ValueError as e:
-        return templates.TemplateResponse(
+        return render(
             "admin_user_edit.html",
             {
                 "request": request,
@@ -453,7 +453,7 @@ async def admin_end_employment(
         return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
     except ValueError as e:
-        return templates.TemplateResponse(
+        return render(
             "admin_user_edit.html",
             {
                 "request": request,

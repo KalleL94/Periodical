@@ -9,6 +9,7 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 from app.database.database import User, UserRole
 
@@ -143,8 +144,11 @@ def render_template(
     user: User | None = None,
 ):
     """
-    Render template with user context automatically included.
+    Render template with user context and translations automatically included.
     """
-    ctx = {"request": request, "user": user, "now": get_today()}
+    lang = "sv"
+    if user and hasattr(user, "language") and user.language:
+        lang = user.language
+    ctx = {"request": request, "user": user, "now": get_today(), "t": TRANSLATIONS.get(lang, TRANSLATIONS["sv"])}
     ctx.update(context)
     return templates.TemplateResponse(template_name, ctx)

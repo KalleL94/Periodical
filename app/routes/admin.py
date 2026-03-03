@@ -13,7 +13,7 @@ from app.core.schedule import clear_schedule_cache, settings, tax_brackets
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, RotationEra, User, get_db
-from app.routes.shared import templates
+from app.routes.shared import render
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -47,7 +47,7 @@ async def admin_settings(
     persons_with_db_wages = []
     for user in users:
         persons_with_db_wages.append({"id": user.id, "name": user.name, "wage": user.wage})
-    return templates.TemplateResponse(
+    return render(
         "admin_settings.html",
         {
             "request": request,
@@ -75,7 +75,7 @@ async def admin_settings_update(
     """
     # Validate monthly_salary range (from previous fix)
     if not (1000 <= monthly_salary <= 1000000):
-        return templates.TemplateResponse(
+        return render(
             "admin_settings.html",
             {
                 "request": request,
@@ -92,7 +92,7 @@ async def admin_settings_update(
     try:
         wage_updates = json.loads(person_wages)
     except json.JSONDecodeError:
-        return templates.TemplateResponse(
+        return render(
             "admin_settings.html",
             {
                 "request": request,
@@ -108,7 +108,7 @@ async def admin_settings_update(
     # Validate each wage in wage_updates (from previous fix)
     for person_id_str, new_wage in wage_updates.items():
         if not (1000 <= int(new_wage) <= 1000000):
-            return templates.TemplateResponse(
+            return render(
                 "admin_settings.html",
                 {
                     "request": request,
@@ -126,7 +126,7 @@ async def admin_settings_update(
     try:
         settings_data = json.loads(settings_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return templates.TemplateResponse(
+        return render(
             "admin_settings.html",
             {
                 "request": request,
@@ -139,7 +139,7 @@ async def admin_settings_update(
             status_code=500,
         )
     except json.JSONDecodeError as e:
-        return templates.TemplateResponse(
+        return render(
             "admin_settings.html",
             {
                 "request": request,
@@ -152,7 +152,7 @@ async def admin_settings_update(
             status_code=500,
         )
     except OSError as e:
-        return templates.TemplateResponse(
+        return render(
             "admin_settings.html",
             {
                 "request": request,
@@ -198,7 +198,7 @@ async def admin_rotation_eras(
     # Get all eras ordered by start_date (most recent first)
     eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
 
-    return templates.TemplateResponse(
+    return render(
         "admin_rotation_eras.html",
         {
             "request": request,
@@ -269,7 +269,7 @@ async def admin_rotation_eras_create(
         db.rollback()
         # Re-fetch eras for error display
         eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
-        return templates.TemplateResponse(
+        return render(
             "admin_rotation_eras.html",
             {
                 "request": request,
@@ -327,7 +327,7 @@ async def admin_rotation_eras_delete(
         db.rollback()
         # Re-fetch eras for error display
         eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
-        return templates.TemplateResponse(
+        return render(
             "admin_rotation_eras.html",
             {
                 "request": request,
@@ -401,7 +401,7 @@ async def admin_vacation(
             }
         )
 
-    return templates.TemplateResponse(
+    return render(
         "admin_vacation.html",
         {
             "request": request,
@@ -446,7 +446,7 @@ async def admin_vacation_user(
         .all()
     )
 
-    return templates.TemplateResponse(
+    return render(
         "admin_vacation_user.html",
         {
             "request": request,

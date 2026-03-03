@@ -24,9 +24,9 @@
 
     <div class="page-header">
         <div class="page-header-left">
-            <a href="/month?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-primary">Previous month</a>
-            <a href="/month" class="btn btn-primary">Today</a>
-            <a href="/month?year={{ next_year }}&month={{ next_month }}" class="btn btn-primary">Next month</a>
+            <a href="/month?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-primary">{{ t.month_prev }}</a>
+            <a href="/month" class="btn btn-primary">{{ t.month_today }}</a>
+            <a href="/month?year={{ next_year }}&month={{ next_month }}" class="btn btn-primary">{{ t.month_next }}</a>
         </div>
 
         <div class="page-header-right">
@@ -39,12 +39,12 @@
                     </a>
                 {% endfor %}
             {% elif user %}
-                <a href="/month/{{ user.id }}?year={{ year }}&month={{ month }}" class="btn secondary">Min månad</a>
+                <a href="/month/{{ user.id }}?year={{ year }}&month={{ month }}" class="btn secondary">{{ t.month_all_my_month }}</a>
             {% endif %}
         </div>
     </div>
 
-<h2 class="page-title">Monthly schedule - {{ year }}-{{ "%02d"|format(month) }}</h2>
+<h2 class="page-title">{{ t.month_all_title.replace('{year}', year|string).replace('{month}', "%02d"|format(month)) }}</h2>
 
 
     {% set header_days = persons[0].days if persons and persons|length > 0 else [] %}
@@ -56,7 +56,7 @@
                 {% if user and user.role.value == 'admin' %}
                 <tr>
                     <th></th>
-                    <th>Total OB</th>
+                    <th>{{ t.month_sum_total_ob }}</th>
                     {% for p in persons %}
                         {% set total_ob = (p.ob_pay.get('OB1',0) or 0) + (p.ob_pay.get('OB2',0) or 0)
                                           + (p.ob_pay.get('OB3',0) or 0) + (p.ob_pay.get('OB4',0) or 0)
@@ -66,8 +66,8 @@
                 </tr>
                 {% endif %}
                 <tr>
-                    <th class="w-sm">Day</th>
-                    <th class="w-md">Date</th>
+                    <th class="w-sm">{{ t.month_all_day_col }}</th>
+                    <th class="w-md">{{ t.month_all_date_col }}</th>
                     {% for p in persons %}
                         <th class="person-header">
                             {# Länka bara till egen sida eller om admin #}
@@ -87,11 +87,12 @@
                 </tr>
             </thead>
             <tbody>
+                {% set weekday_names_full = t.weekday_names_full | from_json %}
                 {% set ndays = header_days|length %}
                 {% for i in range(ndays) %}
                     {% set day = header_days[i] %}
                     <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
-                        <td class="day-cell">{{ day.weekday_name }}</td>
+                        <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
                             {{ day.date }}
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
@@ -114,13 +115,13 @@
                                     {% endif %}
                                         {% if d.shift.code == 'SEM' %}
                                             <span class="badge badge-sem"
-                                                  title="Semester"
+                                                  title="{{ t.month_shift_sem_title }}"
                                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
                                                 SEM
                                             </span>
                                         {% elif d.shift.code == 'OT' %}
                                             <span class="badge"
-                                                  {% if d.start and d.end %}title="Övertid: {{ d.start | time_format }} - {{ d.end | time_format }}"{% endif %}
+                                                  {% if d.start and d.end %}title="{{ t.month_shift_ot_title.replace('{start}', d.start | time_format).replace('{end}', d.end | time_format) }}"{% endif %}
                                                   style="background: {{ d.shift.color }}; color: {{ d.shift.color | contrast }};">
                                                 OT
                                             </span>

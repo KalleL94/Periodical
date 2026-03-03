@@ -4,16 +4,16 @@
 <!-- Rate History -->
 {% if rate_history %}
 <div class="card" style="margin-top: 16px;">
-    <h3 style="margin-top: 0;">Ers&auml;ttningshistorik</h3>
+    <h3 style="margin-top: 0;">{{ t.rates_history_title }}</h3>
 
     <table style="width: 100%; border-collapse: collapse;">
         <thead>
             <tr style="border-bottom: 1px solid var(--border);">
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Fr&aring;n datum</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Till datum</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">&Ouml;versikt</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">Status</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">&Aring;tg&auml;rd</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_from_date }}</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_to_date }}</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_overview }}</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_status }}</th>
+                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_action }}</th>
             </tr>
         </thead>
         <tbody>
@@ -24,7 +24,7 @@
                     {% if record.effective_to %}
                         {{ record.effective_to }}
                     {% else %}
-                        <span style="color: var(--muted); font-style: italic;">p&aring;g&aring;ende</span>
+                        <span style="color: var(--muted); font-style: italic;">{{ t.rates_ongoing }}</span>
                     {% endif %}
                 </td>
                 <td style="padding: 8px; font-size: 0.8rem; line-height: 1.6;">
@@ -70,22 +70,22 @@
                     {% if parts %}
                         {{ parts|join('<br>')|safe }}
                     {% else %}
-                        <span style="color: var(--muted);">Standardsatser</span>
+                        <span style="color: var(--muted);">{{ t.rates_default }}</span>
                     {% endif %}
                 </td>
                 <td style="padding: 8px;">
                     {% if record.status == 'current' %}
-                        <span style="color: var(--success); font-weight: 500;">&check; Aktuell</span>
+                        <span style="color: var(--success); font-weight: 500;">{{ t.rates_current }}</span>
                     {% elif record.status == 'future' %}
-                        <span style="color: var(--warning); font-weight: 500;">Kommande</span>
+                        <span style="color: var(--warning); font-weight: 500;">{{ t.rates_upcoming }}</span>
                     {% else %}
-                        <span style="color: var(--muted);">Historisk</span>
+                        <span style="color: var(--muted);">{{ t.rates_historical }}</span>
                     {% endif %}
                 </td>
                 <td style="padding: 8px;">
                     {% if rate_history | length > 1 %}
-                        <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" style="display: inline;" onsubmit="return confirm('&Auml;r du s&auml;ker p&aring; att du vill ta bort denna ers&auml;ttningspost?');">
-                            <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">Ta bort</button>
+                        <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" style="display: inline;" onsubmit="return confirm('{{ t.rates_delete_confirm }}');">
+                            <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">{{ t.rates_delete }}</button>
                         </form>
                     {% else %}
                         <span style="color: var(--muted); font-size: 0.875rem;">&mdash;</span>
@@ -100,11 +100,9 @@
 
 <!-- Add New Rates -->
 <div class="card" style="margin-top: 16px;">
-    <h3 style="margin-top: 0;">{% if rate_history %}L&auml;gg till nya ers&auml;ttningssatser{% else %}Ers&auml;ttningssatser{% endif %}</h3>
+    <h3 style="margin-top: 0;">{% if rate_history %}{{ t.rates_add_title }}{% else %}{{ t.rates_only_title }}{% endif %}</h3>
     <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
-        Individuella avvikelser fr&aring;n standardsatser. L&auml;mna tomt f&ouml;r att anv&auml;nda standard (l&ouml;nebaserad ber&auml;kning).
-        Ange direkt kr/tim <em>eller</em> tryck <strong>&times;f</strong> f&ouml;r att r&auml;kna via timl&ouml;n&times;faktor.
-        {% if rate_history %}Tidigare satser avslutas automatiskt dagen innan nytt fr&aring;n-datum.{% endif %}
+        {{ t.rates_add_desc }}{% if rate_history %} {{ t.rates_add_desc_history }}{% endif %}
     </p>
 
     <form method="POST" action="{{ rates_form_action }}" class="rates-form-instance">
@@ -112,13 +110,13 @@
         <!-- Från datum + timlön -->
         <div style="display: flex; gap: 24px; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap;">
             <div>
-                <label for="effective_from_rates" style="display: block; margin-bottom: 6px; color: var(--muted);">Fr&aring;n datum</label>
+                <label for="effective_from_rates" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.rates_from_date_label }}</label>
                 <input type="date" id="effective_from_rates" name="effective_from" required
                        style="width: 200px; box-sizing: border-box;">
             </div>
             <div>
                 <label for="rates_base_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">
-                    Timl&ouml;n <span style="font-size: 0.8rem;">(anv&auml;nds f&ouml;r &times;f-ber&auml;kning)</span>
+                    {{ t.rates_base_wage_label }} <span style="font-size: 0.8rem;">{{ t.rates_base_wage_hint }}</span>
                 </label>
                 <input type="number" id="rates_base_wage" step="0.01" min="0" placeholder="kr/tim"
                        class="input" style="width: 160px; box-sizing: border-box;">
@@ -126,9 +124,9 @@
         </div>
 
         <!-- OB-tillägg (kr/tim) -->
-        <h4 style="margin-bottom: 8px; margin-top: 0;">OB-till&auml;gg <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(kr/tim)</span></h4>
+        <h4 style="margin-bottom: 8px; margin-top: 0;">{{ t.rates_ob_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_ob_unit }}</span></h4>
         <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
-            Standard: l&ouml;n / divisor. Fyll i f&ouml;r fast kr/tim ist&auml;llet.
+            {{ t.rates_ob_hint }}
         </p>
         <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px;">
             {% for code, divisor in rate_defaults.ob_divisors.items() %}
@@ -154,9 +152,9 @@
         </div>
 
         <!-- Övertid (kr/tim) -->
-        <h4 style="margin-bottom: 8px;">&Ouml;vertid <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(kr/tim)</span></h4>
+        <h4 style="margin-bottom: 8px;">{{ t.rates_ot_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_ot_unit }}</span></h4>
         <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
-            Standard: l&ouml;n / {{ rate_defaults.ot_divisor }}. Fyll i f&ouml;r fast kr/tim ist&auml;llet.
+            {{ t.rates_ob_hint }}
         </p>
         <div class="rate-field" style="margin-bottom: 16px;">
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -177,9 +175,9 @@
         </div>
 
         <!-- Beredskap (kr/tim) -->
-        <h4 style="margin-bottom: 8px;">Beredskap <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(kr/tim)</span></h4>
+        <h4 style="margin-bottom: 8px;">{{ t.rates_oncall_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_ob_unit }}</span></h4>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px;">
-            {% set oc_groups = [("OC_WEEKDAY", "Vardag", 75), ("OC_WEEKEND", "Helg", 97), ("OC_HOLIDAY", "R\u00f6d dag", 112), ("OC_SPECIAL", "Storhelg", 192)] %}
+            {% set oc_groups = [("OC_WEEKDAY", "Vardag" if t.html_lang == "sv" else "Weekday", 75), ("OC_WEEKEND", "Helg" if t.html_lang == "sv" else "Weekend", 97), ("OC_HOLIDAY", "Röd dag" if t.html_lang == "sv" else "Public holiday", 112), ("OC_SPECIAL", "Storhelg" if t.html_lang == "sv" else "Major holiday", 192)] %}
             {% for code, label, default in oc_groups %}
             <div class="rate-field">
                 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px;">
@@ -203,9 +201,9 @@
         </div>
 
         <!-- Semester -->
-        <h4 style="margin-bottom: 8px;">Semesterers&auml;ttning <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">(decimalform, t.ex. 0.008 = 0.8%)</span></h4>
+        <h4 style="margin-bottom: 8px;">{{ t.rates_vacation_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_vacation_unit }}</span></h4>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;">
-            {% set vac_fields = [("fixed_pct", "Fast del", 0.008, "0.8%"), ("variable_pct", "R\u00f6rlig del", 0.005, "0.5%"), ("payout_pct", "Utbetalning", 0.046, "4.6%")] %}
+            {% set vac_fields = [("fixed_pct", "Fast del" if t.html_lang == "sv" else "Fixed part", 0.008, "0.8%"), ("variable_pct", "Rörlig del" if t.html_lang == "sv" else "Variable part", 0.005, "0.5%"), ("payout_pct", "Utbetalning" if t.html_lang == "sv" else "Payout", 0.046, "4.6%")] %}
             {% for key, label, default, pct in vac_fields %}
             <div>
                 <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ label }} (std: {{ pct }})</label>
@@ -217,7 +215,7 @@
             {% endfor %}
         </div>
 
-        <button type="submit" class="btn">Spara satser</button>
+        <button type="submit" class="btn">{{ t.rates_save }}</button>
     </form>
 </div>
 

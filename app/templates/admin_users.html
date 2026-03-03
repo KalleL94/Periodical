@@ -1,7 +1,7 @@
 {# app/templates/admin_users.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Admin: Användare{% endblock %}
+{% block title %}Periodical – {{ t.admin_users_title }}{% endblock %}
 
 {% block page_content %}
 
@@ -13,10 +13,10 @@
 
 <div class="page-header">
     <div class="page-header-left">
-        <h2 class="page-title" style="margin: 0;">Användare</h2>
+        <h2 class="page-title" style="margin: 0;">{{ t.admin_users_title }}</h2>
     </div>
     <div class="page-header-right">
-        <a href="/admin/users/create" class="btn">Skapa ny användare</a>
+        <a href="/admin/users/create" class="btn">{{ t.admin_create_user }}</a>
     </div>
 </div>
 
@@ -24,32 +24,32 @@
     <table>
         <thead>
             <tr>
-                <th>ID</th>
-                <th>Användarnamn</th>
-                <th>Namn</th>
-                <th>Roll</th>
-                <th class="th_right">Lön</th>
+                <th>{{ t.admin_col_id }}</th>
+                <th>{{ t.admin_col_username }}</th>
+                <th>{{ t.admin_col_name }}</th>
+                <th>{{ t.admin_col_role }}</th>
+                <th class="th_right">{{ t.admin_col_wage }}</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
             {% for u in users %}
             <tr>
-                <td data-label="ID">{{ u.id }}</td>
-                <td data-label="Användarnamn">{{ u.username }}</td>
-                <td data-label="Namn">{{ u.name }}</td>
-                <td data-label="Roll">
+                <td data-label="{{ t.admin_col_id }}">{{ u.id }}</td>
+                <td data-label="{{ t.admin_col_username }}">{{ u.username }}</td>
+                <td data-label="{{ t.admin_col_name }}">{{ u.name }}</td>
+                <td data-label="{{ t.admin_col_role }}">
                     {% if u.role.value == 'admin' %}
                         <span class="badge" style="background: var(--danger);">Admin</span>
                     {% else %}
                         <span class="badge badge-off">User</span>
                     {% endif %}
                 </td>
-                <td data-label="Lön" class="td_right num">{{ "{:,}".format(u.wage) }} SEK</td>
+                <td data-label="{{ t.admin_col_wage }}" class="td_right num">{{ "{:,}".format(u.wage) }} SEK</td>
                 <td>
-                    <a href="/admin/users/{{ u.id }}" class="btn secondary" style="padding: 4px 12px; font-size: 0.85rem;">Redigera</a>
-                    <form method="POST" action="/admin/users/{{ u.id }}/reset-password" style="display: inline-block; margin-left: 8px;" onsubmit="return confirm('Återställ lösenord för {{ u.name }} till London1?');">
-                        <button type="submit" class="btn" style="padding: 4px 12px; font-size: 0.85rem; background: var(--warning); border-color: var(--warning);">Återställ lösenord</button>
+                    <a href="/admin/users/{{ u.id }}" class="btn secondary" style="padding: 4px 12px; font-size: 0.85rem;">{{ t.admin_edit }}</a>
+                    <form method="POST" action="/admin/users/{{ u.id }}/reset-password" style="display: inline-block; margin-left: 8px;" onsubmit="return confirm('{{ t.admin_reset_password_confirm.replace('{name}', u.name) }}');">
+                        <button type="submit" class="btn" style="padding: 4px 12px; font-size: 0.85rem; background: var(--warning); border-color: var(--warning);">{{ t.admin_reset_password }}</button>
                     </form>
                 </td>
             </tr>
