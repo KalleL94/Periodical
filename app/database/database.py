@@ -103,6 +103,7 @@ class User(Base):
         JSON, default=dict
     )  # Saved vacation days per year: {"2025": {"saved": 3, "paid_out": 2, "payout_amount": 3404.0}}
     custom_rates = Column(JSON, default=dict)  # Per-user rate overrides (OB, OT, oncall, vacation)
+    language = Column(String(5), default="sv", nullable=False)  # UI language: "sv" or "en"
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

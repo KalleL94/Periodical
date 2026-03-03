@@ -1,7 +1,7 @@
 {# app/templates/admin_vacation.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Admin: Semester {{ year }}{% endblock %}
+{% block title %}Periodical – Admin: {{ t.profile_vacation_title }} {{ year }}{% endblock %}
 
 {% block page_content %}
 
@@ -12,19 +12,19 @@
         <a href="/admin/vacation?year={{ year + 1 }}" class="btn secondary">{{ year + 1 }}</a>
     </div>
     <div class="page-header-right">
-        <a href="/admin/users" class="btn secondary">Tillbaka</a>
+        <a href="/admin/users" class="btn secondary">{{ t.admin_vacation_back }}</a>
     </div>
 </div>
 
-<h2 class="page-title">Semester&ouml;versikt {{ year }}</h2>
+<h2 class="page-title">{{ t.admin_vacation_title.replace('{year}', year|string) }}</h2>
 
 <!-- Heatmap Grid -->
 <div class="card" style="overflow-x: auto; margin-bottom: 24px;">
-    <h3 style="margin-top: 0;">Semesterveckor</h3>
+    <h3 style="margin-top: 0;">{{ t.admin_vacation_weeks_title }}</h3>
     <table style="min-width: 900px;">
         <thead>
             <tr>
-                <th style="position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 120px;">Namn</th>
+                <th style="position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 120px;">{{ t.admin_vacation_col_name }}</th>
                 {% for w in weeks_range %}
                     <th style="text-align: center; padding: 4px 2px; font-size: 0.7rem; min-width: 22px;">{{ w }}</th>
                 {% endfor %}
@@ -54,23 +54,23 @@
         </tbody>
     </table>
     <div style="margin-top: 12px; display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted);">
-        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent); border-radius: 2px; vertical-align: middle;"></span> Semestervecka</span>
-        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent-2); border-radius: 2px; vertical-align: middle;"></span> Enskild dag</span>
+        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent); border-radius: 2px; vertical-align: middle;"></span> {{ t.admin_vacation_week_label }}</span>
+        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent-2); border-radius: 2px; vertical-align: middle;"></span> {{ t.admin_vacation_day_label }}</span>
     </div>
 </div>
 
 <!-- Balance Table -->
 <div class="card">
-    <h3 style="margin-top: 0;">Semestersaldo</h3>
+    <h3 style="margin-top: 0;">{{ t.admin_vacation_balance }}</h3>
     <table>
         <thead>
             <tr>
-                <th>Namn</th>
-                <th class="num">Tilldelade</th>
-                <th class="num">Sparade</th>
-                <th class="num">Totalt</th>
-                <th class="num">Uttagna</th>
-                <th class="num">Kvar</th>
+                <th>{{ t.admin_vacation_col_name }}</th>
+                <th class="num">{{ t.admin_vacation_col_entitled }}</th>
+                <th class="num">{{ t.vacation_saved }}</th>
+                <th class="num">{{ t.vacation_total }}</th>
+                <th class="num">{{ t.vacation_used }}</th>
+                <th class="num">{{ t.vacation_remaining }}</th>
                 <th>Semester&aring;r</th>
                 <th>Anst&auml;llningsstart</th>
             </tr>
@@ -97,7 +97,7 @@
                     {% if entry.user.employment_start_date %}
                         {{ entry.user.employment_start_date | date_format }}
                     {% else %}
-                        <span style="color: var(--warning);">Ej satt</span>
+                        <span style="color: var(--warning);">{{ t.admin_vacation_not_set }}</span>
                     {% endif %}
                 </td>
             </tr>

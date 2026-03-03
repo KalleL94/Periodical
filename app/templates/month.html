@@ -25,12 +25,12 @@
     <div class="page-header">
         <div class="page-header-left">
             <a href="/month/{{ person_id }}?year={{ prev_year }}&month={{ prev_month }}"
-               class="btn btn-primary">Previous month</a>
+               class="btn btn-primary">{{ t.month_prev }}</a>
 
-            <a href="/month/{{ person_id }}" class="btn btn-primary">Today</a>
+            <a href="/month/{{ person_id }}" class="btn btn-primary">{{ t.month_today }}</a>
 
             <a href="/month/{{ person_id }}?year={{ next_year }}&month={{ next_month }}"
-               class="btn btn-primary">Next month</a>
+               class="btn btn-primary">{{ t.month_next }}</a>
         </div>
 
         <div class="page-header-right">
@@ -38,14 +38,14 @@
             {% if user and user.role.value == 'admin' %}
                 <a href="/month/{{ person_id - 1 if person_id != 1 else max_persons }}?year={{ year }}&month={{ month }}" class="btn secondary">&lt-</a>
             {% endif %}
-            <a href="/month?year={{ year }}&month={{ month }}" class="btn secondary">All</a>
+            <a href="/month?year={{ year }}&month={{ month }}" class="btn secondary">{{ t.month_all }}</a>
             {% if user and user.role.value == 'admin' %}
                 <a href="/month/{{ person_id + 1 if person_id != max_persons else 1 }}?year={{ year }}&month={{ month }}" class="btn secondary">-&gt</a>
             {% endif %}
         </div>
     </div>
 
-<h2 class="page-title">Month {{ month }} {{ year }} - {{ person_name }}</h2>
+<h2 class="page-title">{{ t.month_page_title.replace('{month}', month|string).replace('{year}', year|string).replace('{name}', person_name) }}</h2>
 
 
     {# Summary row - visa bara lönedata om show_salary #}
@@ -53,18 +53,18 @@
         {% if show_salary %}
         <thead>
             <tr>
-                <th>Net salary</th>
-                <th>Gross salary</th>
-                <th>Number of shifts</th>
-                <th>Total hours</th>
-                <th>Total OB pay</th>
-                <th>Evening (OB1/150?)</th>
-                <th>Night (OB2/151)</th>
-                <th>Weekend (OB3+OB4/152)</th>
-                <th>Holiday (OB5/153)</th>
-                <th>On-call hours</th>
-                <th>On-call pay</th>
-                <th>OT pay</th>
+                <th>{{ t.month_sum_net }}</th>
+                <th>{{ t.month_sum_gross }}</th>
+                <th>{{ t.month_sum_shifts }}</th>
+                <th>{{ t.month_sum_hours }}</th>
+                <th>{{ t.month_sum_total_ob }}</th>
+                <th>{{ t.month_sum_evening }}</th>
+                <th>{{ t.month_sum_night }}</th>
+                <th>{{ t.month_sum_weekend }}</th>
+                <th>{{ t.month_sum_holiday }}</th>
+                <th>{{ t.month_sum_oncall_hours }}</th>
+                <th>{{ t.month_sum_oncall_pay }}</th>
+                <th>{{ t.month_sum_ot_pay }}</th>
             </tr>
         </thead>
         {% endif %}
@@ -74,20 +74,20 @@
                               + (days.ob_pay.get('OB5',0) or 0) %}
             <tr>
                 {% if show_salary %}
-                <td data-label="Netto">{{ "%.0f"|format(days.netto_pay or 0) }}</td>
-                <td data-label="Brutto">{{ "%.0f"|format(days.brutto_pay or 0) }}</td>
+                <td data-label="{{ t.month_sum_net }}">{{ "%.0f"|format(days.netto_pay or 0) }}</td>
+                <td data-label="{{ t.month_sum_gross }}">{{ "%.0f"|format(days.brutto_pay or 0) }}</td>
                 {% endif %}
-                <td data-label="Antal pass">{{ days.num_shifts }}</td>
-                <td data-label="Timmar">{{ "%.2f"|format(days.total_hours or 0) }}</td>
+                <td data-label="{{ t.month_sum_shifts }}">{{ days.num_shifts }}</td>
+                <td data-label="{{ t.month_sum_hours }}">{{ "%.2f"|format(days.total_hours or 0) }}</td>
                 {% if show_salary %}
-                <td data-label="Total OB">{{ "%.2f"|format(total_ob) }}</td>
-                <td data-label="OB1 Kväll">{{ "%.2f"|format(days.ob_hours.get('OB1',0) or 0) }}</td>
-                <td data-label="OB2 Natt">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
-                <td data-label="OB3+4 Helg">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
-                <td data-label="OB5 Storhelg">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
-                <td data-label="On-call hours">{{ "%.2f"|format(days.oncall_hours or 0) }}</td>
-                <td data-label="On-call pay">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
-                <td data-label="OT pay">{{ "%.2f"|format(days.ot_pay or 0) }} kr</td>
+                <td data-label="{{ t.month_sum_total_ob }}">{{ "%.2f"|format(total_ob) }}</td>
+                <td data-label="{{ t.month_sum_evening }}">{{ "%.2f"|format(days.ob_hours.get('OB1',0) or 0) }}</td>
+                <td data-label="{{ t.month_sum_night }}">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
+                <td data-label="{{ t.month_sum_weekend }}">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
+                <td data-label="{{ t.month_sum_holiday }}">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
+                <td data-label="{{ t.month_sum_oncall_hours }}">{{ "%.2f"|format(days.oncall_hours or 0) }}</td>
+                <td data-label="{{ t.month_sum_oncall_pay }}">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
+                <td data-label="{{ t.month_sum_ot_pay }}">{{ "%.2f"|format(days.ot_pay or 0) }} kr</td>
                 {% endif %}
             </tr>
         </tbody>
@@ -95,14 +95,14 @@
 
     {% if vacation_month %}
     <div style="background: rgba(100,200,255,0.08); border: 1px solid var(--accent); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 0.9rem;">
-        <strong>{{ vacation_month.days }} semesterdag{{ 'ar' if vacation_month.days != 1 else '' }}</strong> denna m&aring;nad
-        &rarr; semestertill&auml;gg: <strong style="color: var(--accent-2);">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
+        <strong>{{ t.month_vacation_days.replace('{n}', vacation_month.days|string).replace('{suffix}', 'ar' if vacation_month.days != 1 else '') }}</strong>
+        &rarr; {{ t.month_vacation_supplement }} <strong style="color: var(--accent-2);">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
         <span style="color: var(--muted);">({{ "%.0f"|format(vacation_month.supplement_per_day) }} kr/dag)</span>
     </div>
     {% endif %}
 
     {# Calendar grid view #}
-    {% set weekday_names_short = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'] %}
+    {% set weekday_names_short = t.week_day_names | from_json %}
 
     <table class="calendar-grid">
         <thead>
@@ -163,7 +163,7 @@
                                     {% endif %}
 
                                     {% if day_data.coworkers and day_data.shift.code != 'OFF' %}
-                                        <div class="coworkers-list">Med: {{ day_data.coworkers | join(', ') }}</div>
+                                        <div class="coworkers-list">{{ t.week_with }} {{ day_data.coworkers | join(', ') }}</div>
                                     {% endif %}
                                 </div>
                             </div>
@@ -178,22 +178,22 @@
     {% if show_salary %}
     <div style="margin-top: 1.5rem; text-align: center;">
         <button class="btn secondary" id="breakdown-toggle" onclick="toggleBreakdown()">
-            Visa detaljerad uppdelning
+            {{ t.month_show_breakdown }}
         </button>
     </div>
 
     <div id="breakdown-section" style="display: none; margin-top: 1rem;">
-        <h3 style="margin-bottom: 0.5rem;">OB / Beredskap / &Ouml;vertid per dag</h3>
+        <h3 style="margin-bottom: 0.5rem;">{{ t.month_breakdown_title }}</h3>
         <div style="overflow-x: auto;">
             <table class="breakdown-table">
                 <thead>
                     <tr>
-                        <th class="th_left">Datum</th>
-                        <th class="th_left">Dag</th>
-                        <th class="th_left">Typ</th>
-                        <th class="th_right">Start</th>
-                        <th class="th_right">Slut</th>
-                        <th class="th_right">Norm</th>
+                        <th class="th_left">{{ t.month_col_date }}</th>
+                        <th class="th_left">{{ t.month_col_day }}</th>
+                        <th class="th_left">{{ t.month_col_type }}</th>
+                        <th class="th_right">{{ t.month_col_start }}</th>
+                        <th class="th_right">{{ t.month_col_end }}</th>
+                        <th class="th_right">{{ t.month_col_norm }}</th>
                         <th class="th_right">OB1(x1,12)</th>
                         <th class="th_right">OB2(x1,18)</th>
                         <th class="th_right">OB3(x1,24)</th>
@@ -203,7 +203,7 @@
                         <th class="th_right">B.Helg(97)</th>
                         <th class="th_right">B.Helgdag(112)</th>
                         <th class="th_right">B.Storhelg(192)</th>
-                        <th class="th_right">ÖT(x2)</th>
+                        <th class="th_right">{{ t.month_col_ot }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -296,7 +296,7 @@
                     {% if not ns.has_rows %}
                         <tr>
                             <td colspan="16" style="text-align: center; color: var(--muted); padding: 1rem;">
-                                Inga OB / beredskap / &ouml;vertid denna m&aring;nad
+                                {{ t.month_no_ob }}
                             </td>
                         </tr>
                     {% endif %}
@@ -304,7 +304,7 @@
                 {% if ns.has_rows %}
                 <tfoot>
                     <tr>
-                        <td class="td_left" colspan="1"><strong>Total</strong></td>
+                        <td class="td_left" colspan="1"><strong>{{ t.month_col_total }}</strong></td>
                         <td> </td>
                         <td> </td>
                         <td> </td>
@@ -333,10 +333,10 @@
         var btn = document.getElementById('breakdown-toggle');
         if (section.style.display === 'none') {
             section.style.display = 'block';
-            btn.textContent = 'D\u00f6lj detaljerad uppdelning';
+            btn.textContent = '{{ t.month_hide_breakdown }}';
         } else {
             section.style.display = 'none';
-            btn.textContent = 'Visa detaljerad uppdelning';
+            btn.textContent = '{{ t.month_show_breakdown }}';
         }
     }
     </script>

@@ -6,7 +6,7 @@
 {% block page_content %}
 <section>
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-        <h2>Statistik {{ year }} - {{ person_name }}</h2>
+        <h2>{{ t.stats_title.replace('{year}', year|string).replace('{name}', person_name) }}</h2>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
             <a href="/statistics/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">&larr; {{ year - 1 }}</a>
             <a href="/statistics/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">{{ year + 1 }} &rarr;</a>
@@ -25,31 +25,31 @@
 
         {# Pay trend chart - full width #}
         <div class="card">
-            <h3>Löneutveckling</h3>
+            <h3>{{ t.stats_pay_trend }}</h3>
             <canvas id="payChart" style="min-height: 300px;"></canvas>
         </div>
 
         {# OB breakdown chart - full width #}
         <div class="card">
-            <h3>OB-ersättning per månad</h3>
+            <h3>{{ t.stats_ob_per_month }}</h3>
             <canvas id="obChart" style="min-height: 300px;"></canvas>
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
             {# Absence doughnut #}
             <div class="card">
-                <h3>Frånvaro</h3>
+                <h3>{{ t.stats_absence }}</h3>
                 {% set total_absence = absence_data.sick + absence_data.vab + absence_data.leave + absence_data.off %}
                 {% if total_absence > 0 %}
                 <canvas id="absenceChart" style="min-height: 280px;"></canvas>
                 {% else %}
-                <p class="info-text">Ingen registrerad frånvaro {{ year }}.</p>
+                <p class="info-text">{{ t.stats_no_absence.replace('{year}', year|string) }}</p>
                 {% endif %}
             </div>
 
             {# Hours chart #}
             <div class="card">
-                <h3>Arbetstimmar per månad</h3>
+                <h3>{{ t.stats_hours_per_month }}</h3>
                 <canvas id="hoursChart" style="min-height: 280px;"></canvas>
             </div>
         </div>
@@ -58,65 +58,65 @@
     {# Summary cards #}
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
         <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">Total brutto</div>
+            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_gross }}</div>
             <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_brutto or 0).replace(",", " ") }} kr</div>
         </div>
         <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">Total netto</div>
+            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_net }}</div>
             <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_netto or 0).replace(",", " ") }} kr</div>
         </div>
         <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">Total OB</div>
+            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_ob }}</div>
             <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_ob or 0).replace(",", " ") }} kr</div>
         </div>
         <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">Total beredskap</div>
+            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_oncall }}</div>
             <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_oncall or 0).replace(",", " ") }} kr</div>
         </div>
         <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">Totala timmar</div>
+            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_hours }}</div>
             <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_hours or 0).replace(",", " ") }}h</div>
         </div>
         <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">Antal pass</div>
+            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_shifts }}</div>
             <div style="font-size: 1.4rem; font-weight: bold;">{{ year_summary.total_shifts or 0 }}</div>
         </div>
     </div>
 
     {# Monthly detail table #}
-    <h3 style="margin-top: 2rem;">Månadsöversikt</h3>
+    <h3 style="margin-top: 2rem;">{{ t.stats_monthly_overview }}</h3>
     <table class="summary">
         <thead>
             <tr>
-                <th>Månad</th>
-                <th class="th_right">Brutto</th>
-                <th class="th_right">Netto</th>
+                <th>{{ t.stats_month }}</th>
+                <th class="th_right">{{ t.stats_gross }}</th>
+                <th class="th_right">{{ t.stats_net }}</th>
                 <th class="th_right">OB</th>
-                <th class="th_right">Beredskap</th>
+                <th class="th_right">{{ t.stats_oncall }}</th>
                 <th class="th_right">OT</th>
-                <th class="th_right">Avdrag</th>
-                <th class="th_right">Timmar</th>
-                <th class="th_right">Pass</th>
+                <th class="th_right">{{ t.stats_deduction }}</th>
+                <th class="th_right">{{ t.stats_hours }}</th>
+                <th class="th_right">{{ t.stats_shifts }}</th>
             </tr>
         </thead>
         <tbody>
             {% for m in months %}
             <tr class="shift-row">
-                <td data-label="Månad">{{ m.get('payment_year', m.year) }}-{{ "%02d"|format(m.get('payment_month', m.month)) }}</td>
-                <td data-label="Brutto" class="td_right num">{{ "{:,.0f}".format(m.brutto_pay or 0).replace(",", " ") }}</td>
-                <td data-label="Netto" class="td_right num">{{ "{:,.0f}".format(m.netto_pay or 0).replace(",", " ") }}</td>
+                <td data-label="{{ t.stats_month }}">{{ m.get('payment_year', m.year) }}-{{ "%02d"|format(m.get('payment_month', m.month)) }}</td>
+                <td data-label="{{ t.stats_gross }}" class="td_right num">{{ "{:,.0f}".format(m.brutto_pay or 0).replace(",", " ") }}</td>
+                <td data-label="{{ t.stats_net }}" class="td_right num">{{ "{:,.0f}".format(m.netto_pay or 0).replace(",", " ") }}</td>
                 <td data-label="OB" class="td_right num">{{ "{:,.0f}".format(m.total_ob or 0).replace(",", " ") }}</td>
-                <td data-label="Beredskap" class="td_right num">{{ "{:,.0f}".format(m.oncall_pay or 0).replace(",", " ") }}</td>
+                <td data-label="{{ t.stats_oncall }}" class="td_right num">{{ "{:,.0f}".format(m.oncall_pay or 0).replace(",", " ") }}</td>
                 <td data-label="OT" class="td_right num">{{ "{:,.0f}".format(m.ot_pay or 0).replace(",", " ") }}</td>
-                <td data-label="Avdrag" class="td_right num">{{ "{:,.0f}".format(m.absence_deduction or 0).replace(",", " ") }}</td>
-                <td data-label="Timmar" class="td_right num">{{ "%.1f"|format(m.total_hours or 0) }}</td>
-                <td data-label="Pass" class="td_right num">{{ m.num_shifts or 0 }}</td>
+                <td data-label="{{ t.stats_deduction }}" class="td_right num">{{ "{:,.0f}".format(m.absence_deduction or 0).replace(",", " ") }}</td>
+                <td data-label="{{ t.stats_hours }}" class="td_right num">{{ "%.1f"|format(m.total_hours or 0) }}</td>
+                <td data-label="{{ t.stats_shifts }}" class="td_right num">{{ m.num_shifts or 0 }}</td>
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
-                <td><strong>Total</strong></td>
+                <td><strong>{{ t.stats_total }}</strong></td>
                 <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_brutto or 0).replace(",", " ") }}</strong></td>
                 <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_netto or 0).replace(",", " ") }}</strong></td>
                 <td class="td_right num"><strong>{{ "{:,.0f}".format(year_summary.total_ob or 0).replace(",", " ") }}</strong></td>
@@ -130,7 +130,7 @@
     </table>
 
     {% else %}
-    <p class="info-text" style="margin-top: 2rem;">Lönedata visas bara för din egen statistik.</p>
+    <p class="info-text" style="margin-top: 2rem;">{{ t.stats_salary_hidden }}</p>
     {% endif %}
 </section>
 
@@ -147,8 +147,8 @@
         data: {
             labels: labels,
             datasets: [
-                { label: 'Brutto', data: {{ chart_brutto | tojson }}, borderColor: '#40a9ff', backgroundColor: 'rgba(64,169,255,0.1)', fill: true, tension: 0.3 },
-                { label: 'Netto', data: {{ chart_netto | tojson }}, borderColor: '#7bd389', backgroundColor: 'rgba(123,211,137,0.1)', fill: true, tension: 0.3 }
+                { label: '{{ t.stats_gross }}', data: {{ chart_brutto | tojson }}, borderColor: '#40a9ff', backgroundColor: 'rgba(64,169,255,0.1)', fill: true, tension: 0.3 },
+                { label: '{{ t.stats_net }}', data: {{ chart_netto | tojson }}, borderColor: '#7bd389', backgroundColor: 'rgba(123,211,137,0.1)', fill: true, tension: 0.3 }
             ]
         },
         options: { responsive: true, scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor }, ticks: { callback: v => v.toLocaleString('sv-SE') + ' kr' } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('sv-SE') + ' kr' } } } }
@@ -178,10 +178,10 @@
         new Chart(document.getElementById('absenceChart'), {
             type: 'doughnut',
             data: {
-                labels: ['Sjuk', 'VAB', 'Ledigt', 'Ledig'],
+                labels: ['{{ t.stats_absence_sick }}', 'VAB', '{{ t.stats_absence_leave }}', '{{ t.stats_absence_off }}'],
                 datasets: [{ data: [absenceData.sick, absenceData.vab, absenceData.leave, absenceData.off], backgroundColor: ['#ef4444', '#ffa500', '#a855f7', '#9aa5b1'], borderWidth: 0 }]
             },
-            options: { responsive: true, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + ' dagar' } } } }
+            options: { responsive: true, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + ' {{ t.stats_days_suffix }}' } } } }
         });
     }
 
@@ -190,7 +190,7 @@
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{ label: 'Timmar', data: {{ chart_hours | tojson }}, backgroundColor: 'rgba(64,169,255,0.6)', borderRadius: 3 }]
+            datasets: [{ label: '{{ t.stats_hours }}', data: {{ chart_hours | tojson }}, backgroundColor: 'rgba(64,169,255,0.6)', borderRadius: 3 }]
         },
         options: { responsive: true, scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.parsed.y + 'h' } } } }
     });

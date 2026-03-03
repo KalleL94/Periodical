@@ -171,7 +171,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # --- Exception Handlers ---
 
 from app.core.utils import get_today  # noqa: E402
-from app.routes.shared import templates as _templates  # noqa: E402
+from app.routes.shared import render  # noqa: E402
 
 ERROR_MESSAGES = {
     400: ("Ogiltig förfrågan", "Förfrågan kunde inte behandlas."),
@@ -197,7 +197,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         ("Fel", str(exc.detail) if exc.detail else "Ett oväntat fel har inträffat."),
     )
 
-    return _templates.TemplateResponse(
+    return render(
         "error.html",
         {
             "request": request,
@@ -218,7 +218,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     if _wants_json(request):
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-    return _templates.TemplateResponse(
+    return render(
         "error.html",
         {
             "request": request,

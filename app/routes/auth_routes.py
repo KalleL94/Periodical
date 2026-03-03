@@ -23,7 +23,7 @@ from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
 from app.core.sentry_config import add_breadcrumb, clear_user_context, set_user_context
 from app.database.database import User, get_db
-from app.routes.shared import templates
+from app.routes.shared import render
 
 logger = get_logger(__name__)
 
@@ -47,9 +47,7 @@ async def login_page(
     """Show login form."""
     if current_user:
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse(
-        "login.html", {"request": request, "next": next if is_safe_redirect(next) else None}
-    )
+    return render("login.html", {"request": request, "next": next if is_safe_redirect(next) else None})
 
 
 @router.post("/login", name="login")
@@ -71,7 +69,7 @@ async def login(
             details={"ip": request.client.host if request.client else "unknown"},
         )
 
-        return templates.TemplateResponse(
+        return render(
             "login.html",
             {"request": request, "error": "Fel användarnamn eller lösenord", "next": next},
             status_code=401,
@@ -127,7 +125,7 @@ async def change_password_page(
     current_user: User = Depends(get_current_user),
 ):
     """Show mandatory password change page for users with must_change_password=1."""
-    return templates.TemplateResponse(
+    return render(
         "change_password.html",
         {
             "request": request,
@@ -150,7 +148,7 @@ async def change_password_submit(
     from app.auth.auth import verify_password
 
     if not verify_password(current_password, current_user.password_hash):
-        return templates.TemplateResponse(
+        return render(
             "change_password.html",
             {
                 "request": request,
@@ -162,7 +160,7 @@ async def change_password_submit(
         )
 
     if new_password != confirm_password:
-        return templates.TemplateResponse(
+        return render(
             "change_password.html",
             {
                 "request": request,
@@ -174,7 +172,7 @@ async def change_password_submit(
         )
 
     if verify_password(new_password, current_user.password_hash):
-        return templates.TemplateResponse(
+        return render(
             "change_password.html",
             {
                 "request": request,
@@ -186,7 +184,7 @@ async def change_password_submit(
         )
 
     if len(new_password) < 8:
-        return templates.TemplateResponse(
+        return render(
             "change_password.html",
             {
                 "request": request,

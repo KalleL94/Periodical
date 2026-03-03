@@ -1,77 +1,76 @@
 {# app/templates/admin_rotation_eras.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Admin: Rotationsperioder{% endblock %}
+{% block title %}Periodical – Admin: {{ t.admin_eras_title }}{% endblock %}
 
 {% block page_content %}
 
-<h2 class="page-title">Rotation Eras</h2>
+<h2 class="page-title">{{ t.admin_eras_title }}</h2>
 
 <div class="card" style="margin-bottom: 24px; background-color: #e8f4fd; border-left: 4px solid #2196F3;">
-    <h3 style="margin-top: 0; color: #1976D2;">ℹ️ About Rotation Eras</h3>
+    <h3 style="margin-top: 0; color: #1976D2;">ℹ️ {{ t.admin_eras_about_title }}</h3>
     <p style="color: #424242; line-height: 1.6;">
-        <strong>Rotation eras</strong> allow you to change the rotation length (e.g., from 10 to 11 weeks)
-        without corrupting historical schedules. Each era defines a time period with its own rotation parameters.
+        <strong>{{ t.admin_eras_about_title }}</strong> {{ t.admin_eras_about_p }}
     </p>
     <ul style="color: #424242; line-height: 1.6; margin-bottom: 0;">
-        <li>Historical dates use the rotation length that was active at that time</li>
-        <li>Creating a new era automatically closes the current era</li>
-        <li>You can have different rotation lengths for different time periods</li>
+        <li>{{ t.admin_eras_about_li1 }}</li>
+        <li>{{ t.admin_eras_about_li2 }}</li>
+        <li>{{ t.admin_eras_about_li3 }}</li>
     </ul>
 </div>
 
 {% if error %}
 <div class="card" style="margin-bottom: 24px; background-color: #ffebee; border-left: 4px solid #f44336;">
-    <p style="color: #c62828; margin: 0;"><strong>Error:</strong> {{ error }}</p>
+    <p style="color: #c62828; margin: 0;"><strong>{{ t.admin_eras_error_label }}</strong> {{ error }}</p>
 </div>
 {% endif %}
 
 <div class="card" style="margin-bottom: 24px;">
-    <h3>Current & Historical Eras</h3>
+    <h3>{{ t.admin_eras_current_historical }}</h3>
 
     {% if eras %}
     <table>
         <thead>
             <tr>
-                <th>Start Date</th>
-                <th>End Date</th>
-                <th class="num">Rotation Length</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th>{{ t.admin_eras_col_start }}</th>
+                <th>{{ t.admin_eras_col_end }}</th>
+                <th class="num">{{ t.admin_eras_col_length }}</th>
+                <th>{{ t.admin_eras_col_status }}</th>
+                <th>{{ t.admin_eras_col_created }}</th>
+                <th>{{ t.admin_eras_col_actions }}</th>
             </tr>
         </thead>
         <tbody>
             {% for era in eras %}
             <tr>
-                <td data-label="Start Date">{{ era.start_date }}</td>
-                <td data-label="End Date">
+                <td data-label="{{ t.admin_eras_col_start }}">{{ era.start_date }}</td>
+                <td data-label="{{ t.admin_eras_col_end }}">
                     {% if era.end_date %}
                         {{ era.end_date }}
                     {% else %}
-                        <span style="color: var(--success); font-weight: 600;">Ongoing</span>
+                        <span style="color: var(--success); font-weight: 600;">{{ t.admin_eras_ongoing }}</span>
                     {% endif %}
                 </td>
-                <td class="num" data-label="Length">{{ era.rotation_length }} weeks</td>
-                <td data-label="Status">
+                <td class="num" data-label="{{ t.admin_eras_col_length }}">{{ era.rotation_length }} {{ t.admin_eras_weeks }}</td>
+                <td data-label="{{ t.admin_eras_col_status }}">
                     {% if era.start_date > now %}
-                        <span style="color: #1976D2; font-weight: 600;">⏵ Future</span>
+                        <span style="color: #1976D2; font-weight: 600;">⏵ {{ t.admin_eras_future }}</span>
                     {% elif era.end_date and era.end_date <= now %}
-                        <span style="color: var(--muted);">Historical</span>
+                        <span style="color: var(--muted);">{{ t.admin_eras_historical }}</span>
                     {% else %}
-                        <span style="color: var(--success); font-weight: 600;">✓ Current</span>
+                        <span style="color: var(--success); font-weight: 600;">{{ t.admin_eras_current }}</span>
                     {% endif %}
                 </td>
-                <td data-label="Created">
+                <td data-label="{{ t.admin_eras_col_created }}">
                     <small style="color: var(--muted);">{{ era.created_at | date_format }} {{ era.created_at | time_format }}</small>
                 </td>
-                <td data-label="Actions">
+                <td data-label="{{ t.admin_eras_col_actions }}">
                     <form method="POST" action="/admin/rotation-eras/delete/{{ era.id }}"
                           style="display: inline;"
-                          onsubmit="return confirm('Are you sure you want to delete this era? This action cannot be undone.');">
+                          onsubmit="return confirm('{{ t.admin_eras_delete_confirm }}');">
                         <button type="submit"
                                 style="background: none; border: none; color: #d32f2f; cursor: pointer; padding: 4px 8px; font-size: 0.9rem; text-decoration: underline;">
-                            🗑️ Delete
+                            🗑️ {{ t.admin_eras_delete }}
                         </button>
                     </form>
                 </td>
@@ -81,22 +80,22 @@
     </table>
     {% else %}
     <p style="color: var(--muted); text-align: center; padding: 20px;">
-        No rotation eras found. Please run the migration script first.
+        {{ t.admin_eras_no_eras }}
     </p>
     {% endif %}
 </div>
 
 <div class="card">
-    <h3>Create New Era</h3>
+    <h3>{{ t.admin_eras_create_title }}</h3>
     <p style="color: var(--muted); margin-bottom: 16px;">
-        Creating a new era will automatically close the current era and start a new rotation period.
+        {{ t.admin_eras_create_desc }}
     </p>
 
     <form method="POST" action="/admin/rotation-eras/create" id="create-era-form">
         <table style="width: auto;">
             <tbody>
                 <tr>
-                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">Start Date</td>
+                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">{{ t.admin_eras_field_start }}</td>
                     <td>
                         <input
                             type="date"
@@ -105,12 +104,12 @@
                             style="width: 200px;"
                         />
                         <small style="color: var(--muted); display: block; margin-top: 4px;">
-                            When the new rotation era begins
+                            {{ t.admin_eras_field_start_hint }}
                         </small>
                     </td>
                 </tr>
                 <tr>
-                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">Rotation Length</td>
+                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">{{ t.admin_eras_field_length }}</td>
                     <td>
                         <input
                             type="number"
@@ -122,23 +121,23 @@
                             required
                             style="width: 100px;"
                             onchange="updateWeeksPattern()"
-                        /> weeks
+                        /> {{ t.admin_eras_weeks }}
                         <small style="color: var(--muted); display: block; margin-top: 4px;">
-                            Number of weeks in the rotation cycle (1-52)
+                            {{ t.admin_eras_field_length_hint }}
                         </small>
                     </td>
                 </tr>
                 <tr>
-                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px; vertical-align: top;">Weeks Pattern</td>
+                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px; vertical-align: top;">{{ t.admin_eras_field_pattern }}</td>
                     <td>
                         <div style="margin-bottom: 8px;">
                             <label style="display: inline-flex; align-items: center; margin-right: 16px;">
                                 <input type="radio" name="pattern_option" value="copy_current" checked onchange="updateWeeksPattern()" style="margin-right: 6px;">
-                                Copy from current era
+                                {{ t.admin_eras_pattern_copy }}
                             </label>
                             <label style="display: inline-flex; align-items: center;">
                                 <input type="radio" name="pattern_option" value="custom" onchange="updateWeeksPattern()" style="margin-right: 6px;">
-                                Custom JSON
+                                {{ t.admin_eras_pattern_custom }}
                             </label>
                         </div>
                         <textarea
@@ -150,7 +149,7 @@
                             placeholder='{"1": ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"], ...}'
                         ></textarea>
                         <small style="color: var(--muted); display: block; margin-top: 4px;">
-                            JSON object mapping week numbers (1-{{ rotation_length }}) to shift patterns
+                            {{ t.admin_eras_pattern_hint.replace('{n}', rotation_length | string) }}
                         </small>
                     </td>
                 </tr>
@@ -159,10 +158,10 @@
 
         <div style="margin-top: 24px;">
             <button type="submit" class="btn" style="padding: 10px 24px;">
-                Create New Era
+                {{ t.admin_eras_create_button }}
             </button>
             <a href="/admin/settings" class="btn secondary" style="margin-left: 12px;">
-                Back to Settings
+                {{ t.admin_eras_back_settings }}
             </a>
         </div>
     </form>

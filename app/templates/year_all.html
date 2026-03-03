@@ -7,9 +7,9 @@
 
 <div class="page-header">
     <div class="page-header-left">
-        <a href="/year?year={{ year - 1 }}" class="btn btn-primary">Previous year</a>
-        <a href="/year" class="btn btn-primary">Today</a>
-        <a href="/year?year={{ year + 1 }}" class="btn btn-primary">Next year</a>
+        <a href="/year?year={{ year - 1 }}" class="btn btn-primary">{{ t.year_prev }}</a>
+        <a href="/year" class="btn btn-primary">{{ t.year_today }}</a>
+        <a href="/year?year={{ year + 1 }}" class="btn btn-primary">{{ t.year_next }}</a>
     </div>
 
     <div class="page-header-right">
@@ -19,12 +19,12 @@
                 <a href="/year/{{ i }}?year={{ year }}" class="btn secondary">{{ i }}</a>
             {% endfor %}
         {% elif user %}
-            <a href="/year/{{ user.id }}?year={{ year }}" class="btn secondary">Mitt år</a>
+            <a href="/year/{{ user.id }}?year={{ year }}" class="btn secondary">{{ t.year_all_my_year }}</a>
         {% endif %}
     </div>
 </div>
 
-<h2 class="page-title">Year {{ year }} - All persons</h2>
+<h2 class="page-title">{{ t.year_all_title.replace('{year}', year|string) }}</h2>
 
     <div class="month-grid">
         <table class="month-schedule table-sticky">
@@ -44,8 +44,8 @@
                     </tr>
                 {% endif %}
                 <tr>
-                    <th class="w-md">Day</th>
-                    <th class="w-lg">Date</th>
+                    <th class="w-md">{{ t.month_all_day_col }}</th>
+                    <th class="w-lg">{{ t.month_all_date_col }}</th>
                     {% if days and days|length > 0 %}
                         {% for p in days[0].persons %}
                             <th class="person-header">
@@ -67,9 +67,10 @@
                 </tr>
             </thead>
             <tbody>
+                {% set weekday_names_full = t.weekday_names_full | from_json %}
                 {% for day in days %}
                     <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
-                        <td class="day-cell">{{ day.weekday_name }}</td>
+                        <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
                             {{ day.date }}
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
@@ -89,13 +90,13 @@
                                     {% endif %}
                                         {% if person.shift.code == 'SEM' %}
                                             <span class="badge badge-sem"
-                                                  title="Semester"
+                                                  title="{{ t.month_shift_sem_title }}"
                                                   style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
                                                 SEM
                                             </span>
                                         {% elif person.shift.code == 'OT' %}
                                             <span class="badge"
-                                                  {% if person.start and person.end %}title="Övertid: {{ person.start | time_format }} - {{ person.end | time_format }}"{% endif %}
+                                                  {% if person.start and person.end %}title="{{ t.month_shift_ot_title.replace('{start}', person.start | time_format).replace('{end}', person.end | time_format) }}"{% endif %}
                                                   style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
                                                 OT
                                             </span>

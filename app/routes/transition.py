@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.database.database import ConsultantSalaryType, EmploymentTransition, User, get_db
-from app.routes.shared import templates
+from app.routes.shared import render
 
 router = APIRouter(tags=["transition"])
 
@@ -71,7 +71,7 @@ async def transition_page(
 ):
     """Visa inställningssida för anställningsövergång."""
     ctx = _get_transition_context(request, current_user, db)
-    return templates.TemplateResponse("transition.html", ctx)
+    return render("transition.html", ctx)
 
 
 @router.post("/profile/transition", name="transition_save")
@@ -96,17 +96,17 @@ async def transition_save(
         t_date = datetime.date.fromisoformat(transition_date)
     except ValueError:
         ctx = _get_transition_context(request, current_user, db, error="Ogiltigt övergångsdatum.")
-        return templates.TemplateResponse("transition.html", ctx, status_code=400)
+        return render("transition.html", ctx, status_code=400)
 
     if consultant_salary_type not in ("trailing", "current"):
         ctx = _get_transition_context(request, current_user, db, error="Ogiltig lönetyp.")
-        return templates.TemplateResponse("transition.html", ctx, status_code=400)
+        return render("transition.html", ctx, status_code=400)
 
     if not (0 < consultant_supplement_pct < 1):
         ctx = _get_transition_context(
             request, current_user, db, error="Tilläggsprocent måste vara mellan 0 och 1 (t.ex. 0.0043)."
         )
-        return templates.TemplateResponse("transition.html", ctx, status_code=400)
+        return render("transition.html", ctx, status_code=400)
 
     # Parsning av optionella fält
     variable_override: float | None = None
@@ -115,7 +115,7 @@ async def transition_save(
             variable_override = float(variable_avg_daily_override.strip())
         except ValueError:
             ctx = _get_transition_context(request, current_user, db, error="Ogiltig rörlig genomsnittslön.")
-            return templates.TemplateResponse("transition.html", ctx, status_code=400)
+            return render("transition.html", ctx, status_code=400)
 
     earning_start: datetime.date | None = None
     earning_end: datetime.date | None = None
@@ -124,13 +124,13 @@ async def transition_save(
             earning_start = datetime.date.fromisoformat(earning_year_start.strip())
         except ValueError:
             ctx = _get_transition_context(request, current_user, db, error="Ogiltigt startdatum för intjänandeår.")
-            return templates.TemplateResponse("transition.html", ctx, status_code=400)
+            return render("transition.html", ctx, status_code=400)
     if earning_year_end.strip():
         try:
             earning_end = datetime.date.fromisoformat(earning_year_end.strip())
         except ValueError:
             ctx = _get_transition_context(request, current_user, db, error="Ogiltigt slutdatum för intjänandeår.")
-            return templates.TemplateResponse("transition.html", ctx, status_code=400)
+            return render("transition.html", ctx, status_code=400)
 
     # Semesterdagar: manuell override eller auto-beräknat från anställningsdatum
     parsed_vacation_days: float
@@ -139,7 +139,7 @@ async def transition_save(
             parsed_vacation_days = float(consultant_vacation_days.strip())
         except ValueError:
             ctx = _get_transition_context(request, current_user, db, error="Ogiltigt antal semesterdagar.")
-            return templates.TemplateResponse("transition.html", ctx, status_code=400)
+            return render("transition.html", ctx, status_code=400)
     else:
         from types import SimpleNamespace
 

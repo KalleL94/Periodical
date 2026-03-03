@@ -1,19 +1,19 @@
 {# app/templates/transition.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Anställningsövergång{% endblock %}
+{% block title %}Periodical – {{ t.transition_title }}{% endblock %}
 
 {% block page_content %}
 
 <div class="page-header">
     <div class="page-header-left">
-        <a href="/profile" class="btn secondary">&larr; Min profil</a>
+        <a href="/profile" class="btn secondary">{{ t.transition_back }}</a>
     </div>
 </div>
 
-<h2 class="page-title">&#214;vertag</h2>
+<h2 class="page-title">{{ t.transition_title }}</h2>
 
-<p class="form-hint">Konfigurera &#246;vertaget fr&#229;n konsultanst&#228;llning till direktanst&#228;llning med Handelns tj&#228;nstemannaavtal.</p>
+<p class="form-hint">{{ t.transition_desc }}</p>
 
 {% if error %}
 <div class="alert alert--danger">{{ error }}</div>
@@ -24,18 +24,18 @@
     {# === Inställningskort === #}
     <div class="col" style="min-width: 320px; flex: 1;">
         <div class="card">
-            <h3>Inst&#228;llningar</h3>
+            <h3>{{ t.transition_settings_card }}</h3>
 
             <form method="POST" action="/profile/transition">
 
                 <div class="form-group">
-                    <label for="transition_date" class="form-label">&#214;vertagsdatum (f&#246;rsta dag som direktanst&#228;lld)</label>
+                    <label for="transition_date" class="form-label">{{ t.transition_date_label }}</label>
                     <input type="date" id="transition_date" name="transition_date" class="form-input"
                            value="{{ transition.transition_date.isoformat() if transition else '' }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="consultant_salary_type" class="form-label">Konsultl&#246;netyp</label>
+                    <label for="consultant_salary_type" class="form-label">{{ t.transition_salary_type_label }}</label>
                     <select id="consultant_salary_type" name="consultant_salary_type" class="form-input">
                         {% for value, label in salary_types %}
                         <option value="{{ value }}"
@@ -44,23 +44,23 @@
                         </option>
                         {% endfor %}
                     </select>
-                    <span class="form-hint">S&#228;tter om konsultarbetsgivaren betalar extra grundl&#246;n i &#246;vertagesm&#229;naden</span>
+                    <span class="form-hint">{{ t.transition_salary_type_hint }}</span>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Intj&#228;nade semesterdagar (fr&#229;n konsultanst&#228;llningen)</label>
+                    <label class="form-label">{{ t.transition_vacation_days_label }}</label>
                     {% if auto_consultant_vacation_days is not none %}
                     <div class="auto-hint">
-                        Auto-ber&#228;knat: <strong>{{ auto_consultant_vacation_days }} dagar</strong>
-                        <span class="form-hint">Pro-ratat fr&#229;n anst&#228;llningsdagen inom intj&#228;nande&#229;ret</span>
+                        {{ t.transition_vacation_auto.replace('{days}', auto_consultant_vacation_days|string) }}
+                        <span class="form-hint">{{ t.transition_vacation_auto_hint }}</span>
                     </div>
                     {% elif transition %}
                     <div class="auto-hint auto-hint--missing">
-                        Kan inte ber&#228;knas, saknar anst&#228;llningsdatum. Sparad: {{ transition.consultant_vacation_days }} dagar.
+                        {{ t.transition_vacation_missing.replace('{days}', transition.consultant_vacation_days|string) }}
                     </div>
                     {% endif %}
                     <label class="form-label" style="margin-top: 0.4rem;">
-                        Manuell override (tomt = anv&#228;nd auto)
+                        {{ t.transition_vacation_manual_label }}
                     </label>
                     <input type="number" id="consultant_vacation_days" name="consultant_vacation_days" class="form-input"
                            value="{{ transition.consultant_vacation_days if transition and transition.consultant_vacation_days != auto_consultant_vacation_days else '' }}"
@@ -68,44 +68,44 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="consultant_supplement_pct" class="form-label">Semestertill&#228;ggsprocent per dag (semesterlagen)</label>
+                    <label for="consultant_supplement_pct" class="form-label">{{ t.transition_supplement_pct_label }}</label>
                     <input type="number" id="consultant_supplement_pct" name="consultant_supplement_pct" class="form-input"
                            value="{{ transition.consultant_supplement_pct if transition else 0.0043 }}"
                            min="0" max="0.99" step="0.0001" required>
-                    <span class="form-hint">Minimum 0.0043 (0.43%) per semesterlagen. H&#246;j om arbetsgivaren betalar mer.</span>
+                    <span class="form-hint">{{ t.transition_supplement_pct_hint }}</span>
                 </div>
 
                 <hr class="form-section-divider">
-                <p class="form-section-title">Intj&#228;nande&#229;r (optionellt)</p>
+                <p class="form-section-title">{{ t.transition_earning_year_title }}</p>
 
                 <div class="form-group">
-                    <label for="earning_year_start" class="form-label">Start (tomt = auto: 1 april)</label>
+                    <label for="earning_year_start" class="form-label">{{ t.transition_earning_start_label }}</label>
                     <input type="date" id="earning_year_start" name="earning_year_start" class="form-input"
                            value="{{ transition.earning_year_start.isoformat() if transition and transition.earning_year_start else '' }}">
                 </div>
 
                 <div class="form-group">
-                    <label for="earning_year_end" class="form-label">Slut (tomt = auto: dagen f&#246;re &#246;vertaget)</label>
+                    <label for="earning_year_end" class="form-label">{{ t.transition_earning_end_label }}</label>
                     <input type="date" id="earning_year_end" name="earning_year_end" class="form-input"
                            value="{{ transition.earning_year_end.isoformat() if transition and transition.earning_year_end else '' }}">
                 </div>
 
                 <hr class="form-section-divider">
-                <p class="form-section-title">R&#246;rlig genomsnittsl&#246;n (optionellt)</p>
+                <p class="form-section-title">{{ t.transition_variable_title }}</p>
 
                 {% if auto_variable_avg is not none %}
                 <div class="auto-hint">
-                    Auto-ber&#228;knat: <strong>{{ "%.2f"|format(auto_variable_avg) }} kr/dag</strong>
-                    <span class="form-hint">OB + beredskap + &#246;vertid fr&#229;n intj&#228;nande&#229;ret / faktiska arbetsdagar</span>
+                    {{ t.transition_variable_auto.replace('{val}', "%.2f"|format(auto_variable_avg)) }}
+                    <span class="form-hint">{{ t.transition_variable_auto_hint }}</span>
                 </div>
                 {% elif transition %}
                 <div class="auto-hint auto-hint--missing">
-                    Ingen historik hittades, ange manuellt nedan om k&#228;nt.
+                    {{ t.transition_variable_missing }}
                 </div>
                 {% endif %}
 
                 <div class="form-group">
-                    <label for="variable_avg_daily_override" class="form-label">Manuell override kr/dag (tomt = anv&#228;nd auto)</label>
+                    <label for="variable_avg_daily_override" class="form-label">{{ t.transition_variable_manual_label }}</label>
                     <input type="number" id="variable_avg_daily_override" name="variable_avg_daily_override" class="form-input"
                            value="{{ transition.variable_avg_daily_override if transition and transition.variable_avg_daily_override is not none else '' }}"
                            min="0" step="0.01"
@@ -113,30 +113,30 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="notes" class="form-label">Anteckningar (optionellt)</label>
+                    <label for="notes" class="form-label">{{ t.transition_notes_label }}</label>
                     <textarea id="notes" name="notes" rows="2" class="form-input"
                               style="padding: 0.5rem; resize: vertical;">{{ transition.notes if transition and transition.notes else '' }}</textarea>
                 </div>
 
                 <hr class="form-section-divider">
-                <p class="form-section-title">Vid sparande (enl&#229;ngs&#229;tg&#228;rder)</p>
+                <p class="form-section-title">{{ t.transition_actions_title }}</p>
 
                 <div class="form-group">
-                    <label for="new_direct_salary" class="form-label">S&#228;tt ny direktl&#246;n fr&#229;n &#246;vertagsdatum (kr/m&#229;nad, tomt = ingen &#228;ndring)</label>
+                    <label for="new_direct_salary" class="form-label">{{ t.transition_new_salary_label }}</label>
                     <input type="number" id="new_direct_salary" name="new_direct_salary" class="form-input"
                            min="1" step="1" placeholder="t.ex. 32000">
-                    <span class="form-hint">Skapar en ny l&#246;nepost i l&#246;nehistoriken med &#246;vertagsdatum som startdatum.</span>
+                    <span class="form-hint">{{ t.transition_new_salary_hint }}</span>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label">
                         <input type="checkbox" name="reset_rates_to_default" value="on">
-                        &#197;terg&#229; till standard OB/OT/beredskap-satser fr&#229;n &#246;vertagsdatum
+                        {{ t.transition_reset_rates_label }}
                     </label>
-                    <span class="form-hint">Skapar en ny satspost med standardv&#228;rden enligt Handelns tj&#228;nstemannaavtal g&#228;llande fr&#229;n &#246;vertagsdatumet.</span>
+                    <span class="form-hint">{{ t.transition_reset_rates_hint }}</span>
                 </div>
 
-                <button type="submit" class="btn btn-primary">Spara inst&#228;llningar</button>
+                <button type="submit" class="btn btn-primary">{{ t.transition_save_button }}</button>
             </form>
 
             {% if transition %}
@@ -145,16 +145,16 @@
                 <div class="form-group">
                     <label class="form-label">
                         <input type="checkbox" name="cleanup_wage" value="on" checked>
-                        Ta &#228;ven bort l&#246;nepost fr&#229;n &#246;vertagsdatumet ({{ transition.transition_date }})
+                        {{ t.transition_delete_wage_label.replace('{date}', transition.transition_date|string) }}
                     </label>
                 </div>
                 <div class="form-group">
                     <label class="form-label">
                         <input type="checkbox" name="cleanup_rates" value="on" checked>
-                        Ta &#228;ven bort satspost fr&#229;n &#246;vertagsdatumet ({{ transition.transition_date }})
+                        {{ t.transition_delete_rates_label.replace('{date}', transition.transition_date|string) }}
                     </label>
                 </div>
-                <button type="submit" class="btn btn-danger">Ta bort inst&#228;llningar</button>
+                <button type="submit" class="btn btn-danger">{{ t.transition_delete_button }}</button>
             </form>
             {% endif %}
         </div>
@@ -164,15 +164,15 @@
     {% if preview %}
     <div class="col" style="min-width: 320px; flex: 1;">
         <div class="card">
-            <h3>F&#246;rv&#228;ntad utbetalning: {{ preview.transition_month }}/{{ preview.transition_year }}</h3>
+            <h3>{{ t.transition_preview_title.replace('{month}', preview.transition_month|string).replace('{year}', preview.transition_year|string) }}</h3>
 
             {# Konsultarbetsgivare #}
             <div class="transition-employer transition-employer--consultant">
-                <h4>Konsultarbetsgivare</h4>
+                <h4>{{ t.transition_consultant_employer }}</h4>
 
                 {% if preview.consultant_employer.trailing_base %}
                 <div class="transition-row">
-                    <span>Sl&#228;pande grundl&#246;n (sista konsultm&#229;naden)</span>
+                    <span>{{ t.transition_trailing_base }}</span>
                     <strong>{{ "{:,.0f}".format(preview.consultant_employer.trailing_base).replace(",", "\u00a0") }} kr</strong>
                 </div>
                 {% endif %}
@@ -181,9 +181,9 @@
                 {% set vb = preview.consultant_employer.trailing_variable_breakdown %}
                 <div class="transition-row">
                     <span>
-                        Sl&#228;pande r&#246;rliga (sista konsultm&#229;naden)
+                        {{ t.transition_trailing_variable }}
                         {% if vb %}
-                        <span class="form-hint">OB&#160;{{ "{:,.0f}".format(vb.ob).replace(",","\u00a0") }}&#160;+ beredskap&#160;{{ "{:,.0f}".format(vb.oncall).replace(",","\u00a0") }}{% if vb.ot %} + &#246;vertid&#160;{{ "{:,.0f}".format(vb.ot).replace(",","\u00a0") }}{% endif %} kr</span>
+                        <span class="form-hint">OB&#160;{{ "{:,.0f}".format(vb.ob).replace(",","\u00a0") }}&#160;+ beredskap&#160;{{ "{:,.0f}".format(vb.oncall).replace(",","\u00a0") }}{% if vb.ot %} + &ouml;vertid&#160;{{ "{:,.0f}".format(vb.ot).replace(",","\u00a0") }}{% endif %} kr</span>
                         {% endif %}
                     </span>
                     <strong>{{ "{:,.0f}".format(preview.consultant_employer.trailing_variable).replace(",", "\u00a0") }} kr</strong>
@@ -192,42 +192,41 @@
 
                 {% set vp = preview.consultant_employer.vacation_payout %}
                 <div class="transition-breakdown">
-                    <p class="transition-breakdown__label">Semesterutl&#246;sning ({{ vp.vacation_days }} dagar)</p>
+                    <p class="transition-breakdown__label">{{ t.transition_vacation_payout_label.replace('{days}', vp.vacation_days|string) }}</p>
 
                     <div class="transition-row">
-                        <span>Grundkomponent (l&#246;n&#160;/&#160;21,75&#160;&#215;&#160;{{ "%.4f"|format(1 + vp.supplement_pct) }})</span>
+                        <span>{{ t.transition_base_component.replace('{factor}', "%.4f"|format(1 + vp.supplement_pct)) }}</span>
                         <span>{{ "{:,.0f}".format(vp.base_payout).replace(",", "\u00a0") }} kr</span>
                     </div>
 
                     {% if vp.variable_avg_daily %}
                     <div class="transition-row">
                         <span>
-                            R&#246;rlig komponent ({{ "%.2f"|format(vp.variable_avg_daily) }} kr/dag
-                            <span class="form-hint">{{ "auto" if vp.variable_auto_calculated else "manuell" }}</span>)
+                            {{ t.transition_variable_component.replace('{val}', "%.2f"|format(vp.variable_avg_daily)).replace('{calc_type}', t.transition_variable_auto_label if vp.variable_auto_calculated else t.transition_variable_manual_label2) }}
                         </span>
                         <span>{{ "{:,.0f}".format(vp.variable_payout).replace(",", "\u00a0") }} kr</span>
                     </div>
                     {% else %}
-                    <p class="transition-note">R&#246;rlig komponent: saknas (ingen historik / ej angivet)</p>
+                    <p class="transition-note">{{ t.transition_variable_missing_note }}</p>
                     {% endif %}
 
                     <div class="transition-row transition-row--total">
-                        <span>Semesterutl&#246;sning totalt</span>
+                        <span>{{ t.transition_vacation_total }}</span>
                         <span>{{ "{:,.0f}".format(vp.total).replace(",", "\u00a0") }} kr</span>
                     </div>
                 </div>
 
                 <div class="transition-row transition-row--total">
-                    <span>Totalt fr&#229;n konsultarbetsgivare</span>
+                    <span>{{ t.transition_consultant_total }}</span>
                     <strong>{{ "{:,.0f}".format(preview.consultant_employer.total).replace(",", "\u00a0") }} kr</strong>
                 </div>
             </div>
 
             {# Direktarbetsgivare #}
             <div class="transition-employer transition-employer--direct">
-                <h4>Direktarbetsgivare (ICA)</h4>
+                <h4>{{ t.transition_direct_employer }}</h4>
                 <div class="transition-row">
-                    <span>Innest&#229;ende grundl&#246;n (&#246;vertagesm&#229;naden)</span>
+                    <span>{{ t.transition_direct_base }}</span>
                     <strong>{{ "{:,.0f}".format(preview.direct_employer.base_salary).replace(",", "\u00a0") }} kr</strong>
                 </div>
                 <p class="transition-note">&#9432; {{ preview.direct_employer.note_variable }}</p>
@@ -235,13 +234,11 @@
 
             {# Totalt #}
             <div class="transition-grand-total">
-                <span>Totalt brutto &#246;vertagesm&#229;naden</span>
+                <span>{{ t.transition_grand_total }}</span>
                 <span>{{ "{:,.0f}".format(preview.grand_total_gross).replace(",", "\u00a0") }} kr</span>
             </div>
             <p class="transition-tax-note">
-                Utbetalas som tv&#229; separata nettol&#246;ner, en per arbetsgivare.
-                Skatten hanteras av respektive arbetsgivare.
-                Ev. skatteskillnad regleras i deklarationen.
+                {{ t.transition_tax_note }}
             </p>
         </div>
     </div>

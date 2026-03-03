@@ -147,6 +147,7 @@ async def read_root(
                 next_shift = {
                     "date": day["date"],
                     "shift_type": "OT (Overtime)",
+                    "shift_code": "OT",
                     "color": "#ff9800",  # Orange color for OT
                     "time_range": f"{start_str} - {end_str}",
                     "days_until": days_until,
@@ -159,6 +160,7 @@ async def read_root(
                 next_shift = {
                     "date": day["date"],
                     "shift_type": shift.label or shift.code,
+                    "shift_code": shift.code,
                     "color": shift.color or "#666",
                     "time_range": time_range,
                     "days_until": days_until,
@@ -172,6 +174,7 @@ async def read_root(
                 next_oncall_shift = {
                     "date": day["date"],
                     "shift_type": shift.label or shift.code,
+                    "shift_code": shift.code,
                     "color": shift.color or "#666",
                     "time_range": time_range,
                     "days_until": days_until,
@@ -376,6 +379,7 @@ async def read_root(
         "ot_pay": month_ot_pay,
         "absence_deduction": month_absence_deduction,
         "month_name": safe_today.strftime("%B"),
+        "month_number": safe_today.month,
         "gross_pay": month_gross_pay,
         "taxes": month_taxes,
         "net_pay": month_net_pay,
@@ -409,6 +413,7 @@ async def read_root(
                     "diff_percent": diff_percent,
                     "direction": "up" if diff > 0 else "down" if diff < 0 else "same",
                     "last_month_name": dt.date(last_month_year, last_month, 1).strftime("%B"),
+                    "last_month_number": last_month,
                 }
         except Exception:
             pass  # If trend calculation fails, just skip it

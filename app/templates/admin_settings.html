@@ -1,29 +1,29 @@
 {# app/templates/admin_settings.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Admin: Inställningar{% endblock %}
+{% block title %}Periodical – Admin: {{ t.admin_settings_title }}{% endblock %}
 
 {% block page_content %}
 
-<h2 class="page-title">Settings</h2>
+<h2 class="page-title">{{ t.admin_settings_title }}</h2>
 
 <div style="margin-bottom: 20px;">
     <a href="/admin/rotation-eras" class="btn secondary" style="display: inline-block;">
-        📅 Manage Rotation Eras
+        📅 {{ t.admin_settings_manage_eras }}
     </a>
 </div>
 
 <form method="POST" action="/admin/settings" id="settings-form" onsubmit="return prepareFormSubmit()">
     <div class="card" style="margin-bottom: 24px;">
-        <h3>Global Configuration</h3>
+        <h3>{{ t.admin_settings_global_config }}</h3>
         <table style="width: auto;">
             <tbody>
                 <tr>
-                    <td style="font-weight: 600; color: var(--muted);">Rotation Start Date</td>
-                    <td>{{ settings.rotation_start_date }} <span style="color: var(--muted); font-size: 0.85rem;">(read-only)</span></td>
+                    <td style="font-weight: 600; color: var(--muted);">{{ t.admin_settings_rotation_start }}</td>
+                    <td>{{ settings.rotation_start_date }} <span style="color: var(--muted); font-size: 0.85rem;">{{ t.admin_settings_read_only }}</span></td>
                 </tr>
                 <tr>
-                    <td style="font-weight: 600; color: var(--muted);">Default Monthly Salary</td>
+                    <td style="font-weight: 600; color: var(--muted);">{{ t.admin_settings_default_salary }}</td>
                     <td>
                         <input
                             type="number"
@@ -41,21 +41,21 @@
     </div>
 
     <div class="card" style="margin-bottom: 24px;">
-        <h3>Persons</h3>
+        <h3>{{ t.admin_settings_persons }}</h3>
         <table>
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th class="num">Wage (SEK)</th>
+                    <th>{{ t.admin_settings_col_id }}</th>
+                    <th>{{ t.admin_settings_col_name }}</th>
+                    <th class="num">{{ t.admin_settings_col_wage }}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for person in persons %}
                 <tr>
-                    <td data-label="ID">{{ person.id }}</td>
-                    <td data-label="Namn">{{ person.name }}</td>
-                    <td class="num" data-label="Lön">
+                    <td data-label="{{ t.admin_settings_col_id }}">{{ person.id }}</td>
+                    <td data-label="{{ t.admin_settings_col_name }}">{{ person.name }}</td>
+                    <td class="num" data-label="{{ t.admin_settings_col_wage }}">
                         <input
                             type="number"
                             class="person-wage"
@@ -75,48 +75,17 @@
     {# Submit button #}
     <div style="margin-top: 24px; padding: 0 8px;">
         <button type="submit" class="btn" style="padding: 10px 24px;">
-            Save Changes
+            {{ t.admin_settings_save }}
         </button>
         <a href="/admin/settings" class="btn secondary" style="margin-left: 12px;">
-            Cancel
+            {{ t.admin_settings_cancel }}
         </a>
     </div>
-
-    <!-- <div class="card" style="margin-bottom: 24px;">
-        <h3>Tax Brackets <span style="color: var(--muted); font-size: 0.85rem; font-weight: normal;">(read-only)</span></h3>
-        <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 12px;">
-            Preliminary tax (prel_skatt) based on monthly income brackets.
-        </p>
-        <table>
-            <thead>
-                <tr>
-                    <th class="num">Income From (SEK)</th>
-                    <th class="num">Income To (SEK)</th>
-                    <th class="num">Tax (SEK)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for bracket in tax_brackets %}
-                <tr>
-                    <td class="num" data-label="Från">{{ "{:,}".format(bracket.lon_fran | int) }}</td>
-                    <td class="num" data-label="Till">
-                        {% if bracket.lon_till %}
-                            {{ "{:,}".format(bracket.lon_till | int) }}
-                        {% else %}
-                            &infin;
-                        {% endif %}
-                    </td>
-                    <td class="num" data-label="Skatt">{{ "{:,}".format(bracket.prel_skatt | int) }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div> -->
 
     {# Hidden field to store person wages as JSON #}
     <input type="hidden" name="person_wages" id="person_wages" value="">
 
-    
+
 </form>
 
 <script>

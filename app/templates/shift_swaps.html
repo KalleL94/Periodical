@@ -1,61 +1,61 @@
 {# app/templates/shift_swaps.html #}
 {% extends "base.html" %}
 
-{% block title %}Periodical – Skiftbyten{% endblock %}
+{% block title %}Periodical – {{ t.swaps_title }}{% endblock %}
 
 {% block page_content %}
 <section>
-    <h2>Skiftbyten</h2>
+    <h2>{{ t.swaps_title }}</h2>
 
     {% if pending_count > 0 %}
     <div class="card" style="border-color: var(--warning); margin-bottom: 1.5rem;">
-        <strong style="color: var(--warning);">{{ pending_count }} väntande förfrågan{{ 'gar' if pending_count > 1 }}</strong>
+        <strong style="color: var(--warning);">{% if t.html_lang == 'en' %}{{ pending_count }} pending request{{ 's' if pending_count > 1 }}{% else %}{{ pending_count }} väntande förfrågan{{ 'gar' if pending_count > 1 }}{% endif %}</strong>
     </div>
     {% endif %}
 
-    <h3>Mottagna förfrågningar</h3>
+    <h3>{{ t.swaps_received }}</h3>
     {% if received_swaps %}
     <table class="summary">
         <thead>
             <tr>
-                <th>Från</th>
-                <th>Ger dig</th>
-                <th>Vill ha</th>
-                <th>Meddelande</th>
-                <th>Status</th>
+                <th>{{ t.swaps_from }}</th>
+                <th>{{ t.swaps_gives_you }}</th>
+                <th>{{ t.swaps_wants }}</th>
+                <th>{{ t.swaps_message }}</th>
+                <th>{{ t.swaps_status }}</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
             {% for swap in received_swaps %}
             <tr class="shift-row">
-                <td data-label="Från">{{ swap.requester.name }}</td>
-                <td data-label="Ger dig">{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }})</td>
-                <td data-label="Vill ha">{{ swap.target_shift_code or '?' }} ({{ swap.target_date }})</td>
-                <td data-label="Meddelande">{{ swap.message or '-' }}</td>
-                <td data-label="Status">
+                <td data-label="{{ t.swaps_from }}">{{ swap.requester.name }}</td>
+                <td data-label="{{ t.swaps_gives_you }}">{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }})</td>
+                <td data-label="{{ t.swaps_wants }}">{{ swap.target_shift_code or '?' }} ({{ swap.target_date }})</td>
+                <td data-label="{{ t.swaps_message }}">{{ swap.message or '-' }}</td>
+                <td data-label="{{ t.swaps_status }}">
                     {% if swap.status.value == 'PENDING' %}
-                        <span class="badge" style="background: var(--warning); color: #000;">Väntande</span>
+                        <span class="badge" style="background: var(--warning); color: #000;">{{ t.swaps_pending_badge }}</span>
                     {% elif swap.status.value == 'ACCEPTED' %}
-                        <span class="badge" style="background: var(--accent-2); color: #000;">Accepterat</span>
+                        <span class="badge" style="background: var(--accent-2); color: #000;">{{ t.swaps_accepted_badge }}</span>
                     {% elif swap.status.value == 'REJECTED' %}
-                        <span class="badge" style="background: var(--danger); color: #fff;">Avvisat</span>
+                        <span class="badge" style="background: var(--danger); color: #fff;">{{ t.swaps_rejected_badge }}</span>
                     {% else %}
-                        <span class="badge badge-off">Avbrutet</span>
+                        <span class="badge badge-off">{{ t.swaps_cancelled_badge }}</span>
                     {% endif %}
                 </td>
                 <td>
                     {% if swap.status.value == 'PENDING' %}
                         <form method="POST" action="/swaps/{{ swap.id }}/accept" style="display:inline;">
-                            <button type="submit" class="btn" style="font-size:0.8rem; padding:0.3rem 0.6rem;">Acceptera</button>
+                            <button type="submit" class="btn" style="font-size:0.8rem; padding:0.3rem 0.6rem;">{{ t.swaps_accept }}</button>
                         </form>
                         <form method="POST" action="/swaps/{{ swap.id }}/reject" style="display:inline; margin-left:0.25rem;">
-                            <button type="submit" class="btn btn-danger" style="font-size:0.8rem;">Avvisa</button>
+                            <button type="submit" class="btn btn-danger" style="font-size:0.8rem;">{{ t.swaps_reject }}</button>
                         </form>
                     {% elif swap.status.value == 'ACCEPTED' %}
                         <form method="POST" action="/swaps/{{ swap.id }}/cancel" style="display:inline;">
                             <button type="submit" class="btn btn-danger" style="font-size:0.8rem;"
-                                    onclick="return confirm('Ångra accepterat byte?')">Ångra</button>
+                                    onclick="return confirm('{{ t.swaps_undo_confirm }}')">{{ t.swaps_undo }}</button>
                         </form>
                     {% endif %}
                 </td>
@@ -64,44 +64,44 @@
         </tbody>
     </table>
     {% else %}
-        <p class="info-text">Inga mottagna förfrågningar.</p>
+        <p class="info-text">{{ t.swaps_no_received }}</p>
     {% endif %}
 
-    <h3 style="margin-top: 2rem;">Skickade förfrågningar</h3>
+    <h3 style="margin-top: 2rem;">{{ t.swaps_sent }}</h3>
     {% if sent_swaps %}
     <table class="summary">
         <thead>
             <tr>
-                <th>Till</th>
-                <th>Du ger</th>
-                <th>Du får</th>
-                <th>Status</th>
+                <th>{{ t.swaps_to }}</th>
+                <th>{{ t.swaps_you_give }}</th>
+                <th>{{ t.swaps_you_get }}</th>
+                <th>{{ t.swaps_status }}</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
             {% for swap in sent_swaps %}
             <tr class="shift-row">
-                <td data-label="Till">{{ swap.target.name }}</td>
-                <td data-label="Du ger">{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }})</td>
-                <td data-label="Du får">{{ swap.target_shift_code or '?' }} ({{ swap.target_date }})</td>
-                <td data-label="Status">
+                <td data-label="{{ t.swaps_to }}">{{ swap.target.name }}</td>
+                <td data-label="{{ t.swaps_you_give }}">{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }})</td>
+                <td data-label="{{ t.swaps_you_get }}">{{ swap.target_shift_code or '?' }} ({{ swap.target_date }})</td>
+                <td data-label="{{ t.swaps_status }}">
                     {% if swap.status.value == 'PENDING' %}
-                        <span class="badge" style="background: var(--warning); color: #000;">Väntande</span>
+                        <span class="badge" style="background: var(--warning); color: #000;">{{ t.swaps_pending_badge }}</span>
                     {% elif swap.status.value == 'ACCEPTED' %}
-                        <span class="badge" style="background: var(--accent-2); color: #000;">Accepterat</span>
+                        <span class="badge" style="background: var(--accent-2); color: #000;">{{ t.swaps_accepted_badge }}</span>
                     {% elif swap.status.value == 'REJECTED' %}
-                        <span class="badge" style="background: var(--danger); color: #fff;">Avvisat</span>
+                        <span class="badge" style="background: var(--danger); color: #fff;">{{ t.swaps_rejected_badge }}</span>
                     {% else %}
-                        <span class="badge badge-off">Avbrutet</span>
+                        <span class="badge badge-off">{{ t.swaps_cancelled_badge }}</span>
                     {% endif %}
                 </td>
                 <td>
                     {% if swap.status.value in ('PENDING', 'ACCEPTED') %}
                         <form method="POST" action="/swaps/{{ swap.id }}/cancel" style="display:inline;">
                             <button type="submit" class="btn btn-danger" style="font-size:0.8rem;"
-                                    onclick="return confirm('{{ 'Ångra accepterat byte?' if swap.status.value == 'ACCEPTED' else 'Avbryta bytet?' }}')">
-                                {{ 'Ångra' if swap.status.value == 'ACCEPTED' else 'Avbryt' }}
+                                    onclick="return confirm('{{ t.swaps_undo_confirm if swap.status.value == 'ACCEPTED' else t.swaps_cancel_confirm }}')">
+                                {{ t.swaps_undo if swap.status.value == 'ACCEPTED' else t.swaps_cancel }}
                             </button>
                         </form>
                     {% endif %}
@@ -111,7 +111,7 @@
         </tbody>
     </table>
     {% else %}
-        <p class="info-text">Inga skickade förfrågningar.</p>
+        <p class="info-text">{{ t.swaps_no_sent }}</p>
     {% endif %}
 </section>
 {% endblock %}
