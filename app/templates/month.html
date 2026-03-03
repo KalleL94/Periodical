@@ -176,10 +176,17 @@
 
     {# ── Detailed OB / Beredskap / OT breakdown ── #}
     {% if show_salary %}
-    <div style="margin-top: 1.5rem; text-align: center;">
+    <div style="margin-top: 1.5rem; text-align: center; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
         <button class="btn secondary" id="breakdown-toggle" onclick="toggleBreakdown()">
             {{ t.month_show_breakdown }}
         </button>
+        {% if person_id in (6, 8) %}
+        <a class="btn secondary"
+           href="/month/{{ person_id }}/export-excel?year={{ year }}&month={{ month }}"
+           download>
+            Exportera Excel
+        </a>
+        {% endif %}
     </div>
 
     <div id="breakdown-section" style="display: none; margin-top: 1rem;">
@@ -334,10 +341,21 @@
         if (section.style.display === 'none') {
             section.style.display = 'block';
             btn.textContent = '{{ t.month_hide_breakdown }}';
+            history.replaceState(null, '', window.location.pathname + window.location.search + '#breakdown');
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } else {
             section.style.display = 'none';
             btn.textContent = '{{ t.month_show_breakdown }}';
+            history.replaceState(null, '', window.location.pathname + window.location.search);
         }
+    }
+
+    if (window.location.hash === '#breakdown') {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('breakdown-toggle');
+        section.style.display = 'block';
+        btn.textContent = '{{ t.month_hide_breakdown }}';
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     </script>
     {% endif %}

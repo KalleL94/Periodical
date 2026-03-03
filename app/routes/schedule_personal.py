@@ -3,10 +3,12 @@
 Personal schedule view routes - day, week, month, and year views for specific persons.
 """
 
+import calendar as _cal
+import io
 from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
@@ -723,6 +725,249 @@ async def show_month_for_person(
             "vacation_month": vacation_month,
         },
         user=current_user,
+    )
+
+
+@router.get("/month/{person_id}/export-excel", name="month_export_excel")
+async def export_month_excel(
+    request: Request,
+    person_id: int,
+    year: int = None,
+    month: int = None,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Exportera månadsdata som Excel-fil."""
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    from app.core.schedule.summary import summarize_month_for_person
+
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
+    # Resolve person_id -> rotation_position (same logic as show_month_for_person)
+    if person_id > 10:
+        target_user = db.query(User).filter(User.id == person_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id_for_wages = person_id
+        rotation_position = target_user.rotation_person_id
+        person_name = target_user.name
+    else:
+        person_id = validate_person_id(person_id)
+        user_id_for_wages = person_id
+        rotation_position = person_id
+        person_name = None
+
+    safe_today = get_safe_today(rotation_start_date)
+    year = year or safe_today.year
+    month = month or safe_today.month
+
+    if redirect := redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
+    ):
+        return redirect
+
+    if not can_see_salary(current_user, rotation_position):
+        raise HTTPException(status_code=403, detail="Åtkomst nekad")
+
+    validate_date_params(year, month, None)
+
+    days_in_month = summarize_month_for_person(year, month, rotation_position, session=db, payment_year=year)
+
+    # ── Build row data ───────────────────────────────────────────────────
+    # Column definitions (index used to decide merge and filter)
+    COL_HEADERS = [
+        "Datum",
+        "Veckodag",
+        "Skifttyp",
+        "Start",
+        "Slut",
+        "Vanliga timmar",
+        "OB Vardagskväll(x1,12)",
+        "OB Natt(x1,18)",
+        "OB tillägg helg(x1,24)",  # OB3 + OB4 merged
+        "OB tillägg storhelg(x1,47)",
+        "B.Vardag(75)",
+        "Beredskap Helg(97)",
+        "Beredskap Helgdag(112)",
+        "Beredskap Storhelg(192)",
+        "Övertid(x2)",
+    ]
+    # Indices for numeric columns (0-based, from COL_HEADERS)
+    NUM_START = 5  # "Vanliga timmar" is col index 5
+
+    # Weekday name lookup (Swedish)
+    _SV_DAYS = ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]
+
+    def _fmt_time(t):
+        if t is None:
+            return ""
+        if hasattr(t, "strftime"):
+            return t.strftime("%H:%M")
+        return str(t)[:5]
+
+    # Get all days in the calendar month (not just shifts)
+    num_days_in_month = _cal.monthrange(year, month)[1]
+    from datetime import date as _date
+
+    all_dates = {_date(year, month, d): None for d in range(1, num_days_in_month + 1)}
+
+    # Build lookup from days_in_month["days"]
+    day_lookup = {d["date"]: d for d in days_in_month.get("days", [])}
+
+    rows = []
+    totals = [0.0] * len(COL_HEADERS)
+
+    for day_date in sorted(all_dates):
+        d = day_lookup.get(day_date)
+        shift = d.get("shift") if d else None
+        if not shift or shift.code == "OFF":
+            shift_label = "Ledig"
+        else:
+            shift_label = shift.label if hasattr(shift, "label") and shift.label else shift.code
+
+        if d and shift and shift.code not in ("OFF",):
+            # Times
+            start_t = d.get("start")
+            end_t = d.get("end")
+            if not start_t and shift and shift.start_time:
+                start_t = shift.start_time
+                end_t = shift.end_time
+            if d.get("ot_details") and d["ot_details"].get("is_extension"):
+                end_t_str = d["ot_details"]["end_time"][:5]
+            else:
+                end_t_str = _fmt_time(end_t)
+            start_str = _fmt_time(start_t)
+
+            ob1 = d["ob_hours"].get("OB1", 0) or 0
+            ob2 = d["ob_hours"].get("OB2", 0) or 0
+            ob3 = (d["ob_hours"].get("OB3", 0) or 0) + (d["ob_hours"].get("OB4", 0) or 0)
+            ob5 = d["ob_hours"].get("OB5", 0) or 0
+
+            ob_sum = ob1 + ob2 + ob3 + ob5
+            is_work = shift.code not in ("OC", "OT")
+            hours = d.get("hours", 0) or 0
+            norm = max((hours - ob_sum), 0) if is_work else 0
+
+            oc_bd = d.get("oncall_details", {}).get("breakdown", {}) if d.get("oncall_details") else {}
+            oc_vardag = oc_bd.get("OC_WEEKDAY", {}).get("hours", 0) or 0
+            oc_helg = (
+                (oc_bd.get("OC_WEEKEND", {}).get("hours", 0) or 0)
+                + (oc_bd.get("OC_WEEKEND_SAT", {}).get("hours", 0) or 0)
+                + (oc_bd.get("OC_WEEKEND_SUN", {}).get("hours", 0) or 0)
+                + (oc_bd.get("OC_WEEKEND_MON", {}).get("hours", 0) or 0)
+            )
+            oc_helgdag = (
+                (oc_bd.get("OC_HOLIDAY", {}).get("hours", 0) or 0)
+                + (oc_bd.get("OC_HOLIDAY_EVE", {}).get("hours", 0) or 0)
+                + (oc_bd.get("OC_NATIONALDAGEN", {}).get("hours", 0) or 0)
+            )
+            oc_storhelg = oc_bd.get("OC_SPECIAL", {}).get("hours", 0) or 0
+            ot = d.get("ot_hours", 0) or 0
+
+            num_vals = [norm, ob1, ob2, ob3, ob5, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, ot]
+        else:
+            start_str = ""
+            end_t_str = ""
+            num_vals = [0.0] * 10
+
+        row = [
+            str(day_date),
+            _SV_DAYS[day_date.weekday()],
+            shift_label,
+            start_str,
+            end_t_str,
+        ] + num_vals
+
+        rows.append(row)
+        for i, v in enumerate(num_vals):
+            totals[NUM_START + i] = totals[NUM_START + i] + v
+
+    # ── Determine which numeric columns have any data ───────────────────
+    active_num = [any(row[NUM_START + i] for row in rows) for i in range(len(COL_HEADERS) - NUM_START)]
+    # Always keep fixed text columns
+    keep_cols = list(range(NUM_START)) + [NUM_START + i for i, v in enumerate(active_num) if v]
+
+    final_headers = [COL_HEADERS[i] for i in keep_cols]
+    final_rows = [[row[i] for i in keep_cols] for row in rows]
+    final_totals = [totals[i] for i in keep_cols]
+
+    # ── Build workbook ───────────────────────────────────────────────────
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{year}-{month:02d}"
+
+    header_fill = PatternFill("solid", fgColor="2D3748")
+    header_font = Font(bold=True, color="FFFFFF")
+    total_font = Font(bold=True)
+    center_align = Alignment(horizontal="center")
+    right_align = Alignment(horizontal="right")
+
+    # Header row
+    ws.append(final_headers)
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_align
+
+    # Data rows
+    for row in final_rows:
+        ws.append(row)
+        r = ws.max_row
+        for col_idx, val in enumerate(row, start=1):
+            cell = ws.cell(row=r, column=col_idx)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                cell.number_format = "0.0"
+                cell.alignment = right_align
+                if val == 0:
+                    cell.value = None
+
+    # Total row
+    total_row = []
+    for i, _h in enumerate(final_headers):
+        if i == 0:
+            total_row.append("Total")
+        elif i < NUM_START:
+            total_row.append(None)
+        else:
+            v = final_totals[i]
+            total_row.append(round(v, 1) if v else None)
+
+    ws.append(total_row)
+    r = ws.max_row
+    for cell in ws[r]:
+        cell.font = total_font
+        if isinstance(cell.value, float):
+            cell.number_format = "0.0"
+            cell.alignment = right_align
+
+    # Column widths
+    col_widths = {
+        "Datum": 12,
+        "Veckodag": 12,
+        "Skifttyp": 14,
+        "Start": 7,
+        "Slut": 7,
+    }
+    default_num_width = 22
+    for i, h in enumerate(final_headers, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = col_widths.get(h, default_num_width)
+
+    # ── Stream response ──────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"schema_{person_name or rotation_position}_{year}-{month:02d}.xlsx"
+    filename_safe = filename.replace(" ", "_")
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename_safe}"'},
     )
 
 
