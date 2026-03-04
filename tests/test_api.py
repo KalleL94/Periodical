@@ -101,12 +101,11 @@ class TestAuthenticationFlow:
 class TestProtectedRoutes:
     """Test authentication-protected routes."""
 
-    def test_week_view_requires_authentication(self, test_client):
-        """GET /week/{person_id} without auth should redirect to login."""
+    def test_week_view_is_publicly_accessible(self, test_client, test_user):
+        """GET /week/{person_id} without auth should return the week view (public access)."""
         response = test_client.get("/week/1", follow_redirects=False)
 
-        # Should redirect to login (or return 401/403)
-        assert response.status_code in [302, 303, 307, 401, 403]
+        assert response.status_code == 200
 
     def test_week_view_with_authentication(self, test_client, test_user):
         """GET /week/{person_id} with valid auth should return week view."""
@@ -122,11 +121,11 @@ class TestProtectedRoutes:
         # Should return successful response or redirect (not 401/403)
         assert response.status_code not in [401, 403]
 
-    def test_month_view_requires_authentication(self, test_client):
-        """GET /month/{person_id} without auth should redirect to login."""
+    def test_month_view_is_publicly_accessible(self, test_client, test_user):
+        """GET /month/{person_id} without auth should return the month view (public access)."""
         response = test_client.get("/month/1", follow_redirects=False)
 
-        assert response.status_code in [302, 303, 307, 401, 403]
+        assert response.status_code == 200
 
     def test_profile_requires_authentication(self, test_client):
         """GET /profile without auth should redirect to login."""
