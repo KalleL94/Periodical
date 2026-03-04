@@ -315,8 +315,28 @@ document.addEventListener('DOMContentLoaded', function() {
             monthDiv.appendChild(title);
 
             const grid = document.createElement('div');
-            grid.style.cssText = 'display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 0.75rem;';
+            grid.style.cssText = 'display: grid; grid-template-columns: auto repeat(7, 1fr); gap: 2px; font-size: 0.75rem;';
 
+            function isoWeek(dt) {
+                const d = new Date(dt.getTime());
+                d.setHours(0, 0, 0, 0);
+                d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+                const yearStart = new Date(d.getFullYear(), 0, 1);
+                return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            }
+
+            function addWkCell(dt) {
+                const wk = document.createElement('div');
+                wk.textContent = isoWeek(dt);
+                wk.style.cssText = 'text-align: right; color: var(--muted); font-size: 0.6rem; padding: 3px 4px 0 0; opacity: 0.6;';
+                grid.appendChild(wk);
+            }
+
+            // Week header + day headers
+            const wkHdr = document.createElement('div');
+            wkHdr.textContent = '{{ "wk" if t.html_lang == "en" else "v" }}';
+            wkHdr.style.cssText = 'text-align: right; color: var(--muted); font-size: 0.65rem; padding: 2px 4px 2px 0; opacity: 0.5;';
+            grid.appendChild(wkHdr);
             dayHeaders.forEach(dh => {
                 const hdr = document.createElement('div');
                 hdr.style.cssText = 'text-align: center; color: var(--muted); font-size: 0.65rem; padding: 2px 0;';
@@ -328,6 +348,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const daysInMonth = new Date(calYear, m + 1, 0).getDate();
             let startOffset = (firstDay.getDay() + 6) % 7;
 
+            // Week number for the first (possibly partial) row
+            addWkCell(firstDay);
             for (let i = 0; i < startOffset; i++) {
                 grid.appendChild(document.createElement('div'));
             }
@@ -336,6 +358,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const dt = new Date(calYear, m, d);
                 const iso = calYear + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
                 const dayOfWeek = (dt.getDay() + 6) % 7;
+
+                // Insert week number at the start of each new week row (except the first, already added above)
+                if (dayOfWeek === 0 && d > 1) addWkCell(dt);
                 const isWeekend = dayOfWeek >= 5;
 
                 const cell = document.createElement('div');
