@@ -108,6 +108,7 @@ def count_vacation_days_used(
     year_end: datetime.date,
     db,
     vacation_json: dict | None = None,
+    off_dates: set[datetime.date] | None = None,
 ) -> dict:
     """
     Count vacation days consumed in a period from both sources.
@@ -149,8 +150,8 @@ def count_vacation_days_used(
         if weeks:
             week_based += _count_weekdays_in_vacation_weeks(weeks, cal_year, year_start, year_end)
 
-    # Count day-level vacation from absences
-    day_level = (
+    # Count day-level vacation from absences (exclude OFF-shift days)
+    absences = (
         db.query(Absence)
         .filter(
             Absence.user_id == user_id,
@@ -158,8 +159,9 @@ def count_vacation_days_used(
             Absence.date >= year_start,
             Absence.date <= year_end,
         )
-        .count()
+        .all()
     )
+    day_level = sum(1 for a in absences if off_dates is None or a.date not in off_dates)
 
     return {
         "week_based": week_based,
@@ -272,7 +274,7 @@ def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict,
     return closed_data
 
 
-def calculate_vacation_balance(user, target_year: int, db) -> dict:
+def calculate_vacation_balance(user, target_year: int, db, off_dates: set[datetime.date] | None = None) -> dict:
     """
     Calculate complete vacation balance for a user in a given vacation year.
 
@@ -341,6 +343,7 @@ def calculate_vacation_balance(user, target_year: int, db) -> dict:
         year_end=year_end,
         db=db,
         vacation_json=user.vacation,
+        off_dates=off_dates,
     )
 
     # Calculate vacation pay (semestertillägg) with per-user rates
