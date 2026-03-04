@@ -290,9 +290,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const monthNames = {{ t.month_names_json | safe }};
     const dayHeaders = {{ t.day_headers_json | safe }};
+    const offDays = new Set({{ off_days_list | tojson }});
+    const dayColors = {{ day_colors | tojson }};
 
     let selectedDates = new Set(
-        datesInput.value ? datesInput.value.split(',').map(s => s.trim()).filter(Boolean) : []
+        datesInput.value ? datesInput.value.split(',').map(s => s.trim()).filter(s => Boolean(s) && !offDays.has(s)) : []
     );
 
     function updateDayCount() {
@@ -341,29 +343,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 cell.dataset.date = iso;
 
                 const isSelected = selectedDates.has(iso);
-                cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
-                    + (isSelected ? 'background: var(--accent); color: var(--bg); font-weight: 600;'
-                       : isWeekend ? 'color: var(--muted); opacity: 0.4;'
-                       : 'color: var(--text);');
+                const isOffDay = offDays.has(iso);
 
-                cell.addEventListener('click', function() {
-                    const date = this.dataset.date;
-                    if (selectedDates.has(date)) {
-                        selectedDates.delete(date);
-                        const wd = (new Date(date).getDay() + 6) % 7;
-                        this.style.background = 'transparent';
-                        this.style.color = wd >= 5 ? 'var(--muted)' : 'var(--text)';
-                        this.style.fontWeight = '400';
-                        this.style.opacity = wd >= 5 ? '0.4' : '1';
-                    } else {
-                        selectedDates.add(date);
-                        this.style.background = 'var(--accent)';
-                        this.style.color = 'var(--bg)';
-                        this.style.fontWeight = '600';
-                        this.style.opacity = '1';
-                    }
-                    updateDayCount();
-                });
+                const shiftColor = dayColors[iso] || null;
+
+                if (isOffDay) {
+                    cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: not-allowed; user-select: none; opacity: 0.35; text-decoration: line-through;';
+                    if (shiftColor) cell.style.color = shiftColor;
+                } else if (isSelected) {
+                    cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
+                } else {
+                    cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
+                        + (isWeekend ? ' opacity: 0.5;' : '');
+                    cell.style.color = shiftColor || (isWeekend ? 'var(--muted)' : 'var(--text)');
+
+                    cell.addEventListener('click', function() {
+                        const date = this.dataset.date;
+                        const color = dayColors[date] || null;
+                        if (selectedDates.has(date)) {
+                            selectedDates.delete(date);
+                            const wd = (new Date(date).getDay() + 6) % 7;
+                            this.style.background = 'transparent';
+                            this.style.color = color || (wd >= 5 ? 'var(--muted)' : 'var(--text)');
+                            this.style.fontWeight = '400';
+                            this.style.opacity = wd >= 5 ? '0.5' : '1';
+                        } else {
+                            selectedDates.add(date);
+                            this.style.background = 'var(--accent)';
+                            this.style.color = 'var(--bg)';
+                            this.style.fontWeight = '600';
+                            this.style.opacity = '1';
+                        }
+                        updateDayCount();
+                    });
+                }
 
                 grid.appendChild(cell);
             }

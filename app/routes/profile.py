@@ -309,6 +309,7 @@ async def vacation_page(
     db: Session = Depends(get_db),
 ):
     """Show vacation management page."""
+    from app.core.schedule.core import determine_shift_for_date
     from app.core.schedule.vacation import calculate_vacation_balance
     from app.database.database import Absence, AbsenceType
 
@@ -318,7 +319,21 @@ async def vacation_page(
     vacation = current_user.vacation or {}
     vacation_weeks = vacation.get(str(year), [])
 
-    balance = calculate_vacation_balance(current_user, year, db)
+    # Compute shift colors and OFF-shift days for this calendar year
+    off_days: set[datetime.date] = set()
+    day_colors: dict[str, str] = {}
+    d = datetime.date(year, 1, 1)
+    year_end = datetime.date(year, 12, 31)
+    while d <= year_end:
+        shift, _ = determine_shift_for_date(d, current_user.rotation_person_id)
+        if shift:
+            if shift.code == "OFF":
+                off_days.add(d)
+            if shift.color:
+                day_colors[d.isoformat()] = shift.color
+        d += datetime.timedelta(days=1)
+
+    balance = calculate_vacation_balance(current_user, year, db, off_dates=off_days)
 
     day_absences = (
         db.query(Absence)
@@ -332,6 +347,8 @@ async def vacation_page(
         .all()
     )
 
+    off_days_list = sorted(d.isoformat() for d in off_days)
+
     return render(
         "vacation.html",
         {
@@ -341,6 +358,8 @@ async def vacation_page(
             "vacation_weeks": vacation_weeks,
             "balance": balance,
             "day_absences": day_absences,
+            "off_days_list": off_days_list,
+            "day_colors": day_colors,
         },
     )
 
