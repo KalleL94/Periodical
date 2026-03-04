@@ -880,7 +880,7 @@ def _populate_single_person_day(
                     hours, start, end = 0.0, None, None
                     ob = {}
 
-    # Beräkna jour-ersättning
+    # Beräkna beredskap-ersättning
     oncall_pay = 0.0
     oncall_details = {}
     _person_rates = (user_rates_map or {}).get(person_id) or {}
@@ -922,7 +922,7 @@ def _populate_single_person_day(
             except ValueError:
                 pass
 
-    # Om jour + övertid (samma dag ELLER föregående dag över midnatt), räkna om jour
+    # Om beredskap + övertid (samma dag ELLER föregående dag över midnatt), räkna om beredskap
     if shift and shift.code == "OC" and ot_shift_for_oncall:
         oncall_pay, oncall_details = _recalculate_oncall_before_ot(
             current_day,
@@ -1000,7 +1000,7 @@ def _recalculate_oncall_before_ot(
     settings,
     oncall_rate_overrides: dict[str, int | float] | None = None,
 ) -> tuple[float, dict]:
-    """Räknar om jour-ersättning för perioden före OCH efter övertid.
+    """Räknar om beredskap-ersättning för perioden före OCH efter övertid.
 
     Beredskap betalas för 24h minus övertidstimmar.
     Ex: 24h beredskap - 8.5h övertid = 15.5h beredskapsersättning

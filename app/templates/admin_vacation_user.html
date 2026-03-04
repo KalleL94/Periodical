@@ -307,8 +307,8 @@ const _t = {
     weeksSelected: "{{ t.admin_vac_user_weeks_selected_js }}",
     dayCount: "{{ t.admin_vac_user_day_count_js }}",
     daysCount: "{{ t.admin_vac_user_days_count_js }}",
-    monthNames: {{ t.month_names_json }},
-    dayHeaders: {{ t.day_headers_json }},
+    monthNames: {{ t.month_names_json | safe }},
+    dayHeaders: {{ t.day_headers_json | safe }},
 };
 
 document.addEventListener('DOMContentLoaded', function() {

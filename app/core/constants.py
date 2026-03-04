@@ -33,7 +33,7 @@ SHIFT_CODE_OFF: Final[str] = "OFF"
 #: Kod för semester (används både som OB-logik och som "syntetiskt" skift).
 SHIFT_CODE_SEMESTER: Final[str] = "SEM"
 
-#: Kod för jour/on-call (24-timmarspass).
+#: Kod för beredskap/on-call (24-timmarspass).
 SHIFT_CODE_ONCALL: Final[str] = "OC"
 
 #: Samlingslista över skiftkoder som används i logik (till exempel jämförelser).
