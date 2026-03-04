@@ -350,12 +350,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (isOffDay) {
                     cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: not-allowed; user-select: none; opacity: 0.35; text-decoration: line-through;';
                     if (shiftColor) cell.style.color = shiftColor;
-                } else if (isSelected) {
-                    cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
                 } else {
-                    cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
-                        + (isWeekend ? ' opacity: 0.5;' : '');
-                    cell.style.color = shiftColor || (isWeekend ? 'var(--muted)' : 'var(--text)');
+                    if (isSelected) {
+                        cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
+                    } else {
+                        cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
+                            + (isWeekend ? ' opacity: 0.5;' : '');
+                        cell.style.color = shiftColor || (isWeekend ? 'var(--muted)' : 'var(--text)');
+                    }
 
                     cell.addEventListener('click', function() {
                         const date = this.dataset.date;
