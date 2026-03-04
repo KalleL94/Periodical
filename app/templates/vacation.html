@@ -131,7 +131,7 @@
                 <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_save }} {{ t.vacation_days_next_year }}</span>
                 {% if balance.projection.days_to_pay_out > 0 %}
                 <span style="color: var(--muted);">{{ t.vacation_paid_out }}</span>
-                <span style="font-weight: 600;">{{ balance.projection.days_to_pay_out }} dagar</span>
+                <span style="font-weight: 600;">{{ balance.projection.days_to_pay_out }} {{ t.vacation_days_payout }}</span>
                 <span style="color: var(--muted);">{{ t.vacation_payout_amount }}</span>
                 <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_pay_out }} &times; {{ "%.0f"|format(balance.projection.payout_per_day) }} kr = {{ "{:,.0f}".format(balance.projection.payout_total).replace(",", " ") }} kr</span>
                 {% endif %}
@@ -155,7 +155,7 @@
                 {% endif %}
                 {% if balance.closed.paid_out > 0 %}
                 <span style="color: var(--muted);">{{ t.vacation_paid_out_label }}</span>
-                <span style="font-weight: 600;">{{ balance.closed.paid_out }} dagar &rarr; {{ "{:,.0f}".format(balance.closed.payout_amount).replace(",", " ") }} kr</span>
+                <span style="font-weight: 600;">{{ balance.closed.paid_out }} {{ t.vacation_days_payout }} &rarr; {{ "{:,.0f}".format(balance.closed.payout_amount).replace(",", " ") }} kr</span>
                 {% endif %}
                 {% if balance.closed.saved == 0 and balance.closed.paid_out == 0 %}
                 <span style="color: var(--muted);" colspan="2">{{ t.vacation_all_used }}</span>
@@ -288,8 +288,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const dayCountEl = document.getElementById('day-count');
     const calYear = {{ year }};
 
-    const monthNames = {{ t.month_names_json }};
-    const dayHeaders = {{ t.day_headers_json }};
+    const monthNames = {{ t.month_names_json | safe }};
+    const dayHeaders = {{ t.day_headers_json | safe }};
 
     let selectedDates = new Set(
         datesInput.value ? datesInput.value.split(',').map(s => s.trim()).filter(Boolean) : []

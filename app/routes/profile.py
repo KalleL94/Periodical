@@ -254,6 +254,7 @@ async def profile_delete_rate(
 @router.post("/profile/language", name="set_language")
 async def set_language(
     lang: str = Form(...),
+    next: str = Form("/profile"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -266,7 +267,8 @@ async def set_language(
     except Exception:
         db.rollback()
         raise
-    return RedirectResponse(url="/profile", status_code=302)
+    redirect_url = next if (next.startswith("/") and not next.startswith("//")) else "/profile"
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.get("/profile/calendar.ics/{lang}", response_class=Response, name="export_calendar")

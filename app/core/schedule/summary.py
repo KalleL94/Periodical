@@ -416,7 +416,7 @@ def _process_day_for_summary(
         totals["ob_pay"][code] = totals["ob_pay"].get(code, 0.0) + p
         totals["brutto_pay"] += p
 
-    # Lägg till jour och övertid
+    # Lägg till beredskap och övertid
     oncall_pay = day.get("oncall_pay", 0.0)
     oncall_details = day.get("oncall_details", {})
     oncall_hours = oncall_details.get("total_hours", 0.0) if oncall_details else 0.0
