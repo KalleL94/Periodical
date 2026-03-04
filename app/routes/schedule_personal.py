@@ -538,9 +538,6 @@ async def show_week_for_person(
     - 1-10: A rotation position (legacy, still supported)
     - > 10: A user_id (e.g., 11 for Rickard who has rotation position 3)
     """
-    if current_user is None:
-        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
-
     # Handle both user_id (>10) and rotation position (1-10)
     if person_id > 10:
         target_user = db.query(User).filter(User.id == person_id).first()
@@ -563,10 +560,11 @@ async def show_week_for_person(
     year = year or iso_year
     week = week or iso_week
 
-    if redirect := redirect_if_not_own_data(
-        current_user, user_id_for_wages, f"/week/{current_user.id}?year={year}&week={week}"
-    ):
-        return redirect
+    if current_user is not None:
+        if redirect := redirect_if_not_own_data(
+            current_user, user_id_for_wages, f"/week/{current_user.id}?year={year}&week={week}"
+        ):
+            return redirect
 
     # Use rotation_position for schedule calculation
     days_in_week = build_week_data(year, week, person_id=rotation_position, session=db, include_coworkers=True)
@@ -615,9 +613,6 @@ async def show_month_for_person(
     """
     start_time = datetime.now()
 
-    if current_user is None:
-        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
-
     # Handle both user_id (>10) and rotation position (1-10)
     if person_id > 10:
         # It's a user_id, look up the user
@@ -639,16 +634,17 @@ async def show_month_for_person(
     year = year or safe_today.year
     month = month or safe_today.month
 
-    if redirect := redirect_if_not_own_data(
-        current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
-    ):
-        return redirect
+    if current_user is not None:
+        if redirect := redirect_if_not_own_data(
+            current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
+        ):
+            return redirect
 
     validate_date_params(year, month, None)
 
     # Get person name if not already set
     if person_name is None:
-        if current_user.rotation_person_id == rotation_position:
+        if current_user is not None and current_user.rotation_person_id == rotation_position:
             person_name = current_user.name
         else:
             holder = db.query(User).filter(User.person_id == rotation_position).first()
