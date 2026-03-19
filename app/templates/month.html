@@ -279,24 +279,67 @@
                                 {% set t_end = d.ot_details.end_time[:5] %}
                             {% endif %}
 
-                            <tr>
-                                <td class="td_left num">{{ d.date }}</td>
-                                <td class="td_left">{{ d.weekday_name }}</td>
-                                <td class="td_left">{{ shift_label }}</td>
-                                <td class="td_right num">{{ t_start }}</td>
-                                <td class="td_right num">{{ t_end }}</td>
-                                <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
-                                <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
-                                <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
-                                <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
-                                <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
-                                <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
-                                <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
-                                <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
-                                <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
-                                <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
-                                <td class="td_right num">{% if ot %}{{ "%.1f"|format(ot) }}{% endif %}</td>
-                            </tr>
+                            {% set has_oncall = (oc_vardag + oc_helg + oc_helgdag + oc_storhelg) > 0 %}
+                            {% set has_ot = ot > 0 %}
+
+                            {% if has_oncall and has_ot %}
+                                {# Dela upp i två rader: beredskap och övertid var för sig #}
+                                <tr>
+                                    <td class="td_left num">{{ d.date }}</td>
+                                    <td class="td_left">{{ d.weekday_name }}</td>
+                                    <td class="td_left">Beredskap</td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                    <td class="td_right num"></td>
+                                </tr>
+                                <tr>
+                                    <td class="td_left num">{{ d.date }}</td>
+                                    <td class="td_left">{{ d.weekday_name }}</td>
+                                    <td class="td_left">{{ shift_label }}</td>
+                                    <td class="td_right num">{{ t_start }}</td>
+                                    <td class="td_right num">{{ t_end }}</td>
+                                    <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num"></td>
+                                    <td class="td_right num">{{ "%.1f"|format(ot) }}</td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td class="td_left num">{{ d.date }}</td>
+                                    <td class="td_left">{{ d.weekday_name }}</td>
+                                    <td class="td_left">{{ shift_label }}</td>
+                                    <td class="td_right num">{{ t_start }}</td>
+                                    <td class="td_right num">{{ t_end }}</td>
+                                    <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                    <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                    <td class="td_right num">{% if ot %}{{ "%.1f"|format(ot) }}{% endif %}</td>
+                                </tr>
+                            {% endif %}
                         {% endif %}
                     {% endfor %}
 
