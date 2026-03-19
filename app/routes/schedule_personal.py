@@ -865,20 +865,22 @@ async def export_month_excel(
             ot = d.get("ot_hours", 0) or 0
 
             num_vals = [norm, ob1, ob2, ob3, ob5, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, ot]
+
+            oc_total = oc_vardag + oc_helg + oc_helgdag + oc_storhelg
+            if oc_total > 0 and ot > 0:
+                # Dela upp i en beredskapsrad och en övertidsrad
+                oc_vals = [0, 0, 0, 0, 0, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, 0]
+                ot_vals = [norm, ob1, ob2, ob3, ob5, 0, 0, 0, 0, ot]
+                rows.append([str(day_date), _SV_DAYS[day_date.weekday()], "Beredskap", "", ""] + oc_vals)
+                rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + ot_vals)
+            else:
+                rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + num_vals)
         else:
             start_str = ""
             end_t_str = ""
             num_vals = [0.0] * 10
+            rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + num_vals)
 
-        row = [
-            str(day_date),
-            _SV_DAYS[day_date.weekday()],
-            shift_label,
-            start_str,
-            end_t_str,
-        ] + num_vals
-
-        rows.append(row)
         for i, v in enumerate(num_vals):
             totals[NUM_START + i] = totals[NUM_START + i] + v
 
