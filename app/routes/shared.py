@@ -43,7 +43,8 @@ def render(template_name: str, context: dict, status_code: int = 200, headers: d
     if user and hasattr(user, "language") and user.language:
         lang = user.language
     context["t"] = TRANSLATIONS.get(lang, TRANSLATIONS["sv"])
-    return templates.TemplateResponse(template_name, context, status_code=status_code, headers=headers)
+    request = context.get("request")
+    return templates.TemplateResponse(request, template_name, context, status_code=status_code, headers=headers)
 
 
 def redirect_if_not_own_data(current_user, user_id: int, redirect_url: str) -> RedirectResponse | None:
