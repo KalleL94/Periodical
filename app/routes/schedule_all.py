@@ -169,6 +169,19 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
+    # Build person headers using current active holder for each position
+    # (days[0] would show whoever held the position on the first day of rotation,
+    # which can be a predecessor rather than the current person)
+    from app.core.schedule.person_history import get_current_person_for_position
+
+    person_headers = [
+        {
+            "person_id": pid,
+            "person_name": (cp["name"] if (cp := get_current_person_for_position(db, pid)) else f"Person {pid}"),
+        }
+        for pid in range(1, 11)
+    ]
+
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
 
     # Calculate and log load time
@@ -191,6 +204,7 @@ async def show_year_all(
             "year": year,
             "days": days_in_year,
             "person_ob_totals": person_ob_totals,
+            "person_headers": person_headers,
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,

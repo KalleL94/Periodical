@@ -34,36 +34,32 @@
                     <tr id="totals-row">
                         <th></th>
                         <th></th>
-                        {% if days and days|length > 0 %}
-                            {% for p in days[0].persons %}
-                                <th class="num" id="total-{{ p.person_id }}">
-                                    <span class="loading-spinner" style="color: #999; font-size: 0.9em;">...</span>
-                                </th>
-                            {% endfor %}
-                        {% endif %}
+                        {% for p in person_headers %}
+                            <th class="num" id="total-{{ p.person_id }}">
+                                <span class="loading-spinner" style="color: #999; font-size: 0.9em;">...</span>
+                            </th>
+                        {% endfor %}
                     </tr>
                 {% endif %}
                 <tr>
                     <th class="w-md">{{ t.month_all_day_col }}</th>
                     <th class="w-lg">{{ t.month_all_date_col }}</th>
-                    {% if days and days|length > 0 %}
-                        {% for p in days[0].persons %}
-                            <th class="person-header">
-                                {# Länka bara till egen sida eller om admin #}
-                                {% if user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
-                                    {# Om det är användarens egen position, länka till user.id, annars person_id #}
-                                    {% set link_id = user.id if user.rotation_person_id == p.person_id else p.person_id %}
-                                    <a href="/year/{{ link_id }}?year={{ year }}">
-                                        {{ p.person_name }}<br>
-                                        <small>(#{{ p.person_id }})</small>
-                                    </a>
-                                {% else %}
+                    {% for p in person_headers %}
+                        <th class="person-header">
+                            {# Länka bara till egen sida eller om admin #}
+                            {% if user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
+                                {# Om det är användarens egen position, länka till user.id, annars person_id #}
+                                {% set link_id = user.id if user.rotation_person_id == p.person_id else p.person_id %}
+                                <a href="/year/{{ link_id }}?year={{ year }}">
                                     {{ p.person_name }}<br>
                                     <small>(#{{ p.person_id }})</small>
-                                {% endif %}
-                            </th>
-                        {% endfor %}
-                    {% endif %}
+                                </a>
+                            {% else %}
+                                {{ p.person_name }}<br>
+                                <small>(#{{ p.person_id }})</small>
+                            {% endif %}
+                        </th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
