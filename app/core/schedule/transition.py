@@ -45,34 +45,86 @@ def calculate_consultant_vacation_days(
     user: "User",
     transition: "EmploymentTransition",
     full_year_days: int = 25,
+    session=None,
 ) -> int | None:
     """
-    Beräknar pro-ratade semesterdagar intjänade under konsultanställningen.
+    Beräknar netto semesterdagar att betala ut vid konsultanställningens slut.
 
     Formel (semesterlagen §7):
         ceil(full_year_days * anställda_dagar / totala_dagar_i_intjänandeåret)
 
-    Anställda dagar = överlappen mellan employment_start_date och dagen före
-    transition_date inom intjänandeåret.
+    Itererar över ALLA intjänandeår (1 april–31 mars) från employment_start_date
+    till dagen före transition_date. Per intjänandeår räknas:
+        intjänade dagar - använda dagar i motsvarande semesterår (fr.o.m. semesterårets
+        start t.o.m. transition_date - 1)
+
+    Om session anges hämtas faktiskt använda dagar från databasen.
+    Utan session returneras brutto (använda dagar räknas ej av).
+
+    Om transition.earning_year_start/end är manuellt satta används de som ett
+    enda anpassat intjänandeår (bakåtkompatibelt med äldre konfigurationer).
 
     Returns:
-        Antal dagar (avrundat uppåt), eller None om data saknas.
+        Netto antal dagar att betala ut (avrundat uppåt per år), eller None om data saknas.
     """
     if not user.employment_start_date:
         return None
 
-    earning_start, earning_end = get_earning_year(transition)
+    last_day = transition.transition_date - datetime.timedelta(days=1)
 
-    overlap_start = max(user.employment_start_date, earning_start)
-    overlap_end = min(transition.transition_date - datetime.timedelta(days=1), earning_end)
+    # Manual override: single custom earning period (legacy / admin-configured)
+    if transition.earning_year_start and transition.earning_year_end:
+        earning_start = transition.earning_year_start
+        earning_end = transition.earning_year_end
+        overlap_start = max(user.employment_start_date, earning_start)
+        overlap_end = min(last_day, earning_end)
+        if overlap_start > overlap_end:
+            return 0
+        employed_days = (overlap_end - overlap_start).days + 1
+        total_days = (earning_end - earning_start).days + 1
+        return math.ceil(full_year_days * employed_days / total_days)
 
-    if overlap_start > overlap_end:
-        return 0
+    # Auto mode: iterate all April–March earning years from employment start to transition
+    from app.core.schedule.vacation import count_vacation_days_used
 
-    employed_days = (overlap_end - overlap_start).days + 1
-    total_days = (earning_end - earning_start).days + 1
+    employment_start = user.employment_start_date
+    april_year = employment_start.year if employment_start.month >= 4 else employment_start.year - 1
+    current_april = datetime.date(april_year, 4, 1)
 
-    return math.ceil(full_year_days * employed_days / total_days)
+    total = 0
+    while current_april <= last_day:
+        next_april = datetime.date(current_april.year + 1, 4, 1)
+        full_year_end = next_april - datetime.timedelta(days=1)  # 31 mars
+
+        period_end = min(full_year_end, last_day)
+        overlap_start = max(employment_start, current_april)
+
+        if overlap_start <= period_end:
+            employed_days = (period_end - overlap_start).days + 1
+            total_days = (full_year_end - current_april).days + 1
+            earned = math.ceil(full_year_days * employed_days / total_days)
+
+            # Deduct vacation days used in the corresponding vacation year (earning year + 1 year)
+            # up to (but not including) the transition date
+            used = 0
+            if session and earned > 0:
+                vac_year_start = next_april  # Semesteråret börjar månaden efter intjänandeårets slut
+                vac_year_end = min(last_day, datetime.date(next_april.year + 1, 4, 1) - datetime.timedelta(days=1))
+                if vac_year_start <= vac_year_end:
+                    used_data = count_vacation_days_used(
+                        user_id=user.id,
+                        year_start=vac_year_start,
+                        year_end=vac_year_end,
+                        db=session,
+                        vacation_json=user.vacation,
+                    )
+                    used = used_data["total"]
+
+            total += max(0, earned - used)
+
+        current_april = next_april
+
+    return total
 
 
 def _iter_months(start: datetime.date, end: datetime.date) -> list[tuple[int, int]]:
@@ -211,7 +263,9 @@ def calculate_consultant_vacation_payout(
     from app.core.schedule.wages import get_user_wage
 
     earning_start, earning_end = get_earning_year(transition)
-    days = transition.consultant_vacation_days
+    # Always dynamically calculate net vacation days (earned minus already used before transition)
+    # so the payout reflects the actual state at the time of calculation.
+    days = calculate_consultant_vacation_days(user, transition, session=session) or 0
     supplement_pct = transition.consultant_supplement_pct
 
     # Konsultlön: lönen dagen innan övergången (från WageHistory eller User.wage)

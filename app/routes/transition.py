@@ -42,7 +42,7 @@ def _get_transition_context(
         earning_start, earning_end = get_earning_year(transition)
         if transition.variable_avg_daily_override is None:
             auto_variable_avg = calculate_variable_avg_daily(user, db, earning_start, earning_end)
-        auto_consultant_vacation_days = calculate_consultant_vacation_days(user, transition)
+        auto_consultant_vacation_days = calculate_consultant_vacation_days(user, transition, session=db)
         try:
             preview = calculate_transition_month_summary(transition, user, db)
         except Exception:
@@ -150,7 +150,7 @@ async def transition_save(
             earning_year_start=earning_start,
             earning_year_end=earning_end,
         )
-        parsed_vacation_days = float(calculate_consultant_vacation_days(current_user, temp) or 0)
+        parsed_vacation_days = float(calculate_consultant_vacation_days(current_user, temp, session=db) or 0)
 
     salary_type = ConsultantSalaryType(consultant_salary_type)
 
@@ -248,6 +248,26 @@ async def transition_delete(
                 RateHistory.user_id == current_user.id,
                 RateHistory.effective_from == t_date,
             ).delete()
+            # Reopen the previous rate entry that was closed when the transition was created
+            prev_rate = (
+                db.query(RateHistory)
+                .filter(
+                    RateHistory.user_id == current_user.id,
+                    RateHistory.effective_to == t_date - datetime.timedelta(days=1),
+                )
+                .first()
+            )
+            if prev_rate:
+                later = (
+                    db.query(RateHistory)
+                    .filter(
+                        RateHistory.user_id == current_user.id,
+                        RateHistory.effective_from > prev_rate.effective_from,
+                    )
+                    .first()
+                )
+                if not later:
+                    prev_rate.effective_to = None
         db.delete(transition)
         try:
             db.commit()
