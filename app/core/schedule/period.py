@@ -42,6 +42,7 @@ def build_week_data(
     person_id: int | None = None,
     session=None,
     include_coworkers: bool = False,
+    employment_start: datetime.date | None = None,
 ) -> list[dict]:
     """
     Bygger veckodata för ett år/vecka.
@@ -106,6 +107,7 @@ def build_week_data(
                     absence_map,
                     oncall_override_map,
                     swap_map,
+                    employment_start=employment_start,
                 )
             )
 
@@ -123,6 +125,9 @@ def build_week_data(
 
         # Add coworkers to each day
         for day_info in days_in_week:
+            if day_info.get("before_employment"):
+                day_info["coworkers"] = []
+                continue
             current_date = day_info["date"]
             actual_shift = day_info.get("shift")
 
@@ -503,6 +508,7 @@ def _build_person_day_basic(
     absence_map: dict[tuple[int, datetime.date], object] | None = None,
     oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
     swap_map: dict[tuple[int, datetime.date], str] | None = None,
+    employment_start: datetime.date | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
@@ -527,6 +533,14 @@ def _build_person_day_basic(
                 # Only show OFF if date is before the current person's employment started
                 if current_person.get("effective_from") and date < current_person["effective_from"]:
                     show_off_before_employment = True
+
+    # Override: if the viewing user hasn't started yet, show before_employment
+    if employment_start and date < employment_start and not show_off_before_employment:
+        if session:
+            current_person = get_current_person_for_position(session, person_id)
+            if current_person:
+                person_name = current_person["name"]
+        show_off_before_employment = True
 
     # If date is before current person's employment, show OFF
     if show_off_before_employment:
