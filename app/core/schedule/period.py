@@ -22,7 +22,7 @@ from .core import (
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
 from .overtime import get_overtime_shift_for_date
-from .person_history import get_current_person_for_position
+from .person_history import get_current_person_for_position, get_person_for_date
 from .vacation import get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
@@ -503,19 +503,25 @@ def _build_person_day_basic(
     vacation_shift = get_vacation_shift()
     rotation_length = get_rotation_length_for_date(date)
 
-    # Get person name via PersonHistory (shows current holder of position)
-    # Also check if date is before their employment started
+    # Get person name via PersonHistory (shows correct person for this specific date)
+    # Also check if date is before any person's employment at this position
     person_name = persons[person_id - 1].name  # Default fallback
     show_off_before_employment = False
 
     if session:
-        # Get the current person at this position
-        current_person = get_current_person_for_position(session, person_id)
-        if current_person:
-            person_name = current_person["name"]
-            # Check if date is before this person's employment started
-            if current_person.get("effective_from") and date < current_person["effective_from"]:
-                show_off_before_employment = True
+        # First check who held this position on this specific date
+        date_person = get_person_for_date(session, person_id, date)
+        if date_person:
+            # Someone held this position on this date - use their name, no OFF
+            person_name = date_person["name"]
+        else:
+            # No one held the position on this date - check if there's a future person
+            current_person = get_current_person_for_position(session, person_id)
+            if current_person:
+                person_name = current_person["name"]
+                # Only show OFF if date is before the current person's employment started
+                if current_person.get("effective_from") and date < current_person["effective_from"]:
+                    show_off_before_employment = True
 
     # If date is before current person's employment, show OFF
     if show_off_before_employment:
@@ -719,18 +725,24 @@ def _populate_single_person_day(
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
 
-    # Get person name via PersonHistory (shows current holder of position)
+    # Get person name via PersonHistory (shows correct person for this specific date)
     person_name = persons[person_id - 1].name  # Default fallback
     show_off_before_employment = False
 
     if session:
-        # Get the current person at this position
-        current_person = get_current_person_for_position(session, person_id)
-        if current_person:
-            person_name = current_person["name"]
-            # Check if date is before this person's employment started
-            if current_person.get("effective_from") and current_day < current_person["effective_from"]:
-                show_off_before_employment = True
+        # First check who held this position on this specific date
+        date_person = get_person_for_date(session, person_id, current_day)
+        if date_person:
+            # Someone held this position on this date - use their name, no OFF
+            person_name = date_person["name"]
+        else:
+            # No one held the position on this date - check if there's a future person
+            current_person = get_current_person_for_position(session, person_id)
+            if current_person:
+                person_name = current_person["name"]
+                # Only show OFF if date is before the current person's employment started
+                if current_person.get("effective_from") and current_day < current_person["effective_from"]:
+                    show_off_before_employment = True
 
     # If date is before current person's employment, show OFF
     if show_off_before_employment:
