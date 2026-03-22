@@ -157,6 +157,7 @@ def generate_period_data(
     session=None,
     user_wages: dict[int, int] | None = None,
     user_rates_map: dict[int, dict] | None = None,
+    employment_start: datetime.date | None = None,
 ) -> list[dict]:
     """
     Genererar schemadat för en godtycklig period.
@@ -251,6 +252,7 @@ def generate_period_data(
                 oncall_override_map,
                 swap_map,
                 user_rates_map=user_rates_map,
+                employment_start=employment_start,
             )
 
         days_out.append(day_info)
@@ -279,12 +281,15 @@ def generate_month_data(
     session=None,
     user_wages: dict[int, int] | None = None,
     user_rates_map: dict[int, dict] | None = None,
+    employment_start: datetime.date | None = None,
 ) -> list[dict]:
     """Genererar schemadat för en specifik månad."""
     start_date = datetime.date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
     end_date = datetime.date(year, month, last_day)
-    return generate_period_data(start_date, end_date, person_id, session, user_wages, user_rates_map)
+    return generate_period_data(
+        start_date, end_date, person_id, session, user_wages, user_rates_map, employment_start=employment_start
+    )
 
 
 # === Privata hjälpfunktioner ===
@@ -720,6 +725,7 @@ def _populate_single_person_day(
     oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
     swap_map: dict[tuple[int, datetime.date], str] | None = None,
     user_rates_map: dict[int, dict] | None = None,
+    employment_start: datetime.date | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -743,6 +749,15 @@ def _populate_single_person_day(
                 # Only show OFF if date is before the current person's employment started
                 if current_person.get("effective_from") and current_day < current_person["effective_from"]:
                     show_off_before_employment = True
+
+    # Override: if the viewing user hasn't started yet, show before_employment
+    # regardless of who held the position historically (e.g., their predecessor)
+    if employment_start and current_day < employment_start and not show_off_before_employment:
+        if session:
+            current_person = get_current_person_for_position(session, person_id)
+            if current_person:
+                person_name = current_person["name"]
+        show_off_before_employment = True
 
     # If date is before current person's employment, show OFF
     if show_off_before_employment:

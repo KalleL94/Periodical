@@ -655,8 +655,21 @@ async def show_month_for_person(
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
     # Use rotation_position for schedule calculation
+    # For user_id lookups, pass the user's employment start so dates before it show as before_employment
+    viewer_employment_start = None
+    if person_id > 10:
+        from app.core.schedule.person_history import get_employment_period
+
+        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        viewer_employment_start = emp_start
+
     calendar_data = build_calendar_grid_for_month(
-        year, month, person_id=rotation_position, session=db, include_coworkers=True
+        year,
+        month,
+        person_id=rotation_position,
+        session=db,
+        include_coworkers=True,
+        employment_start=viewer_employment_start,
     )
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]
@@ -704,6 +717,14 @@ async def show_month_for_person(
                 except Exception:
                     pass
 
+    # Hide summary stats if the entire month is before the viewer's employment start
+    import calendar as _cal_mod
+    from datetime import date as _date
+
+    before_employment_month = viewer_employment_start is not None and viewer_employment_start > _date(
+        year, month, _cal_mod.monthrange(year, month)[1]
+    )
+
     return render_template(
         templates,
         "month.html",
@@ -719,6 +740,7 @@ async def show_month_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "vacation_month": vacation_month,
+            "before_employment_month": before_employment_month,
         },
         user=current_user,
     )

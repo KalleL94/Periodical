@@ -259,6 +259,7 @@ def build_calendar_grid_for_month(
     session=None,
     user_wages: dict[int, int] | None = None,
     include_coworkers: bool = False,
+    employment_start=None,
 ) -> dict:
     """
     Bygger en komplett kalendergrid inklusive intilliggande månaders dagar.
@@ -293,7 +294,9 @@ def build_calendar_grid_for_month(
     grid_end = last_day + timedelta(days=(6 - last_weekday))
 
     # Hämta data för extended range
-    extended_days = generate_period_data(grid_start, grid_end, person_id, session=session, user_wages=user_wages)
+    extended_days = generate_period_data(
+        grid_start, grid_end, person_id, session=session, user_wages=user_wages, employment_start=employment_start
+    )
 
     # Fetch all persons' data if coworkers requested
     all_persons_data = None
