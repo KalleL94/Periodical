@@ -100,6 +100,61 @@ def get_rotation_length_for_date(date: datetime.date) -> int | None:
 
 
 @cache
+def _get_effective_start_week(
+    era_start: datetime.date,
+    era_length: int,
+    original_start_week: int,
+) -> int:
+    """
+    Beräknar den effektiva startveckan för en era med hänsyn till föregående eror.
+
+    För den första eran returneras original_start_week direkt. För efterföljande
+    eror beräknas vilken rotationsvecka personen var på vid den sista måndagen
+    INNAN den nya erans första måndag, och den veckan används som startoffset.
+    Detta garanterar att rotationspositionen fortsätter sömlöst över eragränser.
+
+    Args:
+        era_start: Erans startdatum
+        era_length: Erans rotationslängd (antal veckor)
+        original_start_week: Personens ursprungliga rotation_person_id
+
+    Returns:
+        Effektiv startvecka (1-indexerad) för denna era
+    """
+    # Kolla om det finns en föregående era
+    prev_era = get_rotation_era_for_date(era_start - datetime.timedelta(days=1))
+    if prev_era is None or prev_era.start_date == era_start:
+        # Första eran: använd original_start_week som stagger-offset
+        return original_start_week
+
+    # Beräkna den nya erans första måndag
+    days_to_monday_new = (7 - era_start.weekday()) % 7
+    first_monday_new = era_start + datetime.timedelta(days=days_to_monday_new)
+
+    # Den sista måndagen INNAN den nya erans första måndag (= sista ISO-veckan i föregående era)
+    last_monday_prev = first_monday_new - datetime.timedelta(days=7)
+
+    # Hämta den effektiva startveckan för föregående era (rekursivt för kedjor av eror)
+    prev_eff_start = _get_effective_start_week(prev_era.start_date, prev_era.rotation_length, original_start_week)
+
+    # Beräkna weeks_passed för last_monday_prev i föregående era
+    days_to_monday_prev = (7 - prev_era.start_date.weekday()) % 7
+    first_monday_prev = prev_era.start_date + datetime.timedelta(days=days_to_monday_prev)
+
+    if last_monday_prev < first_monday_prev:
+        weeks_passed_prev = 0
+    else:
+        weeks_passed_prev = 1 + ((last_monday_prev - first_monday_prev).days // 7)
+
+    # Personens rotationsvecka vid den sista måndagen i föregående era
+    rotation_week_at_lm = ((weeks_passed_prev + (prev_eff_start - 1)) % prev_era.rotation_length) + 1
+
+    # Den nya erans effektiva startvecka: fortsätt från samma rotationsposition
+    # (mappas till 1..era_length om längden ändrats)
+    return ((rotation_week_at_lm - 1) % era_length) + 1
+
+
+@cache
 def determine_shift_for_date(
     date: datetime.date,
     start_week: int = 1,
@@ -122,6 +177,9 @@ def determine_shift_for_date(
     shift_types = get_shift_types()
     rotation_start = era.start_date
 
+    # Beräkna effektiv startvecka med hänsyn till föregående eror
+    effective_start_week = _get_effective_start_week(era.start_date, era.rotation_length, start_week)
+
     # Beräkna första måndagen efter rotationsstart
     days_to_monday = (7 - rotation_start.weekday()) % 7
     if days_to_monday == 0 and rotation_start.weekday() != 0:
@@ -136,7 +194,7 @@ def determine_shift_for_date(
         weeks_passed = 1 + ((date - first_monday).days // 7)
 
     # Använd erans rotation_length för modulo-beräkningen
-    rotation_week = ((weeks_passed + (start_week - 1)) % era.rotation_length) + 1
+    rotation_week = ((weeks_passed + (effective_start_week - 1)) % era.rotation_length) + 1
     weekday_index = date.weekday()
 
     # Använd erans weeks_pattern
@@ -155,6 +213,9 @@ def _calculate_shift_hours_cached(
     shift = next((s for s in get_shift_types() if s.code == shift_code), None)
 
     if shift is None or shift.code == "OFF":
+        return 0.0, None, None
+
+    if not shift.start_time or not shift.end_time:
         return 0.0, None, None
 
     start_time = datetime.datetime.strptime(shift.start_time, "%H:%M").time()
@@ -204,6 +265,7 @@ def calculate_shift_hours(
 def clear_schedule_cache() -> None:
     """Rensar alla cachade schemaberäkningar."""
     get_rotation_era_for_date.cache_clear()
+    _get_effective_start_week.cache_clear()
     determine_shift_for_date.cache_clear()
     _calculate_shift_hours_cached.cache_clear()
 
