@@ -642,9 +642,10 @@ def summarize_year_for_person(
 
         start_date, end_date = get_employment_period(session, current_user.id, person_id)
 
-        # Filter based on PAYMENT month (not work month) since this view
-        # represents the tax year (deklarationsår) – what matters is when
-        # the salary is paid out, not when the work was performed.
+        # Filter on both WORK month and PAYMENT month:
+        # - Work month must not end before employment start (avoids showing
+        #   predecessor's data when salary is paid on trailing basis)
+        # - Payment month must overlap with employment period (tax year view)
         filtered_months = []
         for m in months:
             pay_year = m["payment_year"]
@@ -653,7 +654,13 @@ def summarize_year_for_person(
             last_day = calendar.monthrange(pay_year, pay_month)[1]
             month_end = dt.date(pay_year, pay_month, last_day)
 
-            # Check if there's ANY overlap between employment period and this month
+            # Skip if work month ended before employment started
+            work_last_day = calendar.monthrange(m["year"], m["month"])[1]
+            work_month_end = dt.date(m["year"], m["month"], work_last_day)
+            if start_date > work_month_end:
+                continue
+
+            # Check if there's ANY overlap between employment period and payment month
             if start_date > month_end:
                 continue
             if end_date and end_date < month_start:
