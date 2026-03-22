@@ -341,9 +341,9 @@ def build_calendar_grid_for_month(
                 else:
                     shift_code = "OT"  # Will use time-based matching
             else:
-                original_shift = day.get("original_shift")
-                shift = original_shift if original_shift else actual_shift
-                shift_code = shift.code if shift else "OFF"
+                # Use actual_shift directly - if this person has a swap, actual_shift
+                # already reflects the swapped shift code.
+                shift_code = actual_shift.code if actual_shift else "OFF"
 
             persons_today = all_persons_data.get(day_date, [])
             target_start = day.get("start")

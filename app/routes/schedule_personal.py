@@ -471,9 +471,9 @@ async def show_day_for_person(
         else:
             shift_code_for_matching = "OT"
     else:
-        # Use original_shift if available, otherwise actual shift
-        shift_for_matching = original_shift if original_shift else actual_shift_obj
-        shift_code_for_matching = shift_for_matching.code if shift_for_matching else "OFF"
+        # Use actual_shift directly - if this person has a swap, actual_shift_obj
+        # already reflects the swapped shift code.
+        shift_code_for_matching = actual_shift_obj.code if actual_shift_obj else "OFF"
 
     # Use rotation_position for coworker matching (schedule-based)
     coworkers = get_coworkers_for_day(rotation_position, shift_code_for_matching, persons_today, start_dt, end_dt)
