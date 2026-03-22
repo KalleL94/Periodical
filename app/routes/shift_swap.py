@@ -67,7 +67,7 @@ async def get_user_shifts(
         wk = (iso[0], iso[1])
         info = my_weeks.get(wk, {}).get(d, {})
         s = info.get("shift")
-        if not s or s.code in ("OFF", "OC"):
+        if not s or not s.start_time or not s.end_time:
             return None, None
         _, start_dt, end_dt = calculate_shift_hours(d, s)
         return start_dt, end_dt

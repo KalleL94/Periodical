@@ -408,12 +408,11 @@ def get_coworkers_for_day(
                     if overlap >= 4.0:
                         is_match = True
         else:
-            # Regular work shift (N1, N2, N3)
-            # Use original_shift if available (for when target has OT)
-            original_shift = person_data.get("original_shift")
-            shift_for_matching = original_shift if original_shift else actual_shift
-
-            if shift_for_matching.code == target_shift_code:
+            # Regular work shift (N1, N2, N3) - use actual shift for matching.
+            # original_shift is not used here: if this person has a swap, actual_shift
+            # already reflects the swapped shift, and original_shift would be their
+            # rotation-based shift (e.g. OFF), which would give a false non-match.
+            if actual_shift.code == target_shift_code:
                 is_match = True
 
         if is_match:

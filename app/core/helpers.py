@@ -151,4 +151,4 @@ def render_template(
         lang = user.language
     ctx = {"request": request, "user": user, "now": get_today(), "t": TRANSLATIONS.get(lang, TRANSLATIONS["sv"])}
     ctx.update(context)
-    return templates.TemplateResponse(template_name, ctx)
+    return templates.TemplateResponse(request, template_name, ctx)
