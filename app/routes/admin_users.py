@@ -132,7 +132,7 @@ async def admin_edit_user_page(
         if edit_transition.variable_avg_daily_override is None:
             earning_start, earning_end = get_earning_year(edit_transition)
             admin_auto_variable_avg = calculate_variable_avg_daily(edit_user, db, earning_start, earning_end)
-        admin_auto_vacation_days = calculate_consultant_vacation_days(edit_user, edit_transition)
+        admin_auto_vacation_days = calculate_consultant_vacation_days(edit_user, edit_transition, session=db)
 
     return render(
         "admin_user_edit.html",
@@ -579,7 +579,7 @@ async def admin_transition_save(
             earning_year_start=None,
             earning_year_end=None,
         )
-        parsed_vacation_days = float(calculate_consultant_vacation_days(edit_user, temp) or 0)
+        parsed_vacation_days = float(calculate_consultant_vacation_days(edit_user, temp, session=db) or 0)
 
     variable_override: float | None = None
     if variable_avg_daily_override.strip():
@@ -690,6 +690,26 @@ async def admin_transition_delete(
                 RateHistory.user_id == user_id,
                 RateHistory.effective_from == t_date,
             ).delete()
+            # Reopen the previous rate entry that was closed when the transition was created
+            prev_rate = (
+                db.query(RateHistory)
+                .filter(
+                    RateHistory.user_id == user_id,
+                    RateHistory.effective_to == t_date - datetime.timedelta(days=1),
+                )
+                .first()
+            )
+            if prev_rate:
+                later = (
+                    db.query(RateHistory)
+                    .filter(
+                        RateHistory.user_id == user_id,
+                        RateHistory.effective_from > prev_rate.effective_from,
+                    )
+                    .first()
+                )
+                if not later:
+                    prev_rate.effective_to = None
         db.delete(transition)
         try:
             db.commit()

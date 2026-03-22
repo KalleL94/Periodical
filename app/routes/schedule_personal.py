@@ -103,18 +103,26 @@ async def show_day_for_person(
     original_shift = shift  # Keep track of original shift for OC calculation
 
     # Check if date is before user's employment started - show OFF if so
-    from app.core.schedule.person_history import get_current_person_for_position
+    from app.core.schedule.person_history import get_current_person_for_position, get_employment_period
 
-    current_person = get_current_person_for_position(db, rotation_position)
-    if current_person and current_person.get("effective_from"):
-        if date_obj < current_person["effective_from"]:
-            # Change shift to OFF
-            from app.core.storage import load_shift_types
+    before_employment = False
+    if person_id > 10:
+        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        if emp_start and date_obj < emp_start:
+            before_employment = True
+    else:
+        current_person = get_current_person_for_position(db, rotation_position)
+        if current_person and current_person.get("effective_from"):
+            if date_obj < current_person["effective_from"]:
+                before_employment = True
 
-            all_shifts = load_shift_types()
-            off_shift = next((s for s in all_shifts if s.code == "OFF"), None)
-            if off_shift:
-                shift = off_shift
+    if before_employment:
+        from app.core.storage import load_shift_types
+
+        all_shifts = load_shift_types()
+        off_shift = next((s for s in all_shifts if s.code == "OFF"), None)
+        if off_shift:
+            shift = off_shift
 
     # Fetch oncall override EARLY to apply before hours calculation
     # Use user_id_for_wages since oncall overrides are stored per user
@@ -502,8 +510,9 @@ async def show_day_for_person(
             "absence_deduction": absence_deduction,  # Deduction amount in SEK
             "absence_shift_hours": absence_shift_hours,  # Hours for the shift
             "is_karens": is_karens,  # Whether this is a karensdag
-            "coworkers": coworkers,  # List of coworker names
-            "all_working_persons": persons_today_with_shift,
+            "before_employment": before_employment,
+            "coworkers": coworkers if not before_employment else [],
+            "all_working_persons": persons_today_with_shift if not before_employment else [],
             "swap_users": [
                 u
                 for u in db.query(User)
@@ -567,7 +576,22 @@ async def show_week_for_person(
             return redirect
 
     # Use rotation_position for schedule calculation
-    days_in_week = build_week_data(year, week, person_id=rotation_position, session=db, include_coworkers=True)
+    # For user_id lookups, pass employment start so before-employment days show correctly
+    week_employment_start = None
+    if person_id > 10:
+        from app.core.schedule.person_history import get_employment_period
+
+        week_emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        week_employment_start = week_emp_start
+
+    days_in_week = build_week_data(
+        year,
+        week,
+        person_id=rotation_position,
+        session=db,
+        include_coworkers=True,
+        employment_start=week_employment_start,
+    )
 
     monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)
@@ -655,8 +679,21 @@ async def show_month_for_person(
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
     # Use rotation_position for schedule calculation
+    # For user_id lookups, pass the user's employment start so dates before it show as before_employment
+    viewer_employment_start = None
+    if person_id > 10:
+        from app.core.schedule.person_history import get_employment_period
+
+        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        viewer_employment_start = emp_start
+
     calendar_data = build_calendar_grid_for_month(
-        year, month, person_id=rotation_position, session=db, include_coworkers=True
+        year,
+        month,
+        person_id=rotation_position,
+        session=db,
+        include_coworkers=True,
+        employment_start=viewer_employment_start,
     )
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]
@@ -704,6 +741,14 @@ async def show_month_for_person(
                 except Exception:
                     pass
 
+    # Hide summary stats if the entire month is before the viewer's employment start
+    import calendar as _cal_mod
+    from datetime import date as _date
+
+    before_employment_month = viewer_employment_start is not None and viewer_employment_start > _date(
+        year, month, _cal_mod.monthrange(year, month)[1]
+    )
+
     return render_template(
         templates,
         "month.html",
@@ -719,6 +764,7 @@ async def show_month_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "vacation_month": vacation_month,
+            "before_employment_month": before_employment_month,
         },
         user=current_user,
     )

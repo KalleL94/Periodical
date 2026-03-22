@@ -48,7 +48,8 @@
 <h2 class="page-title">{{ t.month_page_title.replace('{month}', month|string).replace('{year}', year|string).replace('{name}', person_name) }}</h2>
 
 
-    {# Summary row - visa bara lönedata om show_salary #}
+    {# Summary row - visa bara lönedata om show_salary, dölj helt om månaden är före anställningsstart #}
+    {% if not before_employment_month %}
     <table class="summary">
         {% if show_salary %}
         <thead>
@@ -100,6 +101,7 @@
         <span style="color: var(--muted);">({{ "%.0f"|format(vacation_month.supplement_per_day) }} kr/dag)</span>
     </div>
     {% endif %}
+    {% endif %}{# /before_employment_month #}
 
     {# Calendar grid view #}
     {% set weekday_names_short = t.week_day_names | from_json %}
