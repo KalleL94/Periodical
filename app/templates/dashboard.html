@@ -70,7 +70,17 @@
             <!-- Veckosummering -->
             {% if week_summary %}
             <div class="card">
-                <h3>{{ t.dashboard_this_week }}</h3>
+                <div class="period-nav-header">
+                    <a href="{{ prev_week_url }}" class="period-nav-btn" title="Föregående vecka">&#8249;</a>
+                    <h3>
+                        {% if is_current_week %}
+                            {{ t.dashboard_this_week }}
+                        {% else %}
+                            {% if t.html_lang == 'en' %}Week{% else %}Vecka{% endif %} {{ view_iso_week }}, {{ view_iso_year_w }}
+                        {% endif %}
+                    </h3>
+                    <a href="{{ next_week_url }}" class="period-nav-btn" title="Nästa vecka">&#8250;</a>
+                </div>
                 {% if week_schedule %}
                 <div class="week-schedule">
                     {% for day in week_schedule %}
@@ -121,7 +131,17 @@
             <!-- Månadsummering -->
             {% if month_summary %}
             <div class="card">
-                <h3>{{ t.dashboard_this_month.replace('{month}', _month_names[month_summary.month_number - 1]) }}</h3>
+                <div class="period-nav-header">
+                    <a href="{{ prev_month_url }}" class="period-nav-btn" title="Föregående månad">&#8249;</a>
+                    <h3>
+                        {% if is_current_month %}
+                            {{ t.dashboard_this_month.replace('{month}', _month_names[month_summary.month_number - 1]) }}
+                        {% else %}
+                            {{ _month_names[month_summary.month_number - 1] }} {{ month_summary.year }}
+                        {% endif %}
+                    </h3>
+                    <a href="{{ next_month_url }}" class="period-nav-btn" title="Nästa månad">&#8250;</a>
+                </div>
                 <div class="summary-grid">
                     <div class="summary-item">
                         <div class="summary-label">{{ t.dashboard_total_hours }}</div>

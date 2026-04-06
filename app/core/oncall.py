@@ -664,6 +664,7 @@ def calculate_oncall_pay(
     monthly_salary: int,
     oncall_rules: list[OnCallRule] | None = None,
     rate_overrides: dict[str, int | float] | None = None,
+    excluded_intervals: list[tuple[datetime.datetime, datetime.datetime]] | None = None,
 ) -> dict:
     """
     Calculate on-call compensation for a 24-hour shift.
@@ -674,6 +675,8 @@ def calculate_oncall_pay(
         date: Date when on-call shift starts (at 00:00)
         monthly_salary: Employee's monthly salary for rate calculation
         oncall_rules: Optional list of rules (if None, uses cached rules for year)
+        excluded_intervals: Time intervals to treat as already covered (e.g. an OT shift
+            on the same day) so they are excluded from on-call pay.
 
     Returns:
         Dict with:
@@ -694,8 +697,8 @@ def calculate_oncall_pay(
     # Sort rules by priority (highest first)
     sorted_rules = sorted(oncall_rules, key=lambda r: r.priority, reverse=True)
 
-    # Track covered time and results
-    covered: list[tuple[datetime.datetime, datetime.datetime]] = []
+    # Track covered time and results; pre-populate with any excluded intervals (e.g. OT)
+    covered: list[tuple[datetime.datetime, datetime.datetime]] = list(excluded_intervals or [])
     breakdown: dict[str, dict] = {}
     segments: list[dict] = []
 

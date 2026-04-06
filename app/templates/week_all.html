@@ -61,15 +61,10 @@
                     <td class="person-name-cell">
                         {% if days and days|length > 0 and days[0].persons|length >= person_id %}
                             {% set person_data = days[0].persons[person_id - 1] %}
-                            {% if user and (user.role.value == 'admin' or user.id == person_id) %}
-                                <a href="/week/{{ person_id }}?year={{ year }}&week={{ week }}">
-                                    {{ person_data.person_name }}<br>
-                                    <small>(#{{ person_id }})</small>
-                                </a>
-                            {% else %}
+                            <a href="/week/{{ person_id }}?year={{ year }}&week={{ week }}">
                                 {{ person_data.person_name }}<br>
                                 <small>(#{{ person_id }})</small>
-                            {% endif %}
+                            </a>
                         {% else %}
                             Person {{ person_id }}
                         {% endif %}

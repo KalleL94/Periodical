@@ -196,6 +196,8 @@ async def show_year_all(
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
+    real_today = get_today()
+
     return render_template(
         templates,
         "year_all.html",
@@ -208,6 +210,7 @@ async def show_year_all(
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
+            "today": real_today,
         },
         user=current_user,
     )

@@ -553,12 +553,10 @@ async def show_week_for_person(
         if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        user_id_for_wages = person_id
         rotation_position = target_user.rotation_person_id
         person_name = target_user.name
     else:
         person_id = validate_person_id(person_id)
-        user_id_for_wages = person_id
         rotation_position = person_id
         pos_user = db.query(User).filter(User.person_id == rotation_position, User.is_active == 1).first()
         person_name = pos_user.name if pos_user else None
@@ -568,12 +566,6 @@ async def show_week_for_person(
 
     year = year or iso_year
     week = week or iso_week
-
-    if current_user is not None:
-        if redirect := redirect_if_not_own_data(
-            current_user, user_id_for_wages, f"/week/{current_user.id}?year={year}&week={week}"
-        ):
-            return redirect
 
     # Use rotation_position for schedule calculation
     # For user_id lookups, pass employment start so before-employment days show correctly
@@ -657,12 +649,6 @@ async def show_month_for_person(
 
     year = year or safe_today.year
     month = month or safe_today.month
-
-    if current_user is not None:
-        if redirect := redirect_if_not_own_data(
-            current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
-        ):
-            return redirect
 
     validate_date_params(year, month, None)
 
@@ -1054,11 +1040,6 @@ async def year_view(
         user_id_for_wages = person_id  # Same as person_id for legacy users
         rotation_position = person_id
         person_name = None  # Will be looked up below
-
-    if redirect := redirect_if_not_own_data(
-        current_user, user_id_for_wages, f"/year/{current_user.id}?year={year or ''}"
-    ):
-        return redirect
 
     if with_person_id is not None:
         with_person_id = validate_person_id(with_person_id)
