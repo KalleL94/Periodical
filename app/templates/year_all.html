@@ -13,6 +13,11 @@
     </div>
 
     <div class="page-header-right">
+        {% if today is defined and today.year == year %}
+        <button id="toggle-past-btn" class="btn secondary" onclick="togglePastRows()">
+            {% if t.html_lang == 'en' %}Show past days{% else %}Visa passerade dagar{% endif %}
+        </button>
+        {% endif %}
         {# Visa bara länk till egen year-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
             {% for i in person_ids %}
@@ -46,9 +51,7 @@
                     <th class="w-lg">{{ t.month_all_date_col }}</th>
                     {% for p in person_headers %}
                         <th class="person-header">
-                            {# Länka bara till egen sida eller om admin #}
                             {% if user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
-                                {# Om det är användarens egen position, länka till user.id, annars person_id #}
                                 {% set link_id = user.id if user.rotation_person_id == p.person_id else p.person_id %}
                                 <a href="/year/{{ link_id }}?year={{ year }}">
                                     {{ p.person_name }}<br>
@@ -65,7 +68,7 @@
             <tbody>
                 {% set weekday_names_full = t.weekday_names_full | from_json %}
                 {% for day in days %}
-                    <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
+                    <tr class="shift-row {% if today is defined and day.date == today %}today-row{% elif today is defined and day.date < today %}past-row{% endif %}">
                         <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
                             {{ day.date }}
@@ -117,8 +120,35 @@
     </div>
 
 <script>
+// Hide/show past days toggle
+var pastRowsVisible = false;
+
+function togglePastRows() {
+    pastRowsVisible = !pastRowsVisible;
+    var rows = document.querySelectorAll('tr.past-row');
+    rows.forEach(function(row) {
+        row.style.display = pastRowsVisible ? '' : 'none';
+    });
+    var btn = document.getElementById('toggle-past-btn');
+    if (btn) {
+        var lang = document.documentElement.lang || 'sv';
+        if (pastRowsVisible) {
+            btn.textContent = lang === 'en' ? 'Hide past days' : 'Dölj passerade dagar';
+        } else {
+            btn.textContent = lang === 'en' ? 'Show past days' : 'Visa passerade dagar';
+        }
+    }
+}
+
 // Lazy-load OB totals via AJAX for better performance
 document.addEventListener('DOMContentLoaded', function() {
+    // Hide past rows on load and scroll to today
+    var pastRows = document.querySelectorAll('tr.past-row');
+    pastRows.forEach(function(row) { row.style.display = 'none'; });
+    var todayRow = document.querySelector('tr.today-row');
+    if (todayRow) {
+        todayRow.scrollIntoView({ behavior: 'instant', block: 'center' });
+    }
     {% if user and user.role.value == 'admin' %}
     const year = {{ year }};
     const personIds = [

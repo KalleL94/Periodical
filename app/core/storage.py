@@ -234,8 +234,21 @@ def load_tax_table(year: int | None = None) -> dict[str, list[dict]]:
     file_path = Path(f"data/skattetabell{year}.csv")
 
     if not file_path.exists():
-        logger.error("Tax table file not found at %s", file_path)
-        raise StorageError(f"Tax table file not found: {file_path}")
+        # Fall back to the most recent available year
+        fallback_year = year - 1
+        while fallback_year >= 2020:
+            fallback_path = Path(f"data/skattetabell{fallback_year}.csv")
+            if fallback_path.exists():
+                logger.warning("Tax table for %d not found, falling back to %d", year, fallback_year)
+                if fallback_year in _tax_table_cache:
+                    return _tax_table_cache[fallback_year]
+                file_path = fallback_path
+                year = fallback_year
+                break
+            fallback_year -= 1
+        else:
+            logger.error("Tax table file not found at %s", file_path)
+            raise StorageError(f"Tax table file not found: {file_path}")
 
     try:
         import csv

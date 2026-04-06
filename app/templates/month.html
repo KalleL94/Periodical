@@ -48,8 +48,8 @@
 <h2 class="page-title">{{ t.month_page_title.replace('{month}', month|string).replace('{year}', year|string).replace('{name}', person_name) }}</h2>
 
 
-    {# Summary row - visa bara lönedata om show_salary, dölj helt om månaden är före anställningsstart #}
-    {% if not before_employment_month %}
+    {# Summary row - dölj helt om show_salary saknas eller om månaden är före anställningsstart #}
+    {% if not before_employment_month and show_salary %}
     <table class="summary">
         {% if show_salary %}
         <thead>
@@ -77,9 +77,9 @@
                 {% if show_salary %}
                 <td data-label="{{ t.month_sum_net }}">{{ "%.0f"|format(days.netto_pay or 0) }}</td>
                 <td data-label="{{ t.month_sum_gross }}">{{ "%.0f"|format(days.brutto_pay or 0) }}</td>
-                {% endif %}
                 <td data-label="{{ t.month_sum_shifts }}">{{ days.num_shifts }}</td>
                 <td data-label="{{ t.month_sum_hours }}">{{ "%.2f"|format(days.total_hours or 0) }}</td>
+                {% endif %}
                 {% if show_salary %}
                 <td data-label="{{ t.month_sum_total_ob }}">{{ "%.2f"|format(total_ob) }}</td>
                 <td data-label="{{ t.month_sum_evening }}">{{ "%.2f"|format(days.ob_hours.get('OB1',0) or 0) }}</td>
