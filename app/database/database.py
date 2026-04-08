@@ -153,13 +153,21 @@ class Absence(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     date = Column(Date, nullable=False)
     absence_type = Column(SQLEnum(AbsenceType), nullable=False)
+    left_at = Column(String(5), nullable=True)  # "HH:MM" - klockslag när de slutade jobba (None = heldag)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
 
+    @property
+    def is_partial_day(self) -> bool:
+        return self.left_at is not None
+
     def __repr__(self):
-        return f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.absence_type})>"
+        return (
+            f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, "
+            f"type={self.absence_type}, left_at={self.left_at})>"
+        )
 
 
 class OnCallOverride(Base):

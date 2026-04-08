@@ -280,6 +280,9 @@
                                     {% else %}
                                         {{ absence.absence_type.value }}
                                     {% endif %}
+                                    {% if absence.left_at is not none %}
+                                        <span style="color: var(--text-muted); font-size: 0.9em;">(slutade {{ absence.left_at }})</span>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
@@ -290,6 +293,9 @@
                                         <span class="badge" style="background: #a855f7; color: white;">{{ t.day_absence_leave }}</span>
                                     {% elif absence.absence_type.value == 'OFF' %}
                                         <span class="badge" style="background: #888888; color: white;">{{ t.day_absence_off }}</span>
+                                    {% endif %}
+                                    {% if absence.left_at is not none %}
+                                        <span class="badge" style="background: #0ea5e9; color: white;">Deldag</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -313,11 +319,36 @@
                         </thead>
                         <tbody>
                             <tr>
-                                <td>{{ "%.2f"|format(absence_shift_hours) }} h</td>
+                                <td>
+                                    {% if absence.absence_type.value == 'SICK' %}
+                                        {% if karens_hours_today > 0 and sjuklon_hours_today > 0 %}
+                                            {{ "%.1f"|format(karens_hours_today) }} h karens + {{ "%.1f"|format(sjuklon_hours_today) }} h sjuklön
+                                        {% elif karens_hours_today > 0 %}
+                                            {% if absence.left_at is not none %}
+                                                {{ "%.1f"|format(karens_hours_today) }} h (karens, slutade {{ absence.left_at }})
+                                            {% else %}
+                                                8,0 h (karens)
+                                            {% endif %}
+                                        {% else %}
+                                            {% if absence.left_at is not none %}
+                                                {{ "%.1f"|format(sjuklon_hours_today) }} h (slutade {{ absence.left_at }})
+                                            {% else %}
+                                                {{ "%.2f"|format(absence_shift_hours) }} h
+                                            {% endif %}
+                                        {% endif %}
+                                    {% elif absence.left_at is not none %}
+                                        {{ "%.1f"|format(absence_shift_hours) }} h (slutade {{ absence.left_at }})
+                                    {% else %}
+                                        {{ "%.2f"|format(absence_shift_hours) }} h
+                                    {% endif %}
+                                </td>
                                 <td>{{ "%.2f"|format(absence_deduction) }} kr</td>
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
-                                        {% if is_karens %}
+                                        {% if karens_hours_today > 0 and sjuklon_hours_today > 0 %}
+                                            <span class="badge" style="background: #dc2626; color: white;">{{ t.day_karens }}</span>
+                                            + {{ t.day_sick_deduction }}
+                                        {% elif karens_hours_today > 0 %}
                                             <span class="badge" style="background: #dc2626; color: white;">{{ t.day_karens }}</span>
                                         {% else %}
                                             {{ t.day_sick_deduction }}
@@ -352,6 +383,11 @@
                                 <option value="LEAVE">{{ t.day_absence_leave }}</option>
                                 <option value="OFF">{{ t.day_absence_off }}</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="left_at">Slutade (lämna tomt = heldag)</label>
+                            <input type="time" id="left_at" name="left_at"
+                                   placeholder="HH:MM">
                         </div>
                     </div>
 

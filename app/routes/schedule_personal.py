@@ -244,6 +244,19 @@ async def show_day_for_person(
     # Absences are stored per user_id
     absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
 
+    # Partiell frånvaro: trunkera end_dt till left_at och räkna om OB
+    if absence and absence.left_at and start_dt is not None and end_dt is not None:
+        left_time = datetime.strptime(absence.left_at, "%H:%M").time()
+        truncated_end = datetime.combine(date_obj, left_time)
+        if truncated_end > start_dt:
+            end_dt = truncated_end
+            hours = (end_dt - start_dt).total_seconds() / 3600.0
+            if not is_full_ot and not is_effective_oc:
+                ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                ob_pay = calculate_ob_pay(
+                    start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
+                )
+
     if ot_shift and not absence:  # Skip OT if there's an absence
         from app.core.models import ShiftType
         from app.core.storage import load_shift_types
@@ -411,33 +424,44 @@ async def show_day_for_person(
     absence_deduction = 0.0
     absence_shift_hours = 0.0
     is_karens = False
+    karens_hours_today = 0.0
+    sjuklon_hours_today = 0.0
 
     if absence and show_salary:
-        from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
-
-        # Get shift hours for the day (uses rotation_position for schedule)
-        absence_shift_hours = get_shift_hours_for_date(db, rotation_position, date_obj)
-
-        # Check if this is a karensdag (first sick day in a period)
-        if absence.absence_type.value == "SICK":
-            # Check if there was a sick day within the last 5 days
-            five_days_ago = date_obj - timedelta(days=5)
-            previous_sick = (
-                db.query(Absence)
-                .filter(
-                    Absence.user_id == user_id_for_wages,
-                    Absence.date >= five_days_ago,
-                    Absence.date < date_obj,
-                    Absence.absence_type == absence.absence_type,
-                )
-                .first()
-            )
-            is_karens = previous_sick is None
-
-        # Calculate deduction
-        absence_deduction = calculate_absence_deduction(
-            monthly_salary, absence.absence_type.value, absence_shift_hours, is_karens
+        from app.core.schedule.wages import (
+            KARENS_HOURS,
+            calculate_absence_deduction,
+            get_absent_hours_from_left_at,
+            get_karens_consumed_before_date,
+            get_shift_times_for_date,
         )
+
+        # Get shift hours and times for the day
+        full_shift_hours, _, shift_end_dt = get_shift_times_for_date(db, rotation_position, date_obj)
+        absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, full_shift_hours)
+        # absence_shift_hours visas i templaten
+        absence_shift_hours = absent_hours
+
+        if absence.absence_type.value == "SICK":
+            karens_consumed = get_karens_consumed_before_date(db, user_id_for_wages, date_obj)
+            karens_remaining = max(0.0, KARENS_HOURS - karens_consumed)
+            karens_hours_today = min(absent_hours, karens_remaining)
+            sjuklon_hours_today = absent_hours - karens_hours_today
+            is_karens = karens_hours_today > 0
+            absence_deduction = calculate_absence_deduction(
+                monthly_salary,
+                absence.absence_type.value,
+                full_shift_hours,
+                absent_hours=absent_hours,
+                karens_remaining=karens_remaining,
+            )
+        else:
+            is_karens = False
+            karens_hours_today = 0.0
+            sjuklon_hours_today = absent_hours
+            absence_deduction = calculate_absence_deduction(
+                monthly_salary, absence.absence_type.value, full_shift_hours, absent_hours=absent_hours
+            )
 
     # Get coworkers for this day
     from app.core.schedule import generate_period_data
@@ -507,9 +531,11 @@ async def show_day_for_person(
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
             "absence": absence,  # Pass absence data to template
-            "absence_deduction": absence_deduction,  # Deduction amount in SEK
-            "absence_shift_hours": absence_shift_hours,  # Hours for the shift
-            "is_karens": is_karens,  # Whether this is a karensdag
+            "absence_deduction": absence_deduction,
+            "absence_shift_hours": absence_shift_hours,
+            "is_karens": is_karens,
+            "karens_hours_today": karens_hours_today,
+            "sjuklon_hours_today": sjuklon_hours_today,
             "before_employment": before_employment,
             "coworkers": coworkers if not before_employment else [],
             "all_working_persons": persons_today_with_shift if not before_employment else [],

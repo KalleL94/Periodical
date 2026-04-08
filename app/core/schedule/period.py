@@ -570,9 +570,34 @@ def _build_person_day_basic(
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == date).first()
 
     if absence:
-        # VACATION absences use the SEM shift (same as week-based vacation)
         from app.database.database import AbsenceType
 
+        # Partiell frånvaro: visa originalskiftet men med trunkerad sluttid
+        if absence.left_at is not None and absence.absence_type != AbsenceType.VACATION:
+            result = determine_shift_for_date(date, person_id)
+            if result and result[0]:
+                original_shift, rotation_week = result
+                hours, start, end = calculate_shift_hours(date, original_shift.code)
+                if start is not None and absence.left_at:
+                    left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
+                    end = datetime.datetime.combine(date, left_time)
+                    if end <= start:
+                        end = start  # säkerhetsventil
+                    hours = (end - start).total_seconds() / 3600.0
+                return {
+                    "person_id": person_id,
+                    "person_name": person_name,
+                    "shift": original_shift,
+                    "original_shift": original_shift,
+                    "rotation_week": rotation_week,
+                    "rotation_length": rotation_length,
+                    "hours": hours,
+                    "start": start,
+                    "end": end,
+                    "partial_absence": absence,
+                }
+
+        # VACATION absences use the SEM shift (same as week-based vacation)
         if absence.absence_type == AbsenceType.VACATION:
             absence_shift = vacation_shift
         else:
@@ -809,9 +834,46 @@ def _populate_single_person_day(
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == current_day).first()
 
     if absence:
-        # VACATION absences use the SEM shift (same as week-based vacation)
         from app.database.database import AbsenceType
 
+        # Partiell frånvaro: beräkna OB och timmar för jobbad del av passet
+        if absence.left_at is not None and absence.absence_type != AbsenceType.VACATION:
+            result = determine_shift_for_date(current_day, person_id)
+            if result and result[0]:
+                original_shift, rotation_week = result
+                hours, start, end = calculate_shift_hours(current_day, original_shift.code)
+                if start is not None and absence.left_at:
+                    left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
+                    end = datetime.datetime.combine(current_day, left_time)
+                    if end <= start:
+                        end = start
+                    hours = (end - start).total_seconds() / 3600.0
+                    ob = calculate_ob_hours(start, end, combined_ob_rules) if original_shift.code != "OC" else {}
+                else:
+                    ob = {}
+
+                day_info.update(
+                    {
+                        "person_id": person_id,
+                        "person_name": person_name,
+                        "shift": original_shift,
+                        "original_shift": original_shift,
+                        "rotation_week": rotation_week,
+                        "hours": hours,
+                        "start": start,
+                        "end": end,
+                        "ob": ob,
+                        "oncall_pay": 0.0,
+                        "oncall_details": {},
+                        "ot_pay": 0.0,
+                        "ot_hours": 0.0,
+                        "ot_details": {},
+                        "partial_absence": absence,
+                    }
+                )
+                return
+
+        # VACATION absences use the SEM shift (same as week-based vacation)
         if absence.absence_type == AbsenceType.VACATION:
             absence_shift = vacation_shift
         else:

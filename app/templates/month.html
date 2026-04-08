@@ -155,10 +155,15 @@
                                     {% else %}
                                         <span class="badge badge-off calendar-badge">OFF</span>
                                     {% endif %}
+                                    {% if day_data.partial_absence %}
+                                        <span class="badge" style="background:#ef4444;color:white;font-size:0.6rem;padding:1px 4px;" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
+                                    {% endif %}
 
                                     {% if day_data.shift and day_data.shift.code != 'OC' %}
                                         {% if day_data.shift.code == 'OT' and day_data.start and day_data.end %}
                                             <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.end | time_format }}</div>
+                                        {% elif day_data.partial_absence and day_data.start and day_data.end %}
+                                            <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.partial_absence.left_at }}</div>
                                         {% elif day_data.shift.start_time is not none %}
                                             <div class="calendar-time">{{ day_data.shift.start_time }} - {{ day_data.shift.end_time }}</div>
                                         {% endif %}

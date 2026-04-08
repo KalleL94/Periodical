@@ -27,7 +27,13 @@ from app.core.schedule import (
     ob_rules,
     rotation_start_date,
 )
-from app.core.schedule.wages import calculate_absence_deduction, get_shift_hours_for_date
+from app.core.schedule.wages import (
+    KARENS_HOURS,
+    calculate_absence_deduction,
+    get_absent_hours_from_left_at,
+    get_karens_consumed_before_date,
+    get_shift_times_for_date,
+)
 from app.core.storage import calculate_tax_from_table
 from app.core.utils import get_safe_today, get_today
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftSwap, SwapStatus, User, get_db
@@ -47,22 +53,22 @@ def _query_absence_and_deduction(
     absence = db.query(Absence).filter(Absence.user_id == user_id, Absence.date == check_date).first()
     deduction = 0.0
     if absence and show_salary:
-        shift_hours = get_shift_hours_for_date(db, user_id, check_date)
-        five_days_ago = check_date - timedelta(days=5)
-        previous_sick = None
+        shift_hours, _, shift_end_dt = get_shift_times_for_date(db, user_id, check_date)
+        absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_hours)
         if absence.absence_type.value == "SICK":
-            previous_sick = (
-                db.query(Absence)
-                .filter(
-                    Absence.user_id == user_id,
-                    Absence.date >= five_days_ago,
-                    Absence.date < check_date,
-                    Absence.absence_type == absence.absence_type,
-                )
-                .first()
+            karens_consumed = get_karens_consumed_before_date(db, user_id, check_date)
+            karens_remaining = max(0.0, KARENS_HOURS - karens_consumed)
+            deduction = calculate_absence_deduction(
+                user_wage,
+                absence.absence_type.value,
+                shift_hours,
+                absent_hours=absent_hours,
+                karens_remaining=karens_remaining,
             )
-        is_karens = previous_sick is None if absence.absence_type.value == "SICK" else False
-        deduction = calculate_absence_deduction(user_wage, absence.absence_type.value, shift_hours, is_karens)
+        else:
+            deduction = calculate_absence_deduction(
+                user_wage, absence.absence_type.value, shift_hours, absent_hours=absent_hours
+            )
     return absence, deduction
 
 
