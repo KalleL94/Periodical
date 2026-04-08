@@ -535,6 +535,7 @@ async def add_absence(
     user_id: int = Form(...),
     date_str: str = Form(..., alias="date"),
     absence_type: str = Form(...),
+    left_at: str = Form(default=""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -554,6 +555,16 @@ async def add_absence(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Ogiltig frånvarotyp: {absence_type}") from None
 
+    # Validera left_at-format HH:MM (valfritt, tomt = heldag)
+    parsed_left_at: str | None = None
+    stripped = left_at.strip()
+    if stripped:
+        import re
+
+        if not re.match(r"^\d{2}:\d{2}$", stripped):
+            raise HTTPException(status_code=400, detail="Ogiltigt klockslags-format, använd HH:MM") from None
+        parsed_left_at = stripped
+
     if current_user.role == UserRole.ADMIN:
         target_user_id = user_id
     else:
@@ -563,9 +574,15 @@ async def add_absence(
 
     if existing:
         existing.absence_type = absence_type_enum
+        existing.left_at = parsed_left_at
         db.commit()
     else:
-        new_absence = Absence(user_id=target_user_id, date=absence_date, absence_type=absence_type_enum)
+        new_absence = Absence(
+            user_id=target_user_id,
+            date=absence_date,
+            absence_type=absence_type_enum,
+            left_at=parsed_left_at,
+        )
         db.add(new_absence)
         db.commit()
 

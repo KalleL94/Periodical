@@ -322,6 +322,7 @@ def build_calendar_grid_for_month(
             "end": day.get("end"),
             "weekday_name": day.get("weekday_name"),
             "is_current_month": is_current_month,
+            "partial_absence": day.get("partial_absence"),
         }
 
         # Add coworkers if requested

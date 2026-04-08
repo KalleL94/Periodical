@@ -1,6 +1,7 @@
 """Lönehantering från databas."""
 
-from datetime import date
+import datetime
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -115,8 +116,16 @@ def get_all_user_wages(session) -> dict[int, int]:
     return wages
 
 
+KARENS_HOURS = 8.0  # Total karensbudget per sjukperiod (= 20% av normal arbetsvecka)
+
+
 def calculate_absence_deduction(
-    monthly_wage: int, absence_type: str, shift_hours: float = 8.5, is_first_sick_day: bool = False
+    monthly_wage: int,
+    absence_type: str,
+    shift_hours: float = 8.5,
+    is_first_sick_day: bool = False,
+    absent_hours: float | None = None,
+    karens_remaining: float | None = None,
 ) -> float:
     """
     Beräknar löneavdrag för frånvaro baserat på timmar.
@@ -124,78 +133,162 @@ def calculate_absence_deduction(
     Args:
         monthly_wage: Månadslön i SEK
         absence_type: Typ av frånvaro (SICK, VAB, LEAVE, OFF)
-        shift_hours: Antal timmar för skiftet (default 8.5)
-        is_first_sick_day: Om det är första sjukdagen (karensdag)
+        shift_hours: Antal timmar för skiftet (default 8.5), används om absent_hours saknas
+        is_first_sick_day: Om det är första sjukdagen (används om karens_remaining saknas)
+        absent_hours: Faktiska frånvarotimmar vid partiell dag (None = heldag = shift_hours)
+        karens_remaining: Återstående karenstimmar i sjukperioden (None = beräkna från is_first_sick_day)
 
     Returns:
         Avdrag i SEK
 
     Regler:
-        - SICK: Första dagen (karensdag) = 100% avdrag, därefter 20% avdrag (80% sjuklön från arbetsgivaren)
-        - VAB: 100% avdrag (ersättning kommer från Försäkringskassan, inte arbetsgivaren)
+        - SICK: karensbudget = 8h per sjukperiod, fördelas dag för dag tills slut
+          Varje dag: karens_idag = min(frånvarotimmar, karens_kvar)
+                     sjuklön_idag = frånvarotimmar - karens_idag (20% avdrag)
+        - VAB: 100% avdrag (FK betalar ersättning, inte arbetsgivaren)
         - LEAVE: 100% avdrag (obetald ledighet)
         - OFF: 0% avdrag (betald ledighet)
     """
-    # Beräkna timlön (månadslön / 173.33 timmar per månad enligt svensk standard)
     hourly_wage = monthly_wage / 173.33
-
-    # Beräkna lön för skiftet
-    shift_wage = hourly_wage * shift_hours
+    hours = absent_hours if absent_hours is not None else shift_hours
 
     if absence_type == "SICK":
-        if is_first_sick_day:
-            # Karensdag - 100% avdrag
-            return shift_wage
+        if karens_remaining is not None:
+            # Distribuerad karens: förbruka budget tills den är slut
+            karens_today = min(hours, karens_remaining)
+            sjuklon_hours = hours - karens_today
+            return hourly_wage * karens_today + hourly_wage * sjuklon_hours * 0.2
+        elif is_first_sick_day:
+            # Fallback (äldre anrop): dag 1 = hela karensbudgeten eller frånvarotimmar
+            karens_h = hours if absent_hours is not None else KARENS_HOURS
+            return hourly_wage * karens_h
         else:
-            # Sjuklön - 20% avdrag (arbetsgivaren betalar 80%)
-            return shift_wage * 0.2
+            return hourly_wage * hours * 0.2
     elif absence_type == "VAB":
-        # VAB - 100% avdrag (FK betalar ersättning, inte arbetsgivaren)
-        return shift_wage
+        return hourly_wage * hours
     elif absence_type == "LEAVE":
-        # Obetald ledighet - 100% avdrag
-        return shift_wage
+        return hourly_wage * hours
     elif absence_type == "OFF":
-        # Ledig - inget löneavdrag (betald ledighet)
         return 0.0
     else:
-        # Okänd frånvarotyp - inget avdrag
         return 0.0
 
 
-def get_shift_hours_for_date(session: Session, user_id: int, absence_date: date) -> float:
+def get_karens_consumed_before_date(session, user_id: int, sick_date: "date") -> float:
     """
-    Hämtar antal timmar för det skift som skulle ha jobbats på given dag.
+    Beräknar hur många karenstimmar som redan förbrukats i den pågående sjukperioden
+    INNAN sick_date.
 
-    Args:
-        session: SQLAlchemy session
-        user_id: Användar-ID
-        absence_date: Datum för frånvaron
+    En sjukperiod bryts om det är mer än 5 dagars uppehåll mellan sjukdagar.
 
     Returns:
-        Antal timmar för skiftet (default 8.5 om inget skift hittas)
+        Förbrukade karenstimmar (0.0 om sick_date är första dagen i perioden)
     """
-    from app.core.schedule import calculate_shift_hours, determine_shift_for_date
-    from app.database.database import User
+    from app.database.database import Absence, AbsenceType
 
-    # Resolve user_id → rotation position
-    rotation_position = user_id  # fallback
+    # Hämta alla sjukdagar bakåt från sick_date (upp till 30 dagar bakåt är tillräckligt)
+    lookback = sick_date - timedelta(days=30)
+    prev_sick_days = (
+        session.query(Absence)
+        .filter(
+            Absence.user_id == user_id,
+            Absence.absence_type == AbsenceType.SICK,
+            Absence.date >= lookback,
+            Absence.date < sick_date,
+        )
+        .order_by(Absence.date.desc())
+        .all()
+    )
+
+    if not prev_sick_days:
+        return 0.0
+
+    # Gå bakåt och samla dagar i samma sjukperiod (gap <= 5 dagar)
+    period_days: list = []
+    prev_date = sick_date
+    for absence in prev_sick_days:
+        gap = (prev_date - absence.date).days
+        if gap > 5:
+            break  # Ny sjukperiod - sluta leta
+        period_days.append(absence)
+        prev_date = absence.date
+
+    if not period_days:
+        return 0.0
+
+    # Räkna förbrukad karens (kronologisk ordning)
+    period_days.reverse()
+    consumed = 0.0
+    for absence in period_days:
+        if consumed >= KARENS_HOURS:
+            break
+        # Hämta frånvarotimmar för denna dag
+        _, _, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
+        shift_h = get_shift_hours_for_date(session, user_id, absence.date)
+        absent_h = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_h)
+        karens_this_day = min(absent_h, KARENS_HOURS - consumed)
+        consumed += karens_this_day
+
+    return consumed
+
+
+def _get_rotation_position(session, user_id: int) -> int:
+    """Hämtar rotation_person_id för en användare (fallback = user_id)."""
     if session:
+        from app.database.database import User
+
         user = session.query(User).filter(User.id == user_id).first()
         if user:
-            rotation_position = user.rotation_person_id
+            return user.rotation_person_id
+    return user_id
 
-    # Hämta vilket skift personen skulle ha jobbat
+
+def get_shift_times_for_date(
+    session, user_id: int, absence_date: date
+) -> tuple[float, datetime.datetime | None, datetime.datetime | None]:
+    """
+    Hämtar (hours, start_dt, end_dt) för skiftet en person skulle ha jobbat.
+    Returnerar (8.5, None, None) som fallback.
+    """
+    from app.core.schedule import calculate_shift_hours, determine_shift_for_date
+
+    rotation_position = _get_rotation_position(session, user_id)
     result = determine_shift_for_date(absence_date, start_week=rotation_position)
-
     if result and result[0]:
         shift, _ = result
         if shift and shift.code not in ["OFF", "SEM"]:
-            hours, _, _ = calculate_shift_hours(absence_date, shift.code)
-            return hours if hours > 0 else 8.5
+            hours, start_dt, end_dt = calculate_shift_hours(absence_date, shift.code)
+            if hours > 0:
+                return hours, start_dt, end_dt
+    return 8.5, None, None
 
-    # Default till 8.5 timmar om vi inte kan bestämma skiftet
-    return 8.5
+
+def get_shift_hours_for_date(session, user_id: int, absence_date: date) -> float:
+    """
+    Hämtar antal timmar för det skift som skulle ha jobbats på given dag.
+    Default 8.5 om inget skift hittas.
+    """
+    hours, _, _ = get_shift_times_for_date(session, user_id, absence_date)
+    return hours
+
+
+def get_absent_hours_from_left_at(left_at: str, shift_end_dt: datetime.datetime | None, shift_hours: float) -> float:
+    """
+    Beräknar antal frånvarotimmar utifrån left_at ("HH:MM") och skiftets sluttid.
+    Returnerar shift_hours som fallback om sluttid saknas.
+    """
+    if not left_at or shift_end_dt is None:
+        return shift_hours
+    try:
+        left_time = datetime.datetime.strptime(left_at, "%H:%M").time()
+        left_dt = datetime.datetime.combine(shift_end_dt.date(), left_time)
+        # Hantera fall där left_at är nästa dag (t.ex. nattskift)
+        if left_dt >= shift_end_dt:
+            return 0.0
+        absent = (shift_end_dt - left_dt).total_seconds() / 3600.0
+        return max(0.0, absent)
+    except ValueError:
+        return shift_hours
 
 
 def get_absence_deductions_for_month(session: Session, user_id: int, year: int, month: int, monthly_wage: int) -> dict:
@@ -251,39 +344,55 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
     off_hours = 0.0
     details = []
 
-    # Håll koll på om vi har haft karensdag för sjukperiod
-    last_sick_date = None
+    # Spåra karensbudget och sjukperiod
+    last_sick_date: date | None = None
+    karens_consumed_in_period = 0.0
 
     for absence in absences:
-        is_first_sick_day = False
-
         # Hämta antal timmar för det skift som skulle ha jobbats
         shift_hours = get_shift_hours_for_date(session, user_id, absence.date)
-        total_hours += shift_hours
+        _, _, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
+        absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_hours)
+        total_hours += absent_hours
 
         if absence.absence_type == AbsenceType.SICK:
             sick_days += 1
-            sick_hours += shift_hours
+            sick_hours += absent_hours
 
-            # Kolla om det är en ny sjukperiod (mer än 5 dagar sedan senaste sjukdag)
+            # Ny sjukperiod om gap > 5 dagar
             if last_sick_date is None or (absence.date - last_sick_date).days > 5:
-                is_first_sick_day = True
+                karens_consumed_in_period = 0.0
 
+            karens_remaining = max(0.0, KARENS_HOURS - karens_consumed_in_period)
+            karens_today = min(absent_hours, karens_remaining)
+            karens_consumed_in_period += karens_today
             last_sick_date = absence.date
 
-        elif absence.absence_type == AbsenceType.VAB:
-            vab_days += 1
-            vab_hours += shift_hours
-        elif absence.absence_type == AbsenceType.LEAVE:
-            leave_days += 1
-            leave_hours += shift_hours
-        elif absence.absence_type == AbsenceType.OFF:
-            off_days += 1
-            off_hours += shift_hours
+            deduction = calculate_absence_deduction(
+                monthly_wage,
+                absence.absence_type.value,
+                shift_hours,
+                absent_hours=absent_hours,
+                karens_remaining=karens_remaining,
+            )
+            is_karens = karens_today > 0
 
-        deduction = calculate_absence_deduction(
-            monthly_wage, absence.absence_type.value, shift_hours, is_first_sick_day
-        )
+        else:
+            karens_today = 0.0
+            is_karens = False
+            if absence.absence_type == AbsenceType.VAB:
+                vab_days += 1
+                vab_hours += absent_hours
+            elif absence.absence_type == AbsenceType.LEAVE:
+                leave_days += 1
+                leave_hours += absent_hours
+            elif absence.absence_type == AbsenceType.OFF:
+                off_days += 1
+                off_hours += absent_hours
+
+            deduction = calculate_absence_deduction(
+                monthly_wage, absence.absence_type.value, shift_hours, absent_hours=absent_hours
+            )
 
         total_deduction += deduction
 
@@ -291,9 +400,12 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
             {
                 "date": absence.date,
                 "type": absence.absence_type.value,
-                "hours": shift_hours,
+                "hours": absent_hours,
                 "deduction": deduction,
-                "is_karens": is_first_sick_day,
+                "is_karens": is_karens,
+                "karens_hours": karens_today,
+                "is_partial": absence.left_at is not None,
+                "left_at": absence.left_at,
             }
         )
 
