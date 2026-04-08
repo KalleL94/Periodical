@@ -62,11 +62,13 @@ def build_week_data(
     persons = _get_persons()
     shift_types = get_shift_types()
 
+    rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
+
     # Batch fetch absences, overtime, oncall overrides, and swaps for the week
-    absence_map = _batch_fetch_absences(session, person_ids, monday, sunday)
-    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday)
-    oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday)
-    swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday)
+    absence_map = _batch_fetch_absences(session, person_ids, monday, sunday, rotation_to_user_id)
+    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday, rotation_to_user_id)
+    oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
+    swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
 
     days_in_week = []
 
@@ -206,11 +208,16 @@ def generate_period_data(
     # Förbered person-lista
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
 
+    # Bygg mappning rotation_position -> user_id (hanterar Peter/Rickard som har olika user_id)
+    rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
+
     # Batch fetch absences, overtime shifts, oncall overrides, and swaps for the entire period
-    absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date)
-    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date)
-    oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, effective_start, end_date)
-    swap_map = _batch_fetch_swap_map(session, person_ids, effective_start, end_date)
+    absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date, rotation_to_user_id)
+    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date, rotation_to_user_id)
+    oncall_override_map = _batch_fetch_oncall_overrides(
+        session, person_ids, effective_start, end_date, rotation_to_user_id
+    )
+    swap_map = _batch_fetch_swap_map(session, person_ids, effective_start, end_date, rotation_to_user_id)
 
     # Generera dagdata
     persons = _get_persons()
@@ -323,36 +330,60 @@ def _load_vacation_dates(years: set[int]) -> dict[int, set[datetime.date]]:
     return vacation_dates
 
 
+def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[int, int]:
+    """
+    Bygger mappning rotation_position -> user_id för användare där de skiljer sig.
+    Returnerar rotation_position -> rotation_position som fallback om ingen match.
+    """
+    result = {p: p for p in rotation_positions}
+    if not session:
+        return result
+    from app.database.database import User
+
+    users = session.query(User).filter(User.person_id.in_(rotation_positions)).all()
+    for u in users:
+        if u.person_id is not None:
+            result[u.person_id] = u.id
+    return result
+
+
 def _batch_fetch_absences(
     session,
     person_ids: list[int],
     start_date: datetime.date,
     end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """
     Batch-hämtar frånvaro för flera personer och en period.
 
     Returns:
-        Dict med (person_id, date) -> Absence
+        Dict med (rotation_position, date) -> Absence
     """
     if not session:
         return {}
 
     from app.database.database import Absence
 
-    # Hämta alla frånvaro för alla personer i perioden
+    # Hämta faktiska user_ids (kan skilja sig från rotationsposition)
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
     absences = (
         session.query(Absence)
         .filter(
-            Absence.user_id.in_(person_ids),
+            Absence.user_id.in_(user_ids),
             Absence.date >= start_date,
             Absence.date <= end_date,
         )
         .all()
     )
 
-    # Skapa lookup-dict
-    return {(absence.user_id, absence.date): absence for absence in absences}
+    return {(user_id_to_rotation.get(a.user_id, a.user_id), a.date): a for a in absences}
 
 
 def _batch_fetch_ot_shifts(
@@ -360,34 +391,40 @@ def _batch_fetch_ot_shifts(
     person_ids: list[int],
     start_date: datetime.date,
     end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """
     Batch-hämtar övertidspass för flera personer och en period.
 
     Returns:
-        Dict med (person_id, date) -> OvertimeShift
+        Dict med (rotation_position, date) -> OvertimeShift
     """
     if not session:
         return {}
 
     from app.database.database import OvertimeShift
 
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
     # Hämta också dagen före start_date för att fånga OT som går över midnatt
     fetch_start = start_date - datetime.timedelta(days=1)
 
-    # Hämta alla OT-pass för alla personer i perioden
     ot_shifts = (
         session.query(OvertimeShift)
         .filter(
-            OvertimeShift.user_id.in_(person_ids),
+            OvertimeShift.user_id.in_(user_ids),
             OvertimeShift.date >= fetch_start,
             OvertimeShift.date <= end_date,
         )
         .all()
     )
 
-    # Skapa lookup-dict
-    return {(shift.user_id, shift.date): shift for shift in ot_shifts}
+    return {(user_id_to_rotation.get(s.user_id, s.user_id), s.date): s for s in ot_shifts}
 
 
 def _batch_fetch_oncall_overrides(
@@ -395,31 +432,37 @@ def _batch_fetch_oncall_overrides(
     person_ids: list[int],
     start_date: datetime.date,
     end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """
     Batch-hämtar on-call overrides för flera personer och en period.
 
     Returns:
-        Dict med (person_id, date) -> OnCallOverride
+        Dict med (rotation_position, date) -> OnCallOverride
     """
     if not session:
         return {}
 
     from app.database.database import OnCallOverride
 
-    # Hämta alla overrides för alla personer i perioden
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
     overrides = (
         session.query(OnCallOverride)
         .filter(
-            OnCallOverride.user_id.in_(person_ids),
+            OnCallOverride.user_id.in_(user_ids),
             OnCallOverride.date >= start_date,
             OnCallOverride.date <= end_date,
         )
         .all()
     )
 
-    # Skapa lookup-dict
-    return {(override.user_id, override.date): override for override in overrides}
+    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
 
 
 def _batch_fetch_swap_map(
@@ -427,28 +470,31 @@ def _batch_fetch_swap_map(
     person_ids: list[int],
     start_date: datetime.date,
     end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
 ) -> dict[tuple[int, datetime.date], str]:
     """
     Batch-hämtar accepterade skiftbyten för flera personer och en period.
 
     Returns:
-        Dict med (person_id, date) -> new_shift_code
-        Each accepted swap produces two entries:
-        - (requester_id, requester_date) -> target_shift_code
-        - (target_id, target_date) -> requester_shift_code
+        Dict med (rotation_position, date) -> new_shift_code
     """
     if not session:
         return {}
 
-    from app.database.database import ShiftSwap, SwapStatus
+    from app.database.database import ShiftSwap, SwapStatus, User
 
-    # A swap affects both people on both dates, so we need swaps where:
-    # - either person is in our person_ids AND either date is in our range
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
     swaps = (
         session.query(ShiftSwap)
         .filter(
             ShiftSwap.status == SwapStatus.ACCEPTED,
-            (ShiftSwap.requester_id.in_(person_ids) | ShiftSwap.target_id.in_(person_ids)),
+            (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
             (
                 ShiftSwap.requester_date.between(start_date, end_date)
                 | ShiftSwap.target_date.between(start_date, end_date)
@@ -457,42 +503,39 @@ def _batch_fetch_swap_map(
         .all()
     )
 
-    # Build user_id → rotation_person_id mapping for shift lookups
-    from app.database.database import User
-
-    all_user_ids = set()
+    # Build full user_id -> rotation_person_id mapping for all swap participants
+    all_swap_user_ids = set()
     for swap in swaps:
-        all_user_ids.update([swap.requester_id, swap.target_id])
-    user_rotation = {}
-    if all_user_ids:
-        for u in session.query(User).filter(User.id.in_(all_user_ids)).all():
-            user_rotation[u.id] = u.rotation_person_id
+        all_swap_user_ids.update([swap.requester_id, swap.target_id])
+    user_rotation = dict(user_id_to_rotation)  # start from known mappings
+    if all_swap_user_ids:
+        for u in session.query(User).filter(User.id.in_(all_swap_user_ids)).all():
+            if u.id not in user_rotation:
+                user_rotation[u.id] = u.person_id if u.person_id else u.id
 
-    pid_set = set(person_ids)
+    rotation_set = set(person_ids)
     swap_map = {}
     for swap in swaps:
         req_rot = user_rotation.get(swap.requester_id, swap.requester_id)
         tgt_rot = user_rotation.get(swap.target_id, swap.target_id)
 
         # On requester_date: they swap shifts
-        if swap.requester_id in pid_set:
+        if req_rot in rotation_set:
             # Requester gets what target normally has on this date
             tgt_result = determine_shift_for_date(swap.requester_date, tgt_rot)
-            swap_map[(swap.requester_id, swap.requester_date)] = (
-                tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
-            )
-        if swap.target_id in pid_set:
+            swap_map[(req_rot, swap.requester_date)] = tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
+        if tgt_rot in rotation_set:
             # Target gets requester's shift on this date
-            swap_map[(swap.target_id, swap.requester_date)] = swap.requester_shift_code or "OFF"
+            swap_map[(tgt_rot, swap.requester_date)] = swap.requester_shift_code or "OFF"
 
         # On target_date: they swap shifts
-        if swap.target_id in pid_set:
+        if tgt_rot in rotation_set:
             # Target gets what requester normally has on this date
             req_result = determine_shift_for_date(swap.target_date, req_rot)
-            swap_map[(swap.target_id, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
-        if swap.requester_id in pid_set:
+            swap_map[(tgt_rot, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
+        if req_rot in rotation_set:
             # Requester gets target's shift on this date
-            swap_map[(swap.requester_id, swap.target_date)] = swap.target_shift_code or "OFF"
+            swap_map[(req_rot, swap.target_date)] = swap.target_shift_code or "OFF"
 
     return swap_map
 
