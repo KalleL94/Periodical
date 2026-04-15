@@ -539,16 +539,9 @@ async def show_day_for_person(
             "before_employment": before_employment,
             "coworkers": coworkers if not before_employment else [],
             "all_working_persons": persons_today_with_shift if not before_employment else [],
-            "swap_users": [
-                u
-                for u in db.query(User)
-                .filter(User.is_active == 1, User.id != current_user.id, User.role != UserRole.ADMIN)
-                .all()
-                if any(
-                    p.get("person_id") == u.rotation_person_id and (not p.get("shift") or p["shift"].code == "OFF")
-                    for p in persons_today
-                )
-            ],
+            "swap_users": db.query(User)
+            .filter(User.is_active == 1, User.id != current_user.id, User.role != UserRole.ADMIN)
+            .all(),
             "oncall_override": oncall_override,  # On-call override data
             "has_rotation_oc": has_rotation_oc,  # Whether person has OC in rotation
             "is_effective_oc": is_effective_oc,  # Whether this is effectively an OC shift
