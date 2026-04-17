@@ -364,6 +364,18 @@
                     </table>
                     {% endif %}
 
+                    {% if show_salary and sick_ob_pay_today > 0 %}
+                    <table style="margin-top: 8px;">
+                        <tbody>
+                            <tr>
+                                <td>{{ "%.1f"|format(sjuklon_hours_today) }} h</td>
+                                <td style="padding-left: 16px;">+{{ "%.2f"|format(sick_ob_pay_today) }} kr</td>
+                                <td style="padding-left: 16px; color: var(--muted); font-size: 0.85rem;">{{ t.day_sick_ob_pay }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    {% endif %}
+
                     <p class="info-text">
                         {{ t.day_absence_registered }}
                     </p>

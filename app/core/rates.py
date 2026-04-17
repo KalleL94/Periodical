@@ -42,11 +42,13 @@ DEFAULT_OT_DIVISOR: int = OT_RATE_DIVISOR  # 72
 
 def _resolve_rates(custom: dict) -> dict:
     """Convert a raw custom_rates JSON dict into resolved rates."""
+    sick_raw = custom.get("sick") or {}
     return {
         "ob": custom.get("ob") or {},
         "ot": custom.get("ot"),
         "oncall": {**DEFAULT_ONCALL_RATES, **(custom.get("oncall") or {})},
         "vacation": {**DEFAULT_VACATION_RATES, **(custom.get("vacation") or {})},
+        "sick": {"ob_compensation": bool(sick_raw.get("ob_compensation", False))},
     }
 
 

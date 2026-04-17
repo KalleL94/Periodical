@@ -67,6 +67,11 @@
                         {% if vac_items %}{% set _ = parts.append('Semester: ' ~ vac_items|join(' · ')) %}{% endif %}
                     {% endif %}
 
+                    {# Sjuk OB #}
+                    {% if r.get('sick', {}).get('ob_compensation') %}
+                        {% set _ = parts.append('Sjuk OB: Ja') %}
+                    {% endif %}
+
                     {% if parts %}
                         {{ parts|join('<br>')|safe }}
                     {% else %}
@@ -213,6 +218,17 @@
                        class="input" style="width: 100%; box-sizing: border-box;">
             </div>
             {% endfor %}
+        </div>
+
+        <!-- Sjukfrånvaro -->
+        <h4 style="margin-bottom: 8px;">{{ t.rates_sick_title }}</h4>
+        <div style="margin-bottom: 16px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" name="sick_ob_compensation"
+                       {% if custom_rates.get('sick', {}).get('ob_compensation') %}checked{% endif %}>
+                <span>{{ t.rates_sick_ob_label }}</span>
+            </label>
+            <p style="color: var(--muted); font-size: 0.8rem; margin: 4px 0 0 22px;">{{ t.rates_sick_ob_hint }}</p>
         </div>
 
         <button type="submit" class="btn">{{ t.rates_save }}</button>

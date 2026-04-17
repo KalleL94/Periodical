@@ -245,6 +245,7 @@ async def show_day_for_person(
     absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
 
     # Partiell frånvaro: trunkera end_dt till left_at och räkna om OB
+    original_end_dt = end_dt  # Spara originalslut innan ev. trunkering
     if absence and absence.left_at and start_dt is not None and end_dt is not None:
         left_time = datetime.strptime(absence.left_at, "%H:%M").time()
         truncated_end = datetime.combine(date_obj, left_time)
@@ -256,6 +257,17 @@ async def show_day_for_person(
                 ob_pay = calculate_ob_pay(
                     start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
                 )
+
+    # Heldags-sjukfrånvaro: nollställ OB (ingen ordinarie OB utgår vid sjukdom)
+    if (
+        absence
+        and absence.absence_type.value == "SICK"
+        and absence.left_at is None
+        and not is_full_ot
+        and not is_effective_oc
+    ):
+        ob_hours = {code: 0.0 for code in ob_hours}
+        ob_pay = {code: 0.0 for code in ob_pay}
 
     if ot_shift and not absence:  # Skip OT if there's an absence
         from app.core.models import ShiftType
@@ -426,6 +438,7 @@ async def show_day_for_person(
     is_karens = False
     karens_hours_today = 0.0
     sjuklon_hours_today = 0.0
+    sick_ob_pay_today = 0.0
 
     if absence and show_salary:
         from app.core.schedule.wages import (
@@ -455,6 +468,21 @@ async def show_day_for_person(
                 absent_hours=absent_hours,
                 karens_remaining=karens_remaining,
             )
+
+            # OB-kompensation vid sjukfrånvaro (80% av OB på sjuklönetimmarna)
+            if (
+                _user_rates.get("sick", {}).get("ob_compensation")
+                and sjuklon_hours_today > 0
+                and start_dt is not None
+                and original_end_dt is not None
+                and full_shift_hours > 0
+            ):
+                from app.core.schedule.ob import calculate_ob_pay as _calc_ob_pay_sick
+
+                full_shift_ob = _calc_ob_pay_sick(
+                    start_dt, original_end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
+                )
+                sick_ob_pay_today = sum(full_shift_ob.values()) * (sjuklon_hours_today / full_shift_hours) * 0.8
         else:
             is_karens = False
             karens_hours_today = 0.0
@@ -536,6 +564,7 @@ async def show_day_for_person(
             "is_karens": is_karens,
             "karens_hours_today": karens_hours_today,
             "sjuklon_hours_today": sjuklon_hours_today,
+            "sick_ob_pay_today": sick_ob_pay_today,
             "before_employment": before_employment,
             "coworkers": coworkers if not before_employment else [],
             "all_working_persons": persons_today_with_shift if not before_employment else [],

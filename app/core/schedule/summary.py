@@ -172,6 +172,9 @@ def summarize_month_for_person(
         "absence_hours": 0.0,
         "sick_days": 0,
         "sick_hours": 0.0,
+        "sick_ob_pay": 0.0,
+        "sick_total_ob": 0.0,
+        "sick_ob_lost": 0.0,
         "vab_days": 0,
         "vab_hours": 0.0,
         "leave_days": 0,
@@ -197,11 +200,22 @@ def summarize_month_for_person(
     # Hämta frånvaroavdrag för månaden
     absence_details = []
     if session:
-        absence_info = get_absence_deductions_for_month(session, person_id, year, month, base_salary)
+        absence_info = get_absence_deductions_for_month(
+            session,
+            person_id,
+            year,
+            month,
+            base_salary,
+            ob_rules=combined_rules,
+            ob_rate_overrides=user_rates.get("ob") if user_rates else None,
+        )
         totals["absence_deduction"] = absence_info["total_deduction"]
         totals["absence_hours"] = absence_info["total_hours"]
         totals["sick_days"] = absence_info["sick_days"]
         totals["sick_hours"] = absence_info["sick_hours"]
+        totals["sick_ob_pay"] = absence_info.get("sick_ob_pay", 0.0)
+        totals["sick_total_ob"] = absence_info.get("sick_total_ob", 0.0)
+        totals["sick_ob_lost"] = absence_info.get("sick_ob_lost", 0.0)
         totals["vab_days"] = absence_info["vab_days"]
         totals["vab_hours"] = absence_info["vab_hours"]
         totals["leave_days"] = absence_info["leave_days"]
@@ -210,8 +224,9 @@ def summarize_month_for_person(
         totals["off_hours"] = absence_info["off_hours"]
         absence_details = absence_info["details"]
 
-        # Dra av frånvaroavdrag från bruttolön
+        # Dra av frånvaroavdrag och lägg till OB-sjuklön
         totals["brutto_pay"] -= totals["absence_deduction"]
+        totals["brutto_pay"] += totals["sick_ob_pay"]
 
     # Beräkna netto med användarens skattetabell (använd payment_year för rätt skattetabell)
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
@@ -241,6 +256,9 @@ def summarize_month_for_person(
         "absence_hours": totals["absence_hours"],
         "sick_days": totals["sick_days"],
         "sick_hours": totals.get("sick_hours", 0.0),
+        "sick_ob_pay": totals.get("sick_ob_pay", 0.0),
+        "sick_total_ob": totals.get("sick_total_ob", 0.0),
+        "sick_ob_lost": totals.get("sick_ob_lost", 0.0),
         "vab_days": totals["vab_days"],
         "vab_hours": totals.get("vab_hours", 0.0),
         "leave_days": totals["leave_days"],
@@ -697,6 +715,9 @@ def _build_year_summary(months: list[dict]) -> dict:
     total_absence_hours = sum(m.get("absence_hours", 0.0) for m in months)
     total_sick_days = sum(m.get("sick_days", 0) for m in months)
     total_sick_hours = sum(m.get("sick_hours", 0.0) for m in months)
+    total_sick_ob_pay = sum(m.get("sick_ob_pay", 0.0) for m in months)
+    total_sick_ob_lost = sum(m.get("sick_ob_lost", 0.0) for m in months)
+    total_sick_total_ob = sum(m.get("sick_total_ob", 0.0) for m in months)
     total_vab_days = sum(m.get("vab_days", 0) for m in months)
     total_vab_hours = sum(m.get("vab_hours", 0.0) for m in months)
     total_leave_days = sum(m.get("leave_days", 0) for m in months)
@@ -747,6 +768,9 @@ def _build_year_summary(months: list[dict]) -> dict:
         "total_absence_hours": total_absence_hours,
         "total_sick_days": total_sick_days,
         "total_sick_hours": total_sick_hours,
+        "total_sick_ob_pay": total_sick_ob_pay,
+        "total_sick_ob_lost": total_sick_ob_lost,
+        "total_sick_total_ob": total_sick_total_ob,
         "total_vab_days": total_vab_days,
         "total_vab_hours": total_vab_hours,
         "total_leave_days": total_leave_days,
@@ -766,6 +790,8 @@ def _build_year_summary(months: list[dict]) -> dict:
         "avg_oncall_hours": total_oncall_hours / month_count,
         "avg_ot": total_ot / month_count,
         "avg_absence_deduction": total_absence_deduction / month_count,
+        "avg_sick_total_ob": total_sick_total_ob / month_count,
+        "avg_sick_ob_pay": total_sick_ob_pay / month_count,
         "ob_hours_by_code": ob_hours_by_code,
         "ob_pay_by_code": ob_pay_by_code,
         "total_ob_hours": sum(ob_hours_by_code.values()),
