@@ -94,6 +94,28 @@
         </tbody>
     </table>
 
+    {% if show_salary and days.sick_days > 0 %}
+    {% set sick_total_ob = days.sick_total_ob or 0 %}
+    {% set sick_ob_lost = days.sick_ob_lost or 0 %}
+    {% set sick_total_loss = (days.absence_deduction or 0) + sick_ob_lost %}
+    <div style="background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.35); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 12px; font-size: 0.9rem;">
+        <strong>{{ t.month_sick_label }}:</strong>
+        {{ days.sick_days }} {{ t.month_sick_days_unit }}, {{ "%.1f"|format(days.sick_hours or 0) }} h
+        &nbsp;&mdash;&nbsp;
+        <span style="color: #ef4444;">{{ t.month_sick_deduction_label }}: -{{ "%.0f"|format(days.absence_deduction or 0) }} kr</span>
+        {% if sick_total_ob > 0 %}
+        &nbsp;|&nbsp;
+        <span style="color: #f97316;" title="Total OB på sjukdagarna, ingår ej i brutto">{{ t.month_sick_ob_lost_label }}: -{{ "%.0f"|format(sick_total_ob) }} kr</span>
+        {% endif %}
+        {% if days.sick_ob_pay and days.sick_ob_pay > 0 %}
+        &nbsp;|&nbsp;
+        <span style="color: var(--success);">{{ t.month_sick_ob_label }}: +{{ "%.0f"|format(days.sick_ob_pay) }} kr</span>
+        {% endif %}
+        &nbsp;|&nbsp;
+        <span style="color: var(--muted);">{{ t.month_sick_net_label }}: -{{ "%.0f"|format(sick_total_loss) }} kr</span>
+    </div>
+    {% endif %}
+
     {% if vacation_month %}
     <div style="background: rgba(100,200,255,0.08); border: 1px solid var(--accent); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 0.9rem;">
         <strong>{{ t.month_vacation_days.replace('{n}', vacation_month.days|string).replace('{suffix}', 'ar' if vacation_month.days != 1 else '') }}</strong>

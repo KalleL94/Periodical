@@ -123,4 +123,7 @@ def _parse_rates_form(form) -> dict:
     if vac:
         custom["vacation"] = vac
 
+    # Sick OB compensation flag
+    custom["sick"] = {"ob_compensation": form.get("sick_ob_compensation") == "on"}
+
     return custom

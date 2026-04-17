@@ -291,7 +291,16 @@ def get_absent_hours_from_left_at(left_at: str, shift_end_dt: datetime.datetime 
         return shift_hours
 
 
-def get_absence_deductions_for_month(session: Session, user_id: int, year: int, month: int, monthly_wage: int) -> dict:
+def get_absence_deductions_for_month(
+    session: Session,
+    user_id: int,
+    year: int,
+    month: int,
+    monthly_wage: int,
+    ob_rules=None,
+    ob_rate_overrides=None,
+    sick_ob_compensation: bool = False,  # behålls för bakåtkompatibilitet, ignoreras när ob_rules finns
+) -> dict:
     """
     Beräknar totala löneavdrag för frånvaro under en månad.
 
@@ -301,6 +310,10 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
         year: År
         month: Månad
         monthly_wage: Månadslön i SEK
+        ob_rules: OB-regler (lista av ObRule). När dessa finns slås OB-kompensation
+                  upp per frånvarodatum via RateHistory för att respektera giltighetsdatum.
+        ob_rate_overrides: Fallback OB-satser (används om ingen historik finns för datumet)
+        sick_ob_compensation: Ignoreras när ob_rules anges (datumspecifik lookup används då)
 
     Returns:
         Dict med:
@@ -308,6 +321,7 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
             - total_hours: Totalt antal frånvarotimmar
             - sick_days: Antal sjukdagar
             - sick_hours: Antal sjuktimmar
+            - sick_ob_pay: OB-ersättning vid sjukfrånvaro (SEK)
             - vab_days: Antal VAB-dagar
             - vab_hours: Antal VAB-timmar
             - leave_days: Antal lediga dagar
@@ -336,6 +350,8 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
     total_hours = 0.0
     sick_days = 0
     sick_hours = 0.0
+    sick_ob_pay = 0.0
+    sick_total_ob = 0.0
     vab_days = 0
     vab_hours = 0.0
     leave_days = 0
@@ -344,14 +360,20 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
     off_hours = 0.0
     details = []
 
+    # Hämta user en gång för datumspecifik rates-lookup
+    _sick_ob_user = None
+    if ob_rules and session:
+        from app.database.database import User as _User
+
+        _sick_ob_user = session.query(_User).filter(_User.id == user_id).first()
+
     # Spåra karensbudget och sjukperiod
     last_sick_date: date | None = None
     karens_consumed_in_period = 0.0
 
     for absence in absences:
         # Hämta antal timmar för det skift som skulle ha jobbats
-        shift_hours = get_shift_hours_for_date(session, user_id, absence.date)
-        _, _, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
+        shift_hours, start_dt, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
         absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_hours)
         total_hours += absent_hours
 
@@ -376,6 +398,31 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
                 karens_remaining=karens_remaining,
             )
             is_karens = karens_today > 0
+
+            # OB på frånvarodagen: beräkna alltid för att kunna visa totalt tapp
+            sjuklon_hours = absent_hours - karens_today
+            if ob_rules and start_dt is not None and shift_end_dt is not None and shift_hours > 0:
+                from app.core.schedule.ob import calculate_ob_pay
+
+                _ob_overrides = ob_rate_overrides
+                _ob_compensation = False
+
+                if _sick_ob_user is not None:
+                    from app.core.rates import get_user_rates
+
+                    date_rates = get_user_rates(_sick_ob_user, session=session, effective_date=absence.date)
+                    _ob_overrides = date_rates.get("ob") or ob_rate_overrides
+                    _ob_compensation = bool(date_rates.get("sick", {}).get("ob_compensation"))
+
+                full_ob_total = sum(
+                    calculate_ob_pay(
+                        start_dt, shift_end_dt, ob_rules, monthly_wage, rate_overrides=_ob_overrides
+                    ).values()
+                )
+                sick_total_ob += full_ob_total * (absent_hours / shift_hours)
+
+                if _ob_compensation and sjuklon_hours > 0:
+                    sick_ob_pay += full_ob_total * (sjuklon_hours / shift_hours) * 0.8
 
         else:
             karens_today = 0.0
@@ -414,6 +461,9 @@ def get_absence_deductions_for_month(session: Session, user_id: int, year: int, 
         "total_hours": total_hours,
         "sick_days": sick_days,
         "sick_hours": sick_hours,
+        "sick_ob_pay": sick_ob_pay,
+        "sick_total_ob": sick_total_ob,
+        "sick_ob_lost": sick_total_ob - sick_ob_pay,
         "vab_days": vab_days,
         "vab_hours": vab_hours,
         "leave_days": leave_days,
