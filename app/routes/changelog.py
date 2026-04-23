@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.13.0",
+        "date": "2026-04-23",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Passöverlåtelse: ge bort eller ta ett pass utan att byta tillbaka. Kollegan accepterar som vanligt.",
+                "en": "Shift transfer: give away or take a shift without a mutual swap. The colleague still accepts.",
+            },
+        ],
+    },
+    {
         "version": "0.12.1",
         "date": "2026-04-23",
         "entries": [
