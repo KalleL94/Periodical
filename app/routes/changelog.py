@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.12.1",
+        "date": "2026-04-23",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "iCal-export använde databas-ID istället för rotationsposition, vilket gav fel schema",
+                "en": "iCal export used database ID instead of rotation position, causing wrong schedule",
+            },
+        ],
+    },
+    {
         "version": "0.12.0",
         "date": "2026-04-23",
         "entries": [
