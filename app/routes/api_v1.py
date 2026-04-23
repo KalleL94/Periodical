@@ -561,8 +561,8 @@ async def _admin_cookie_check(request, call_next):
     return await call_next(request)
 
 
-def _add_bearer_security(api: FastAPI) -> None:
-    """Inject BearerAuth security scheme into the sub-app's OpenAPI schema."""
+def _add_bearer_security(api: FastAPI, server_prefix: str) -> None:
+    """Inject BearerAuth security scheme and correct server prefix into the sub-app's OpenAPI schema."""
     from fastapi.openapi.utils import get_openapi
 
     def custom_openapi():
@@ -574,6 +574,7 @@ def _add_bearer_security(api: FastAPI) -> None:
             description=api.description,
             routes=api.routes,
         )
+        schema["servers"] = [{"url": server_prefix}]
         schema.setdefault("components", {}).setdefault("securitySchemes", {})["BearerAuth"] = {
             "type": "http",
             "scheme": "bearer",
@@ -596,7 +597,7 @@ def create_api_app() -> FastAPI:
         redoc_url="/redoc",
     )
     api.include_router(router)
-    _add_bearer_security(api)
+    _add_bearer_security(api, server_prefix="/api/v1")
     return api
 
 
@@ -609,5 +610,5 @@ def create_admin_api_app() -> FastAPI:
         redoc_url="/redoc",
     )
     api.include_router(admin_router)
-    _add_bearer_security(api)
+    _add_bearer_security(api, server_prefix="/api/v1/admin")
     return api
