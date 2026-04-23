@@ -69,8 +69,21 @@ fi
 
 # 3. Git Pull
 log "📥 Hämtar senaste koden..."
-if ! git pull; then
-    error_exit "Git pull misslyckades. Kontrollera nätverk eller konflikter."
+git fetch origin
+
+# Ta bort ospårade filer som konfliktar med inkommande commits
+# (händer t.ex. när filer flyttas i repot men redan existerar lokalt)
+CONFLICTING=$(git diff --name-status HEAD origin/main 2>/dev/null \
+    | awk '$1=="A" || $1=="R100" {print $NF}' \
+    | while read -r f; do [ -f "$f" ] && echo "$f"; done)
+if [ -n "$CONFLICTING" ]; then
+    warn "Tar bort lokala ospårade filer som konfliktar med origin/main:"
+    echo "$CONFLICTING" | while read -r f; do warn "  - $f"; done
+    echo "$CONFLICTING" | xargs rm -f
+fi
+
+if ! git merge --ff-only origin/main; then
+    error_exit "Git merge misslyckades. Kontrollera nätverk eller konflikter."
 fi
 
 # Aktivera virtual environment (Kritiskt steg)

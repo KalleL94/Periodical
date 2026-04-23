@@ -24,6 +24,7 @@ from app.routes.admin import router as admin_router
 from app.routes.admin_users import router as admin_users_router
 from app.routes.api_v1 import create_admin_api_app, create_api_app
 from app.routes.auth_routes import router as auth_router
+from app.routes.changelog import router as changelog_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.oncall import router as oncall_router
 from app.routes.overtime import router as overtime_router
@@ -281,6 +282,7 @@ app.include_router(profile_router)
 app.include_router(admin_users_router)
 app.include_router(admin_router)
 app.include_router(transition_router)
+app.include_router(changelog_router)
 
 
 @app.get("/health", tags=["health"])

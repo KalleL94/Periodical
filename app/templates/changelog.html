@@ -1,0 +1,38 @@
+{# app/templates/changelog.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – Nyheter & Versioner{% endblock %}
+
+{% block page_content %}
+<section>
+    <div style="max-width: 720px;">
+        <h2 style="margin-bottom: 0.25rem;">Nyheter &amp; Versioner</h2>
+        <p style="color: var(--muted); margin-top: 0; margin-bottom: 2rem;">Aktuell version: <strong>v{{ current_version }}</strong></p>
+
+        {% for v in versions %}
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+                <span style="font-size: 1.1rem; font-weight: 600; color: var(--text);">v{{ v.version }}</span>
+                <span style="color: var(--muted); font-size: 0.85rem;">{{ v.date }}</span>
+                {% if loop.first %}
+                <span style="background: var(--accent, #4f9cf9); color: #fff; font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 99px; letter-spacing: 0.04em;">SENASTE</span>
+                {% endif %}
+            </div>
+
+            <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.45rem;">
+                {% for entry in v.entries %}
+                <li style="display: flex; gap: 0.6rem; align-items: baseline;">
+                    {% if entry.type == "nyhet" %}
+                    <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg, #2a2a35); color: var(--accent, #4f9cf9); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">Nyhet</span>
+                    {% else %}
+                    <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg, #2a2a35); color: var(--warning, #e0a84e); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">Fix</span>
+                    {% endif %}
+                    <span style="color: var(--text); line-height: 1.5;">{{ entry.text }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
