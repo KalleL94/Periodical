@@ -27,7 +27,7 @@
                     {% else %}
                     <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg, #2a2a35); color: var(--warning, #e0a84e); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_fix }}</span>
                     {% endif %}
-                    <span style="color: var(--text); line-height: 1.5;">{{ entry.text }}</span>
+                    <span style="color: var(--text); line-height: 1.5;">{{ entry.en if t.html_lang == 'en' else entry.sv }}</span>
                 </li>
                 {% endfor %}
             </ul>
