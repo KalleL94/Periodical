@@ -27,6 +27,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav_settings": "Inställningar",
         "nav_logout": "Logga ut",
         "nav_login": "Logga in",
+        "nav_changelog": "Nyheter",
+        # ── Changelog ─────────────────────────────────────────────
+        "changelog_title": "Nyheter & Versioner",
+        "changelog_current_version": "Aktuell version",
+        "changelog_latest": "SENASTE",
+        "changelog_type_nyhet": "Nyhet",
+        "changelog_type_fix": "Fix",
         # ── Login ──────────────────────────────────────────────────
         "login_title": "Logga in",
         "login_username": "Användarnamn",
@@ -890,6 +897,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav_settings": "Settings",
         "nav_logout": "Log out",
         "nav_login": "Log in",
+        "nav_changelog": "What's New",
+        # ── Changelog ─────────────────────────────────────────────
+        "changelog_title": "What's New",
+        "changelog_current_version": "Current version",
+        "changelog_latest": "LATEST",
+        "changelog_type_nyhet": "New",
+        "changelog_type_fix": "Fix",
         # ── Login ──────────────────────────────────────────────────
         "login_title": "Log in",
         "login_username": "Username",
