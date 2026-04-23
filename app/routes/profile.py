@@ -319,7 +319,9 @@ async def export_calendar(
     start_date = get_today()
     end_date = start_date + timedelta(days=180)
 
-    ical_content = generate_ical(person_id=current_user.id, start_date=start_date, end_date=end_date, lang=lang)
+    ical_content = generate_ical(
+        person_id=current_user.rotation_person_id, start_date=start_date, end_date=end_date, lang=lang
+    )
 
     return Response(
         content=ical_content,
