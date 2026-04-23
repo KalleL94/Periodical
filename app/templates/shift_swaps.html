@@ -30,8 +30,10 @@
             {% for swap in received_swaps %}
             <tr class="shift-row">
                 <td data-label="{{ t.swaps_from }}">{{ swap.requester.name }}</td>
-                <td data-label="{{ t.swaps_gives_you }}">{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }})</td>
-                <td data-label="{{ t.swaps_wants }}">{{ swap.target_shift_code or '?' }} ({{ swap.target_date }})</td>
+                {% set is_one_way_req_free = swap.requester_shift_code == 'OFF' and swap.requester_date == swap.target_date %}
+                {% set is_one_way_tgt_free = swap.target_shift_code == 'OFF' and swap.requester_date == swap.target_date %}
+                <td data-label="{{ t.swaps_gives_you }}">{% if is_one_way_req_free %}&ndash;{% else %}{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }}){% endif %}</td>
+                <td data-label="{{ t.swaps_wants }}">{% if is_one_way_tgt_free %}&ndash;{% else %}{{ swap.target_shift_code or '?' }} ({{ swap.target_date }}){% endif %}</td>
                 <td data-label="{{ t.swaps_message }}">{{ swap.message or '-' }}</td>
                 <td data-label="{{ t.swaps_status }}">
                     {% if swap.status.value == 'PENDING' %}
@@ -83,8 +85,10 @@
             {% for swap in sent_swaps %}
             <tr class="shift-row">
                 <td data-label="{{ t.swaps_to }}">{{ swap.target.name }}</td>
-                <td data-label="{{ t.swaps_you_give }}">{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }})</td>
-                <td data-label="{{ t.swaps_you_get }}">{{ swap.target_shift_code or '?' }} ({{ swap.target_date }})</td>
+                {% set is_one_way_req_free = swap.requester_shift_code == 'OFF' and swap.requester_date == swap.target_date %}
+                {% set is_one_way_tgt_free = swap.target_shift_code == 'OFF' and swap.requester_date == swap.target_date %}
+                <td data-label="{{ t.swaps_you_give }}">{% if is_one_way_req_free %}&ndash;{% else %}{{ swap.requester_shift_code or '?' }} ({{ swap.requester_date }}){% endif %}</td>
+                <td data-label="{{ t.swaps_you_get }}">{% if is_one_way_tgt_free %}&ndash;{% else %}{{ swap.target_shift_code or '?' }} ({{ swap.target_date }}){% endif %}</td>
                 <td data-label="{{ t.swaps_status }}">
                     {% if swap.status.value == 'PENDING' %}
                         <span class="badge" style="background: var(--warning); color: #000;">{{ t.swaps_pending_badge }}</span>

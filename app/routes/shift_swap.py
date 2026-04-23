@@ -214,22 +214,36 @@ async def get_user_shifts(
         # Check target's shift
         tgt_info = target_weeks[wk].get(d, {})
         tgt_shift = tgt_info.get("shift")
-        if not tgt_shift or tgt_shift.code == "OFF":
-            continue
+        tgt_code = tgt_shift.code if tgt_shift else "OFF"
 
         is_same_day = d == center
 
+        # Skip days where target is free — unless it's a same-day give-away
+        if tgt_code == "OFF" and not (is_same_day and requester_working_on_center):
+            continue
+
         if requester_working_on_center:
-            # Requester is working on center — only same-day swap is relevant
+            # Requester is working on center — only same-day is relevant
             if not is_same_day:
                 continue
-            # Same-day swap: both must be working different shifts
+            if tgt_code == "OFF":
+                # Give-away: target is free, requester gives their shift away
+                shifts.append(
+                    {
+                        "date": d.isoformat(),
+                        "date_display": d.strftime("%a %d %b"),
+                        "code": "OFF",
+                        "label": "Ledig",
+                        "ob_hours": 0.0,
+                    }
+                )
+                continue
+            # Mutual same-day swap: different shifts, no OC mixing
             if not my_shift:
                 continue
-            if tgt_shift.code == my_code:
+            if tgt_code == my_code:
                 continue  # Same shift code — pointless swap
-            # Don't mix OC and regular shifts
-            if (my_code == "OC") != (tgt_shift.code == "OC"):
+            if (my_code == "OC") != (tgt_code == "OC"):
                 continue
         else:
             # Requester is free — can take target's shift on a different day
@@ -237,21 +251,20 @@ async def get_user_shifts(
             # OC-to-OC: when offering OC, only show target's OC shifts (requester must be OFF)
             # Regular: when offering a regular shift, only show target's regular shifts
             if offering == "OC":
-                if tgt_shift.code != "OC":
+                if tgt_code != "OC":
                     continue  # Offering OC — only interested in target's OC
                 if my_code != "OFF":
                     continue  # Must be OFF to take their OC
             else:
-                if tgt_shift.code == "OC":
+                if tgt_code == "OC":
                     continue  # Offering regular — can't take OC
                 if my_code != "OFF":
                     continue  # Must be OFF to take their shift
 
         # Calculate target shift times (the shift I would work)
-        _, tgt_start, tgt_end = calculate_shift_hours(d, tgt_shift)
+        _, tgt_start, tgt_end = calculate_shift_hours(d, tgt_shift) if tgt_shift else (None, None, None)
 
-        # Same-day swaps skip rest checks: both parties already work that day,
-        # only the shift assignment changes.
+        # Same-day operations skip rest checks.
         if not is_same_day:
             # 11h rest rule: check against my shifts on adjacent days
             if tgt_start and tgt_end:
@@ -266,7 +279,7 @@ async def get_user_shifts(
                     continue
 
             # 36h weekly rest rule: OC (beredskap) blocks weekly rest per ATL §14
-            if not _check_weekly_rest_ok(d, tgt_shift.code, my_pid):
+            if not _check_weekly_rest_ok(d, tgt_code, my_pid):
                 continue
 
         # Calculate OB hours for the target's shift
@@ -282,8 +295,8 @@ async def get_user_shifts(
             {
                 "date": d.isoformat(),
                 "date_display": d.strftime("%a %d %b"),
-                "code": tgt_shift.code,
-                "label": tgt_shift.label or tgt_shift.code,
+                "code": tgt_code,
+                "label": (tgt_shift.label or tgt_code) if tgt_shift else tgt_code,
                 "ob_hours": round(ob_total, 1),
             }
         )
@@ -365,27 +378,37 @@ async def propose_swap(
     req_shift = req_result[0] if req_result and req_result[0] else None
     tgt_shift = tgt_result[0] if tgt_result and tgt_result[0] else None
 
-    if not req_shift or req_shift.code in ("OFF",):
-        raise HTTPException(status_code=400, detail="Du jobbar inte det datumet")
-    if not tgt_shift or tgt_shift.code in ("OFF",):
-        raise HTTPException(status_code=400, detail="Kollegan jobbar inte det datumet")
-
+    req_code = req_shift.code if req_shift else "OFF"
+    tgt_code = tgt_shift.code if tgt_shift else "OFF"
     is_same_day = req_date == tgt_date
-    if is_same_day:
-        if req_shift.code == tgt_shift.code:
-            raise HTTPException(status_code=400, detail="Ni jobbar redan samma pass")
-        if (req_shift.code == "OC") != (tgt_shift.code == "OC"):
-            raise HTTPException(status_code=400, detail="Kan inte blanda OC och vanliga pass")
+    # One-way transfer: same day, exactly one party is free (XOR)
+    is_one_way = is_same_day and (req_code == "OFF") != (tgt_code == "OFF")
 
-    # Same-day swaps skip rest checks: both parties already work that day.
     if not is_same_day:
-        if not _check_rest_ok(tgt_date, tgt_shift.code, current_user.rotation_person_id, session=db):
+        # Cross-day swaps require both to be working
+        if req_code == "OFF":
+            raise HTTPException(status_code=400, detail="Du jobbar inte det datumet")
+        if tgt_code == "OFF":
+            raise HTTPException(status_code=400, detail="Kollegan jobbar inte det datumet")
+    else:
+        # Same-day: both free = pointless; mutual swap has extra rules
+        if req_code == "OFF" and tgt_code == "OFF":
+            raise HTTPException(status_code=400, detail="Ingen av er jobbar den dagen")
+        if not is_one_way:
+            if req_code == tgt_code:
+                raise HTTPException(status_code=400, detail="Ni jobbar redan samma pass")
+            if (req_code == "OC") != (tgt_code == "OC"):
+                raise HTTPException(status_code=400, detail="Kan inte blanda OC och vanliga pass")
+
+    # Same-day operations (mutual or one-way) skip rest checks.
+    if not is_same_day:
+        if not _check_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id, session=db):
             raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (du)")
-        if not _check_rest_ok(req_date, req_shift.code, target_user.rotation_person_id, session=db):
+        if not _check_rest_ok(req_date, req_code, target_user.rotation_person_id, session=db):
             raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (kollegan)")
-        if not _check_weekly_rest_ok(tgt_date, tgt_shift.code, current_user.rotation_person_id):
+        if not _check_weekly_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id):
             raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (du)")
-        if not _check_weekly_rest_ok(req_date, req_shift.code, target_user.rotation_person_id):
+        if not _check_weekly_rest_ok(req_date, req_code, target_user.rotation_person_id):
             raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (kollegan)")
 
     swap = ShiftSwap(
@@ -393,8 +416,8 @@ async def propose_swap(
         target_id=target_id,
         requester_date=req_date,
         target_date=tgt_date,
-        requester_shift_code=req_result[0].code if req_result and req_result[0] else None,
-        target_shift_code=tgt_result[0].code if tgt_result and tgt_result[0] else None,
+        requester_shift_code=req_code,
+        target_shift_code=tgt_code,
         message=message,
     )
     db.add(swap)

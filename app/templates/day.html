@@ -528,12 +528,13 @@
         {% endif %}
 
         {% if swap_users and user and user.id == person_id %}
-        <h3 style="margin-top: 1.5rem;">{{ t.day_propose_swap }}</h3>
+        {% set is_one_way = not shift or shift.code == 'OFF' %}
+        <h3 style="margin-top: 1.5rem;">{% if is_one_way %}{{ t.day_take_shift }}{% else %}{{ t.day_propose_swap }}{% endif %}</h3>
         <form method="POST" action="/swaps/propose" class="ot-form" id="swap-form">
             <input type="hidden" name="requester_date" value="{{ date }}">
             <div class="form-row">
                 <div class="form-group">
-                    <label for="target_id">{{ t.day_swap_with }}</label>
+                    <label for="target_id">{% if is_one_way %}{{ t.day_take_shift_colleague }}{% else %}{{ t.day_swap_with }}{% endif %}</label>
                     <select id="target_id" name="target_id" required>
                         <option value="">{{ t.day_swap_choose_colleague }}</option>
                         {% for u in swap_users %}
@@ -554,13 +555,17 @@
                     <input type="text" id="swap_message" name="message" placeholder="T.ex. kan jag ta ditt pass?">
                 </div>
             </div>
-            <button type="submit" class="btn" id="swap-submit" disabled>{{ t.day_swap_submit }}</button>
+            <button type="submit" class="btn" id="swap-submit" disabled>{% if is_one_way %}{{ t.day_take_shift_submit }}{% else %}{{ t.day_swap_submit }}{% endif %}</button>
             <p class="info-text">
-                {{ t.day_swap_offering }}
-                {% if shift %}
-                    ({{ shift.code }}{% if ob_hours %}, {{ "%.1f"|format(ob_hours.values()|sum) }}h OB{% endif %})
+                {% if is_one_way %}
+                    {{ t.day_take_shift_info }}
+                {% else %}
+                    {{ t.day_swap_offering }}
+                    {% if shift %}
+                        ({{ shift.code }}{% if ob_hours %}, {{ "%.1f"|format(ob_hours.values()|sum) }}h OB{% endif %})
+                    {% endif %}
+                    {{ t.day_swap_offering_suffix }}
                 {% endif %}
-                {{ t.day_swap_offering_suffix }}
             </p>
         </form>
         <script>
