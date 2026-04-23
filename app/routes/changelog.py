@@ -15,7 +15,7 @@ router = APIRouter()
 
 VERSIONS = [
     {
-        "version": "0.20.0",
+        "version": "0.12.0",
         "date": "2026-04-23",
         "entries": [
             {
@@ -25,7 +25,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.19.0",
+        "version": "0.11.0",
         "date": "2026-04-06",
         "entries": [
             {"type": "nyhet", "text": "OB-ersättning beräknas nu korrekt vid sjukfrånvaro (sick-OB)"},
@@ -38,7 +38,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.18.0",
+        "version": "0.10.0",
         "date": "2026-03-03",
         "entries": [
             {"type": "nyhet", "text": "Jourövertid och övertid visas nu i separata rader i månadsvyn"},
@@ -52,7 +52,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.17.0",
+        "version": "0.9.0",
         "date": "2026-02-07",
         "entries": [
             {"type": "nyhet", "text": "Anställningstransition: stöd för att byta anställningstyp mitt i en period"},
@@ -75,7 +75,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.15.0",
+        "version": "0.8.0",
         "date": "2026-01-09",
         "entries": [
             {"type": "nyhet", "text": "Dashboard-förbättringar: bättre översikt med kommande pass och ersättningar"},
@@ -88,7 +88,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.14.0",
+        "version": "0.7.0",
         "date": "2025-12-29",
         "entries": [
             {"type": "nyhet", "text": "Lönehistorik: hantering av löneändringar över tid"},
@@ -101,7 +101,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.12.0",
+        "version": "0.6.0",
         "date": "2025-12-22",
         "entries": [
             {"type": "nyhet", "text": "OB-koder visas som etiketter i schema- och dagvyer"},
@@ -113,7 +113,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.9.0",
+        "version": "0.5.0",
         "date": "2025-12-21",
         "entries": [
             {"type": "nyhet", "text": "Frånvarotypen 'Tjänstledigt' lagd till"},
@@ -122,7 +122,17 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.7.0",
+        "version": "0.4.0",
+        "date": "2025-12-20",
+        "entries": [
+            {"type": "nyhet", "text": "Inloggning med cookie-baserad session och databaslagring"},
+            {"type": "nyhet", "text": "Användarprofil och semesterhanteringsgränssnitt"},
+            {"type": "nyhet", "text": "Administratörsgränssnitt för användare och inställningar"},
+            {"type": "nyhet", "text": "Passbyte mellan kollegor"},
+        ],
+    },
+    {
+        "version": "0.3.0",
         "date": "2025-12-19",
         "entries": [
             {"type": "nyhet", "text": "iCal-export: exportera ditt schema till kalenderapp"},
@@ -130,15 +140,23 @@ VERSIONS = [
         ],
     },
     {
+        "version": "0.2.0",
+        "date": "2025-12-08",
+        "entries": [
+            {"type": "nyhet", "text": "OB-regler och utökade skiftvyer"},
+            {"type": "nyhet", "text": "Svenska helgdagar och storhelgsberäkning"},
+            {"type": "nyhet", "text": "Månads- och årsvy för hela teamet"},
+            {"type": "nyhet", "text": "Detaljerad dagsvy per person"},
+            {"type": "nyhet", "text": "Årsstatistik per person"},
+        ],
+    },
+    {
         "version": "0.1.0",
         "date": "2025-12-08",
         "entries": [
-            {"type": "nyhet", "text": "Initial release: schemavisning per år, månad och vecka"},
+            {"type": "nyhet", "text": "Initial release: grundläggande schemavisning per vecka"},
             {"type": "nyhet", "text": "OB-ersättningsberäkning baserad på rotationsschema"},
-            {"type": "nyhet", "text": "Personlig vy med daglig lön och ersättning"},
-            {"type": "nyhet", "text": "Administratörsgränssnitt för användare och inställningar"},
-            {"type": "nyhet", "text": "Passbyte mellan kollegor"},
-            {"type": "nyhet", "text": "Inloggning med cookie-baserad session"},
+            {"type": "nyhet", "text": "Personlig veckovy med daglig ersättning"},
         ],
     },
 ]
