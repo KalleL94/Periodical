@@ -22,6 +22,7 @@ from app.core.sentry_config import init_sentry
 from app.database.database import create_tables, get_db
 from app.routes.admin import router as admin_router
 from app.routes.admin_users import router as admin_users_router
+from app.routes.api_v1 import create_admin_api_app, create_api_app
 from app.routes.auth_routes import router as auth_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.oncall import router as oncall_router
@@ -182,7 +183,39 @@ ERROR_MESSAGES = {
 }
 
 
+_ADMIN_ONLY_PATHS = {
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/api/v1/admin/docs",
+    "/api/v1/admin/redoc",
+    "/api/v1/admin/openapi.json",
+}
+
+
+@app.middleware("http")
+async def protect_docs(request: Request, call_next):
+    if request.url.path in _ADMIN_ONLY_PATHS:
+        from app.auth.auth import get_current_user_from_cookie
+        from app.database.database import SessionLocal, UserRole
+
+        db = SessionLocal()
+        try:
+            user = await get_current_user_from_cookie(request, db)
+        finally:
+            db.close()
+
+        if not user or user.role != UserRole.ADMIN:
+            from fastapi.responses import RedirectResponse
+
+            return RedirectResponse("/login")
+
+    return await call_next(request)
+
+
 def _wants_json(request: Request) -> bool:
+    if request.url.path.startswith("/api/"):
+        return True
     accept = request.headers.get("accept", "")
     return "application/json" in accept and "text/html" not in accept
 
@@ -233,6 +266,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 # Include routers
+app.mount("/api/v1/admin", create_admin_api_app())
+app.mount("/api/v1", create_api_app())
 app.include_router(dashboard_router)
 app.include_router(schedule_personal_router)
 app.include_router(schedule_all_router)

@@ -163,3 +163,30 @@ def set_auth_cookie(response: Response, token: str) -> None:
 def clear_auth_cookie(response: Response) -> None:
     """Clear authentication cookie."""
     response.delete_cookie(key="access_token")
+
+
+async def get_api_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """Authenticate via Bearer API key in Authorization header."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    api_key = auth_header[7:]
+    user = db.query(User).filter(User.api_key == api_key).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+async def get_admin_api_user(user: User = Depends(get_api_user)) -> User:
+    """Get API user and verify admin role."""
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
