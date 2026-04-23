@@ -56,9 +56,7 @@ def migrate():
         print(f"[OK] {affected_rows} användare uppdaterade (must_change_password=1)")
 
         # Visa status
-        cursor.execute(
-            "SELECT id, username, name, role, must_change_password FROM users ORDER BY id"
-        )
+        cursor.execute("SELECT id, username, name, role, must_change_password FROM users ORDER BY id")
         users = cursor.fetchall()
 
         print("\nAnvändare i databasen:")
