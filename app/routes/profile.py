@@ -4,6 +4,7 @@ Profile routes: user profile, wages, rates, vacation, absence.
 """
 
 import datetime
+import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -269,6 +270,37 @@ async def set_language(
         raise
     redirect_url = next if (next.startswith("/") and not next.startswith("//")) else "/profile"
     return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@router.post("/profile/api-key/generate", name="generate_api_key")
+async def generate_api_key(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a new API key for the current user."""
+    new_key = secrets.token_urlsafe(32)
+    current_user.api_key = new_key
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/api-key/revoke", name="revoke_api_key")
+async def revoke_api_key(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke the current user's API key."""
+    current_user.api_key = None
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
 
 
 @router.get("/profile/calendar.ics/{lang}", response_class=Response, name="export_calendar")

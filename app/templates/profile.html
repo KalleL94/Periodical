@@ -194,6 +194,34 @@
         </div>
     </section>
 
+    <!-- API-nyckel -->
+    <section style="margin-top: 32px;">
+        <h2>{{ t.profile_api_key_title }}</h2>
+        <div class="card">
+            <p style="color: var(--muted); margin-top: 0;">{{ t.profile_api_key_desc }}</p>
+
+            {% if user.api_key %}
+                <input type="text" value="{{ user.api_key }}" readonly
+                       style="width: 100%; box-sizing: border-box; font-family: monospace; margin-bottom: 12px;">
+            {% else %}
+                <p style="color: var(--muted);">{{ t.profile_api_key_none }}</p>
+            {% endif %}
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center;">
+                <form method="POST" action="/profile/api-key/generate">
+                    <button type="submit" class="btn btn-primary">{{ t.profile_api_key_generate }}</button>
+                </form>
+                {% if user.api_key %}
+                <form method="POST" action="/profile/api-key/revoke"
+                      onsubmit="return confirm('{{ t.profile_api_key_revoke_confirm }}')">
+                    <button type="submit" class="btn btn-danger">{{ t.profile_api_key_revoke }}</button>
+                </form>
+                <a href="/api/v1/docs" target="_blank" class="btn btn-secondary">{{ t.profile_api_key_docs }}</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
     <!-- Kalenderexport -->
     <section class="calendar-export">
         <h2>{{ t.profile_calendar_export }}</h2>
