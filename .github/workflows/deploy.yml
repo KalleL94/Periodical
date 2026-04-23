@@ -2,8 +2,8 @@ name: Production Deployment
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
   deploy:
@@ -25,8 +25,7 @@ jobs:
           port: 2222
           script_stop: true
           script: |
-            # Anropa scriptet med rätt sökväg
-            bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }}
+            bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }} ${{ github.ref_name }}
 
       - name: Notify Success
         if: success()

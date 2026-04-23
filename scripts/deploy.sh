@@ -12,8 +12,9 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 1. Hantera argument (APP_PATH)
+# 1. Hantera argument
 APP_PATH="${1:-.}"
+TAG="${2:-}"
 SERVICE_NAME="ica-schedule"
 HEALTH_URL="http://127.0.0.1:8000/health"
 
@@ -32,7 +33,7 @@ error_exit() {
 }
 
 # Starta deployment
-log "🚀 Startar deployment för $SERVICE_NAME i $APP_PATH"
+log "🚀 Startar deployment för $SERVICE_NAME i $APP_PATH${TAG:+ (tagg: $TAG)}"
 
 # Navigera till katalogen
 if [ -d "$APP_PATH" ]; then
@@ -67,23 +68,29 @@ else
     warn "Databas hittades inte på $DB_PATH - hoppar över backup"
 fi
 
-# 3. Git Pull
+# 3. Hämta kod
 log "📥 Hämtar senaste koden..."
-git fetch origin
+git fetch --tags origin
 
-# Ta bort ospårade filer som konfliktar med inkommande commits
-# (händer t.ex. när filer flyttas i repot men redan existerar lokalt)
-CONFLICTING=$(git diff --name-status HEAD origin/main 2>/dev/null \
+# Ta bort ospårade filer som konfliktar med inkommande ändringar
+TARGET="${TAG:-origin/main}"
+CONFLICTING=$(git diff --name-status HEAD "$TARGET" 2>/dev/null \
     | awk '$1=="A" || $1=="R100" {print $NF}' \
     | while read -r f; do [ -f "$f" ] && echo "$f"; done)
 if [ -n "$CONFLICTING" ]; then
-    warn "Tar bort lokala ospårade filer som konfliktar med origin/main:"
+    warn "Tar bort lokala ospårade filer som konfliktar med $TARGET:"
     echo "$CONFLICTING" | while read -r f; do warn "  - $f"; done
     echo "$CONFLICTING" | xargs rm -f
 fi
 
-if ! git merge --ff-only origin/main; then
-    error_exit "Git merge misslyckades. Kontrollera nätverk eller konflikter."
+if [ -n "$TAG" ]; then
+    if ! git checkout "$TAG"; then
+        error_exit "Kunde inte checka ut tagg $TAG."
+    fi
+else
+    if ! git merge --ff-only origin/main; then
+        error_exit "Git merge misslyckades. Kontrollera nätverk eller konflikter."
+    fi
 fi
 
 # Aktivera virtual environment (Kritiskt steg)

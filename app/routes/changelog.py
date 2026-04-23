@@ -15,133 +15,395 @@ router = APIRouter()
 
 VERSIONS = [
     {
-        "version": "0.0.20",
+        "version": "0.12.0",
         "date": "2026-04-23",
         "entries": [
             {
                 "type": "nyhet",
-                "text": "Externt REST API v1 med API-nyckelautentisering för integration mot tredjepartssystem",
+                "sv": "Externt REST API v1 med API-nyckelautentisering för integration mot tredjepartssystem",
+                "en": "External REST API v1 with API key authentication for third-party integrations",
             },
-            {"type": "nyhet", "text": "OB-ersättning beräknas nu korrekt vid sjukfrånvaro (sick-OB)"},
-            {"type": "nyhet", "text": "Passbyte på samma dag är nu möjligt"},
         ],
     },
     {
-        "version": "0.0.19",
-        "date": "2026-04-08",
+        "version": "0.11.0",
+        "date": "2026-04-06",
         "entries": [
             {
                 "type": "nyhet",
-                "text": "Partiell frånvaro: registrera 'left_at' för halvdagsfrånvaro med karens-fördelning",
+                "sv": "OB-ersättning beräknas nu korrekt vid sjukfrånvaro (sick-OB)",
+                "en": "OB compensation now calculated correctly during sick leave",
             },
-            {"type": "nyhet", "text": "Förbättrad dashboard-navigering och schemavisning"},
-        ],
-    },
-    {
-        "version": "0.0.18",
-        "date": "2026-03-19",
-        "entries": [
-            {"type": "nyhet", "text": "Jourövertid och övertid visas nu i separata rader i månadsvyn"},
-            {"type": "nyhet", "text": "Offentlig månads- och veckovy tillgänglig utan inloggning"},
-            {"type": "nyhet", "text": "Excel-export för månadsvy"},
-            {"type": "nyhet", "text": "Semesterveckoväljarens hoppar nu automatiskt förbi ledigdagar"},
-            {"type": "nyhet", "text": "Flerspråkigt gränssnitt: Svenska / Engelska väljs per användare"},
-            {"type": "nyhet", "text": "Samarbetsstatistik-sida (gemensamma pass med kollegor)"},
-            {"type": "fix", "text": "Kollegors synlighet i passbyteslistan rättad"},
-            {"type": "fix", "text": "Personhistorik hämtar nu schema baserat på rätt datum"},
-            {"type": "fix", "text": "Semesterdagsavmarkering fungerar korrekt"},
-        ],
-    },
-    {
-        "version": "0.0.17",
-        "date": "2026-02-21",
-        "entries": [
-            {"type": "nyhet", "text": "Anställningstransition: stöd för att byta anställningstyp mitt i en period"},
-            {"type": "nyhet", "text": "Anpassningsbara faktorer för OB-, övertids- och joursatser per användare"},
-            {"type": "nyhet", "text": "Övertidsförlängning: pass kan förlängas med övertid direkt i schemat"},
-            {"type": "nyhet", "text": "Anpassade ersättningssatser (OB, OT, jour) per person"},
-            {"type": "nyhet", "text": "Månadsbrytningsvy med detaljerad uppdelning av ersättningstyper"},
             {
                 "type": "nyhet",
-                "text": "Sparade semesterdagar: möjlighet att spara och ta ut semester över räkenskapsår",
+                "sv": "Passbyte på samma dag är nu möjligt",
+                "en": "Same-day shift swaps are now possible",
             },
-            {"type": "nyhet", "text": "Semesterförbättringar: automatisk stängning av passerade semesterår"},
-            {"type": "nyhet", "text": "Storhelgsindikator i schemavy"},
-            {"type": "nyhet", "text": "Personhistorik: visa hur en persons schema sett ut historiskt"},
-            {"type": "fix", "text": "Rättad beräkning av jourövertid vid midnattspassering"},
+            {
+                "type": "nyhet",
+                "sv": "Partiell frånvaro: registrera 'left_at' för halvdagsfrånvaro med karens-fördelning",
+                "en": "Partial absence: register 'left_at' for half-day absence with deductible distribution",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Förbättrad dashboard-navigering och schemavisning",
+                "en": "Improved dashboard navigation and schedule display",
+            },
         ],
     },
     {
-        "version": "0.0.15",
-        "date": "2026-01-25",
+        "version": "0.10.0",
+        "date": "2026-03-03",
         "entries": [
-            {"type": "nyhet", "text": "Dashboard-förbättringar: bättre översikt med kommande pass och ersättningar"},
-            {"type": "nyhet", "text": "Jouröverride: möjlighet att manuellt överskriva vem som har jour"},
-            {"type": "nyhet", "text": "Betalningsvy per månad och år med summerat utfall"},
-            {"type": "nyhet", "text": "Uppdaterade joursatser för OC_WEEKEND och OC_HOLIDAY"},
-            {"type": "nyhet", "text": "Konsekvent tabellformatering i alla vyer"},
-            {"type": "nyhet", "text": "Kollegor visas i dagvyn och personliga vyer"},
-            {"type": "fix", "text": "Jouröverride rättad i dashboardens dagsvy"},
+            {
+                "type": "nyhet",
+                "sv": "Jourövertid och övertid visas nu i separata rader i månadsvyn",
+                "en": "On-call overtime and overtime now shown in separate rows in the month view",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Offentlig månads- och veckovy tillgänglig utan inloggning",
+                "en": "Public month and week view available without login",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Excel-export för månadsvy",
+                "en": "Excel export for month view",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Semesterveckoväljaren hoppar nu automatiskt förbi ledigdagar",
+                "en": "Vacation week selector now automatically skips days off",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Flerspråkigt gränssnitt: Svenska / Engelska väljs per användare",
+                "en": "Multilingual interface: Swedish / English selectable per user",
+            },
+            {
+                "type": "fix",
+                "sv": "Kollegors synlighet i passbyteslistan rättad",
+                "en": "Fixed colleague visibility in the shift swap list",
+            },
+            {
+                "type": "fix",
+                "sv": "Personhistorik hämtar nu schema baserat på rätt datum",
+                "en": "Person history now fetches schedule based on the correct date",
+            },
+            {
+                "type": "fix",
+                "sv": "Semesterdagsavmarkering fungerar korrekt",
+                "en": "Vacation day deselection now works correctly",
+            },
         ],
     },
     {
-        "version": "0.0.14",
-        "date": "2025-12-30",
+        "version": "0.9.0",
+        "date": "2026-02-07",
         "entries": [
-            {"type": "nyhet", "text": "Lönehistorik: hantering av löneändringar över tid"},
-            {"type": "nyhet", "text": "Rotationsperioder: schema kan konfigureras med flera rotationserar"},
-            {"type": "nyhet", "text": "Angränsande månader visas i kalendervy"},
-            {"type": "nyhet", "text": "Hälsokontrollendpoint med databas-status"},
-            {"type": "fix", "text": "Övertids- och frånvaroberäkning rättad"},
-            {"type": "fix", "text": "Datumkonsistens förbättrad i hela applikationen"},
-            {"type": "fix", "text": "Konfigurationsvalidering vid uppstart"},
+            {
+                "type": "nyhet",
+                "sv": "Anställningstransition: stöd för att byta anställningstyp mitt i en period",
+                "en": "Employment transition: support for changing employment type mid-period",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Anpassningsbara faktorer för OB-, övertids- och joursatser per användare",
+                "en": "Configurable multipliers for OB, overtime and on-call rates per user",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Övertidsförlängning: pass kan förlängas med övertid direkt i schemat",
+                "en": "Overtime extension: shifts can be extended with overtime directly in the schedule",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Anpassade ersättningssatser (OB, OT, jour) per person",
+                "en": "Custom compensation rates (OB, OT, on-call) per person",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Månadsbrytningsvy med detaljerad uppdelning av ersättningstyper",
+                "en": "Month breakdown view with detailed split of compensation types",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Sparade semesterdagar: möjlighet att spara och ta ut semester över räkenskapsår",
+                "en": "Saved vacation days: carry over and pay out vacation days across fiscal years",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Semesterförbättringar: automatisk stängning av passerade semesterår",
+                "en": "Vacation improvements: automatic closing of past vacation years",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Storhelgsindikator i schemavy",
+                "en": "Public holiday indicator in schedule view",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Personhistorik: visa hur en persons schema sett ut historiskt",
+                "en": "Person history: view how a person's schedule has looked historically",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Statistiksida med årsöversikt och lönetrenddiagram",
+                "en": "Statistics page with yearly overview and pay trend chart",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Samarbetsstatistik-sida (gemensamma pass med kollegor)",
+                "en": "Collaboration statistics page (shared shifts with colleagues)",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Svenska navigeringstexter och aktiva länkmarkeringar i navbaren",
+                "en": "Localized navigation labels and active link highlighting in the navbar",
+            },
+            {
+                "type": "fix",
+                "sv": "Rättad beräkning av jourövertid vid midnattspassering",
+                "en": "Fixed on-call overtime calculation at midnight crossings",
+            },
+            {
+                "type": "fix",
+                "sv": "Veckovy visade rotationsposition istället för personnamn",
+                "en": "Week view showed rotation position instead of person name",
+            },
         ],
     },
     {
-        "version": "0.0.12",
-        "date": "2025-12-23",
+        "version": "0.8.0",
+        "date": "2026-01-09",
         "entries": [
-            {"type": "nyhet", "text": "OB-koder visas som etiketter i schema- och dagvyer"},
-            {"type": "fix", "text": "Jourberedskap separeras korrekt från ordinarie pass i dashboarden"},
-            {"type": "fix", "text": "Storhelgsbricka baseras nu på datum istället för veckotyp"},
-            {"type": "fix", "text": "Jourtimmar räknas inte längre dubbelt i passlistan"},
+            {
+                "type": "nyhet",
+                "sv": "Dashboard-förbättringar: bättre översikt med kommande pass och ersättningar",
+                "en": "Dashboard improvements: better overview with upcoming shifts and compensation",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Jouröverride: möjlighet att manuellt överskriva vem som har jour",
+                "en": "On-call override: ability to manually override who is on call",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Betalningsvy per månad och år med summerat utfall",
+                "en": "Payment view per month and year with summarized totals",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Uppdaterade joursatser för OC_WEEKEND och OC_HOLIDAY",
+                "en": "Updated on-call rates for OC_WEEKEND and OC_HOLIDAY",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Konsekvent tabellformatering i alla vyer",
+                "en": "Consistent table formatting across all views",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Kollegor visas i dagvyn och personliga vyer",
+                "en": "Colleagues shown in day view and personal views",
+            },
+            {
+                "type": "fix",
+                "sv": "Jouröverride rättad i dashboardens dagsvy",
+                "en": "On-call override fixed in the dashboard day view",
+            },
         ],
     },
     {
-        "version": "0.0.11",
+        "version": "0.7.0",
+        "date": "2025-12-29",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Lönehistorik: hantering av löneändringar över tid",
+                "en": "Wage history: tracking of wage changes over time",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Rotationsperioder: schema kan konfigureras med flera rotationserar",
+                "en": "Rotation eras: schedule can be configured with multiple rotation periods",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Angränsande månader visas i kalendervy",
+                "en": "Adjacent months shown in calendar view",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Hälsokontrollendpoint med databas-status",
+                "en": "Health check endpoint with database status",
+            },
+            {
+                "type": "fix",
+                "sv": "Övertids- och frånvaroberäkning rättad",
+                "en": "Overtime and absence calculation fixed",
+            },
+            {
+                "type": "fix",
+                "sv": "Datumkonsistens förbättrad i hela applikationen",
+                "en": "Date consistency improved throughout the application",
+            },
+            {
+                "type": "fix",
+                "sv": "Konfigurationsvalidering vid uppstart",
+                "en": "Configuration validation on startup",
+            },
+        ],
+    },
+    {
+        "version": "0.6.0",
         "date": "2025-12-22",
         "entries": [
-            {"type": "nyhet", "text": "Datumväljare i dagvyn för snabb navigering"},
-            {"type": "nyhet", "text": "Skattetabellintegration: nettolön beräknas med korrekt skattetabell"},
+            {
+                "type": "nyhet",
+                "sv": "OB-koder visas som etiketter i schema- och dagvyer",
+                "en": "OB codes shown as labels in schedule and day views",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Datumväljare i dagvyn för snabb navigering",
+                "en": "Date picker in day view for quick navigation",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Skattetabellintegration: nettolön beräknas med korrekt skattetabell",
+                "en": "Tax table integration: net pay calculated using the correct tax table",
+            },
+            {
+                "type": "fix",
+                "sv": "Jourberedskap separeras korrekt från ordinarie pass i dashboarden",
+                "en": "On-call duty correctly separated from regular shifts in the dashboard",
+            },
+            {
+                "type": "fix",
+                "sv": "Storhelgsbricka baseras nu på datum istället för veckotyp",
+                "en": "Public holiday badge now based on date instead of week type",
+            },
+            {
+                "type": "fix",
+                "sv": "Jourtimmar räknas inte längre dubbelt i passlistan",
+                "en": "On-call hours no longer double-counted in the shift list",
+            },
         ],
     },
     {
-        "version": "0.0.9",
+        "version": "0.5.0",
         "date": "2025-12-21",
         "entries": [
-            {"type": "nyhet", "text": "Frånvarotypen 'Tjänstledigt' lagd till"},
-            {"type": "nyhet", "text": "Komplett frånvarohantering med karens och OB-justering"},
-            {"type": "nyhet", "text": "Automatisk databasbackup vid driftsättning"},
+            {
+                "type": "nyhet",
+                "sv": "Frånvarotypen 'Tjänstledigt' lagd till",
+                "en": "Absence type 'Leave of absence' added",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Komplett frånvarohantering med karens och OB-justering",
+                "en": "Complete absence tracking with deductible and OB adjustment",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Automatisk databasbackup vid driftsättning",
+                "en": "Automatic database backup on deployment",
+            },
         ],
     },
     {
-        "version": "0.0.7",
+        "version": "0.4.0",
+        "date": "2025-12-20",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Inloggning med cookie-baserad session och databaslagring",
+                "en": "Login with cookie-based session and database persistence",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Användarprofil och semesterhanteringsgränssnitt",
+                "en": "User profile and vacation management interface",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Administratörsgränssnitt för användare och inställningar",
+                "en": "Admin interface for users and settings",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Passbyte mellan kollegor",
+                "en": "Shift swaps between colleagues",
+            },
+        ],
+    },
+    {
+        "version": "0.3.0",
         "date": "2025-12-19",
         "entries": [
-            {"type": "nyhet", "text": "iCal-export: exportera ditt schema till kalenderapp"},
-            {"type": "nyhet", "text": "Veckovy med rutnätslayout"},
+            {
+                "type": "nyhet",
+                "sv": "iCal-export: exportera ditt schema till kalenderapp",
+                "en": "iCal export: export your schedule to a calendar app",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Veckovy med rutnätslayout",
+                "en": "Week view with grid layout",
+            },
         ],
     },
     {
-        "version": "0.0.1",
+        "version": "0.2.0",
         "date": "2025-12-08",
         "entries": [
-            {"type": "nyhet", "text": "Initial release: schemavisning per år, månad och vecka"},
-            {"type": "nyhet", "text": "OB-ersättningsberäkning baserad på rotationsschema"},
-            {"type": "nyhet", "text": "Personlig vy med daglig lön och ersättning"},
-            {"type": "nyhet", "text": "Administratörsgränssnitt för användare och inställningar"},
-            {"type": "nyhet", "text": "Passbyte mellan kollegor"},
-            {"type": "nyhet", "text": "Inloggning med cookie-baserad session"},
+            {
+                "type": "nyhet",
+                "sv": "OB-regler och utökade skiftvyer",
+                "en": "OB rules and expanded shift views",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Svenska helgdagar och storhelgsberäkning",
+                "en": "Swedish public holidays and major holiday calculation",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Månads- och årsvy för hela teamet",
+                "en": "Monthly and yearly view for the whole team",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Detaljerad dagsvy per person",
+                "en": "Detailed day view per person",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Årsstatistik per person",
+                "en": "Yearly statistics per person",
+            },
+        ],
+    },
+    {
+        "version": "0.1.0",
+        "date": "2025-12-08",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Initial release: grundläggande schemavisning per vecka",
+                "en": "Initial release: basic schedule view per week",
+            },
+            {
+                "type": "nyhet",
+                "sv": "OB-ersättningsberäkning baserad på rotationsschema",
+                "en": "OB compensation calculation based on rotation schedule",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Personlig veckovy med daglig ersättning",
+                "en": "Personal week view with daily compensation",
+            },
         ],
     },
 ]
