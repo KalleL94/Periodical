@@ -15,21 +15,21 @@ router = APIRouter()
 
 VERSIONS = [
     {
-        "version": "0.0.20",
+        "version": "0.20.0",
         "date": "2026-04-23",
         "entries": [
             {
                 "type": "nyhet",
                 "text": "Externt REST API v1 med API-nyckelautentisering för integration mot tredjepartssystem",
             },
-            {"type": "nyhet", "text": "OB-ersättning beräknas nu korrekt vid sjukfrånvaro (sick-OB)"},
-            {"type": "nyhet", "text": "Passbyte på samma dag är nu möjligt"},
         ],
     },
     {
-        "version": "0.0.19",
-        "date": "2026-04-08",
+        "version": "0.19.0",
+        "date": "2026-04-06",
         "entries": [
+            {"type": "nyhet", "text": "OB-ersättning beräknas nu korrekt vid sjukfrånvaro (sick-OB)"},
+            {"type": "nyhet", "text": "Passbyte på samma dag är nu möjligt"},
             {
                 "type": "nyhet",
                 "text": "Partiell frånvaro: registrera 'left_at' för halvdagsfrånvaro med karens-fördelning",
@@ -38,23 +38,22 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.0.18",
-        "date": "2026-03-19",
+        "version": "0.18.0",
+        "date": "2026-03-03",
         "entries": [
             {"type": "nyhet", "text": "Jourövertid och övertid visas nu i separata rader i månadsvyn"},
             {"type": "nyhet", "text": "Offentlig månads- och veckovy tillgänglig utan inloggning"},
             {"type": "nyhet", "text": "Excel-export för månadsvy"},
-            {"type": "nyhet", "text": "Semesterveckoväljarens hoppar nu automatiskt förbi ledigdagar"},
+            {"type": "nyhet", "text": "Semesterveckoväljaren hoppar nu automatiskt förbi ledigdagar"},
             {"type": "nyhet", "text": "Flerspråkigt gränssnitt: Svenska / Engelska väljs per användare"},
-            {"type": "nyhet", "text": "Samarbetsstatistik-sida (gemensamma pass med kollegor)"},
             {"type": "fix", "text": "Kollegors synlighet i passbyteslistan rättad"},
             {"type": "fix", "text": "Personhistorik hämtar nu schema baserat på rätt datum"},
             {"type": "fix", "text": "Semesterdagsavmarkering fungerar korrekt"},
         ],
     },
     {
-        "version": "0.0.17",
-        "date": "2026-02-21",
+        "version": "0.17.0",
+        "date": "2026-02-07",
         "entries": [
             {"type": "nyhet", "text": "Anställningstransition: stöd för att byta anställningstyp mitt i en period"},
             {"type": "nyhet", "text": "Anpassningsbara faktorer för OB-, övertids- och joursatser per användare"},
@@ -68,12 +67,16 @@ VERSIONS = [
             {"type": "nyhet", "text": "Semesterförbättringar: automatisk stängning av passerade semesterår"},
             {"type": "nyhet", "text": "Storhelgsindikator i schemavy"},
             {"type": "nyhet", "text": "Personhistorik: visa hur en persons schema sett ut historiskt"},
+            {"type": "nyhet", "text": "Statistiksida med årsöversikt och lönetrenddiagram"},
+            {"type": "nyhet", "text": "Samarbetsstatistik-sida (gemensamma pass med kollegor)"},
+            {"type": "nyhet", "text": "Svenska navigeringstexter och aktiva länkmarkeringar i navbaren"},
             {"type": "fix", "text": "Rättad beräkning av jourövertid vid midnattspassering"},
+            {"type": "fix", "text": "Veckovy visade rotationsposition istället för personnamn"},
         ],
     },
     {
-        "version": "0.0.15",
-        "date": "2026-01-25",
+        "version": "0.15.0",
+        "date": "2026-01-09",
         "entries": [
             {"type": "nyhet", "text": "Dashboard-förbättringar: bättre översikt med kommande pass och ersättningar"},
             {"type": "nyhet", "text": "Jouröverride: möjlighet att manuellt överskriva vem som har jour"},
@@ -85,8 +88,8 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.0.14",
-        "date": "2025-12-30",
+        "version": "0.14.0",
+        "date": "2025-12-29",
         "entries": [
             {"type": "nyhet", "text": "Lönehistorik: hantering av löneändringar över tid"},
             {"type": "nyhet", "text": "Rotationsperioder: schema kan konfigureras med flera rotationserar"},
@@ -98,25 +101,19 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.0.12",
-        "date": "2025-12-23",
+        "version": "0.12.0",
+        "date": "2025-12-22",
         "entries": [
             {"type": "nyhet", "text": "OB-koder visas som etiketter i schema- och dagvyer"},
+            {"type": "nyhet", "text": "Datumväljare i dagvyn för snabb navigering"},
+            {"type": "nyhet", "text": "Skattetabellintegration: nettolön beräknas med korrekt skattetabell"},
             {"type": "fix", "text": "Jourberedskap separeras korrekt från ordinarie pass i dashboarden"},
             {"type": "fix", "text": "Storhelgsbricka baseras nu på datum istället för veckotyp"},
             {"type": "fix", "text": "Jourtimmar räknas inte längre dubbelt i passlistan"},
         ],
     },
     {
-        "version": "0.0.11",
-        "date": "2025-12-22",
-        "entries": [
-            {"type": "nyhet", "text": "Datumväljare i dagvyn för snabb navigering"},
-            {"type": "nyhet", "text": "Skattetabellintegration: nettolön beräknas med korrekt skattetabell"},
-        ],
-    },
-    {
-        "version": "0.0.9",
+        "version": "0.9.0",
         "date": "2025-12-21",
         "entries": [
             {"type": "nyhet", "text": "Frånvarotypen 'Tjänstledigt' lagd till"},
@@ -125,7 +122,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.0.7",
+        "version": "0.7.0",
         "date": "2025-12-19",
         "entries": [
             {"type": "nyhet", "text": "iCal-export: exportera ditt schema till kalenderapp"},
@@ -133,7 +130,7 @@ VERSIONS = [
         ],
     },
     {
-        "version": "0.0.1",
+        "version": "0.1.0",
         "date": "2025-12-08",
         "entries": [
             {"type": "nyhet", "text": "Initial release: schemavisning per år, månad och vecka"},

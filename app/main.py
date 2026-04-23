@@ -119,7 +119,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Periodical",
     description="Employee shift scheduling and OB pay calculation system",
-    version="0.0.20",
+    version="0.20.0",
     lifespan=lifespan,
 )
 
@@ -302,7 +302,7 @@ async def health_check(db: Session = Depends(get_db)):
             content={
                 "status": "healthy",
                 "service": "periodical",
-                "version": "0.0.20",
+                "version": "0.20.0",
                 "database": "connected",
             },
         )
