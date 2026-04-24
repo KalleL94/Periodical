@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.14.1",
+        "date": "2026-04-25",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "API: övertidspersonal visas nu som kollega med rätt pass (t.ex. OT-N1), beredskap utan inringning visas inte, adminkonto filtreras bort",
+                "en": "API: overtime workers now appear as coworkers with the correct shift (e.g. OT-N1), on-call without call-in is hidden, admin account is filtered out",
+            },
+        ],
+    },
+    {
         "version": "0.14.0",
         "date": "2026-04-24",
         "entries": [

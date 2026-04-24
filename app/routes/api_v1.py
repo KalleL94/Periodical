@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_api_user, get_api_user
-from app.core.schedule.core import calculate_shift_hours, determine_shift_for_date
+from app.core.schedule.core import calculate_shift_hours, determine_shift_for_date, get_shift_types
 from app.core.schedule.ob import calculate_ob_pay, get_combined_rules_for_year
 from app.core.utils import get_today
 from app.database.database import Absence, OvertimeShift, User, UserRole, get_db
@@ -41,13 +41,48 @@ def _absent_ids_by_date(start: datetime.date, end: datetime.date, db: Session) -
     return result
 
 
-def _build_coworkers(user_id: int, date: datetime.date, all_users: list[User], absent_ids: set[int]) -> list[dict]:
+def _overtime_by_date(
+    start: datetime.date, end: datetime.date, db: Session
+) -> dict[datetime.date, dict[int, datetime.time]]:
+    """Returns {date: {user_id: end_time}} for full (non-extension) overtime shifts."""
+    rows = (
+        db.query(OvertimeShift.user_id, OvertimeShift.date, OvertimeShift.end_time)
+        .filter(OvertimeShift.date >= start, OvertimeShift.date <= end, OvertimeShift.is_extension.is_(False))
+        .all()
+    )
+    result: dict[datetime.date, dict[int, datetime.time]] = {}
+    for uid, d, et in rows:
+        result.setdefault(d, {})[uid] = et
+    return result
+
+
+def _find_shift_for_overtime(ot_end: datetime.time) -> tuple[str, str]:
+    """Match overtime end time to a named shift; falls back to 'OT'/'Övertid'."""
+    ot_end_str = ot_end.strftime("%H:%M")
+    for shift in get_shift_types():
+        if shift.end_time == ot_end_str and shift.code not in ("OFF", "OC"):
+            label = shift.label or shift.code
+            return f"OT-{shift.code}", f"Övertid ({label})"
+    return "OT", "Övertid"
+
+
+def _build_coworkers(
+    user_id: int,
+    date: datetime.date,
+    all_users: list[User],
+    absent_ids: set[int],
+    overtime_map: dict[int, datetime.time] | None = None,
+) -> list[dict]:
     result = []
     for u in all_users:
-        if u.id == user_id or u.id in absent_ids:
+        if u.id == user_id or u.id in absent_ids or u.role == UserRole.ADMIN:
+            continue
+        if overtime_map is not None and u.id in overtime_map:
+            code, label = _find_shift_for_overtime(overtime_map[u.id])
+            result.append({"id": u.id, "name": u.name, "shift_code": code, "shift_label": label})
             continue
         shift, _ = determine_shift_for_date(date, u.rotation_person_id)
-        if shift and shift.code not in ("OFF",):
+        if shift and shift.code not in ("OFF", "OC"):
             result.append({"id": u.id, "name": u.name, "shift_code": shift.code, "shift_label": shift.label})
     return result
 
@@ -59,6 +94,7 @@ def _build_day_status(
     include_salary: bool = False,
     all_users: list[User] | None = None,
     absent_ids: set[int] | None = None,
+    overtime_map: dict[int, datetime.time] | None = None,
 ) -> dict:
     absence = db.query(Absence).filter(Absence.user_id == user.id, Absence.date == date).first()
     overtime = db.query(OvertimeShift).filter(OvertimeShift.user_id == user.id, OvertimeShift.date == date).first()
@@ -74,7 +110,16 @@ def _build_day_status(
         # Include the current user as absent if they have an absence
         if absence:
             effective_absent = effective_absent | {user.id}
-        coworkers = _build_coworkers(user.id, date, all_users, effective_absent)
+        if overtime_map is not None:
+            effective_overtime = overtime_map
+        else:
+            effective_overtime = {
+                row[0]: row[1]
+                for row in db.query(OvertimeShift.user_id, OvertimeShift.end_time)
+                .filter(OvertimeShift.date == date, OvertimeShift.is_extension.is_(False))
+                .all()
+            }
+        coworkers = _build_coworkers(user.id, date, all_users, effective_absent, effective_overtime)
 
     if absence:
         result = {
@@ -153,6 +198,7 @@ def _build_period(
     """Build day-status list for a range; returns (days, ob_total_sum)."""
     all_users = db.query(User).filter(User.is_active == 1).all()
     absent_by_date = _absent_ids_by_date(start, end, db)
+    overtime_by_date = _overtime_by_date(start, end, db)
     days = []
     ob_sum = 0.0
     d = start
@@ -164,6 +210,7 @@ def _build_period(
             include_salary=include_salary,
             all_users=all_users,
             absent_ids=absent_by_date.get(d, set()),
+            overtime_map=overtime_by_date.get(d, {}),
         )
         if include_salary:
             ob_sum += day.get("ob_total") or 0.0
