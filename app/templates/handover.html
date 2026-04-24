@@ -1,0 +1,83 @@
+{# app/templates/handover.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – {{ t.handover_title }} – {{ date }}{% endblock %}
+
+{% block page_content %}
+
+<style>
+.handover-nav {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+@media print {
+    .handover-nav, header, footer { display: none !important; }
+    .page-title { margin-top: 0; }
+    body { background: white !important; color: black !important; }
+    main { padding: 0 !important; }
+}
+</style>
+
+<div class="handover-nav">
+    {% if user %}
+    <a href="/day/{{ user.id }}/{{ date.year }}/{{ date.month }}/{{ date.day }}"
+       class="btn secondary">{{ t.handover_back_day }}</a>
+    {% endif %}
+    <a href="/handover?date={{ prev_date }}" class="btn btn-primary">{{ t.handover_prev }}</a>
+    <a href="/handover" class="btn btn-primary">{{ t.handover_today }}</a>
+    <a href="/handover?date={{ next_date }}" class="btn btn-primary">{{ t.handover_next }}</a>
+    <input type="date"
+           class="date-picker-input"
+           value="{{ date }}"
+           onchange="window.location.href='/handover?date=' + this.value">
+    <button onclick="selectReport()" class="btn btn-primary" style="margin-left: auto;">
+        {{ t.handover_copy }}
+    </button>
+</div>
+
+<h2 class="page-title">{{ t.handover_title }} – {{ weekday_name }} {{ date }}</h2>
+
+{# Allt i #handover-content använder inline-stilar så att OneNote bevarar dem vid inklistring #}
+<div id="handover-content" style="max-width: 780px;">
+
+{% for group in shift_groups %}
+<p style="margin: 16px 0 10px 0;">_______________________________________________________________________________________________________________</p>
+<table style="border-collapse: collapse; width: 100%; margin-bottom: 8px;">
+    <tr>
+        <td style="border: 1px solid black; padding: 5px 10px; white-space: nowrap;"><b>{{ group.label }}:</b></td>
+        {% for name in group.persons %}
+        <td style="border: 1px solid black; padding: 5px 10px;">{{ name }}</td>
+        {% endfor %}
+        {% if not group.persons %}
+        <td style="border: 1px solid black; padding: 5px 10px;">&nbsp;</td>
+        {% endif %}
+    </tr>
+</table>
+
+{% if group.code != 'OC' %}
+<p style="margin: 8px 0 4px 0;"><b><u>Viktigt:</u></b></p>
+<p style="margin: 4px 0;">&nbsp;</p>
+<p style="margin: 4px 0;">&nbsp;</p>
+<p style="margin: 8px 0 4px 0;"><b><u>Övrigt:</u></b></p>
+<p style="margin: 4px 0;">&nbsp;</p>
+<p style="margin: 4px 0;">&nbsp;</p>
+{% endif %}
+{% endfor %}
+
+</div>
+
+<script>
+function selectReport() {
+    var el = document.getElementById('handover-content');
+    var sel = window.getSelection();
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
+}
+</script>
+
+{% endblock %}
