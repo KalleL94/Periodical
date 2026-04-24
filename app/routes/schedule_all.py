@@ -3,13 +3,14 @@
 Team-wide schedule view routes - week, month, and year views for all persons.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
+from app.core.constants import WEEKDAY_NAMES
 from app.core.helpers import can_see_salary, render_template, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
@@ -211,6 +212,59 @@ async def show_year_all(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "today": real_today,
+        },
+        user=current_user,
+    )
+
+
+@router.get("/handover", response_class=HTMLResponse, name="handover")
+async def show_handover(
+    request: Request,
+    date: str = None,
+    current_user: User = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Daily handover report grouped by shift type."""
+    today = get_today()
+
+    if date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            target_date = today
+    else:
+        target_date = today
+
+    iso_year, iso_week, _ = target_date.isocalendar()
+    days_in_week = build_week_data(iso_year, iso_week, session=db)
+
+    day_data = next((d for d in days_in_week if d["date"] == target_date), None)
+
+    shift_groups = [
+        {"code": "N1", "label": "Morgonpass", "persons": []},
+        {"code": "N2", "label": "Kvällspass", "persons": []},
+        {"code": "N3", "label": "Nattpass", "persons": []},
+        {"code": "OC", "label": "Beredskap", "persons": []},
+    ]
+
+    if day_data and "persons" in day_data:
+        code_to_group = {g["code"]: g for g in shift_groups}
+        for person in day_data["persons"]:
+            shift = person.get("shift")
+            if shift and shift.code in code_to_group:
+                code_to_group[shift.code]["persons"].append(person["person_name"])
+
+    return render_template(
+        templates,
+        "handover.html",
+        request,
+        {
+            "date": target_date,
+            "weekday_name": WEEKDAY_NAMES[target_date.weekday()],
+            "shift_groups": shift_groups,
+            "prev_date": target_date - timedelta(days=1),
+            "next_date": target_date + timedelta(days=1),
+            "today": today,
         },
         user=current_user,
     )

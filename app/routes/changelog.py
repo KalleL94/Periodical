@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.14.0",
+        "date": "2026-04-24",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Överlämningsrapport: generera dagens passöverlämning från dagvyn, kopiera och klistra in i OneNote",
+                "en": "Handover report: generate the daily shift handover from the day view, copy and paste into OneNote",
+            },
+        ],
+    },
+    {
         "version": "0.13.0",
         "date": "2026-04-23",
         "entries": [
