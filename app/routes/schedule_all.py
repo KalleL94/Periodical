@@ -20,6 +20,7 @@ from app.core.schedule import (
     generate_month_data,
     generate_year_data,
     get_all_user_wages,
+    get_shift_types,
     rotation_start_date,
     summarize_month_for_person,
 )
@@ -249,10 +250,23 @@ async def show_handover(
 
     if day_data and "persons" in day_data:
         code_to_group = {g["code"]: g for g in shift_groups}
+        end_time_to_code = {
+            s.end_time: s.code for s in get_shift_types() if s.end_time and s.code in ("N1", "N2", "N3")
+        }
         for person in day_data["persons"]:
             shift = person.get("shift")
-            if shift and shift.code in code_to_group:
+            if not shift:
+                continue
+            if shift.code in code_to_group:
                 code_to_group[shift.code]["persons"].append(person["person_name"])
+            elif shift.code == "OT":
+                end_dt = person.get("end")
+                matched_code = end_time_to_code.get(end_dt.strftime("%H:%M")) if end_dt else None
+                name = f"{person['person_name']} (ÖT)"
+                if matched_code:
+                    code_to_group[matched_code]["persons"].append(name)
+                else:
+                    code_to_group["N1"]["persons"].append(name)
 
     return render_template(
         templates,
