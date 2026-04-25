@@ -27,7 +27,7 @@
         </div>
 
         <div class="day-buttons-right">
-            <a href="/handover?date={{ date }}" class="btn secondary">Överlämning</a>
+            <a href="/handover?date={{ date }}" class="btn secondary">{{ t.handover_title }}</a>
             {# Navigering mellan personer - endast för admin #}
             {% if user and user.role.value == 'admin' %}
                 {% for i in person_ids %}
