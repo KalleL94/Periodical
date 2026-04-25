@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.14.2",
+        "date": "2026-04-25",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Överlämningsrapport: övertidspersonal visas nu med rätt passgrupp och markeras med (ÖT)",
+                "en": "Handover report: overtime workers now appear under the correct shift group and are marked with (ÖT)",
+            },
+        ],
+    },
+    {
         "version": "0.14.1",
         "date": "2026-04-25",
         "entries": [
