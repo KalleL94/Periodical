@@ -460,11 +460,11 @@ def calculate_vacation_pay(
         db: Database session
     """
     from app.core.schedule.summary import summarize_month_for_person
-    from app.core.schedule.wages import get_user_wage
+    from app.core.schedule.wages import get_effective_monthly_wage
 
-    # Get current wage
+    # Get current wage (monthly equivalent for HOURLY workers)
     try:
-        monthly_salary = get_user_wage(db, user.id, 0)
+        monthly_salary = get_effective_monthly_wage(db, user.id, 0)
     except Exception:
         monthly_salary = user.wage if hasattr(user, "wage") else 0
     if monthly_salary == 0:

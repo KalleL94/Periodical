@@ -1151,14 +1151,16 @@ def _populate_single_person_day(
 
     if ot_shift:
         # Beräkna övertidsersättning med temporal wage query
-        from app.core.constants import OT_RATE_DIVISOR
+        from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
 
-        from .wages import get_user_wage
-
-        # Get wage for this specific date (temporal query)
+        # Get raw stored wage for this date (temporal query)
         wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
         _ot_custom = _person_rates.get("ot")
-        hourly_rate = float(_ot_custom) if _ot_custom is not None else (wage_for_date / OT_RATE_DIVISOR)
+        hourly_rate = (
+            float(_ot_custom)
+            if _ot_custom is not None
+            else get_ot_hourly_rate_from_stored_wage(session, person_id, wage_for_date)
+        )
 
         # Recalculate overtime pay based on historical wage
         ot_hours = ot_shift.hours

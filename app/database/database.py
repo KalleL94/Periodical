@@ -47,6 +47,13 @@ class AbsenceType(str, enum.Enum):
     VACATION = "VACATION"  # Enskild semesterdag
 
 
+class WageType(str, enum.Enum):
+    """Whether the user is paid a monthly salary or an hourly rate."""
+
+    MONTHLY = "monthly"
+    HOURLY = "hourly"
+
+
 class OnCallOverrideType(str, enum.Enum):
     """Types of on-call override."""
 
@@ -81,6 +88,7 @@ class User(Base):
     name = Column(String(100), nullable=False)
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
     wage = Column(Integer, nullable=False)
+    wage_type = Column(SQLEnum(WageType), default=WageType.MONTHLY, nullable=False)
     vacation = Column(JSON, default=dict)  # {"2026": [1,2,3], "2027": []}
     tax_table = Column(String(10), default="33", nullable=True)  # Swedish tax table number (e.g., "29", "30", "33")
     is_active = Column(

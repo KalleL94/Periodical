@@ -5,7 +5,7 @@ from app.core.storage import load_persons, load_tax_brackets
 from .core import get_settings
 from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, generate_year_data
-from .wages import get_absence_deductions_for_month, get_all_user_wages, get_user_wage
+from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage
 
 _tax_brackets = None
 _persons = None
@@ -120,10 +120,12 @@ def summarize_month_for_person(
     uid_for_wages = wage_user_id if wage_user_id is not None else person_id
 
     if user_wages and uid_for_wages in user_wages:
-        base_salary = get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
+        base_salary = get_effective_monthly_wage(
+            session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
+        )
     else:
         try:
-            base_salary = get_user_wage(
+            base_salary = get_effective_monthly_wage(
                 session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
             )
         except Exception:
@@ -580,7 +582,7 @@ def summarize_year_for_person(
             # Use wage_user_id for wage lookup if provided
             uid_for_wages = wage_user_id if wage_user_id is not None else person_id
 
-            base_salary = get_user_wage(
+            base_salary = get_effective_monthly_wage(
                 session, uid_for_wages, settings.monthly_salary, effective_date=dt.date(2025, 12, 1)
             )
 

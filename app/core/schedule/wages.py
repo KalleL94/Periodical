@@ -31,6 +31,21 @@ def _get_user_id_for_position(session, person_id: int) -> int:
     return person_id
 
 
+_MONTHLY_HOURS = 173.33  # Standard Swedish monthly hours divisor
+
+
+def _get_wage_type(session, user_id: int):
+    """Returns the WageType for a user. Defaults to MONTHLY if not set."""
+    from app.database.database import User, WageType
+
+    if not session:
+        return WageType.MONTHLY
+    user = session.query(User).filter(User.id == user_id).first()
+    if user and user.wage_type:
+        return user.wage_type
+    return WageType.MONTHLY
+
+
 def get_user_wage(session, user_id: int, fallback: int | None = None, effective_date: date | None = None) -> int:
     """
     Hämtar en användares lön från databasen med temporal validity support.
@@ -84,6 +99,41 @@ def get_user_wage(session, user_id: int, fallback: int | None = None, effective_
     return user.wage if user else default
 
 
+def get_effective_monthly_wage(
+    session, user_id: int, fallback: int | None = None, effective_date: date | None = None
+) -> int:
+    """
+    Returns a monthly-equivalent wage for use in calculations that divide by 173.33.
+
+    For MONTHLY workers: returns stored wage as-is.
+    For HOURLY workers: returns int(hourly_rate * 173.33) so that
+      effective_monthly / 173.33 == hourly_rate.
+    """
+    from app.database.database import WageType
+
+    wage = get_user_wage(session, user_id, fallback, effective_date)
+    wage_type = _get_wage_type(session, user_id)
+    if wage_type == WageType.HOURLY:
+        return int(wage * _MONTHLY_HOURS)
+    return wage
+
+
+def get_ot_hourly_rate_from_stored_wage(session, user_id: int, stored_wage: int) -> float:
+    """
+    Returns the OT hourly rate given the stored wage value.
+
+    For MONTHLY workers: stored_wage / OT_RATE_DIVISOR (72).
+    For HOURLY workers: stored_wage directly (it IS already the hourly rate).
+    """
+    from app.core.constants import OT_RATE_DIVISOR
+    from app.database.database import WageType
+
+    wage_type = _get_wage_type(session, user_id)
+    if wage_type == WageType.HOURLY:
+        return float(stored_wage)
+    return stored_wage / OT_RATE_DIVISOR
+
+
 def get_all_user_wages(session) -> dict[int, int]:
     """
     Hämtar alla användares löner i en query.
@@ -103,10 +153,15 @@ def get_all_user_wages(session) -> dict[int, int]:
         persons = load_persons()
         return {p.id: p.wage for p in persons}
 
-    from app.database.database import User
+    from app.database.database import User, WageType
 
     users = session.query(User).filter(User.id.in_(PERSON_IDS)).all()
-    wages = {user.id: user.wage for user in users}
+    wages = {}
+    for user in users:
+        if user.wage_type == WageType.HOURLY:
+            wages[user.id] = int(user.wage * _MONTHLY_HOURS)
+        else:
+            wages[user.id] = user.wage
 
     # Fyll i saknade med fallback
     for pid in PERSON_IDS:

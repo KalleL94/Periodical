@@ -14,7 +14,7 @@ from app.core.constants import DEFAULT_PASSWORD
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
-from app.database.database import User, UserRole, get_db
+from app.database.database import User, UserRole, WageType, get_db
 from app.routes.shared import _parse_rates_form, render
 
 logger = get_logger(__name__)
@@ -63,7 +63,6 @@ async def admin_create_user(
     username: str = Form(...),
     password: str = Form(...),
     name: str = Form(...),
-    wage: int = Form(...),
     role: str = Form("user"),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
@@ -80,7 +79,8 @@ async def admin_create_user(
         username=username,
         password_hash=get_password_hash(password),
         name=name,
-        wage=wage,
+        wage=37000,
+        wage_type=WageType.MONTHLY,
         role=UserRole(role),
         vacation={},
         must_change_password=1,
@@ -240,12 +240,30 @@ async def admin_reset_password(
     return RedirectResponse(url=f"/admin/users?success={quote(success_msg)}", status_code=302)
 
 
+@router.post("/admin/users/{user_id}/set-wage-type", name="admin_set_wage_type")
+async def admin_set_wage_type(
+    user_id: int,
+    wage_type: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: change whether a user is on hourly or monthly wage."""
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    edit_user.wage_type = WageType.HOURLY if wage_type == "hourly" else WageType.MONTHLY
+    db.commit()
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
 @router.post("/admin/users/{user_id}/add-wage", name="admin_add_wage")
 async def admin_add_wage(
     request: Request,
     user_id: int,
     new_wage: int = Form(...),
     effective_from: str = Form(...),
+    wage_type: str = Form("monthly"),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
@@ -260,6 +278,7 @@ async def admin_add_wage(
 
     try:
         effective_date = datetime.strptime(effective_from, "%Y-%m-%d").date()
+        edit_user.wage_type = WageType.HOURLY if wage_type == "hourly" else WageType.MONTHLY
         add_new_wage(
             session=db,
             user_id=user_id,
