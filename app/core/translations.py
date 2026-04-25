@@ -507,6 +507,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "day_no_ob_hours": "Inga OB-timmar denna dag.",
         "day_no_ob_pay": "Ingen OB-ersättning denna dag.",
         "day_no_ob_rules": "Inga speciella OB-regler aktiva denna dag.",
+        # ── Day edit panel ─────────────────────────────────────────
+        "day_edit_toggle": "Ändra dag/skift",
+        "day_edit_close": "Stäng",
+        # ── Shift override ─────────────────────────────────────────
+        "day_shift_override_title": "Manuellt pass",
+        "day_shift_override_current": "Tilldelat pass",
+        "day_shift_override_remove": "Ta bort",
+        "day_shift_override_remove_confirm": "Ta bort det manuella passet?",
+        "day_shift_override_add": "Tilldela pass",
+        "day_shift_override_label": "Pass",
+        "day_shift_override_note": "Manuellt tilldelat pass åsidosätter rotationen och visas som ett ordinarie pass.",
         # ── Handover view ──────────────────────────────────────────
         "handover_title": "Överlämning",
         "handover_prev": "Föregående",
@@ -1394,6 +1405,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "day_no_ob_hours": "No OB hours this day.",
         "day_no_ob_pay": "No OB compensation this day.",
         "day_no_ob_rules": "No special OB rules active this day.",
+        # ── Day edit panel ─────────────────────────────────────────
+        "day_edit_toggle": "Edit day/shift",
+        "day_edit_close": "Close",
+        # ── Shift override ─────────────────────────────────────────
+        "day_shift_override_title": "Manual shift",
+        "day_shift_override_current": "Assigned shift",
+        "day_shift_override_remove": "Remove",
+        "day_shift_override_remove_confirm": "Remove the manual shift assignment?",
+        "day_shift_override_add": "Assign shift",
+        "day_shift_override_label": "Shift",
+        "day_shift_override_note": "A manually assigned shift overrides the rotation and appears as a regular shift.",
         # ── Handover view ──────────────────────────────────────────
         "handover_title": "Handover",
         "handover_prev": "Previous",

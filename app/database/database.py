@@ -192,6 +192,25 @@ class OnCallOverride(Base):
         return f"<OnCallOverride(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.override_type})>"
 
 
+class ShiftOverride(Base):
+    """Manual shift assignment that overrides the rotation for a given day."""
+
+    __tablename__ = "shift_overrides"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    shift_code = Column(String(10), nullable=False)  # N1, N2, N3
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f"<ShiftOverride(id={self.id}, user_id={self.user_id}, date={self.date}, shift_code={self.shift_code})>"
+
+
 class WageHistory(Base):
     """Wage history model for tracking wage changes over time with temporal validity."""
 

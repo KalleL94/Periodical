@@ -64,11 +64,12 @@ def build_week_data(
 
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
-    # Batch fetch absences, overtime, oncall overrides, and swaps for the week
+    # Batch fetch absences, overtime, oncall overrides, swaps, and shift overrides for the week
     absence_map = _batch_fetch_absences(session, person_ids, monday, sunday, rotation_to_user_id)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday, rotation_to_user_id)
     oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
     swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
+    shift_override_map = _batch_fetch_shift_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
 
     days_in_week = []
 
@@ -93,6 +94,7 @@ def build_week_data(
                     absence_map,
                     oncall_override_map,
                     swap_map,
+                    shift_override_map=shift_override_map,
                 )
                 for pid in person_ids
             ]
@@ -110,6 +112,7 @@ def build_week_data(
                     oncall_override_map,
                     swap_map,
                     employment_start=employment_start,
+                    shift_override_map=shift_override_map,
                 )
             )
 
@@ -211,13 +214,16 @@ def generate_period_data(
     # Bygg mappning rotation_position -> user_id (hanterar Peter/Rickard som har olika user_id)
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
-    # Batch fetch absences, overtime shifts, oncall overrides, and swaps for the entire period
+    # Batch fetch absences, overtime shifts, oncall overrides, swaps, and shift overrides for the entire period
     absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date, rotation_to_user_id)
     ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date, rotation_to_user_id)
     oncall_override_map = _batch_fetch_oncall_overrides(
         session, person_ids, effective_start, end_date, rotation_to_user_id
     )
     swap_map = _batch_fetch_swap_map(session, person_ids, effective_start, end_date, rotation_to_user_id)
+    shift_override_map = _batch_fetch_shift_overrides(
+        session, person_ids, effective_start, end_date, rotation_to_user_id
+    )
 
     # Generera dagdata
     persons = _get_persons()
@@ -245,6 +251,7 @@ def generate_period_data(
                     absence_map,
                     oncall_override_map,
                     swap_map,
+                    shift_override_map=shift_override_map,
                 )
                 for pid in person_ids
             ]
@@ -465,6 +472,43 @@ def _batch_fetch_oncall_overrides(
     return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
 
 
+def _batch_fetch_shift_overrides(
+    session,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
+) -> dict[tuple[int, datetime.date], str]:
+    """Batch-hämtar manuella passöverrides för flera personer och en period.
+
+    Returns:
+        Dict med (rotation_position, date) -> shift_code
+    """
+    if not session:
+        return {}
+
+    from app.database.database import ShiftOverride
+
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
+    overrides = (
+        session.query(ShiftOverride)
+        .filter(
+            ShiftOverride.user_id.in_(user_ids),
+            ShiftOverride.date >= start_date,
+            ShiftOverride.date <= end_date,
+        )
+        .all()
+    )
+
+    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o.shift_code for o in overrides}
+
+
 def _batch_fetch_swap_map(
     session,
     person_ids: list[int],
@@ -552,6 +596,7 @@ def _build_person_day_basic(
     oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
     swap_map: dict[tuple[int, datetime.date], str] | None = None,
     employment_start: datetime.date | None = None,
+    shift_override_map: dict[tuple[int, datetime.date], str] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
@@ -675,6 +720,27 @@ def _build_person_day_basic(
             "start": None,
             "end": None,
         }
+
+    # Kolla manuell passöverride (admin-tilldelat N1/N2/N3 som ersätter rotation)
+    if shift_override_map is not None:
+        override_code = shift_override_map.get((person_id, date))
+        if override_code:
+            result = determine_shift_for_date(date, person_id)
+            original_shift, rotation_week = result if result else (None, None)
+            override_shift = next((s for s in shift_types if s.code == override_code), None)
+            if override_shift:
+                hours, start, end = calculate_shift_hours(date, override_shift.code)
+                return {
+                    "person_id": person_id,
+                    "person_name": person_name,
+                    "shift": override_shift,
+                    "original_shift": original_shift,
+                    "rotation_week": rotation_week,
+                    "rotation_length": rotation_length,
+                    "hours": hours,
+                    "start": start,
+                    "end": end,
+                }
 
     # Kolla skiftbyte
     if swap_map is not None:

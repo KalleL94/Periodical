@@ -32,6 +32,7 @@ from app.routes.profile import router as profile_router
 from app.routes.schedule_all import router as schedule_all_router
 from app.routes.schedule_api import router as schedule_api_router
 from app.routes.schedule_personal import router as schedule_personal_router
+from app.routes.shift_override import router as shift_override_router
 from app.routes.shift_swap import router as shift_swap_router
 from app.routes.statistics import router as statistics_router
 from app.routes.transition import router as transition_router
@@ -276,6 +277,7 @@ app.include_router(schedule_api_router)
 app.include_router(overtime_router)
 app.include_router(oncall_router)
 app.include_router(shift_swap_router)
+app.include_router(shift_override_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
