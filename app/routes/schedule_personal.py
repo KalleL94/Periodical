@@ -48,7 +48,7 @@ from app.core.schedule import (
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
-from app.database.database import Absence, OnCallOverride, OnCallOverrideType, User, UserRole, get_db
+from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftOverride, User, UserRole, get_db
 from app.routes.shared import redirect_if_not_own_data, templates
 
 logger = get_logger(__name__)
@@ -156,6 +156,21 @@ async def show_day_for_person(
     is_effective_oc = (
         has_rotation_oc and not (oncall_override and oncall_override.override_type == OnCallOverrideType.REMOVE)
     ) or (oncall_override and oncall_override.override_type == OnCallOverrideType.ADD)
+
+    # Fetch and apply manual shift override (N1/N2/N3 assigned by admin)
+    shift_override = (
+        db.query(ShiftOverride)
+        .filter(ShiftOverride.user_id == user_id_for_wages, ShiftOverride.date == date_obj)
+        .first()
+    )
+    if shift_override:
+        from app.core.storage import load_shift_types
+
+        all_shifts = load_shift_types()
+        override_shift = next((s for s in all_shifts if s.code == shift_override.shift_code), None)
+        if override_shift:
+            shift = override_shift
+            is_effective_oc = False  # Override takes priority over OC
 
     hours: float = 0.0
     start_dt: datetime | None = None
@@ -571,9 +586,10 @@ async def show_day_for_person(
             "swap_users": db.query(User)
             .filter(User.is_active == 1, User.id != current_user.id, User.role != UserRole.ADMIN)
             .all(),
-            "oncall_override": oncall_override,  # On-call override data
-            "has_rotation_oc": has_rotation_oc,  # Whether person has OC in rotation
-            "is_effective_oc": is_effective_oc,  # Whether this is effectively an OC shift
+            "oncall_override": oncall_override,
+            "has_rotation_oc": has_rotation_oc,
+            "is_effective_oc": is_effective_oc,
+            "shift_override": shift_override,
             **nav,
         },
         user=current_user,

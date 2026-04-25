@@ -103,6 +103,12 @@
                 </tbody>
             </table>
 
+            {% set has_active = ot_shift or absence or oncall_override or shift_override %}
+            <button id="day-edit-btn" class="btn secondary" style="margin-top:1rem;"
+                    onclick="toggleDayEdit()">{{ t.day_edit_toggle }} ▾</button>
+
+            <div id="day-edit-panel" style="display:{% if has_active %}block{% else %}none{% endif %};">
+
             <h3>{{ t.day_overtime }}</h3>
 
             {% if ot_shift %}
@@ -508,6 +514,60 @@
             {% endif %}
         {% endif %}
 
+        {# Manuellt pass – visa om override finns, eller om personen är OFF/OC och saknar frånvaro #}
+        {% if user and (user.id == person_id or user.id == 0) %}
+            {% if shift_override or (not absence and shift and shift.code in ('OFF', 'OC')) %}
+                <h3>{{ t.day_shift_override_title }}</h3>
+
+                {% if shift_override %}
+                    <div class="oncall-override-display">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>{{ t.day_shift_override_current }}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <span class="badge" style="background: #3b82f6; color: white;">{{ shift_override.shift_code }}</span>
+                                    </td>
+                                    <td>
+                                        <form method="POST" action="/shift-override/{{ shift_override.id }}/delete" style="display: inline;">
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_shift_override_remove_confirm }}')">{{ t.day_shift_override_remove }}</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <form method="POST" action="/shift-override/add">
+                        <input type="hidden" name="user_id" value="{{ person_id }}">
+                        <input type="hidden" name="date" value="{{ date }}">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="shift_code">{{ t.day_shift_override_label }}</label>
+                                <select id="shift_code" name="shift_code" required>
+                                    <option value="N1">N1 – {{ t.handover_morning }}</option>
+                                    <option value="N2">N2 – {{ t.handover_evening }}</option>
+                                    <option value="N3">N3 – {{ t.handover_night }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">{{ t.day_shift_override_add }}</button>
+                    </form>
+
+                    <p class="info-text">{{ t.day_shift_override_note }}</p>
+                {% endif %}
+            {% endif %}
+        {% endif %}
+
+            </div>{# /day-edit-panel #}
+
         <h3>{{ t.day_all_working }}</h3>
         {% if all_working_persons and all_working_persons|length > 0 %}
             <table>
@@ -753,5 +813,15 @@
 
 
     </div>
+
+<script>
+function toggleDayEdit() {
+    var panel = document.getElementById('day-edit-panel');
+    var btn = document.getElementById('day-edit-btn');
+    var open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : 'block';
+    btn.textContent = open ? '{{ t.day_edit_toggle }} ▾' : '{{ t.day_edit_close }} ▲';
+}
+</script>
 
 {% endblock %}

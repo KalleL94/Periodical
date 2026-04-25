@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.15.0",
+        "date": "2026-04-25",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Manuellt pass: tilldela N1/N2/N3 på en ledig dag – visas som ordinarie pass i överlämning, kollegor och API",
+                "en": "Manual shift: assign N1/N2/N3 on a day off – appears as a regular shift in handover, coworkers and API",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Dagvyn samlar alla ändringsfunktioner bakom en 'Ändra dag/skift'-knapp",
+                "en": "Day view consolidates all edit options behind an 'Edit day/shift' toggle button",
+            },
+        ],
+    },
+    {
         "version": "0.14.2",
         "date": "2026-04-25",
         "entries": [
