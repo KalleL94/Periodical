@@ -22,6 +22,8 @@ from app.core.schedule import (
     calculate_overtime_pay,
     calculate_shift_hours,
     determine_shift_for_date,
+    get_effective_monthly_wage,
+    get_ot_hourly_rate_from_stored_wage,
     get_overtime_shifts_for_month,
     get_user_wage,
     ob_rules,
@@ -90,7 +92,8 @@ def _compute_month_summary(
     month_end = date(year, month + 1, 1) - dt.timedelta(days=1) if month < 12 else date(year, 12, 31)
 
     # Resolve wage and rates for the specific month (date-aware)
-    user_wage = get_user_wage(db, user.id, effective_date=month_start)
+    user_wage = get_effective_monthly_wage(db, user.id, effective_date=month_start)
+    _raw_wage = get_user_wage(db, user.id, effective_date=month_start)
     user_rates = get_user_rates(user, session=db, effective_date=month_start)
     user_id = user.id
     tax_table = user.tax_table
@@ -129,7 +132,12 @@ def _compute_month_summary(
             ot_hours_val = (ot_end - ot_start).total_seconds() / 3600.0
             total_hours += ot_hours_val
             if show_salary:
-                ot_pay += calculate_overtime_pay(user_wage, ot_hours_val, ot_hourly_rate=user_rates["ot"])
+                _ot_rate = (
+                    user_rates["ot"]
+                    if user_rates["ot"] is not None
+                    else get_ot_hourly_rate_from_stored_wage(db, user.id, _raw_wage)
+                )
+                ot_pay += calculate_overtime_pay(user_wage, ot_hours_val, ot_hourly_rate=_ot_rate)
 
         result = determine_shift_for_date(current_date, start_week=person_id)
         if result:
@@ -373,7 +381,8 @@ async def read_root(
     # Setup OB/oncall rules for the viewed week
     combined_rules_w = ob_rules + _cached_special_rules(view_iso_year_w)
     oncall_rules_w = _cached_oncall_rules(view_iso_year_w)
-    user_wage = get_user_wage(db, current_user.id)
+    user_wage = get_effective_monthly_wage(db, current_user.id)
+    _raw_wage_week = get_user_wage(db, current_user.id)
     _user_rates = get_user_rates(current_user, session=db)
     show_salary = can_see_salary(current_user, current_user.id)
 
@@ -408,7 +417,13 @@ async def read_root(
                 total_hours += ot_hours
 
                 if show_salary:
-                    ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_user_rates["ot"])
+                    _custom_ot = _user_rates["ot"]
+                    _ot_rate_w = (
+                        _custom_ot
+                        if _custom_ot is not None
+                        else get_ot_hourly_rate_from_stored_wage(db, current_user.id, _raw_wage_week)
+                    )
+                    ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_ot_rate_w)
                     ot_pay += ot_ob_pay
 
             # Determine effective on-call status using rotation shift + override

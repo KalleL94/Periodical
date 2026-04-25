@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, get_password_hash
 from app.core.schedule import clear_schedule_cache
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, User, UserRole, get_db
+from app.database.database import Absence, AbsenceType, User, UserRole, WageType, get_db
 from app.routes.shared import _parse_rates_form, render
 
 router = APIRouter(tags=["profile"])
@@ -159,11 +159,25 @@ async def profile_update_rates(
     return RedirectResponse(url="/profile", status_code=302)
 
 
+@router.post("/profile/set-wage-type", name="profile_set_wage_type")
+async def profile_set_wage_type(
+    wage_type: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: change own wage type (monthly/hourly)."""
+    current_user.wage_type = WageType.HOURLY if wage_type == "hourly" else WageType.MONTHLY
+    db.commit()
+    clear_schedule_cache()
+    return RedirectResponse(url="/profile", status_code=303)
+
+
 @router.post("/profile/add-wage", name="profile_add_wage")
 async def profile_add_wage(
     request: Request,
     new_wage: int = Form(...),
     effective_from: str = Form(...),
+    wage_type: str = Form("monthly"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -174,6 +188,7 @@ async def profile_add_wage(
 
     try:
         effective_date = datetime.strptime(effective_from, "%Y-%m-%d").date()
+        current_user.wage_type = WageType.HOURLY if wage_type == "hourly" else WageType.MONTHLY
         add_new_wage(
             session=db,
             user_id=current_user.id,

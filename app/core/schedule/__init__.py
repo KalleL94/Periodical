@@ -51,6 +51,8 @@ from .wages import (
     add_new_wage,
     get_all_user_wages,
     get_current_wage_record,
+    get_effective_monthly_wage,
+    get_ot_hourly_rate_from_stored_wage,
     get_user_wage,
     get_wage_history,
 )
@@ -94,6 +96,8 @@ __all__ = [
     "get_overtime_shifts_for_month",
     # wages
     "get_user_wage",
+    "get_effective_monthly_wage",
+    "get_ot_hourly_rate_from_stored_wage",
     "get_all_user_wages",
     "add_new_wage",
     "get_wage_history",

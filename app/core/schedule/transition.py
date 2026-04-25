@@ -260,7 +260,7 @@ def calculate_consultant_vacation_payout(
             "earning_year_end": date,
         }
     """
-    from app.core.schedule.wages import get_user_wage
+    from app.core.schedule.wages import get_effective_monthly_wage
 
     earning_start, earning_end = get_earning_year(transition)
     # Always dynamically calculate net vacation days (earned minus already used before transition)
@@ -270,7 +270,9 @@ def calculate_consultant_vacation_payout(
 
     # Konsultlön: lönen dagen innan övergången (från WageHistory eller User.wage)
     last_consultant_day = transition.transition_date - datetime.timedelta(days=1)
-    monthly_salary = get_user_wage(session, user.id, fallback=user.wage, effective_date=last_consultant_day)
+    monthly_salary = get_effective_monthly_wage(
+        session, user.id, fallback=user.wage, effective_date=last_consultant_day
+    )
 
     # Grundkomponent: sammalöneregeln
     base_per_day = monthly_salary / 21.75
@@ -348,17 +350,19 @@ def calculate_transition_month_summary(
         }
     """
     from app.core.schedule.summary import summarize_month_for_person
-    from app.core.schedule.wages import get_user_wage
+    from app.core.schedule.wages import get_effective_monthly_wage
     from app.database.database import ConsultantSalaryType
 
     t_date = transition.transition_date
     last_consultant_day = t_date - datetime.timedelta(days=1)
 
     # Konsultlön (lönen dagen innan övergången)
-    consultant_monthly = get_user_wage(session, user.id, fallback=user.wage, effective_date=last_consultant_day)
+    consultant_monthly = get_effective_monthly_wage(
+        session, user.id, fallback=user.wage, effective_date=last_consultant_day
+    )
 
     # Direktlön (lönen på/efter övergångsdatumet)
-    direct_monthly = get_user_wage(session, user.id, fallback=user.wage, effective_date=t_date)
+    direct_monthly = get_effective_monthly_wage(session, user.id, fallback=user.wage, effective_date=t_date)
 
     # Semesterutlösning från konsultarbetsgivaren
     vacation_payout = calculate_consultant_vacation_payout(transition, user, session)

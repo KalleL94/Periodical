@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.16.0",
+        "date": "2026-04-25",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Timlön: konsulter kan nu ha timlön (kr/tim) istället för månadslön – alla beräkningar (OB, OT, frånvaro, beredskap) använder rätt sats",
+                "en": "Hourly wage: consultants can now have an hourly rate (SEK/h) instead of a monthly salary – all calculations (OB, OT, absence, on-call) use the correct rate",
+            },
+        ],
+    },
+    {
         "version": "0.15.0",
         "date": "2026-04-25",
         "entries": [

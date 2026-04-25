@@ -33,6 +33,8 @@ from app.core.schedule import (
     calculate_ob_pay,
     calculate_shift_hours,
     determine_shift_for_date,
+    get_effective_monthly_wage,
+    get_ot_hourly_rate_from_stored_wage,
     get_overtime_shift_for_date,
     get_rotation_length_for_date,
     get_user_wage,
@@ -194,7 +196,7 @@ async def show_day_for_person(
 
     # Use temporal wage query for the specific date being viewed
     # Use user_id_for_wages for wage lookup
-    monthly_salary = get_user_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date_obj)
+    monthly_salary = get_effective_monthly_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date_obj)
 
     # Resolve per-user rates for the viewed user
     from app.core.rates import get_user_rates
@@ -322,9 +324,12 @@ async def show_day_for_person(
                     pass
 
         # Recalculate overtime pay based on historical wage
-        from app.core.constants import OT_RATE_DIVISOR
-
-        hourly_rate = _user_rates["ot"] if _user_rates["ot"] is not None else (monthly_salary / OT_RATE_DIVISOR)
+        _raw_wage_for_ot = get_user_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date_obj)
+        hourly_rate = (
+            _user_rates["ot"]
+            if _user_rates["ot"] is not None
+            else get_ot_hourly_rate_from_stored_wage(db, user_id_for_wages, _raw_wage_for_ot)
+        )
         ot_pay = hourly_rate * ot_shift.hours
 
         ot_details = {

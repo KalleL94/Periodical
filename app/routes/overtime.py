@@ -10,7 +10,12 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.schedule import calculate_overtime_pay, clear_schedule_cache, get_user_wage
+from app.core.schedule import (
+    calculate_overtime_pay,
+    clear_schedule_cache,
+    get_ot_hourly_rate_from_stored_wage,
+    get_user_wage,
+)
 from app.database.database import OvertimeShift, User, UserRole, get_db
 
 router = APIRouter(prefix="/overtime", tags=["overtime"])
@@ -42,15 +47,20 @@ async def add_overtime_shift(
     ot_date = datetime.strptime(date, "%Y-%m-%d").date()
 
     # Get user's wage and rates for the specific date (temporal query)
-    monthly_salary = get_user_wage(session, user_id, effective_date=ot_date)
+    raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
 
     from app.core.rates import get_user_rates
 
     ot_user = session.query(User).filter(User.id == user_id).first()
     _ot_rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
 
-    # Calculate OT pay
-    ot_pay = calculate_overtime_pay(monthly_salary, hours, ot_hourly_rate=_ot_rates.get("ot"))
+    # Calculate OT pay -- use stored wage directly for HOURLY workers
+    _ot_rate = (
+        _ot_rates.get("ot")
+        if _ot_rates.get("ot") is not None
+        else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
+    )
+    ot_pay = calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=_ot_rate)
 
     # Parse times
     start_t = datetime.strptime(start_time, "%H:%M").time()
