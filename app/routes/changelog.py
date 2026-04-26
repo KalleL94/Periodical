@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.18.1",
+        "date": "2026-04-26",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Månadsvy: nettolön i sammanfattningen beräknas nu på rätt underlag för timlönsanvändare",
+                "en": "Month view: net pay in the summary is now calculated on the correct base for hourly wage users",
+            },
+        ],
+    },
+    {
         "version": "0.18.0",
         "date": "2026-04-26",
         "entries": [
