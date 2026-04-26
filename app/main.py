@@ -117,10 +117,12 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down")
 
 
+from app.routes.changelog import VERSIONS as _VERSIONS  # noqa: E402
+
 app = FastAPI(
     title="Periodical",
     description="Employee shift scheduling and OB pay calculation system",
-    version="0.12.0",
+    version=_VERSIONS[0]["version"],
     lifespan=lifespan,
 )
 
@@ -288,9 +290,7 @@ app.include_router(changelog_router)
 
 
 def _app_version() -> str:
-    from app.routes.changelog import VERSIONS
-
-    return VERSIONS[0]["version"]
+    return _VERSIONS[0]["version"]
 
 
 @app.get("/health", tags=["health"])
