@@ -15,6 +15,27 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.18.1",
+        "date": "2026-04-26",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Timlön: brutto- och nettolön visas nu korrekt i alla vyer baserat på faktiska jobbade timmar istället för teoretiskt månadsunderlag",
+                "en": "Hourly wage: gross and net pay now display correctly in all views based on actual worked hours instead of the theoretical monthly equivalent",
+            },
+            {
+                "type": "fix",
+                "sv": "Timlön: sjuklön beräknades fel när timlönsanvändare hade sjukfrånvaro – brutto stämmer nu med lönespecifikationens totalt",
+                "en": "Hourly wage: sick pay was calculated incorrectly for hourly wage users – gross pay now matches the payslip spec total",
+            },
+            {
+                "type": "fix",
+                "sv": "API: OB-tillägg beräknades på fel underlag för timlönsanvändare i schema-endpointsen",
+                "en": "API: OB supplements were calculated on the wrong base for hourly wage users in schedule endpoints",
+            },
+        ],
+    },
+    {
         "version": "0.18.0",
         "date": "2026-04-26",
         "entries": [

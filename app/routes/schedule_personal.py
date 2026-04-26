@@ -891,10 +891,6 @@ async def show_month_for_person(
                 days_in_month.get("absence_deduction", 0.0) or 0.0,
                 _sick_ob_hs,
             )
-            _spec_total = sum(v["pay"] for v in agg.values()) + _sjuklon_info["sjuklon_base_pay"]
-            for _code, _ob_h in _sick_ob_hs.items():
-                if _ob_h > 0:
-                    _spec_total += _ob_h * hourly_rate * 0.8 + _sick_ob_py.get(_code, 0.0)
             hourly_breakdown = {
                 "hourly_rate": hourly_rate,
                 "period": f"{year}{month:02d}01-{year}{month:02d}{last_day:02d}",
@@ -902,7 +898,6 @@ async def show_month_for_person(
                 "sick_days": days_in_month.get("sick_days", 0) or 0,
                 "sick_ob_pay_by_code": _sick_ob_py,
                 "sick_ob_hours_by_code": _sick_ob_hs,
-                "spec_total": _spec_total,
                 **_sjuklon_info,
             }
 

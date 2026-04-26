@@ -147,7 +147,10 @@ def _build_day_status(
             if start_dt and end_dt:
                 rules = get_combined_rules_for_year(date.year)
                 rate_overrides = (user.custom_rates or {}).get("ob")
-                ob_pay_raw = calculate_ob_pay(start_dt, end_dt, rules, user.wage, rate_overrides)
+                from app.core.schedule.wages import get_effective_monthly_wage
+
+                monthly_wage = get_effective_monthly_wage(db, user.id, user.wage, effective_date=date)
+                ob_pay_raw = calculate_ob_pay(start_dt, end_dt, rules, monthly_wage, rate_overrides)
                 ob_total = round(sum(ob_pay_raw.values()), 2)
                 ob_pay_data = {k: round(v, 2) for k, v in ob_pay_raw.items() if v > 0}
 

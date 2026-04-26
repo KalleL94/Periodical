@@ -5,7 +5,7 @@ from app.core.storage import load_persons, load_tax_brackets
 from .core import get_settings
 from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, generate_year_data
-from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage
+from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage, get_user_wage
 
 _tax_brackets = None
 _persons = None
@@ -170,6 +170,7 @@ def summarize_month_for_person(
         "oncall_pay": 0.0,
         "oncall_hours": 0.0,
         "ot_pay": 0.0,
+        "ot_hours": 0.0,
         "absence_deduction": 0.0,
         "absence_hours": 0.0,
         "sick_days": 0,
@@ -231,6 +232,24 @@ def summarize_month_for_person(
         # Dra av frånvaroavdrag och lägg till OB-sjuklön
         totals["brutto_pay"] -= totals["absence_deduction"]
         totals["brutto_pay"] += totals["sick_ob_pay"]
+
+        # För timlönsanvändare: ersätt det teoretiska månadslöneunderlaget (hourly_rate×173.33)
+        # med faktiska schemalagda timmar × timlön så att brutto stämmer med spec-tabellen
+        from app.database.database import WageType
+
+        if user and user.wage_type == WageType.HOURLY:
+            actual_hourly_rate = float(
+                get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
+            )
+            worked_hours = totals["total_hours"] - totals["ot_hours"]
+            # absence_hours är frånvarotimmar som period.py sätter till 0 (ej inkl i total_hours).
+            # Absence_deduction är designad för månadslön och förutsätter att dessa timmar
+            # redan betalats – för timlön måste vi lägga till dem explicit så att
+            # (worked + absent) × hourly_rate - absence_deduction ger rätt sjuklöneunderlag.
+            absent_hours = totals.get("absence_hours", 0.0)
+            totals["brutto_pay"] = (
+                totals["brutto_pay"] - base_salary + (worked_hours + absent_hours) * actual_hourly_rate
+            )
 
     # Beräkna netto med användarens skattetabell (använd payment_year för rätt skattetabell)
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
@@ -455,6 +474,7 @@ def _process_day_for_summary(
     totals["oncall_pay"] += oncall_pay
     totals["oncall_hours"] += oncall_hours
     totals["ot_pay"] += ot_pay
+    totals["ot_hours"] = totals.get("ot_hours", 0.0) + ot_hours
     totals["total_hours"] += ot_hours
 
     return {

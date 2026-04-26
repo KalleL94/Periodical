@@ -76,7 +76,7 @@
             <tr>
                 {% if show_salary %}
                 <td data-label="{{ t.month_sum_net }}">{{ "%.0f"|format(days.netto_pay or 0) }}</td>
-                <td data-label="{{ t.month_sum_gross }}">{{ "%.0f"|format(hourly_breakdown.spec_total if hourly_breakdown else (days.brutto_pay or 0)) }}</td>
+                <td data-label="{{ t.month_sum_gross }}">{{ "%.0f"|format(days.brutto_pay or 0) }}</td>
                 <td data-label="{{ t.month_sum_shifts }}">{{ days.num_shifts }}</td>
                 <td data-label="{{ t.month_sum_hours }}">{{ "%.2f"|format(days.total_hours or 0) }}</td>
                 {% endif %}
