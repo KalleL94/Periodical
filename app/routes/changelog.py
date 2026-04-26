@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.18.0",
+        "date": "2026-04-26",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Månadsvy: timlönsanvändare får nu en lönespecifikation med uppdelning per löneart – arbetade timmar, OB per kod, beredskap, övertid och sjuklön",
+                "en": "Month view: hourly wage users now see a payslip-style breakdown with rows per pay type – worked hours, OB by code, on-call, overtime and sick pay",
+            },
+            {
+                "type": "fix",
+                "sv": "Månadsvy: bruttolön i sammanfattningen stämmer nu med lönespecifikationens totalt för timlönsanvändare",
+                "en": "Month view: gross pay in the summary now matches the payslip spec total for hourly wage users",
+            },
+        ],
+    },
+    {
         "version": "0.17.0",
         "date": "2026-04-26",
         "entries": [

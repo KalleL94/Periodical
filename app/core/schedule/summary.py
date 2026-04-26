@@ -216,6 +216,8 @@ def summarize_month_for_person(
         totals["sick_days"] = absence_info["sick_days"]
         totals["sick_hours"] = absence_info["sick_hours"]
         totals["sick_ob_pay"] = absence_info.get("sick_ob_pay", 0.0)
+        totals["sick_ob_pay_by_code"] = absence_info.get("sick_ob_pay_by_code", {})
+        totals["sick_ob_hours_by_code"] = absence_info.get("sick_ob_hours_by_code", {})
         totals["sick_total_ob"] = absence_info.get("sick_total_ob", 0.0)
         totals["sick_ob_lost"] = absence_info.get("sick_ob_lost", 0.0)
         totals["vab_days"] = absence_info["vab_days"]
@@ -259,6 +261,8 @@ def summarize_month_for_person(
         "sick_days": totals["sick_days"],
         "sick_hours": totals.get("sick_hours", 0.0),
         "sick_ob_pay": totals.get("sick_ob_pay", 0.0),
+        "sick_ob_pay_by_code": totals.get("sick_ob_pay_by_code", {}),
+        "sick_ob_hours_by_code": totals.get("sick_ob_hours_by_code", {}),
         "sick_total_ob": totals.get("sick_total_ob", 0.0),
         "sick_ob_lost": totals.get("sick_ob_lost", 0.0),
         "vab_days": totals["vab_days"],

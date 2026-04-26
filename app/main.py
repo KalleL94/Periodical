@@ -117,10 +117,15 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down")
 
 
+from app.routes.changelog import VERSIONS as _VERSIONS  # noqa: E402
+from app.routes.shared import templates as _templates  # noqa: E402
+
+_templates.env.globals["app_version"] = _VERSIONS[0]["version"]
+
 app = FastAPI(
     title="Periodical",
     description="Employee shift scheduling and OB pay calculation system",
-    version="0.12.0",
+    version=_VERSIONS[0]["version"],
     lifespan=lifespan,
 )
 
@@ -287,6 +292,10 @@ app.include_router(transition_router)
 app.include_router(changelog_router)
 
 
+def _app_version() -> str:
+    return _VERSIONS[0]["version"]
+
+
 @app.get("/health", tags=["health"])
 async def health_check(db: Session = Depends(get_db)):
     """
@@ -304,7 +313,7 @@ async def health_check(db: Session = Depends(get_db)):
             content={
                 "status": "healthy",
                 "service": "periodical",
-                "version": "0.12.0",
+                "version": _app_version(),
                 "database": "connected",
             },
         )
