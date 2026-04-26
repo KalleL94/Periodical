@@ -20,8 +20,13 @@ VERSIONS = [
         "entries": [
             {
                 "type": "fix",
-                "sv": "Månadsvy: nettolön i sammanfattningen beräknas nu på rätt underlag för timlönsanvändare",
-                "en": "Month view: net pay in the summary is now calculated on the correct base for hourly wage users",
+                "sv": "Timlön: brutto- och nettolön visas nu korrekt i alla vyer baserat på faktiska jobbade timmar istället för teoretiskt månadsunderlag",
+                "en": "Hourly wage: gross and net pay now display correctly in all views based on actual worked hours instead of the theoretical monthly equivalent",
+            },
+            {
+                "type": "fix",
+                "sv": "API: OB-tillägg beräknades på fel underlag för timlönsanvändare i schema-endpointsen",
+                "en": "API: OB supplements were calculated on the wrong base for hourly wage users in schedule endpoints",
             },
         ],
     },
