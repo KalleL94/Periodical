@@ -287,6 +287,12 @@ app.include_router(transition_router)
 app.include_router(changelog_router)
 
 
+def _app_version() -> str:
+    from app.routes.changelog import VERSIONS
+
+    return VERSIONS[0]["version"]
+
+
 @app.get("/health", tags=["health"])
 async def health_check(db: Session = Depends(get_db)):
     """
@@ -304,7 +310,7 @@ async def health_check(db: Session = Depends(get_db)):
             content={
                 "status": "healthy",
                 "service": "periodical",
-                "version": "0.12.0",
+                "version": _app_version(),
                 "database": "connected",
             },
         )
