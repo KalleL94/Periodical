@@ -2,13 +2,13 @@
 
 import datetime
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_api_user, get_api_user
 from app.core.schedule.core import calculate_shift_hours, determine_shift_for_date, get_shift_types
 from app.core.schedule.ob import calculate_ob_pay, get_combined_rules_for_year
-from app.core.utils import get_today
+from app.core.utils import APP_TIMEZONE, get_today
 from app.database.database import Absence, OvertimeShift, User, UserRole, get_db
 
 router = APIRouter(tags=["api-v1"])
@@ -509,12 +509,26 @@ async def get_user_absences(
 @router.get("/users/{user_id}/next-shift")
 async def get_user_next_shift(
     user_id: int,
+    at_date: str | None = Query(None, alias="date", description="Simulate from date (YYYY-MM-DD)"),
+    at_time: str | None = Query(None, alias="time", description="Simulate from time (HH:MM)"),
     current_user: User = Depends(get_api_user),
     db: Session = Depends(get_db),
 ):
-    """Next working day for a user (starting from today). Returns shift details and date."""
+    """Next working day for a user. Optionally pass ?date=YYYY-MM-DD&time=HH:MM to simulate."""
     target = _get_user_or_404(user_id, db)
-    today = get_today()
+    if at_date:
+        try:
+            today = datetime.date.fromisoformat(at_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from None
+        try:
+            current_time = datetime.time.fromisoformat(at_time) if at_time else datetime.time(0, 0)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ogiltigt tidsformat, använd HH:MM") from None
+    else:
+        now = datetime.datetime.now(APP_TIMEZONE)
+        today = now.date()
+        current_time = now.time()
 
     for offset in range(60):
         candidate = today + datetime.timedelta(days=offset)
@@ -522,19 +536,24 @@ async def get_user_next_shift(
         if absence:
             continue
         shift, rotation_week = determine_shift_for_date(candidate, target.rotation_person_id)
-        if shift and shift.code not in ("OFF",):
-            return {
-                "date": candidate.isoformat(),
-                "days_from_today": offset,
-                "shift": {
-                    "code": shift.code,
-                    "label": shift.label,
-                    "start_time": shift.start_time,
-                    "end_time": shift.end_time,
-                    "color": shift.color,
-                },
-                "rotation_week": rotation_week,
-            }
+        if not shift or shift.code == "OFF":
+            continue
+        if offset == 0:
+            shift_start = datetime.time.fromisoformat(shift.start_time)
+            if current_time >= shift_start:
+                continue
+        return {
+            "date": candidate.isoformat(),
+            "days_from_today": offset,
+            "shift": {
+                "code": shift.code,
+                "label": shift.label,
+                "start_time": shift.start_time,
+                "end_time": shift.end_time,
+                "color": shift.color,
+            },
+            "rotation_week": rotation_week,
+        }
 
     raise HTTPException(status_code=404, detail="Inget kommande pass hittades inom 60 dagar")
 

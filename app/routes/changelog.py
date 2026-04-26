@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.17.0",
+        "date": "2026-04-26",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "API: /next-shift returnerade felaktigt dagens pass – endpointen tar nu hänsyn till klockslag och hoppar över pass vars starttid redan passerat",
+                "en": "API: /next-shift incorrectly returned today's shift – the endpoint now considers the current time and skips shifts whose start time has already passed",
+            },
+            {
+                "type": "nyhet",
+                "sv": "API: /next-shift stödjer nu valfria parametrar ?date och ?time för att simulera svaret för en godtycklig tidpunkt",
+                "en": "API: /next-shift now supports optional ?date and ?time query parameters to simulate the response for any given point in time",
+            },
+        ],
+    },
+    {
         "version": "0.16.0",
         "date": "2026-04-25",
         "entries": [
