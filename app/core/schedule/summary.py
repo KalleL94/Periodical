@@ -242,7 +242,14 @@ def summarize_month_for_person(
                 get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
             )
             worked_hours = totals["total_hours"] - totals["ot_hours"]
-            totals["brutto_pay"] = totals["brutto_pay"] - base_salary + worked_hours * actual_hourly_rate
+            # absence_hours är frånvarotimmar som period.py sätter till 0 (ej inkl i total_hours).
+            # Absence_deduction är designad för månadslön och förutsätter att dessa timmar
+            # redan betalats – för timlön måste vi lägga till dem explicit så att
+            # (worked + absent) × hourly_rate - absence_deduction ger rätt sjuklöneunderlag.
+            absent_hours = totals.get("absence_hours", 0.0)
+            totals["brutto_pay"] = (
+                totals["brutto_pay"] - base_salary + (worked_hours + absent_hours) * actual_hourly_rate
+            )
 
     # Beräkna netto med användarens skattetabell (använd payment_year för rätt skattetabell)
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
