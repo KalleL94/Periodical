@@ -25,6 +25,11 @@ VERSIONS = [
             },
             {
                 "type": "fix",
+                "sv": "Timlön: sjuklön beräknades fel när timlönsanvändare hade sjukfrånvaro – brutto stämmer nu med lönespecifikationens totalt",
+                "en": "Hourly wage: sick pay was calculated incorrectly for hourly wage users – gross pay now matches the payslip spec total",
+            },
+            {
+                "type": "fix",
                 "sv": "API: OB-tillägg beräknades på fel underlag för timlönsanvändare i schema-endpointsen",
                 "en": "API: OB supplements were calculated on the wrong base for hourly wage users in schedule endpoints",
             },
