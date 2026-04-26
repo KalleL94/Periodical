@@ -681,6 +681,22 @@ async def show_week_for_person(
     )
 
 
+def _compute_sjuklon_base(
+    hourly_rate: float,
+    sick_hours: float,
+    absence_deduction: float,
+    sick_ob_hours_by_code: dict,
+) -> dict:
+    sjuklon_pay_total = max(0.0, hourly_rate * sick_hours - absence_deduction)
+    sjuklon_hours_total = (sjuklon_pay_total / (hourly_rate * 0.8)) if hourly_rate > 0 else 0.0
+    sick_ob_h_total = sum(sick_ob_hours_by_code.values())
+    sjuklon_base_hours = max(0.0, sjuklon_hours_total - sick_ob_h_total)
+    return {
+        "sjuklon_base_hours": sjuklon_base_hours,
+        "sjuklon_base_pay": sjuklon_base_hours * hourly_rate * 0.8,
+    }
+
+
 @router.get("/month/{person_id}", response_class=HTMLResponse, name="month_person")
 async def show_month_for_person(
     request: Request,
@@ -804,6 +820,92 @@ async def show_month_for_person(
         year, month, _cal_mod.monthrange(year, month)[1]
     )
 
+    # Aggregated payslip-style breakdown for hourly wage users
+    hourly_breakdown = None
+    if show_salary:
+        from app.database.database import WageType
+
+        wage_user = (
+            db.query(User).filter(User.id == user_id_for_wages).first()
+            if user_id_for_wages > 10
+            else db.query(User).filter(User.person_id == rotation_position).first()
+        )
+        if wage_user and getattr(wage_user, "wage_type", None) == WageType.HOURLY:
+            hourly_rate = float(
+                get_user_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date(year, month, 1))
+            )
+            _OC_TO_GROUP = {
+                "OC_WEEKDAY": "oc_vardag",
+                "OC_WEEKEND": "oc_helg",
+                "OC_WEEKEND_SAT": "oc_helg",
+                "OC_WEEKEND_SUN": "oc_helg",
+                "OC_WEEKEND_MON": "oc_helg",
+                "OC_HOLIDAY": "oc_helgdag",
+                "OC_HOLIDAY_EVE": "oc_helgdag",
+                "OC_NATIONALDAGEN": "oc_helgdag",
+                "OC_SPECIAL": "oc_storhelg",
+            }
+            agg = {
+                k: {"hours": 0.0, "pay": 0.0}
+                for k in [
+                    "norm",
+                    "OB1",
+                    "OB2",
+                    "OB3",
+                    "OB4",
+                    "OB5",
+                    "oc_vardag",
+                    "oc_helg",
+                    "oc_helgdag",
+                    "oc_storhelg",
+                    "ot",
+                ]
+            }
+            for d in days_in_month.get("days", []):
+                shift = d.get("shift")
+                hours = d.get("hours", 0.0) or 0.0
+                ob_h = d.get("ob_hours", {}) or {}
+                ob_p = d.get("ob_pay", {}) or {}
+                if shift and shift.code not in ("OFF", "OC", "OT") and hours:
+                    ob_sum = sum(ob_h.values())
+                    norm = max(hours - ob_sum, 0.0)
+                    agg["norm"]["hours"] += norm
+                    agg["norm"]["pay"] += norm * hourly_rate
+                    for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
+                        h = ob_h.get(code, 0.0) or 0.0
+                        agg[code]["hours"] += h
+                        agg[code]["pay"] += (ob_p.get(code, 0.0) or 0.0) + h * hourly_rate
+                oc_bd = (d.get("oncall_details") or {}).get("breakdown", {}) or {}
+                for oc_code, group in _OC_TO_GROUP.items():
+                    entry = oc_bd.get(oc_code) or {}
+                    agg[group]["hours"] += entry.get("hours", 0.0) or 0.0
+                    agg[group]["pay"] += entry.get("pay", 0.0) or 0.0
+                agg["ot"]["hours"] += d.get("ot_hours", 0.0) or 0.0
+                agg["ot"]["pay"] += d.get("ot_pay", 0.0) or 0.0
+            last_day = _cal_mod.monthrange(year, month)[1]
+            _sick_ob_py = days_in_month.get("sick_ob_pay_by_code", {}) or {}
+            _sick_ob_hs = days_in_month.get("sick_ob_hours_by_code", {}) or {}
+            _sjuklon_info = _compute_sjuklon_base(
+                hourly_rate,
+                days_in_month.get("sick_hours", 0.0) or 0.0,
+                days_in_month.get("absence_deduction", 0.0) or 0.0,
+                _sick_ob_hs,
+            )
+            _spec_total = sum(v["pay"] for v in agg.values()) + _sjuklon_info["sjuklon_base_pay"]
+            for _code, _ob_h in _sick_ob_hs.items():
+                if _ob_h > 0:
+                    _spec_total += _ob_h * hourly_rate * 0.8 + _sick_ob_py.get(_code, 0.0)
+            hourly_breakdown = {
+                "hourly_rate": hourly_rate,
+                "period": f"{year}{month:02d}01-{year}{month:02d}{last_day:02d}",
+                "rows": agg,
+                "sick_days": days_in_month.get("sick_days", 0) or 0,
+                "sick_ob_pay_by_code": _sick_ob_py,
+                "sick_ob_hours_by_code": _sick_ob_hs,
+                "spec_total": _spec_total,
+                **_sjuklon_info,
+            }
+
     return render_template(
         templates,
         "month.html",
@@ -820,6 +922,7 @@ async def show_month_for_person(
             "holiday_dates": holiday_dates,
             "vacation_month": vacation_month,
             "before_employment_month": before_employment_month,
+            "hourly_breakdown": hourly_breakdown,
         },
         user=current_user,
     )

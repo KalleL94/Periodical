@@ -406,6 +406,8 @@ def get_absence_deductions_for_month(
     sick_days = 0
     sick_hours = 0.0
     sick_ob_pay = 0.0
+    sick_ob_pay_by_code: dict[str, float] = {}
+    sick_ob_hours_by_code: dict[str, float] = {}
     sick_total_ob = 0.0
     vab_days = 0
     vab_hours = 0.0
@@ -469,15 +471,24 @@ def get_absence_deductions_for_month(
                     _ob_overrides = date_rates.get("ob") or ob_rate_overrides
                     _ob_compensation = bool(date_rates.get("sick", {}).get("ob_compensation"))
 
-                full_ob_total = sum(
-                    calculate_ob_pay(
-                        start_dt, shift_end_dt, ob_rules, monthly_wage, rate_overrides=_ob_overrides
-                    ).values()
+                from app.core.schedule.ob import calculate_ob_hours as _calc_ob_hours
+
+                full_ob_by_code = calculate_ob_pay(
+                    start_dt, shift_end_dt, ob_rules, monthly_wage, rate_overrides=_ob_overrides
                 )
+                full_ob_hours_by_code = _calc_ob_hours(start_dt, shift_end_dt, ob_rules)
+                full_ob_total = sum(full_ob_by_code.values())
                 sick_total_ob += full_ob_total * (absent_hours / shift_hours)
 
                 if _ob_compensation and sjuklon_hours > 0:
-                    sick_ob_pay += full_ob_total * (sjuklon_hours / shift_hours) * 0.8
+                    hours_ratio = sjuklon_hours / shift_hours
+                    ratio = hours_ratio * 0.8
+                    sick_ob_pay += full_ob_total * ratio
+                    for code, pay in full_ob_by_code.items():
+                        if pay > 0:
+                            sick_ob_pay_by_code[code] = sick_ob_pay_by_code.get(code, 0.0) + pay * ratio
+                            ob_h = full_ob_hours_by_code.get(code, 0.0) or 0.0
+                            sick_ob_hours_by_code[code] = sick_ob_hours_by_code.get(code, 0.0) + ob_h * hours_ratio
 
         else:
             karens_today = 0.0
@@ -517,6 +528,8 @@ def get_absence_deductions_for_month(
         "sick_days": sick_days,
         "sick_hours": sick_hours,
         "sick_ob_pay": sick_ob_pay,
+        "sick_ob_pay_by_code": sick_ob_pay_by_code,
+        "sick_ob_hours_by_code": sick_ob_hours_by_code,
         "sick_total_ob": sick_total_ob,
         "sick_ob_lost": sick_total_ob - sick_ob_pay,
         "vab_days": vab_days,

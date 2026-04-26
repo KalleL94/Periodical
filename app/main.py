@@ -118,6 +118,9 @@ async def lifespan(app: FastAPI):
 
 
 from app.routes.changelog import VERSIONS as _VERSIONS  # noqa: E402
+from app.routes.shared import templates as _templates  # noqa: E402
+
+_templates.env.globals["app_version"] = _VERSIONS[0]["version"]
 
 app = FastAPI(
     title="Periodical",
