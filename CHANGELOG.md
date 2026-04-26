@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-04-26
+
+### Fixed
+- API: `/next-shift` returnerade felaktigt dagens pass – endpointen tar nu hänsyn till klockslag och hoppar över pass vars starttid redan passerat
+
+### Added
+- API: `/next-shift` stödjer nu valfria parametrar `?date` och `?time` för att simulera svaret för en godtycklig tidpunkt
+
 ### Planned
 - Absence tracking (sick leave, VAB, other leave types)
 - Wage history tracking for accurate historical calculations
