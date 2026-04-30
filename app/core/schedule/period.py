@@ -70,6 +70,7 @@ def build_week_data(
     oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
     swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
     shift_override_map = _batch_fetch_shift_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
+    vacation_dates = _load_vacation_dates(_get_years_in_range(monday, sunday))
 
     days_in_week = []
 
@@ -89,7 +90,7 @@ def build_week_data(
                     persons,
                     shift_types,
                     session,
-                    None,
+                    vacation_dates,
                     ot_shift_map,
                     absence_map,
                     oncall_override_map,
@@ -106,7 +107,7 @@ def build_week_data(
                     persons,
                     shift_types,
                     session,
-                    None,
+                    vacation_dates,
                     ot_shift_map,
                     absence_map,
                     oncall_override_map,
