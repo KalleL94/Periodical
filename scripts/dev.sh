@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Standard värden
-HOST="127.0.0.1"
+HOST="192.168.0.190"
 PORT="8001"
 
 # Parse arguments
