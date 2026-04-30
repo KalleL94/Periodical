@@ -4,7 +4,6 @@ import datetime
 import math
 
 from app.core.constants import PERSON_IDS
-from app.core.storage import load_persons
 
 
 def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
@@ -15,16 +14,25 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
     day-level vacation (Absence records with type VACATION).
 
     Returns:
-        Dict med person_id -> set av semesterdatum
+        Dict med person_id (rotationsposition) -> set av semesterdatum
     """
     from app.database.database import Absence, AbsenceType, SessionLocal, User
 
-    persons = load_persons()
-    per_person: dict[int, set[datetime.date]] = {p.id: set() for p in persons}
+    per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
 
     db = SessionLocal()
     try:
-        users = db.query(User).filter(User.id.in_(PERSON_IDS)).all()
+        # Query active users by rotation position, not by user.id
+        users = (
+            db.query(User)
+            .filter(
+                User.person_id.in_(PERSON_IDS),
+                User.is_active,
+            )
+            .all()
+        )
+
+        user_id_to_person_id = {u.id: u.person_id for u in users}
 
         for user in users:
             vac_by_year = user.vacation or {}
@@ -34,7 +42,7 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
                 for day in range(1, 8):
                     try:
                         d = datetime.date.fromisocalendar(year, week, day)
-                        per_person[user.id].add(d)
+                        per_person[user.person_id].add(d)
                     except ValueError:
                         continue
 
@@ -42,7 +50,7 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
         day_absences = (
             db.query(Absence)
             .filter(
-                Absence.user_id.in_(PERSON_IDS),
+                Absence.user_id.in_(user_id_to_person_id.keys()),
                 Absence.absence_type == AbsenceType.VACATION,
                 Absence.date >= datetime.date(year, 1, 1),
                 Absence.date <= datetime.date(year, 12, 31),
@@ -50,8 +58,9 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
             .all()
         )
         for absence in day_absences:
-            if absence.user_id in per_person:
-                per_person[absence.user_id].add(absence.date)
+            person_id = user_id_to_person_id.get(absence.user_id)
+            if person_id is not None:
+                per_person[person_id].add(absence.date)
     finally:
         db.close()
 

@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.18.2",
+        "date": "2026-04-30",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Veckovy: veckobaserad semester visades inte, pass visades som vanligt arbetspass trots inlagd semester",
+                "en": "Week view: week-based vacation was not shown, shifts appeared as normal working shifts despite scheduled vacation",
+            },
+            {
+                "type": "fix",
+                "sv": "Semester: veckobaserad semester var osynlig för användare vars user-ID inte matchar rotationsposition",
+                "en": "Vacation: week-based vacation was invisible for users whose user ID does not match their rotation position",
+            },
+        ],
+    },
+    {
         "version": "0.18.1",
         "date": "2026-04-26",
         "entries": [
