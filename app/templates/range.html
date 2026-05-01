@@ -1,1 +1,152 @@
-{# Todo: #}
+{# app/templates/range.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – {{ t.range_title }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
+
+{% block page_content %}
+
+{# ── Scaling styles based on number of weeks ───────────────────── #}
+{% if num_weeks >= 9 %}
+{% set cell_h = "48px" %}{% set cell_p = "0.15rem" %}{% set th_p = "0.25rem 0.2rem" %}{% set th_f = "0.68rem" %}{% set badge_f = "0.58rem" %}{% set small_f = "0.54rem" %}{% set dn_f = "0.66rem" %}
+{% elif num_weeks >= 7 %}
+{% set cell_h = "75px" %}{% set cell_p = "0.22rem" %}{% set th_p = "0.38rem 0.28rem" %}{% set th_f = "0.74rem" %}{% set badge_f = "0.63rem" %}{% set small_f = "0.59rem" %}{% set dn_f = "0.71rem" %}
+{% elif num_weeks >= 5 %}
+{% set cell_h = "90px" %}{% set cell_p = "0.28rem" %}{% set th_p = "0.5rem 0.35rem" %}{% set th_f = "0.79rem" %}{% set badge_f = "0.67rem" %}{% set small_f = "0.62rem" %}{% set dn_f = "0.74rem" %}
+{% elif num_weeks >= 3 %}
+{% set cell_h = "112px" %}{% set cell_p = "0.36rem" %}{% set th_p = "0.6rem 0.4rem" %}{% set th_f = "0.83rem" %}{% set badge_f = "0.72rem" %}{% set small_f = "0.67rem" %}{% set dn_f = "0.78rem" %}
+{% else %}
+{% set cell_h = "140px" %}{% set cell_p = "0.5rem" %}{% set th_p = "0.75rem 0.5rem" %}{% set th_f = "0.85rem" %}{% set badge_f = "0.75rem" %}{% set small_f = "0.7rem" %}{% set dn_f = null %}
+{% endif %}
+
+{% if num_weeks >= 3 %}
+<style>
+.range-grid .calendar-day { height: {{ cell_h }} !important; overflow: hidden; }
+.range-grid .calendar-day-content { padding: {{ cell_p }}; height: {{ cell_h }}; overflow: hidden; }
+.range-grid thead th { padding: {{ th_p }}; font-size: {{ th_f }}; }
+.range-grid .calendar-badge { font-size: {{ badge_f }}; padding: 2px 4px; }
+.range-grid .calendar-time, .range-grid .coworkers-list, .range-grid .rotation-week-small { font-size: {{ small_f }}; }
+{% if dn_f %}.range-grid .day-number { font-size: {{ dn_f }}; }{% endif %}
+{% if num_weeks >= 9 %}
+.range-grid .calendar-day-body { flex-direction: row; align-items: flex-start; gap: 10px; flex-wrap: nowrap; overflow: hidden; }
+.range-grid .calendar-badge { flex-shrink: 0; }
+.range-grid .range-text-stack { display: flex; flex-direction: column; min-width: 0; overflow: hidden; gap: 1px; }
+.range-grid .calendar-time, .range-grid .coworkers-list { margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+{% endif %}
+</style>
+{% endif %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        {% if active_weeks is not none %}
+            <a href="/range/{{ person_id }}?weeks={{ active_weeks }}&from={{ prev_from }}" class="btn btn-primary">&laquo; {{ active_weeks }}v</a>
+            <a href="/range/{{ person_id }}?weeks={{ active_weeks }}&from={{ prev_week_from }}" class="btn btn-primary">&lsaquo; 1v</a>
+            <a href="/range/{{ person_id }}?weeks={{ active_weeks }}" class="btn btn-primary">{{ t.week_today }}</a>
+            <a href="/range/{{ person_id }}?weeks={{ active_weeks }}&from={{ next_week_from }}" class="btn btn-primary">1v &rsaquo;</a>
+            <a href="/range/{{ person_id }}?weeks={{ active_weeks }}&from={{ next_from }}" class="btn btn-primary">{{ active_weeks }}v &raquo;</a>
+        {% else %}
+            <a href="/range/{{ person_id }}" class="btn btn-primary">{{ t.week_today }}</a>
+        {% endif %}
+    </div>
+    <div class="page-header-right" style="position:relative;">
+        <select onchange="window.location='/range/{{ person_id }}?weeks='+this.value+'&from={{ start_date.isoformat() }}'"
+                style="background:#0f1720;color:#e6eef6;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 8px;font-size:0.9rem;cursor:pointer;color-scheme:dark;">
+            {% for w in range(1, 11) %}
+                <option value="{{ w }}" {% if active_weeks == w %}selected{% endif %} style="background:#0f1720;color:#e6eef6;">{{ w }}v</option>
+            {% endfor %}
+        </select>
+        <button class="btn secondary" onclick="var f=this.nextElementSibling;f.style.display=f.style.display==='flex'?'none':'flex';">{{ t.range_from }}/{{ t.range_to }} ▾</button>
+        <form method="get" action="/range/{{ person_id }}"
+              style="display:none;gap:0.5rem;align-items:center;flex-wrap:wrap;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:0.5rem;z-index:10;margin-top:4px;">
+            <label style="color:var(--muted);font-size:0.85rem;">{{ t.range_from }}</label>
+            <input type="date" name="from" value="{{ start_date.isoformat() }}"
+                   style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.9rem;">
+            <label style="color:var(--muted);font-size:0.85rem;">{{ t.range_to }}</label>
+            <input type="date" name="to" value="{{ end_date.isoformat() }}"
+                   style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.9rem;">
+            <button type="submit" class="btn btn-primary">{{ t.range_apply }}</button>
+        </form>
+    </div>
+</div>
+
+<h2 class="page-title">{{ person_name if person_name else '' }}</h2>
+
+{# ── Calendar grid ─────────────────────────────────────────────── #}
+{% set weekday_names_short = t.week_day_names | from_json %}
+
+{% if days %}
+<table class="calendar-grid week-grid-single range-grid">
+    <thead><tr>
+        {% for dn in weekday_names_short %}<th>{{ dn }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% set ns = namespace(current_week=none) %}
+    {% for day in days %}
+        {% set week_key = day.date.isocalendar()[0] ~ '-' ~ day.date.isocalendar()[1] %}
+
+        {% if week_key != ns.current_week %}
+            {% if ns.current_week is not none %}
+                {% set prev_day = days[loop.index0 - 1] %}
+                {% for pad in range(6 - prev_day.date.weekday()) %}
+                    <td class="calendar-day" style="background:transparent;border:none;"></td>
+                {% endfor %}
+                </tr>
+            {% endif %}
+            {% set ns.current_week = week_key %}
+            <tr>
+            {% for pad in range(day.date.weekday()) %}
+                <td class="calendar-day" style="background:transparent;border:none;"></td>
+            {% endfor %}
+        {% endif %}
+
+        {% set is_today = today is defined and day.date == today %}
+        <td class="calendar-day {% if is_today %}today-cell{% endif %}"
+            style="border-top: 4px solid {% if day.shift %}{{ day.shift.color }}{% else %}#333{% endif %};">
+            <div class="calendar-day-content">
+                <div class="calendar-day-header">
+                    <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                       class="day-number">{{ day.date.day }}/{{ day.date.month }}</a>
+                    {% if storhelg_dates is defined and day.date in storhelg_dates %}
+                        <span class="badge badge-ob5" style="font-size:0.6rem;padding:1px 4px;">S</span>
+                    {% elif holiday_dates is defined and day.date in holiday_dates %}
+                        <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
+                    {% endif %}
+                    {% if day.date.weekday() == 0 %}
+                        <span class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</span>
+                    {% endif %}
+                </div>
+                <div class="calendar-day-body">
+                    {% if day.shift %}
+                        <span class="badge calendar-badge"
+                              style="background:{{ day.shift.color }};color:{{ day.shift.color | contrast }};">
+                            {{ day.shift.code }}
+                        </span>
+                    {% else %}
+                        <span class="badge badge-off calendar-badge">OFF</span>
+                    {% endif %}
+                    {% if num_weeks >= 9 %}<div class="range-text-stack">{% endif %}
+                    {% if day.shift and day.shift.code != 'OC' %}
+                        {% if day.shift.code == 'OT' and day.start and day.end %}
+                            <div class="calendar-time">{{ day.start | time_format }} - {{ day.end | time_format }}</div>
+                        {% elif day.shift.start_time is not none %}
+                            <div class="calendar-time">{{ day.shift.start_time }} - {{ day.shift.end_time }}</div>
+                        {% endif %}
+                    {% endif %}
+                    {% if day.coworkers %}
+                        <div class="coworkers-list">{{ t.week_with }} {{ day.coworkers | join(', ') }}</div>
+                    {% endif %}
+                    {% if num_weeks >= 9 %}</div>{% endif %}
+                </div>
+            </div>
+        </td>
+    {% endfor %}
+
+    {% set last_day = days[-1] %}
+    {% for pad in range(6 - last_day.date.weekday()) %}
+        <td class="calendar-day" style="background:transparent;border:none;"></td>
+    {% endfor %}
+    </tr>
+    </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

@@ -34,6 +34,7 @@
         </div>
 
         <div class="page-header-right">
+            <a href="/range/{{ person_id }}?from={{ year }}-{{ '%02d'|format(month) }}-01&to={{ days.days[-1].date }}" class="btn secondary">{{ t.range_btn }}</a>
             {# Navigering mellan personer - endast för admin #}
             {% if user and user.role.value == 'admin' %}
                 <a href="/month/{{ person_id - 1 if person_id != 1 else max_persons }}?year={{ year }}&month={{ month }}" class="btn secondary">&lt-</a>

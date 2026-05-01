@@ -17,10 +17,22 @@ APP_PATH="${1:-.}"
 TAG="${2:-}"
 SERVICE_NAME="ica-schedule"
 HEALTH_URL="http://127.0.0.1:8000/health"
+GITEA_TOKEN="${GITEA_TOKEN:-}"
+GITEA_MIRROR_URL="https://gitea.kakanweb.com/api/v1/repos/kalle/periodical/mirror-sync"
 
 # Funktion för loggning med timestamp
 log() {
     echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
+
+gitea_sync() {
+    if [ -n "$GITEA_TOKEN" ]; then
+        log "🔄 Triggar Gitea mirror-sync..."
+        curl -s -o /dev/null -X POST "$GITEA_MIRROR_URL" \
+            -H "Authorization: token $GITEA_TOKEN" && \
+            log "✅ Gitea mirror-sync triggad." || \
+            warn "Gitea mirror-sync misslyckades (icke-kritiskt)."
+    fi
 }
 
 warn() {
@@ -141,6 +153,7 @@ HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
 
 if [ "$HTTP_STATUS" -eq 200 ]; then
     log "✅ Deployment slutförd! Health check svarade 200 OK."
+    gitea_sync
     exit 0
 else
     log "⏳ Väntar 30 sekunder på att tjänsten ska starta..."
@@ -148,6 +161,7 @@ else
     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
     if [ "$HTTP_STATUS" -eq 200 ]; then
         log "✅ Deployment slutförd efter väntan! Health check svarade 200 OK."
+        gitea_sync
         exit 0
     fi
     # Hämta loggar för att se vad som gick fel

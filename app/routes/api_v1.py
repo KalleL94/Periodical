@@ -348,7 +348,7 @@ async def get_user_schedule_range(
     current_user: User = Depends(get_api_user),
     db: Session = Depends(get_db),
 ):
-    """Schedule for a date range (?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD, max 31 days)."""
+    """Schedule for a date range (?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD, max 70 days)."""
     target = _get_user_or_404(user_id, db)
     try:
         start = datetime.date.fromisoformat(from_date)
@@ -357,8 +357,8 @@ async def get_user_schedule_range(
         raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from None
     if end < start:
         raise HTTPException(status_code=400, detail="to_date måste vara efter from_date")
-    if (end - start).days > 31:
-        raise HTTPException(status_code=400, detail="Max 31 dagar per anrop")
+    if (end - start).days >= 70:
+        raise HTTPException(status_code=400, detail="Max 70 dagar per anrop")
     include_salary = _can_see_salary(current_user, target)
     days, _ = _build_period(target, start, end, db, include_salary)
     return {"days": days}

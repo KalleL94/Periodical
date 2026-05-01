@@ -25,7 +25,7 @@ jobs:
           port: 2222
           script_stop: true
           script: |
-            bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }} ${{ github.ref_name }}
+            GITEA_TOKEN=${{ secrets.GITEA_TOKEN }} bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }} ${{ github.ref_name }}
 
       - name: Notify Success
         if: success()

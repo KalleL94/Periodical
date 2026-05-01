@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.19.0",
+        "date": "2026-05-01",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Intervalvy: visa 1-10 veckor av ditt personliga schema i ett rutnät, nåbar via vecko- och månadsvy",
+                "en": "Range view: display 1-10 weeks of your personal schedule in a grid, reachable from the week and month views",
+            },
+            {
+                "type": "fix",
+                "sv": "Dagvy: semesterdagar visades som vanligt arbetspass – SEM-badge och gul notis visas nu korrekt bredvid rotationspasset",
+                "en": "Day view: vacation days were shown as regular working shifts – SEM badge and yellow notice now appear correctly alongside the rotation shift",
+            },
+        ],
+    },
+    {
         "version": "0.18.2",
         "date": "2026-04-30",
         "entries": [
