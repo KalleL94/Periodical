@@ -50,7 +50,16 @@ from app.core.schedule import (
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
-from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftOverride, User, UserRole, get_db
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    OnCallOverride,
+    OnCallOverrideType,
+    ShiftOverride,
+    User,
+    UserRole,
+    get_db,
+)
 from app.routes.shared import redirect_if_not_own_data, templates
 
 logger = get_logger(__name__)
@@ -550,6 +559,30 @@ async def show_day_for_person(
     # Use rotation_position for coworker matching (schedule-based)
     coworkers = get_coworkers_for_day(rotation_position, shift_code_for_matching, persons_today, start_dt, end_dt)
 
+    # Check if this day is a vacation day for the user
+    _vac_user = (
+        db.query(User).filter(User.id == user_id_for_wages).first()
+        if user_id_for_wages != current_user.id
+        else current_user
+    )
+    is_vacation_day = False
+    if _vac_user:
+        _iso_year, _iso_week, _ = date_obj.isocalendar()
+        _vac_json = _vac_user.vacation or {}
+        if str(_iso_year) in _vac_json and _iso_week in _vac_json[str(_iso_year)]:
+            is_vacation_day = True
+        if not is_vacation_day:
+            is_vacation_day = (
+                db.query(Absence)
+                .filter(
+                    Absence.user_id == user_id_for_wages,
+                    Absence.date == date_obj,
+                    Absence.absence_type == AbsenceType.VACATION,
+                )
+                .first()
+                is not None
+            )
+
     return render_template(
         templates,
         "day.html",
@@ -595,6 +628,7 @@ async def show_day_for_person(
             "has_rotation_oc": has_rotation_oc,
             "is_effective_oc": is_effective_oc,
             "shift_override": shift_override,
+            "is_vacation_day": is_vacation_day,
             **nav,
         },
         user=current_user,
@@ -676,6 +710,127 @@ async def show_week_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             **nav,
+        },
+        user=current_user,
+    )
+
+
+@router.get("/range/{person_id}", response_class=HTMLResponse, name="range_person")
+async def show_range_for_person(
+    request: Request,
+    person_id: int,
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    weeks_param: int | None = Query(None, alias="weeks", ge=1, le=10),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Range view for a specific person -- arbitrary date interval (max 70 days)."""
+    if current_user is None:
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
+    if person_id > 10:
+        target_user = db.query(User).filter(User.id == person_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id_for_wages = person_id
+        rotation_position = target_user.rotation_person_id
+        person_name = target_user.name
+    else:
+        person_id = validate_person_id(person_id)
+        user_id_for_wages = person_id
+        rotation_position = person_id
+        person_name = None
+
+    if redirect := redirect_if_not_own_data(current_user, user_id_for_wages, f"/range/{current_user.id}"):
+        return redirect
+
+    real_today = get_today()
+
+    # Weeks-based mode: snap to Monday, compute end from weeks count
+    if weeks_param is not None or (from_date is None and to_date is None):
+        active_weeks = weeks_param if weeks_param is not None else 2
+        try:
+            anchor = date.fromisoformat(from_date) if from_date else real_today
+        except ValueError:
+            anchor = real_today
+        start = anchor - timedelta(days=anchor.weekday())  # snap to Monday
+        end = start + timedelta(weeks=active_weeks) - timedelta(days=1)
+    else:
+        # Free-form mode: both from/to provided explicitly
+        active_weeks = None
+        try:
+            start = date.fromisoformat(from_date) if from_date else real_today
+            end = date.fromisoformat(to_date) if to_date else real_today + timedelta(days=13)
+        except ValueError:
+            start = real_today
+            end = real_today + timedelta(days=13)
+        if end < start:
+            end = start
+        if (end - start).days >= 70:
+            end = start + timedelta(days=69)
+
+    if person_name is None:
+        if current_user is not None and current_user.rotation_person_id == rotation_position:
+            person_name = current_user.name
+        else:
+            holder = db.query(User).filter(User.person_id == rotation_position).first()
+            person_name = holder.name if holder else person_list[rotation_position - 1].name
+
+    range_employment_start = None
+    if person_id > 10:
+        from app.core.schedule.person_history import get_employment_period
+
+        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        range_employment_start = emp_start
+
+    # Build days week-by-week then filter to exact range (reuses build_week_data incl. coworkers)
+    days_in_range = []
+    current_monday = start - timedelta(days=start.weekday())
+    seen_weeks: set[tuple[int, int]] = set()
+    while current_monday <= end:
+        iso_year, iso_week, _ = current_monday.isocalendar()
+        if (iso_year, iso_week) not in seen_weeks:
+            seen_weeks.add((iso_year, iso_week))
+            week_days = build_week_data(
+                iso_year,
+                iso_week,
+                person_id=rotation_position,
+                session=db,
+                include_coworkers=True,
+                employment_start=range_employment_start,
+            )
+            for d in week_days:
+                if start <= d["date"] <= end:
+                    days_in_range.append(d)
+        current_monday += timedelta(days=7)
+
+    years_in_range = {d["date"].year for d in days_in_range}
+    storhelg_dates: set = set()
+    holiday_dates: set = set()
+    for yr in years_in_range:
+        storhelg_dates |= _get_storhelg_dates_for_year(yr)
+        holiday_dates |= get_holiday_dates_for_year(yr)
+
+    return render_template(
+        templates,
+        "range.html",
+        request,
+        {
+            "person_id": person_id,
+            "person_name": person_name,
+            "start_date": start,
+            "end_date": end,
+            "days": days_in_range,
+            "num_weeks": len(seen_weeks),
+            "active_weeks": active_weeks,
+            "prev_from": (start - timedelta(weeks=active_weeks)).isoformat() if active_weeks else None,
+            "next_from": (start + timedelta(weeks=active_weeks)).isoformat() if active_weeks else None,
+            "prev_week_from": (start - timedelta(weeks=1)).isoformat() if active_weeks else None,
+            "next_week_from": (start + timedelta(weeks=1)).isoformat() if active_weeks else None,
+            "today": real_today,
+            "storhelg_dates": storhelg_dates,
+            "holiday_dates": holiday_dates,
         },
         user=current_user,
     )

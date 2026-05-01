@@ -49,6 +49,12 @@
         </h2>
     </div>
 
+    {% if is_vacation_day %}
+    <div style="background:rgba(199,199,0,0.12);border-left:4px solid #c7c700;border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;color:#c7c700;font-weight:500;">
+        {{ t.day_sem_notice }}
+    </div>
+    {% endif %}
+
     <!-- Shift -->
     <div class="day-layout">
         <section class="day-section">
@@ -68,7 +74,11 @@
                         style="border-left:6px solid {% if shift %}{{ shift.color }}{% else %}transparent{% endif %};">
                         <td>{% if rotation_week and rotation_length %}{{ rotation_week }}/{{ rotation_length }}{% else %}-{% endif %}</td>
                         <td>
-                            {% if shift %}
+                            {% if is_vacation_day %}
+                                <span style="white-space:nowrap;">
+                                    <span class="badge" style="background:#c7c700;color:#000;">SEM</span>{% if shift %}&nbsp;<span class="badge" style="background:{{ shift.color }};color:{{ shift.color | contrast }};">{{ shift.code }}</span>{% endif %}
+                                </span>
+                            {% elif shift %}
                                 <span class="badge"
                                       style="background: {{ shift.color }}; color: {{ shift.color | contrast }};">
                                     {{ shift.code }}
@@ -78,7 +88,9 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if shift %}
+                            {% if is_vacation_day %}
+                                {{ t.day_absence_vacation }}{% if shift %} ({{ shift.label }}){% endif %}
+                            {% elif shift %}
                                 {{ shift.label }}
                             {% else %}
                                 {{ t.day_no_shift }}
@@ -284,6 +296,8 @@
                                         {{ t.day_absence_leave }}
                                     {% elif absence.absence_type.value == 'OFF' %}
                                         {{ t.day_absence_off }}
+                                    {% elif absence.absence_type.value == 'VACATION' %}
+                                        {{ t.day_absence_vacation }}
                                     {% else %}
                                         {{ absence.absence_type.value }}
                                     {% endif %}
@@ -300,6 +314,8 @@
                                         <span class="badge" style="background: #a855f7; color: white;">{{ t.day_absence_leave }}</span>
                                     {% elif absence.absence_type.value == 'OFF' %}
                                         <span class="badge" style="background: #888888; color: white;">{{ t.day_absence_off }}</span>
+                                    {% elif absence.absence_type.value == 'VACATION' %}
+                                        <span class="badge" style="background: #c7c700; color: #000;">{{ t.day_absence_vacation }}</span>
                                     {% endif %}
                                     {% if absence.left_at is not none %}
                                         <span class="badge" style="background: #0ea5e9; color: white;">Deldag</span>

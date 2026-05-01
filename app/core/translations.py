@@ -907,6 +907,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "admin_vac_user_weeks_selected_js": "veckor valda:",
         "admin_vac_user_day_count_js": "dag",
         "admin_vac_user_days_count_js": "dagar valda",
+        "day_sem_notice": "Du har semester denna dag.",
+        "day_absence_vacation": "Semester",
+        # ── Range view ─────────────────────────────────────────────
+        "range_title": "Valfritt intervall",
+        "range_from": "Från",
+        "range_to": "Till",
+        "range_apply": "Visa",
+        "range_btn": "Valfritt intervall",
         # ── Index ──────────────────────────────────────────────────
         "index_title": "Schemaöversikt",
         "index_desc1": "Denna applikation visar rotationsschemat och OB-ersättning för alla personer över år, månad, vecka och dag.",
@@ -1812,6 +1820,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "admin_vac_user_weeks_selected_js": "weeks selected:",
         "admin_vac_user_day_count_js": "day",
         "admin_vac_user_days_count_js": "days selected",
+        "day_sem_notice": "You have vacation on this day.",
+        "day_absence_vacation": "Vacation",
+        # ── Range view ─────────────────────────────────────────────
+        "range_title": "Custom range",
+        "range_from": "From",
+        "range_to": "To",
+        "range_apply": "Show",
+        "range_btn": "Custom range",
         # ── Index ──────────────────────────────────────────────────
         "index_title": "Schedule overview",
         "index_desc1": "This application shows the rotation schedule and OB pay for all persons over year, month, week and day.",

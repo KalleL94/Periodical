@@ -15,6 +15,7 @@
     </div>
 
     <div class="page-header-right">
+        <a href="/range/{{ person_id }}?from={{ days[0].date }}&to={{ days[6].date }}" class="btn secondary">{{ t.range_btn }}</a>
         <a href="/week?year={{ year }}&week={{ week }}" class="btn secondary">{{ t.week_all }}</a>
         {# Navigering mellan personer - endast för admin #}
         {% if user and user.role.value == 'admin' %}
