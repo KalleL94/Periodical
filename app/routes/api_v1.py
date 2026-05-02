@@ -56,6 +56,24 @@ def _overtime_by_date(
     return result
 
 
+def _is_overnight(shift) -> bool:
+    """Returns True when the shift ends on the next calendar day (end_time <= start_time)."""
+    if not shift or not shift.start_time or not shift.end_time:
+        return False
+    return shift.end_time <= shift.start_time
+
+
+def _shift_to_dict(shift) -> dict:
+    return {
+        "code": shift.code,
+        "label": shift.label,
+        "start_time": shift.start_time,
+        "end_time": shift.end_time,
+        "color": shift.color,
+        "overnight": _is_overnight(shift),
+    }
+
+
 def _find_shift_for_overtime(ot_end: datetime.time) -> tuple[str, str]:
     """Match overtime end time to a named shift; falls back to 'OT'/'Övertid'."""
     ot_end_str = ot_end.strftime("%H:%M")
@@ -121,11 +139,13 @@ def _build_day_status(
             }
         coworkers = _build_coworkers(user.id, date, all_users, effective_absent, effective_overtime)
 
+    shift_data = _shift_to_dict(shift) if shift else None
+
     if absence:
         result = {
             "date": date.isoformat(),
             "status": absence.absence_type.value.lower(),
-            "shift": None,
+            "shift": shift_data,
             "rotation_week": rotation_week,
             "overtime": None,
             "partial_day": absence.left_at,
@@ -153,16 +173,6 @@ def _build_day_status(
                 ob_pay_raw = calculate_ob_pay(start_dt, end_dt, rules, monthly_wage, rate_overrides)
                 ob_total = round(sum(ob_pay_raw.values()), 2)
                 ob_pay_data = {k: round(v, 2) for k, v in ob_pay_raw.items() if v > 0}
-
-    shift_data = None
-    if shift:
-        shift_data = {
-            "code": shift.code,
-            "label": shift.label,
-            "start_time": shift.start_time,
-            "end_time": shift.end_time,
-            "color": shift.color,
-        }
 
     overtime_data = None
     if overtime:
@@ -533,6 +543,21 @@ async def get_user_next_shift(
         today = now.date()
         current_time = now.time()
 
+    # Check if there is an ongoing overnight shift from yesterday still running.
+    currently_active: dict | None = None
+    yesterday = today - datetime.timedelta(days=1)
+    yesterday_absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == yesterday).first()
+    if not yesterday_absence:
+        prev_shift, prev_rw = determine_shift_for_date(yesterday, target.rotation_person_id)
+        if prev_shift and prev_shift.code not in ("OFF", "OC") and _is_overnight(prev_shift):
+            prev_end = datetime.time.fromisoformat(prev_shift.end_time)
+            if current_time < prev_end:
+                currently_active = {
+                    "date": yesterday.isoformat(),
+                    "shift": _shift_to_dict(prev_shift),
+                    "rotation_week": prev_rw,
+                }
+
     for offset in range(60):
         candidate = today + datetime.timedelta(days=offset)
         absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == candidate).first()
@@ -545,18 +570,15 @@ async def get_user_next_shift(
             shift_start = datetime.time.fromisoformat(shift.start_time)
             if current_time >= shift_start:
                 continue
-        return {
+        result = {
             "date": candidate.isoformat(),
             "days_from_today": offset,
-            "shift": {
-                "code": shift.code,
-                "label": shift.label,
-                "start_time": shift.start_time,
-                "end_time": shift.end_time,
-                "color": shift.color,
-            },
+            "shift": _shift_to_dict(shift),
             "rotation_week": rotation_week,
         }
+        if currently_active is not None:
+            result["currently_active_shift"] = currently_active
+        return result
 
     raise HTTPException(status_code=404, detail="Inget kommande pass hittades inom 60 dagar")
 
