@@ -254,18 +254,46 @@ async def get_me(current_user: User = Depends(get_api_user)):
 @router.get("/users/{user_id}/status")
 async def get_user_status(
     user_id: int,
+    at_date: str | None = Query(None, alias="date", description="Simulate date (YYYY-MM-DD)"),
+    at_time: str | None = Query(None, alias="time", description="Simulate time (HH:MM)"),
     current_user: User = Depends(get_api_user),
     db: Session = Depends(get_db),
 ):
-    """Status for today for a given user. Includes co-workers and OB if own user or admin."""
+    """Status for a given user. Defaults to now; pass ?date=YYYY-MM-DD&time=HH:MM to simulate."""
     target = _get_user_or_404(user_id, db)
     include_salary = _can_see_salary(current_user, target)
+    if at_date:
+        try:
+            today = datetime.date.fromisoformat(at_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from None
+        try:
+            current_time = datetime.time.fromisoformat(at_time) if at_time else datetime.time(0, 0)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ogiltigt tidsformat, använd HH:MM") from None
+    else:
+        now = datetime.datetime.now(APP_TIMEZONE)
+        today = now.date()
+        current_time = now.time()
     all_users = db.query(User).filter(User.is_active == 1).all()
-    today = get_today()
     absent_ids = {row[0] for row in db.query(Absence.user_id).filter(Absence.date == today).all()}
-    return _build_day_status(
+    result = _build_day_status(
         target, today, db, include_salary=include_salary, all_users=all_users, absent_ids=absent_ids
     )
+    # Check for an ongoing overnight shift from the previous day.
+    yesterday = today - datetime.timedelta(days=1)
+    yesterday_absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == yesterday).first()
+    if not yesterday_absence:
+        prev_shift, prev_rw = determine_shift_for_date(yesterday, target.rotation_person_id)
+        if prev_shift and prev_shift.code not in ("OFF", "OC") and _is_overnight(prev_shift):
+            prev_end = datetime.time.fromisoformat(prev_shift.end_time)
+            if current_time < prev_end:
+                result["currently_active_shift"] = {
+                    "date": yesterday.isoformat(),
+                    "shift": _shift_to_dict(prev_shift),
+                    "rotation_week": prev_rw,
+                }
+    return result
 
 
 @router.get("/users/{user_id}/schedule/today")
