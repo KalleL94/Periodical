@@ -15,6 +15,32 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.19.1",
+        "date": "2026-05-02",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "API: nattpass returnerade ingen skiftdata vid frånvaro – rotationspasset visas nu även när dagen är ledig",
+                "en": "API: night shifts returned no shift data on absence days – rotation shift is now included even when the day is leave",
+            },
+            {
+                "type": "nyhet",
+                "sv": "API: overnight-fält på alla pass så integrationer vet när sluttiden är nästa kalenderdag",
+                "en": "API: overnight field on all shifts so integrations know when end_time falls on the next calendar day",
+            },
+            {
+                "type": "nyhet",
+                "sv": "API: currently_active_shift på /status och /next-shift visar pågående nattpass från föregående dag baserat på klockan",
+                "en": "API: currently_active_shift on /status and /next-shift shows an ongoing overnight shift from the previous day based on current time",
+            },
+            {
+                "type": "nyhet",
+                "sv": "API: /status accepterar ?date och ?time för att simulera status för valfri tidpunkt",
+                "en": "API: /status accepts ?date and ?time to simulate status for any point in time",
+            },
+        ],
+    },
+    {
         "version": "0.19.0",
         "date": "2026-05-01",
         "entries": [
