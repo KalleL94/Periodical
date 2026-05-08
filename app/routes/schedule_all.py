@@ -144,6 +144,7 @@ async def show_month_all(
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
+            "today": get_today(),
         },
         user=current_user,
     )

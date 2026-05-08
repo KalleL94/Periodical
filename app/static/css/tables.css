@@ -29,6 +29,8 @@ tbody td {
   color: var(--text);
 }
 
+tr.shift-row:hover { background: rgba(255,255,255,0.12); }
+tr.shift-row:hover td { background: transparent; }
 tr:hover td { background: rgba(255,255,255,0.01); }
 td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 

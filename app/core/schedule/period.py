@@ -273,6 +273,7 @@ def generate_period_data(
                 swap_map,
                 user_rates_map=user_rates_map,
                 employment_start=employment_start,
+                shift_override_map=shift_override_map,
             )
 
         days_out.append(day_info)
@@ -875,6 +876,7 @@ def _populate_single_person_day(
     swap_map: dict[tuple[int, datetime.date], str] | None = None,
     user_rates_map: dict[int, dict] | None = None,
     employment_start: datetime.date | None = None,
+    shift_override_map: dict[tuple[int, datetime.date], str] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -1027,6 +1029,22 @@ def _populate_single_person_day(
         rotation_week = None
         hours, start, end = 0.0, None, None
         ob = {}
+    elif shift_override_map is not None and shift_override_map.get((person_id, current_day)):
+        override_code = shift_override_map[(person_id, current_day)]
+        result = determine_shift_for_date(current_day, person_id)
+        rotation_week = result[1] if result else None
+        override_shift = next((s for s in shift_types if s.code == override_code), None)
+        if override_shift:
+            shift = override_shift
+            hours, start, end = calculate_shift_hours(current_day, override_shift.code)
+            if start is not None and override_shift.code != "OC":
+                ob = calculate_ob_hours(start, end, combined_ob_rules)
+            else:
+                ob = {}
+        else:
+            shift, rotation_week = None, None
+            hours, start, end = 0.0, None, None
+            ob = {}
     elif swap_map is not None and (person_id, current_day) in swap_map:
         # Skiftbyte: ersätt med det nya skiftet
         new_code = swap_map[(person_id, current_day)]

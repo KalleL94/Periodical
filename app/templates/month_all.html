@@ -46,6 +46,17 @@
 
 <h2 class="page-title">{{ t.month_all_title.replace('{year}', year|string).replace('{month}', "%02d"|format(month)) }}</h2>
 
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--panel);border-radius:var(--radius);border:1px solid var(--border);align-items:center;">
+        <button onclick="setAllPersonCols(true)" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">Markera alla</button>
+        <button onclick="setAllPersonCols(false)" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">Avmarkera alla</button>
+        <span style="color:var(--border);margin:0 0.25rem;">|</span>
+        {% for p in persons %}
+        <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;font-size:0.85rem;user-select:none;">
+            <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" style="cursor:pointer;">
+            {{ p.person_name }}
+        </label>
+        {% endfor %}
+    </div>
 
     {% set header_days = persons[0].days if persons and persons|length > 0 else [] %}
 
@@ -61,7 +72,7 @@
                         {% set total_ob = (p.ob_pay.get('OB1',0) or 0) + (p.ob_pay.get('OB2',0) or 0)
                                           + (p.ob_pay.get('OB3',0) or 0) + (p.ob_pay.get('OB4',0) or 0)
                                           + (p.ob_pay.get('OB5',0) or 0) %}
-                        <th>{{ "%.2f"|format(total_ob) }}</th>
+                        <th data-person="{{ p.person_id }}">{{ "%.2f"|format(total_ob) }}</th>
                     {% endfor %}
                 </tr>
                 {% endif %}
@@ -69,7 +80,7 @@
                     <th class="w-sm">{{ t.month_all_day_col }}</th>
                     <th class="w-md">{{ t.month_all_date_col }}</th>
                     {% for p in persons %}
-                        <th class="person-header">
+                        <th class="person-header" data-person="{{ p.person_id }}">
                             <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}">
                                 {{ p.person_name }}<br>
                                 <small>(#{{ p.person_id }})</small>
@@ -87,6 +98,9 @@
                         <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
                             {{ day.date }}
+                            {% if day.date.weekday() == 0 %}
+                                <a href="/week?year={{ day.date.isocalendar()[0] }}&week={{ day.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</a>
+                            {% endif %}
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
                                 <span class="badge badge-ob5" style="font-size:0.55rem;padding:1px 3px;">S</span>
                             {% elif holiday_dates is defined and day.date in holiday_dates %}
@@ -95,7 +109,7 @@
                         </td>
                         {% for p in persons %}
                             {% set d = p.days[i] %}
-                            <td class="day-cell"
+                            <td class="day-cell" data-person="{{ p.person_id }}"
                                 title="{{ d.date.isoformat() }}"
                                 style="border-left:6px solid {% if d.shift %}{{ d.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                                 {% if d.shift %}
@@ -136,5 +150,19 @@
             </tbody>
         </table>
     </div>
+
+<script>
+function togglePersonCol(pid, show) {
+    document.querySelectorAll('[data-person="' + pid + '"]').forEach(function(c) {
+        c.style.display = show ? '' : 'none';
+    });
+}
+function setAllPersonCols(show) {
+    document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        cb.checked = show;
+        cb.dispatchEvent(new Event('change'));
+    });
+}
+</script>
 
 {% endblock %}

@@ -95,10 +95,9 @@ def get_employment_period(session: Session, user_id: int, person_id: int) -> tup
         return (record.effective_from, record.effective_to)
 
     # Fallback: assume employed from rotation start
-    from app.core.schedule.core import get_settings
+    from app.core.schedule.core import get_rotation_start_date
 
-    settings = get_settings()
-    return (settings.rotation_start_date, None)
+    return (get_rotation_start_date(), None)
 
 
 def add_person_change(

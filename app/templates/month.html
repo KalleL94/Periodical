@@ -159,7 +159,7 @@
                                         <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
                                     {% endif %}
                                     {% if day_data.date.weekday() == 0 %}
-                                        <span class="rotation-week-small">v{{ day_data.date.isocalendar()[1] }}</span>
+                                        <a href="/week/{{ person_id }}?year={{ day_data.date.isocalendar()[0] }}&week={{ day_data.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day_data.date.isocalendar()[1] }}</a>
                                     {% elif day_data.date.weekday() == 6 and day_data.rotation_week %}
                                         {% if day_data.rotation_length %}
                                             <span class="rotation-week-small">r-v{{ day_data.rotation_week }}/{{ day_data.rotation_length }}</span>

@@ -49,6 +49,8 @@
 .day-number { font-size: 1.2rem; font-weight: 700; color: var(--text); text-decoration: none; line-height: 1; }
 .day-number:hover { color: var(--accent); }
 .rotation-week-small { font-size: 0.7rem; color: var(--muted); font-weight: 500; }
+a.rotation-week-small { text-decoration: none; }
+a.rotation-week-small:hover { color: var(--text); }
 
 .calendar-day-body { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .calendar-badge { font-size: 0.75rem; padding: 3px 7px; align-self: flex-start; }
