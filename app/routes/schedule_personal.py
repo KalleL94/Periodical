@@ -1073,6 +1073,7 @@ async def show_month_for_person(
             "vacation_month": vacation_month,
             "before_employment_month": before_employment_month,
             "hourly_breakdown": hourly_breakdown,
+            "today": get_today(),
         },
         user=current_user,
     )

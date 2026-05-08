@@ -31,6 +31,18 @@
 
 <h2 class="page-title">{{ t.year_all_title.replace('{year}', year|string) }}</h2>
 
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--panel);border-radius:var(--radius);border:1px solid var(--border);align-items:center;">
+        <button onclick="setAllPersonCols(true)" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">Markera alla</button>
+        <button onclick="setAllPersonCols(false)" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">Avmarkera alla</button>
+        <span style="color:var(--border);margin:0 0.25rem;">|</span>
+        {% for p in person_headers %}
+        <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;font-size:0.85rem;user-select:none;">
+            <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" style="cursor:pointer;">
+            {{ p.person_name }}
+        </label>
+        {% endfor %}
+    </div>
+
     <div class="month-grid">
         <table class="month-schedule table-sticky">
             <thead>
@@ -40,7 +52,7 @@
                         <th></th>
                         <th></th>
                         {% for p in person_headers %}
-                            <th class="num" id="total-{{ p.person_id }}">
+                            <th class="num" id="total-{{ p.person_id }}" data-person="{{ p.person_id }}">
                                 <span class="loading-spinner" style="color: #999; font-size: 0.9em;">...</span>
                             </th>
                         {% endfor %}
@@ -50,10 +62,9 @@
                     <th class="w-md">{{ t.month_all_day_col }}</th>
                     <th class="w-lg">{{ t.month_all_date_col }}</th>
                     {% for p in person_headers %}
-                        <th class="person-header">
-                            {% if user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
-                                {% set link_id = user.id if user.rotation_person_id == p.person_id else p.person_id %}
-                                <a href="/year/{{ link_id }}?year={{ year }}">
+                        <th class="person-header" data-person="{{ p.person_id }}">
+                            {% if user and user.rotation_person_id == p.person_id %}
+                                <a href="/year/{{ user.id }}?year={{ year }}">
                                     {{ p.person_name }}<br>
                                     <small>(#{{ p.person_id }})</small>
                                 </a>
@@ -72,6 +83,9 @@
                         <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
                             {{ day.date }}
+                            {% if day.date.weekday() == 0 %}
+                                <a href="/week?year={{ day.date.isocalendar()[0] }}&week={{ day.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</a>
+                            {% endif %}
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
                                 <span class="badge badge-ob5" style="font-size:0.55rem;padding:1px 3px;">S</span>
                             {% elif holiday_dates is defined and day.date in holiday_dates %}
@@ -79,7 +93,7 @@
                             {% endif %}
                         </td>
                         {% for person in day.persons %}
-                            <td style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
+                            <td data-person="{{ person.person_id }}" style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                                 {% if person.shift %}
                                     {# Länka till day-sida bara om admin eller egen #}
                                     {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
@@ -120,6 +134,18 @@
     </div>
 
 <script>
+function togglePersonCol(pid, show) {
+    document.querySelectorAll('[data-person="' + pid + '"]').forEach(function(c) {
+        c.style.display = show ? '' : 'none';
+    });
+}
+function setAllPersonCols(show) {
+    document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        cb.checked = show;
+        cb.dispatchEvent(new Event('change'));
+    });
+}
+
 // Hide/show past days toggle
 var pastRowsVisible = false;
 

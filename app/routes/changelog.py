@@ -15,6 +15,47 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.20.0",
+        "date": "2026-05-08",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Månadsvy: manuellt tilldelade pass (t.ex. N2) visades inte i kalenderrutnätet trots att de syntes i veckovy",
+                "en": "Month view: manually assigned shifts (e.g. N2) were not shown in the calendar grid even though they appeared in week view",
+            },
+            {
+                "type": "fix",
+                "sv": "Månadsvy: dagens datum markerades inte med blå ram",
+                "en": "Month view: today's date was not highlighted with a blue border",
+            },
+            {
+                "type": "fix",
+                "sv": "Intervalvy: rotationsvecka visades inte på söndagar",
+                "en": "Range view: rotation week was not shown on Sundays",
+            },
+            {
+                "type": "nyhet",
+                "sv": "ISO-veckonummer (v17) i månadsvy och intervalvy är nu klickbara länkar till veckovy för den veckan",
+                "en": "ISO week numbers (v17) in month and range views are now clickable links to the week view for that week",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Alla-vyer (månad/år): ISO-veckonummer visas i datumkolumnen på måndagar och länkar till veckovyn för alla",
+                "en": "All-person views (month/year): ISO week numbers appear in the date column on Mondays and link to the all-persons week view",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Alla-vyer (månad/år): personfilterfält med kryssboxar per person samt markera/avmarkera alla",
+                "en": "All-person views (month/year): person filter panel with per-person checkboxes and select/deselect all",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Alla-vyer (månad/år): tydligare hover-markering vid musöverfart på dagrader",
+                "en": "All-person views (month/year): more visible hover highlight on day rows",
+            },
+        ],
+    },
+    {
         "version": "0.19.1",
         "date": "2026-05-02",
         "entries": [
