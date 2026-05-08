@@ -26,12 +26,12 @@ FROM base AS builder
 # Installera byggverktyg (om du har libs som kräver kompilering)
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 
-COPY requirements.txt .
+COPY pyproject.toml .
 # Vi installerar i en venv för att enkelt kunna kopiera hela miljön senare
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir ".[dev]"
 
 # -------------------------------------------------------------------
 # STAGE 3: Development
@@ -53,8 +53,8 @@ USER appuser
 # Kopiera koden (men docker-compose volumes kommer oftast överskugga detta i dev)
 COPY --chown=appuser:appgroup . .
 
-# Dev-kommando med reload
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Dev-kommando med reload (bara app/ och tests/ bevakas för att undvika file watch-problem)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "app", "--reload-dir", "tests"]
 
 # -------------------------------------------------------------------
 # STAGE 4: Production
