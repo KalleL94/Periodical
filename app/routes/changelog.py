@@ -15,6 +15,27 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.20.1",
+        "date": "2026-05-10",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "API: medarbetare med beredskapspass (OC) visades inte i co-workers-listan i schemats dagendpoints",
+                "en": "API: co-workers with on-call shifts (OC) were not included in the co-workers list in the schedule day endpoints",
+            },
+            {
+                "type": "nyhet",
+                "sv": "API: /schedule/today accepterar ?date=YYYY-MM-DD för att simulera schema för valfri dag",
+                "en": "API: /schedule/today accepts ?date=YYYY-MM-DD to simulate the schedule for any given day",
+            },
+            {
+                "type": "nyhet",
+                "sv": "API: ny endpoint /shifts listar alla passkoder med label, tider och färg",
+                "en": "API: new endpoint /shifts lists all shift type codes with label, times and color",
+            },
+        ],
+    },
+    {
         "version": "0.20.0",
         "date": "2026-05-08",
         "entries": [

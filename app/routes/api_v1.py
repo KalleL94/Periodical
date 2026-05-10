@@ -100,7 +100,7 @@ def _build_coworkers(
             result.append({"id": u.id, "name": u.name, "shift_code": code, "shift_label": label})
             continue
         shift, _ = determine_shift_for_date(date, u.rotation_person_id)
-        if shift and shift.code not in ("OFF", "OC"):
+        if shift and shift.code != "OFF":
             result.append({"id": u.id, "name": u.name, "shift_code": shift.code, "shift_label": shift.label})
     return result
 
@@ -248,6 +248,33 @@ async def get_me(current_user: User = Depends(get_api_user)):
     }
 
 
+@router.get("/shifts")
+async def get_shifts(current_user: User = Depends(get_api_user)):
+    """All shift type definitions (code, label, times, color), including synthetic OT-N1/N2/N3 variants."""
+    from app.core.constants import WORK_SHIFT_CODES
+
+    shift_types = get_shift_types()
+    result = [_shift_to_dict(s) for s in shift_types]
+
+    ot_shift = next((s for s in shift_types if s.code == "OT"), None)
+    ot_color = ot_shift.color if ot_shift else "#ff9800"
+
+    for s in shift_types:
+        if s.code in WORK_SHIFT_CODES:
+            result.append(
+                {
+                    "code": f"OT-{s.code}",
+                    "label": f"Övertid ({s.label})",
+                    "start_time": None,
+                    "end_time": s.end_time,
+                    "color": ot_color,
+                    "overnight": _is_overnight(s),
+                }
+            )
+
+    return result
+
+
 # ── Per-user endpoints ───────────────────────────────────────────────────────
 
 
@@ -265,8 +292,8 @@ async def get_user_status(
     if at_date:
         try:
             today = datetime.date.fromisoformat(at_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from None
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from e
         try:
             current_time = datetime.time.fromisoformat(at_time) if at_time else datetime.time(0, 0)
         except ValueError:
@@ -299,14 +326,21 @@ async def get_user_status(
 @router.get("/users/{user_id}/schedule/today")
 async def get_user_schedule_today(
     user_id: int,
+    at_date: str | None = Query(None, alias="date", description="Simulate date (YYYY-MM-DD)"),
     current_user: User = Depends(get_api_user),
     db: Session = Depends(get_db),
 ):
-    """Schedule for today including co-workers."""
+    """Schedule for today including co-workers. Pass ?date=YYYY-MM-DD to simulate another day."""
     target = _get_user_or_404(user_id, db)
     include_salary = _can_see_salary(current_user, target)
     all_users = db.query(User).filter(User.is_active == 1).all()
-    today = get_today()
+    if at_date:
+        try:
+            today = datetime.date.fromisoformat(at_date)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from e
+    else:
+        today = get_today()
     absent_ids = {row[0] for row in db.query(Absence.user_id).filter(Absence.date == today).all()}
     return _build_day_status(
         target, today, db, include_salary=include_salary, all_users=all_users, absent_ids=absent_ids
@@ -560,8 +594,8 @@ async def get_user_next_shift(
     if at_date:
         try:
             today = datetime.date.fromisoformat(at_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from None
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from e
         try:
             current_time = datetime.time.fromisoformat(at_time) if at_time else datetime.time(0, 0)
         except ValueError:
