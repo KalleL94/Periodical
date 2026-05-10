@@ -100,7 +100,7 @@ def _build_coworkers(
             result.append({"id": u.id, "name": u.name, "shift_code": code, "shift_label": label})
             continue
         shift, _ = determine_shift_for_date(date, u.rotation_person_id)
-        if shift and shift.code not in ("OFF", "OC"):
+        if shift and shift.code != "OFF":
             result.append({"id": u.id, "name": u.name, "shift_code": shift.code, "shift_label": shift.label})
     return result
 

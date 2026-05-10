@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.20.1",
+        "date": "2026-05-10",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "API: medarbetare med beredskapspass (OC) visades inte i co-workers-listan i schemats dagendpoints",
+                "en": "API: co-workers with on-call shifts (OC) were not included in the co-workers list in the schedule day endpoints",
+            },
+        ],
+    },
+    {
         "version": "0.20.0",
         "date": "2026-05-08",
         "entries": [
