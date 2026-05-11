@@ -281,6 +281,77 @@ async def admin_rotation_eras_create(
         )
 
 
+@router.post("/rotation-eras/edit/{era_id}", name="admin_rotation_eras_edit")
+async def admin_rotation_eras_edit(
+    era_id: int,
+    request: Request,
+    start_date: str = Form(...),
+    weeks_pattern: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Edit a future rotation era's start date and weeks pattern."""
+    try:
+        era = db.query(RotationEra).filter(RotationEra.id == era_id).first()
+        if not era:
+            raise ValueError(f"Era with id {era_id} not found")
+
+        today = datetime.date.today()
+        if era.start_date <= today:
+            raise ValueError("Only future eras can be edited")
+
+        new_start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+        if new_start_date <= today:
+            raise ValueError("New start date must be in the future")
+
+        weeks_pattern_dict = json.loads(weeks_pattern)
+        if len(weeks_pattern_dict) != era.rotation_length:
+            raise ValueError(
+                f"Weeks pattern must have exactly {era.rotation_length} weeks, got {len(weeks_pattern_dict)}"
+            )
+
+        # If start_date changed, update the era that was closed by this one
+        if new_start_date != era.start_date:
+            # Check no other era (besides this one) starts on the new date
+            conflict = (
+                db.query(RotationEra)
+                .filter(RotationEra.id != era_id)
+                .filter(RotationEra.start_date == new_start_date)
+                .first()
+            )
+            if conflict:
+                raise ValueError(f"Another era already starts on {new_start_date}")
+
+            # Update the previous era's end_date
+            prev_era = db.query(RotationEra).filter(RotationEra.end_date == era.start_date).first()
+            if prev_era:
+                prev_era.end_date = new_start_date
+                db.add(prev_era)
+
+            era.start_date = new_start_date
+
+        era.weeks_pattern = weeks_pattern_dict
+        db.add(era)
+        db.commit()
+        clear_schedule_cache()
+
+        return RedirectResponse(url="/admin/rotation-eras", status_code=303)
+
+    except (ValueError, json.JSONDecodeError) as e:
+        db.rollback()
+        eras = db.query(RotationEra).order_by(RotationEra.start_date.desc()).all()
+        return render(
+            "admin_rotation_eras.html",
+            {
+                "request": request,
+                "user": current_user,
+                "eras": eras,
+                "error": f"Error editing era: {str(e)}",
+            },
+            status_code=400,
+        )
+
+
 @router.post("/rotation-eras/delete/{era_id}", name="admin_rotation_eras_delete")
 async def admin_rotation_eras_delete(
     era_id: int,
@@ -423,6 +494,8 @@ async def admin_vacation_user(
     db: Session = Depends(get_db),
 ):
     """Admin: edit vacation for a specific user."""
+    from app.core.schedule.core import determine_shift_for_date
+
     if year is None:
         year = get_today().year
 
@@ -431,7 +504,23 @@ async def admin_vacation_user(
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
     vacation_weeks = (edit_user.vacation or {}).get(str(year), [])
-    balance = calculate_vacation_balance(edit_user, year, db)
+
+    # Compute shift colors and OFF days for this user's rotation
+    off_days: set[datetime.date] = set()
+    day_colors: dict[str, str] = {}
+    d = datetime.date(year, 1, 1)
+    year_end = datetime.date(year, 12, 31)
+    while d <= year_end:
+        shift, _ = determine_shift_for_date(d, edit_user.rotation_person_id)
+        if shift:
+            if shift.code == "OFF":
+                off_days.add(d)
+            if shift.color:
+                day_colors[d.isoformat()] = shift.color
+        d += datetime.timedelta(days=1)
+
+    off_days_list = sorted(day.isoformat() for day in off_days)
+    balance = calculate_vacation_balance(edit_user, year, db, off_dates=off_days)
 
     # Get day-level vacation for this year
     day_absences = (
@@ -456,6 +545,8 @@ async def admin_vacation_user(
             "vacation_weeks": sorted(vacation_weeks),
             "balance": balance,
             "day_absences": day_absences,
+            "off_days_list": off_days_list,
+            "day_colors": day_colors,
             "success": success,
             "month_names": MONTH_NAMES_SV,
         },

@@ -15,6 +15,37 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.20.2",
+        "date": "2026-05-11",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Admin: rotationseror har nu en JSON-knapp som visar erans fullständiga data i en modal",
+                "en": "Admin: rotation eras now have a JSON button that shows the era's full data in a modal",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Admin: framtida rotationseror kan nu redigeras (startdatum och veckömönster) via en Ändra-knapp – nuvarande eras slutdatum uppdateras automatiskt",
+                "en": "Admin: future rotation eras can now be edited (start date and weeks pattern) via an Edit button – the current era's end date is updated automatically",
+            },
+            {
+                "type": "fix",
+                "sv": "Admin: semesterns dagkalender visar nu skiftfärger och OFF-dagar för den redigerade användaren, identiskt med användarens egna vy",
+                "en": "Admin: the vacation day calendar now shows shift colours and OFF days for the edited user, matching the user's own view",
+            },
+            {
+                "type": "fix",
+                "sv": "Admin: dagkalendern i semestervyn visar nu veckonummer-kolumn, identiskt med användarens egna vy",
+                "en": "Admin: the vacation day calendar now shows a week-number column, matching the user's own view",
+            },
+            {
+                "type": "fix",
+                "sv": "Docker: containern körs nu som hostens användare (uid/gid) vilket löste SQLite-skrivfel vid monterade volymer i dev-miljön",
+                "en": "Docker: the container now runs as the host user (uid/gid), fixing SQLite write errors on mounted volumes in the dev environment",
+            },
+        ],
+    },
+    {
         "version": "0.20.1",
         "date": "2026-05-10",
         "entries": [
