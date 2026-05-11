@@ -43,11 +43,11 @@ FROM base AS dev
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Skapa directories som appen behöver skriva till
-RUN mkdir -p logs && chown -R appuser:appgroup logs
+# Skapa directories som appen behöver skriva till.
+# chmod 777 istället för chown: docker-compose kör dev-containern som hostens uid,
+# inte som appuser, så vi behöver att valfri uid kan skriva till logs/.
+RUN mkdir -p logs && chmod 777 logs
 
-# I dev vill vi ofta vara root för att kunna installera debug-verktyg "on the fly",
-# men att köra som appuser är bättre praxis. Vi stannar som appuser här.
 USER appuser
 
 # Kopiera koden (men docker-compose volumes kommer oftast överskugga detta i dev)

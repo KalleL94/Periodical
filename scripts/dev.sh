@@ -57,6 +57,8 @@ if [ "$USE_DOCKER" = true ]; then
     echo ""
 
     export DEV_PORT="$PORT"
+    export HOST_UID=$(id -u)
+    export HOST_GID=$(id -g)
     docker compose up --build
 else
     echo -e "${BLUE}Mode:${NC}     Local venv"
