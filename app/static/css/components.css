@@ -21,6 +21,7 @@
 }
 .badge-off { background: var(--muted-bg); color: var(--muted-text); }
 .badge-sem { box-shadow: 0 0 0 2px rgba(250, 250, 210, 0.7); }
+.orig-asterisk { font-size: 1em; color: var(--muted); margin-left: 4px; }
 .badge-ob4 {
   background: var(--warning);
   color: var(--bg);

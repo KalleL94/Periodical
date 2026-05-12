@@ -187,7 +187,7 @@ def calculate_absence_deduction(
 
     Args:
         monthly_wage: Månadslön i SEK
-        absence_type: Typ av frånvaro (SICK, VAB, LEAVE, OFF)
+        absence_type: Typ av frånvaro (SICK, VAB, LEAVE, OFF, PARENTAL)
         shift_hours: Antal timmar för skiftet (default 8.5), används om absent_hours saknas
         is_first_sick_day: Om det är första sjukdagen (används om karens_remaining saknas)
         absent_hours: Faktiska frånvarotimmar vid partiell dag (None = heldag = shift_hours)
@@ -224,6 +224,8 @@ def calculate_absence_deduction(
     elif absence_type == "LEAVE":
         return hourly_wage * hours
     elif absence_type == "OFF":
+        return 0.0
+    elif absence_type == "PARENTAL":
         return 0.0
     else:
         return 0.0
@@ -415,6 +417,8 @@ def get_absence_deductions_for_month(
     leave_hours = 0.0
     off_days = 0
     off_hours = 0.0
+    parental_days = 0
+    parental_hours = 0.0
     details = []
 
     # Hämta user en gång för datumspecifik rates-lookup
@@ -502,6 +506,9 @@ def get_absence_deductions_for_month(
             elif absence.absence_type == AbsenceType.OFF:
                 off_days += 1
                 off_hours += absent_hours
+            elif absence.absence_type == AbsenceType.PARENTAL:
+                parental_days += 1
+                parental_hours += absent_hours
 
             deduction = calculate_absence_deduction(
                 monthly_wage, absence.absence_type.value, shift_hours, absent_hours=absent_hours
@@ -538,6 +545,8 @@ def get_absence_deductions_for_month(
         "leave_hours": leave_hours,
         "off_days": off_days,
         "off_hours": off_hours,
+        "parental_days": parental_days,
+        "parental_hours": parental_hours,
         "details": details,
     }
 

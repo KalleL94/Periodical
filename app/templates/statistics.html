@@ -174,12 +174,12 @@
 
     // 3. Absence doughnut
     const absenceData = {{ absence_data | tojson }};
-    if (absenceData.sick + absenceData.vab + absenceData.leave + absenceData.off > 0) {
+    if (absenceData.sick + absenceData.vab + absenceData.leave + absenceData.off + (absenceData.parental || 0) > 0) {
         new Chart(document.getElementById('absenceChart'), {
             type: 'doughnut',
             data: {
-                labels: ['{{ t.stats_absence_sick }}', 'VAB', '{{ t.stats_absence_leave }}', '{{ t.stats_absence_off }}'],
-                datasets: [{ data: [absenceData.sick, absenceData.vab, absenceData.leave, absenceData.off], backgroundColor: ['#ef4444', '#ffa500', '#a855f7', '#9aa5b1'], borderWidth: 0 }]
+                labels: ['{{ t.stats_absence_sick }}', 'VAB', '{{ t.stats_absence_leave }}', '{{ t.stats_absence_off }}', '{{ t.day_absence_parental }}'],
+                datasets: [{ data: [absenceData.sick, absenceData.vab, absenceData.leave, absenceData.off, absenceData.parental || 0], backgroundColor: ['#ef4444', '#ffa500', '#a855f7', '#9aa5b1', '#3b82f6'], borderWidth: 0 }]
             },
             options: { responsive: true, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + ' {{ t.stats_days_suffix }}' } } } }
         });

@@ -298,6 +298,8 @@
                                         {{ t.day_absence_off }}
                                     {% elif absence.absence_type.value == 'VACATION' %}
                                         {{ t.day_absence_vacation }}
+                                    {% elif absence.absence_type.value == 'PARENTAL' %}
+                                        {{ t.day_absence_parental }}
                                     {% else %}
                                         {{ absence.absence_type.value }}
                                     {% endif %}
@@ -316,6 +318,8 @@
                                         <span class="badge" style="background: #888888; color: white;">{{ t.day_absence_off }}</span>
                                     {% elif absence.absence_type.value == 'VACATION' %}
                                         <span class="badge" style="background: #c7c700; color: #000;">{{ t.day_absence_vacation }}</span>
+                                    {% elif absence.absence_type.value == 'PARENTAL' %}
+                                        <span class="badge" style="background: #3b82f6; color: white;">{{ t.day_absence_parental }}</span>
                                     {% endif %}
                                     {% if absence.left_at is not none %}
                                         <span class="badge" style="background: #0ea5e9; color: white;">Deldag</span>

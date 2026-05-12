@@ -45,6 +45,7 @@ class AbsenceType(str, enum.Enum):
     LEAVE = "LEAVE"  # Ledigt/Permission - ingen extra ersättning
     OFF = "OFF"  # Ledig - inget löneavdrag
     VACATION = "VACATION"  # Enskild semesterdag
+    PARENTAL = "PARENTAL"  # Föräldraledig - ingen semesterdag, ingen ersättning
 
 
 class WageType(str, enum.Enum):
@@ -90,6 +91,7 @@ class User(Base):
     wage = Column(Integer, nullable=False)
     wage_type = Column(SQLEnum(WageType), default=WageType.MONTHLY, nullable=False)
     vacation = Column(JSON, default=dict)  # {"2026": [1,2,3], "2027": []}
+    parental_leave = Column(JSON, default=dict)  # {"2026": [1,2,3]} - veckonummer per år
     tax_table = Column(String(10), default="33", nullable=True)  # Swedish tax table number (e.g., "29", "30", "33")
     is_active = Column(
         Integer, default=1, nullable=False

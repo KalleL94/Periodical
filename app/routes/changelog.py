@@ -15,6 +15,57 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.21.0",
+        "date": "2026-05-12",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Vecko-, månads- och årsvy (alla): ny knapp 'Visa rotation' visar det ordinarie rotationsskiftet istället för det faktiska passet – ändrade dagar markeras med en asterisk",
+                "en": "Week, month and year views (all): new 'Show rotation' button displays the original rotation shift instead of the actual shift – changed days are marked with an asterisk",
+            },
+            {
+                "type": "fix",
+                "sv": "Månadsvy (alla): rotationsskiftet (original_shift) skickades inte vidare från dagsammanfattningen – 'Visa rotation'-knappen fungerar nu korrekt",
+                "en": "Month view (all): the rotation shift (original_shift) was not passed through from the day summary – the 'Show rotation' button now works correctly",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Föräldraledighet: välj hela veckor i semestervyn – lagras som veckonummer i ett eget JSON-fält och påverkar inte semesterdagar",
+                "en": "Parental leave: select whole weeks in the vacation view – stored as week numbers in a dedicated JSON field and does not consume vacation days",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Schema: föräldraledigdagar visas med LEAVE-pass (ingen lön, ingen OB) i alla schemavyer",
+                "en": "Schedule: parental leave days appear with a LEAVE shift (no pay, no OB) in all schedule views",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Dagvy: LEAVE-badge visas för föräldraledigdagar, identiskt med sjuk- och tjänstledighetsbadges",
+                "en": "Day view: LEAVE badge shown for parental leave days, matching sick and leave of absence badges",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Årsvy: föräldraledigdagar och -timmar visas i en egen rad i sammanfattningstabellen",
+                "en": "Year view: parental leave days and hours shown in a dedicated row in the summary table",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Statistik: föräldraledighet inkluderas i frånvarodiagrammet (blå sektion)",
+                "en": "Statistics: parental leave included in the absence chart (blue section)",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Admin: föräldraledigveckor kan hanteras per användare i admin-semestervyn med eget formulär och spara-knapp",
+                "en": "Admin: parental leave weeks can be managed per user in the admin vacation view with a dedicated form and save button",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Databas: ny kolumn parental_leave (JSON) i users-tabellen – kör add_parental_leave_column.py vid driftsättning",
+                "en": "Database: new parental_leave (JSON) column in the users table – run add_parental_leave_column.py on deployment",
+            },
+        ],
+    },
+    {
         "version": "0.20.2",
         "date": "2026-05-11",
         "entries": [

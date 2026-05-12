@@ -346,12 +346,20 @@
                     <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_off_hours or 0) }}</td>
                     <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: #888888;">{{ "%.0f"|format(year_summary.off_deduction or 0) }} kr</td>
                 </tr>
+                {% if year_summary.total_parental_days %}
+                <tr class="shift-row">
+                    <td class="td_left" data-label="{{ t.year_type_col }}">{{ t.year_parental_label }}</td>
+                    <td class="td_right num" data-label="{{ t.year_days_col }}">{{ year_summary.total_parental_days or 0 }}</td>
+                    <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_parental_hours or 0) }}</td>
+                    <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: #3b82f6;">{{ "%.0f"|format(0) }} kr</td>
+                </tr>
+                {% endif %}
             </tbody>
             <tfoot>
                 <tr>
                     <td class="td_left foot_left" data-label="{{ t.year_type_col }}"><strong>{{ t.year_total }}</strong></td>
-                    <td class="td_right foot_right num" data-label="{{ t.year_days_col }}"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) }}</strong></td>
-                    <td class="td_right foot_right num" data-label="{{ t.year_hours_col }}"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0)) }}</strong></td>
+                    <td class="td_right foot_right num" data-label="{{ t.year_days_col }}"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) + (year_summary.total_parental_days or 0) }}</strong></td>
+                    <td class="td_right foot_right num" data-label="{{ t.year_hours_col }}"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0) + (year_summary.total_parental_hours or 0)) }}</strong></td>
                     <td class="td_right foot_right num" data-label="{{ t.year_deduction_col }}" style="color: #ef4444;">
                         <strong>-{{ "%.0f"|format(year_summary.total_absence_deduction or 0) }} kr</strong>
                     </td>

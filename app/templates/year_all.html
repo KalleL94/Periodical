@@ -41,6 +41,10 @@
             {{ p.person_name }}
         </label>
         {% endfor %}
+        <span style="color:var(--border);margin:0 0.25rem;">|</span>
+        <button id="orig-toggle-btn" onclick="toggleOriginalMode()" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">
+            {% if t.html_lang == 'en' %}Show rotation{% else %}Visa rotation{% endif %}
+        </button>
     </div>
 
     <div class="month-grid">
@@ -93,7 +97,15 @@
                             {% endif %}
                         </td>
                         {% for person in day.persons %}
-                            <td data-person="{{ person.person_id }}" style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
+                            {% set orig_code = person.original_shift.code if person.original_shift else (person.shift.code if person.shift else 'OFF') %}
+                            {% set orig_color = person.original_shift.color if person.original_shift else (person.shift.color if person.shift else 'transparent') %}
+                            {% set is_changed = person.shift and person.original_shift and person.shift.code != person.original_shift.code %}
+                            <td data-person="{{ person.person_id }}"
+                                data-act-color="{{ person.shift.color if person.shift else 'transparent' }}"
+                                data-orig-color="{{ orig_color }}"
+                                data-orig-code="{{ orig_code }}"
+                                data-changed="{{ '1' if is_changed else '0' }}"
+                                style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
                                 {% if person.shift %}
                                     {# Länka till day-sida bara om admin eller egen #}
                                     {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
@@ -102,28 +114,25 @@
                                            style="text-decoration:none;">
                                     {% endif %}
                                         {% if person.shift.code == 'SEM' %}
-                                            <span class="badge badge-sem"
+                                            <span class="badge badge-sem js-sb"
                                                   title="{{ t.month_shift_sem_title }}"
-                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                                SEM
-                                            </span>
+                                                  data-act-label="SEM"
+                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">SEM</span>{% if is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
                                         {% elif person.shift.code == 'OT' %}
-                                            <span class="badge"
+                                            <span class="badge js-sb"
                                                   {% if person.start and person.end %}title="{{ t.month_shift_ot_title.replace('{start}', person.start | time_format).replace('{end}', person.end | time_format) }}"{% endif %}
-                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                                OT
-                                            </span>
+                                                  data-act-label="OT"
+                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">OT</span>{% if is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
                                         {% else %}
-                                            <span class="badge"
-                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">
-                                                {{ person.shift.code }}
-                                            </span>
+                                            <span class="badge js-sb"
+                                                  data-act-label="{{ person.shift.code }}"
+                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">{{ person.shift.code }}</span>{% if is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
                                         {% endif %}
                                     {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
                                         </a>
                                     {% endif %}
                                 {% else %}
-                                    <span class="badge badge-off">OFF</span>
+                                    <span class="badge badge-off js-sb" data-act-label="OFF">OFF</span>
                                 {% endif %}
                             </td>
                         {% endfor %}
@@ -144,6 +153,58 @@ function setAllPersonCols(show) {
         cb.checked = show;
         cb.dispatchEvent(new Event('change'));
     });
+}
+
+var showOriginal = false;
+function toggleOriginalMode() {
+    showOriginal = !showOriginal;
+    var btn = document.getElementById('orig-toggle-btn');
+    var lang = document.documentElement.lang || 'sv';
+    if (showOriginal) {
+        btn.textContent = lang === 'en' ? 'Show actual' : 'Visa aktuellt';
+        btn.classList.remove('secondary');
+        btn.style.background = 'var(--accent)';
+        btn.style.color = 'var(--bg)';
+    } else {
+        btn.textContent = lang === 'en' ? 'Show rotation' : 'Visa rotation';
+        btn.classList.add('secondary');
+        btn.style.background = '';
+        btn.style.color = '';
+    }
+    applyShiftMode();
+}
+
+function applyShiftMode() {
+    document.querySelectorAll('td[data-orig-code]').forEach(function(td) {
+        var badge = td.querySelector('.js-sb');
+        if (!badge) return;
+        var asterisk = td.querySelector('.orig-asterisk');
+        var changed = td.dataset.changed === '1';
+        if (showOriginal) {
+            var origCode = td.dataset.origCode || '';
+            var origColor = td.dataset.origColor || 'transparent';
+            td.style.borderLeftColor = origColor;
+            badge.style.background = origColor;
+            badge.style.color = _contrast(origColor);
+            badge.textContent = origCode;
+            if (asterisk) asterisk.style.display = changed ? '' : 'none';
+        } else {
+            var actColor = td.dataset.actColor || 'transparent';
+            td.style.borderLeftColor = actColor;
+            badge.style.background = actColor;
+            badge.style.color = _contrast(actColor);
+            badge.textContent = badge.dataset.actLabel || '';
+            if (asterisk) asterisk.style.display = 'none';
+        }
+    });
+}
+
+function _contrast(hex) {
+    if (!hex || hex === 'transparent') return 'var(--text)';
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    var lum = (0.299*parseInt(hex.substr(0,2),16) + 0.587*parseInt(hex.substr(2,2),16) + 0.114*parseInt(hex.substr(4,2),16)) / 255;
+    return lum > 0.5 ? '#000' : '#fff';
 }
 
 // Hide/show past days toggle

@@ -15,6 +15,9 @@
     </div>
 
     <div class="page-header-right">
+        <button id="orig-toggle-btn" onclick="toggleOriginalMode()" class="btn secondary" style="font-size:0.85rem;">
+            {% if t.html_lang == 'en' %}Show rotation{% else %}Visa rotation{% endif %}
+        </button>
         {# Visa bara länk till egen week-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
             {% for i in person_ids %}
@@ -81,11 +84,34 @@
                         {% endfor %}
 
                         {% set is_today = today is defined and day.date == today %}
+                        {% set wp = ns.person %}
+                        {% set w_orig_code = wp.original_shift.code if wp and wp.original_shift else (wp.shift.code if wp and wp.shift else 'OFF') %}
+                        {% set w_orig_color = wp.original_shift.color if wp and wp.original_shift else (wp.shift.color if wp and wp.shift else '#ddd') %}
+                        {% set w_is_changed = wp and wp.shift and wp.original_shift and wp.shift.code != wp.original_shift.code %}
+                        {% if wp and wp.shift %}
+                            {% if wp.shift.code == 'SEM' %}
+                                {% set w_act_label = t.week_shift_sem %}
+                            {% elif wp.shift.code == 'OT' %}
+                                {% set w_act_label = t.week_shift_ot %}
+                            {% elif wp.shift.code == 'OC' %}
+                                {% set w_act_label = t.week_shift_oc %}
+                            {% elif wp.shift.code == 'OFF' %}
+                                {% set w_act_label = t.week_shift_off %}
+                            {% else %}
+                                {% set w_act_label = t.shift_labels.get(wp.shift.code, wp.shift.label or wp.shift.code) %}
+                            {% endif %}
+                        {% else %}
+                            {% set w_act_label = t.week_shift_off %}
+                        {% endif %}
 
                         <td class="shift-cell {% if is_today %}today-cell{% endif %}"
-                            style="border-left: 4px solid {% if ns.person and ns.person.shift %}{{ ns.person.shift.color }}{% else %}#ddd{% endif %};">
+                            data-act-color="{{ wp.shift.color if wp and wp.shift else '#ddd' }}"
+                            data-orig-color="{{ w_orig_color }}"
+                            data-orig-code="{{ w_orig_code }}"
+                            data-changed="{{ '1' if w_is_changed else '0' }}"
+                            style="border-left: 4px solid {% if wp and wp.shift %}{{ wp.shift.color }}{% else %}#ddd{% endif %};">
 
-                            {% if ns.person and ns.person.shift %}
+                            {% if wp and wp.shift %}
                                 {# Länka till day-sida bara om admin eller egen #}
                                 {% if user and (user.role.value == 'admin' or user.id == person_id) %}
                                     <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
@@ -93,24 +119,16 @@
                                        style="color: var(--text); text-decoration: none;">
                                 {% endif %}
 
-                                <div class="shift-name" style="color: {{ ns.person.shift.color }}; font-weight: 500; font-size: 0.85rem;">
-                                    {% if ns.person.shift.code == 'SEM' %}
-                                        {{ t.week_shift_sem }}
-                                    {% elif ns.person.shift.code == 'OT' %}
-                                        {{ t.week_shift_ot }}
-                                    {% elif ns.person.shift.code == 'OC' %}
-                                        {{ t.week_shift_oc }}
-                                    {% elif ns.person.shift.code == 'OFF' %}
-                                        {{ t.week_shift_off }}
-                                    {% else %}
-                                        {{ t.shift_labels.get(ns.person.shift.code, ns.person.shift.label or ns.person.shift.code) }}
-                                    {% endif %}
+                                <div class="js-sb shift-name"
+                                     data-act-label="{{ w_act_label }}"
+                                     style="color: {{ wp.shift.color }}; font-weight: 500; font-size: 0.85rem;">
+                                    {{ w_act_label }}{% if w_is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
                                 </div>
 
                                 {# Show times for OT shifts #}
-                                {% if ns.person.shift.code == 'OT' and ns.person.start and ns.person.end %}
+                                {% if wp.shift.code == 'OT' and wp.start and wp.end %}
                                     <div class="shift-time" style="color: var(--muted); font-size: 0.7rem; margin-top: 2px;">
-                                        {{ ns.person.start | time_format }}-{{ ns.person.end | time_format }}
+                                        {{ wp.start | time_format }}-{{ wp.end | time_format }}
                                     </div>
                                 {% endif %}
 
@@ -118,7 +136,9 @@
                                     </a>
                                 {% endif %}
                             {% else %}
-                                <span class="shift-name" style="color: var(--muted); font-size: 0.85rem;">{{ t.week_shift_off }}</span>
+                                <div class="js-sb shift-name"
+                                     data-act-label="{{ t.week_shift_off }}"
+                                     style="color: var(--muted); font-size: 0.85rem;">{{ t.week_shift_off }}</div>
                             {% endif %}
                         </td>
                     {% endfor %}
@@ -127,5 +147,52 @@
         </tbody>
     </table>
 </div>
+
+<script>
+var showOriginal = false;
+function toggleOriginalMode() {
+    showOriginal = !showOriginal;
+    var btn = document.getElementById('orig-toggle-btn');
+    var lang = document.documentElement.lang || 'sv';
+    if (showOriginal) {
+        btn.textContent = lang === 'en' ? 'Show actual' : 'Visa aktuellt';
+        btn.classList.remove('secondary');
+        btn.style.background = 'var(--accent)';
+        btn.style.color = 'var(--bg)';
+    } else {
+        btn.textContent = lang === 'en' ? 'Show rotation' : 'Visa rotation';
+        btn.classList.add('secondary');
+        btn.style.background = '';
+        btn.style.color = '';
+    }
+    applyShiftMode();
+}
+
+function applyShiftMode() {
+    document.querySelectorAll('td[data-orig-code]').forEach(function(td) {
+        var badge = td.querySelector('.js-sb');
+        if (!badge) return;
+        var asterisk = td.querySelector('.orig-asterisk');
+        var changed = td.dataset.changed === '1';
+        if (showOriginal) {
+            var origCode = td.dataset.origCode || '';
+            var origColor = td.dataset.origColor || '#ddd';
+            td.style.borderLeftColor = origColor;
+            badge.style.color = origColor;
+            // Replace text node only (preserve the <sup> child if present)
+            var textNode = badge.childNodes[0];
+            if (textNode && textNode.nodeType === 3) textNode.nodeValue = origCode;
+            if (asterisk) asterisk.style.display = changed ? '' : 'none';
+        } else {
+            var actColor = td.dataset.actColor || '#ddd';
+            td.style.borderLeftColor = actColor;
+            badge.style.color = actColor;
+            var textNode = badge.childNodes[0];
+            if (textNode && textNode.nodeType === 3) textNode.nodeValue = badge.dataset.actLabel || '';
+            if (asterisk) asterisk.style.display = 'none';
+        }
+    });
+}
+</script>
 
 {% endblock %}
