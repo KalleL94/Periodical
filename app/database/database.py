@@ -20,8 +20,11 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     create_engine,
+    event,
 )
-from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
@@ -29,6 +32,16 @@ DATABASE_URL = "sqlite:///./app/database/schedule.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragmas(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA wal_autocheckpoint=100")
+    cursor.close()
+
+
 Base = declarative_base()
 
 
