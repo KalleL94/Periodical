@@ -23,7 +23,7 @@ from .core import (
 from .ob import calculate_ob_hours, get_combined_rules_for_year
 from .overtime import get_overtime_shift_for_date
 from .person_history import get_current_person_for_position, get_person_for_date
-from .vacation import get_vacation_dates_for_year
+from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
 _persons = None
@@ -70,7 +70,9 @@ def build_week_data(
     oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
     swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
     shift_override_map = _batch_fetch_shift_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
-    vacation_dates = _load_vacation_dates(_get_years_in_range(monday, sunday))
+    years_week = _get_years_in_range(monday, sunday)
+    vacation_dates = _load_vacation_dates(years_week)
+    parental_dates = _load_parental_dates(years_week)
 
     days_in_week = []
 
@@ -96,6 +98,7 @@ def build_week_data(
                     oncall_override_map,
                     swap_map,
                     shift_override_map=shift_override_map,
+                    parental_dates=parental_dates,
                 )
                 for pid in person_ids
             ]
@@ -114,6 +117,7 @@ def build_week_data(
                     swap_map,
                     employment_start=employment_start,
                     shift_override_map=shift_override_map,
+                    parental_dates=parental_dates,
                 )
             )
 
@@ -202,8 +206,9 @@ def generate_period_data(
     for yr in years_in_range:
         combined_ob_rules.extend(get_combined_rules_for_year(yr))
 
-    # Ladda semesterdatum
+    # Ladda semester- och föräldraledighetsdatum
     vacation_dates = _load_vacation_dates(years_in_range)
+    parental_dates = _load_parental_dates(years_in_range)
 
     # Ladda löner om inte redan gjort
     if user_wages is None:
@@ -253,6 +258,7 @@ def generate_period_data(
                     oncall_override_map,
                     swap_map,
                     shift_override_map=shift_override_map,
+                    parental_dates=parental_dates,
                 )
                 for pid in person_ids
             ]
@@ -274,6 +280,7 @@ def generate_period_data(
                 user_rates_map=user_rates_map,
                 employment_start=employment_start,
                 shift_override_map=shift_override_map,
+                parental_dates=parental_dates,
             )
 
         days_out.append(day_info)
@@ -337,6 +344,18 @@ def _load_vacation_dates(years: set[int]) -> dict[int, set[datetime.date]]:
                 vacation_dates[pid] = set()
             vacation_dates[pid].update(dates)
     return vacation_dates
+
+
+def _load_parental_dates(years: set[int]) -> dict[int, set[datetime.date]]:
+    """Laddar föräldraledighetsdatum för flera år."""
+    parental_dates: dict[int, set[datetime.date]] = {}
+    for yr in years:
+        year_parentals = get_parental_dates_for_year(yr)
+        for pid, dates in year_parentals.items():
+            if pid not in parental_dates:
+                parental_dates[pid] = set()
+            parental_dates[pid].update(dates)
+    return parental_dates
 
 
 def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[int, int]:
@@ -599,6 +618,7 @@ def _build_person_day_basic(
     swap_map: dict[tuple[int, datetime.date], str] | None = None,
     employment_start: datetime.date | None = None,
     shift_override_map: dict[tuple[int, datetime.date], str] | None = None,
+    parental_dates: dict[int, set[datetime.date]] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
     vacation_shift = get_vacation_shift()
@@ -688,8 +708,11 @@ def _build_person_day_basic(
                 }
 
         # VACATION absences use the SEM shift (same as week-based vacation)
+        # PARENTAL falls back to LEAVE shift since no dedicated shift type exists
         if absence.absence_type == AbsenceType.VACATION:
             absence_shift = vacation_shift
+        elif absence.absence_type == AbsenceType.PARENTAL:
+            absence_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
         else:
             absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
         if absence_shift:
@@ -722,6 +745,24 @@ def _build_person_day_basic(
             "start": None,
             "end": None,
         }
+
+    # Kolla föräldraledighet (veckobaserad + dagsnivå)
+    if parental_dates and date in parental_dates.get(person_id, set()):
+        leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
+        if leave_shift:
+            result = determine_shift_for_date(date, person_id)
+            original_shift, rotation_week = result if result else (None, None)
+            return {
+                "person_id": person_id,
+                "person_name": person_name,
+                "shift": leave_shift,
+                "original_shift": original_shift,
+                "rotation_week": rotation_week,
+                "rotation_length": rotation_length,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
+            }
 
     # Kolla manuell passöverride (admin-tilldelat N1/N2/N3 som ersätter rotation)
     if shift_override_map is not None:
@@ -877,6 +918,7 @@ def _populate_single_person_day(
     user_rates_map: dict[int, dict] | None = None,
     employment_start: datetime.date | None = None,
     shift_override_map: dict[tuple[int, datetime.date], str] | None = None,
+    parental_dates: dict[int, set[datetime.date]] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
     vacation_shift = get_vacation_shift()
@@ -986,8 +1028,11 @@ def _populate_single_person_day(
                 return
 
         # VACATION absences use the SEM shift (same as week-based vacation)
+        # PARENTAL falls back to LEAVE shift since no dedicated shift type exists
         if absence.absence_type == AbsenceType.VACATION:
             absence_shift = vacation_shift
+        elif absence.absence_type == AbsenceType.PARENTAL:
+            absence_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
         else:
             absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
         if absence_shift:
@@ -1019,6 +1064,32 @@ def _populate_single_person_day(
                     "ot_pay": ot_pay,
                     "ot_hours": ot_hours,
                     "ot_details": ot_details,
+                }
+            )
+            return
+
+    # Kolla föräldraledighet (veckobaserad + dagsnivå via parental_dates)
+    if parental_dates and current_day in parental_dates.get(person_id, set()):
+        leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
+        if leave_shift:
+            result = determine_shift_for_date(current_day, person_id)
+            original_shift, rotation_week = result if result else (None, None)
+            day_info.update(
+                {
+                    "person_id": person_id,
+                    "person_name": person_name,
+                    "shift": leave_shift,
+                    "original_shift": original_shift,
+                    "rotation_week": rotation_week,
+                    "hours": 0.0,
+                    "start": None,
+                    "end": None,
+                    "ob": {},
+                    "oncall_pay": 0.0,
+                    "oncall_details": {},
+                    "ot_pay": 0.0,
+                    "ot_hours": 0.0,
+                    "ot_details": {},
                 }
             )
             return
@@ -1076,8 +1147,9 @@ def _populate_single_person_day(
             else:
                 ob = {}
 
-    # Spara det ursprungliga skiftet för coworker-matchning
-    original_shift = shift
+    # Rotationsskiftet (för coworker-matchning och "visa rotation"-toggle i alla-vyer)
+    _rot = determine_shift_for_date(current_day, person_id)
+    original_shift = _rot[0] if _rot else shift
 
     # Kolla oncall override - hämta från batch eller databas
     oncall_override = None

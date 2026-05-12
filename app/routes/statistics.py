@@ -172,6 +172,7 @@ async def statistics_view(
         "vab": year_summary.get("total_vab_days", 0) or 0,
         "leave": year_summary.get("total_leave_days", 0) or 0,
         "off": year_summary.get("total_off_days", 0) or 0,
+        "parental": year_summary.get("total_parental_days", 0) or 0,
     }
 
     # Person list for admin navigation

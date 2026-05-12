@@ -56,6 +56,40 @@
 
                 <button type="submit" class="btn">{{ t.vacation_save }}</button>
             </form>
+
+            <hr style="border: none; border-top: 1px solid var(--table-border); margin: 20px 0;">
+
+            <h4 style="margin: 0 0 8px 0; color: #3b82f6;">{{ t.vacation_parental_weeks }}</h4>
+            <p style="color: var(--muted); margin-bottom: 16px; font-size: 0.875rem;">{{ t.vacation_parental_weeks_hint }}</p>
+
+            <form method="POST" action="/profile/vacation/parental/weeks" id="parental-form">
+                <input type="hidden" name="year" value="{{ year }}">
+                <input type="hidden" name="weeks" id="parental-weeks-input" value="{{ parental_weeks | join(',') }}">
+
+                <div class="week-grid" id="parental-week-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px; margin-bottom: 16px;">
+                    {% for week in range(1, 53) %}
+                        <button
+                            type="button"
+                            class="parental-week-btn {% if week in parental_weeks %}selected{% endif %}"
+                            data-week="{{ week }}"
+                            style="
+                                padding: 12px 8px;
+                                border-radius: var(--radius);
+                                border: 1px solid var(--table-border);
+                                background: {% if week in parental_weeks %}#3b82f6{% else %}var(--panel){% endif %};
+                                color: {% if week in parental_weeks %}white{% else %}var(--text){% endif %};
+                                cursor: pointer;
+                                font-weight: {% if week in parental_weeks %}600{% else %}400{% endif %};
+                                transition: all 0.15s;
+                            "
+                        >
+                            v{{ week }}
+                        </button>
+                    {% endfor %}
+                </div>
+
+                <button type="submit" class="btn" style="background: #3b82f6; color: white;">{{ t.vacation_save }}</button>
+            </form>
         </div>
 
         <!-- Day-Level Vacation Calendar -->
@@ -63,10 +97,17 @@
             <h3 style="margin-top: 0;">{{ t.vacation_day_level }}</h3>
             <p style="color: var(--muted); margin-bottom: 16px;">{{ t.vacation_day_level_hint }}</p>
 
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <button type="button" id="mode-vacation" class="btn" style="flex: 1; background: var(--accent); color: var(--bg);" onclick="setMode('vacation')">{{ t.vacation_mode_vacation }}</button>
+                <button type="button" id="mode-parental" class="btn secondary" style="flex: 1;" onclick="setMode('parental')">{{ t.vacation_mode_parental }}</button>
+            </div>
+
             <form method="POST" action="/profile/vacation/days/sync" id="days-form">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="dates" id="dates-input"
                     value="{% for a in day_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
+                <input type="hidden" name="parental_dates" id="parental-dates-input"
+                    value="{% for a in parental_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
 
                 <div id="day-calendar" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
 
@@ -282,8 +323,42 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // --- Parental week buttons ---
+    const parentalWeeksInput = document.getElementById('parental-weeks-input');
+    let selectedParentalWeeks = new Set(
+        parentalWeeksInput.value
+            ? parentalWeeksInput.value.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w))
+            : []
+    );
+
+    function updateParentalWeeksInput() {
+        parentalWeeksInput.value = Array.from(selectedParentalWeeks).sort((a, b) => a - b).join(',');
+    }
+
+    const parentalWeekBtns = document.querySelectorAll('.parental-week-btn');
+    parentalWeekBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const week = parseInt(this.dataset.week);
+            if (selectedParentalWeeks.has(week)) {
+                selectedParentalWeeks.delete(week);
+                this.classList.remove('selected');
+                this.style.background = 'var(--panel)';
+                this.style.color = 'var(--text)';
+                this.style.fontWeight = '400';
+            } else {
+                selectedParentalWeeks.add(week);
+                this.classList.add('selected');
+                this.style.background = '#3b82f6';
+                this.style.color = 'white';
+                this.style.fontWeight = '600';
+            }
+            updateParentalWeeksInput();
+        });
+    });
+
     // --- Day-level calendar ---
     const datesInput = document.getElementById('dates-input');
+    const parentalDatesInput = document.getElementById('parental-dates-input');
     const calendarEl = document.getElementById('day-calendar');
     const dayCountEl = document.getElementById('day-count');
     const calYear = {{ year }};
@@ -293,14 +368,43 @@ document.addEventListener('DOMContentLoaded', function() {
     const offDays = new Set({{ off_days_list | tojson }});
     const dayColors = {{ day_colors | tojson }};
 
+    let currentMode = 'vacation'; // 'vacation' or 'parental'
+
     let selectedDates = new Set(
         datesInput.value ? datesInput.value.split(',').map(s => s.trim()).filter(s => Boolean(s) && !offDays.has(s)) : []
     );
+    let parentalDates = new Set(
+        parentalDatesInput.value ? parentalDatesInput.value.split(',').map(s => s.trim()).filter(s => Boolean(s) && !offDays.has(s)) : []
+    );
+
+    window.setMode = function(mode) {
+        currentMode = mode;
+        const btnVac = document.getElementById('mode-vacation');
+        const btnPar = document.getElementById('mode-parental');
+        if (mode === 'vacation') {
+            btnVac.style.background = 'var(--accent)';
+            btnVac.style.color = 'var(--bg)';
+            btnVac.classList.remove('secondary');
+            btnPar.style.background = '';
+            btnPar.style.color = '';
+            btnPar.classList.add('secondary');
+        } else {
+            btnPar.style.background = '#3b82f6';
+            btnPar.style.color = 'white';
+            btnPar.classList.remove('secondary');
+            btnVac.style.background = '';
+            btnVac.style.color = '';
+            btnVac.classList.add('secondary');
+        }
+        updateDayCount();
+    };
 
     function updateDayCount() {
         datesInput.value = Array.from(selectedDates).sort().join(',');
-        const daySuffix = selectedDates.size !== 1 ? '{% if t.html_lang == "en" %}s{% else %}ar{% endif %}' : '';
-        dayCountEl.textContent = selectedDates.size + ' {{ t.vacation_day_count_js }}' + daySuffix + ' {{ t.vacation_days_selected_js }}';
+        parentalDatesInput.value = Array.from(parentalDates).sort().join(',');
+        const activeSet = currentMode === 'vacation' ? selectedDates : parentalDates;
+        const daySuffix = activeSet.size !== 1 ? '{% if t.html_lang == "en" %}s{% else %}ar{% endif %}' : '';
+        dayCountEl.textContent = activeSet.size + ' {{ t.vacation_day_count_js }}' + daySuffix + ' {{ t.vacation_days_selected_js }}';
     }
 
     function renderCalendar() {
@@ -372,35 +476,46 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 const shiftColor = dayColors[iso] || null;
 
+                const isParental = parentalDates.has(iso);
+
+                function applyCellStyle(el, date) {
+                    const wd = (new Date(date).getDay() + 6) % 7;
+                    const color = dayColors[date] || null;
+                    if (selectedDates.has(date)) {
+                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
+                    } else if (parentalDates.has(date)) {
+                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: #3b82f6; color: white; font-weight: 600;';
+                    } else {
+                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
+                            + (wd >= 5 ? ' opacity: 0.5;' : '');
+                        el.style.color = color || (wd >= 5 ? 'var(--muted)' : 'var(--text)');
+                    }
+                }
+
                 if (isOffDay) {
                     cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: not-allowed; user-select: none; opacity: 0.35; text-decoration: line-through;';
                     if (shiftColor) cell.style.color = shiftColor;
                 } else {
-                    if (isSelected) {
-                        cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
-                    } else {
-                        cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
-                            + (isWeekend ? ' opacity: 0.5;' : '');
-                        cell.style.color = shiftColor || (isWeekend ? 'var(--muted)' : 'var(--text)');
-                    }
+                    applyCellStyle(cell, iso);
 
                     cell.addEventListener('click', function() {
                         const date = this.dataset.date;
-                        const color = dayColors[date] || null;
-                        if (selectedDates.has(date)) {
-                            selectedDates.delete(date);
-                            const wd = (new Date(date).getDay() + 6) % 7;
-                            this.style.background = 'transparent';
-                            this.style.color = color || (wd >= 5 ? 'var(--muted)' : 'var(--text)');
-                            this.style.fontWeight = '400';
-                            this.style.opacity = wd >= 5 ? '0.5' : '1';
+                        if (currentMode === 'vacation') {
+                            if (selectedDates.has(date)) {
+                                selectedDates.delete(date);
+                            } else {
+                                parentalDates.delete(date); // en dag kan bara vara en typ
+                                selectedDates.add(date);
+                            }
                         } else {
-                            selectedDates.add(date);
-                            this.style.background = 'var(--accent)';
-                            this.style.color = 'var(--bg)';
-                            this.style.fontWeight = '600';
-                            this.style.opacity = '1';
+                            if (parentalDates.has(date)) {
+                                parentalDates.delete(date);
+                            } else {
+                                selectedDates.delete(date); // en dag kan bara vara en typ
+                                parentalDates.add(date);
+                            }
                         }
+                        applyCellStyle(this, date);
                         updateDayCount();
                     });
                 }

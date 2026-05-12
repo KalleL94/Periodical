@@ -182,6 +182,8 @@ def summarize_month_for_person(
         "vab_hours": 0.0,
         "leave_days": 0,
         "leave_hours": 0.0,
+        "parental_days": 0,
+        "parental_hours": 0.0,
     }
 
     days_out = []
@@ -227,6 +229,8 @@ def summarize_month_for_person(
         totals["leave_hours"] = absence_info["leave_hours"]
         totals["off_days"] = absence_info["off_days"]
         totals["off_hours"] = absence_info["off_hours"]
+        totals["parental_days"] = absence_info.get("parental_days", 0)
+        totals["parental_hours"] = absence_info.get("parental_hours", 0.0)
         absence_details = absence_info["details"]
 
         # Dra av frånvaroavdrag och lägg till OB-sjuklön
@@ -288,6 +292,8 @@ def summarize_month_for_person(
         "vab_hours": totals.get("vab_hours", 0.0),
         "leave_days": totals["leave_days"],
         "leave_hours": totals.get("leave_hours", 0.0),
+        "parental_days": totals.get("parental_days", 0),
+        "parental_hours": totals.get("parental_hours", 0.0),
         "absence_details": absence_details,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
@@ -481,6 +487,7 @@ def _process_day_for_summary(
         "date": day["date"],
         "weekday_name": day["weekday_name"],
         "shift": shift,
+        "original_shift": day.get("original_shift"),
         "rotation_week": day.get("rotation_week"),
         "hours": hours,
         "ob_hours": ob_hours,
@@ -750,6 +757,8 @@ def _build_year_summary(months: list[dict]) -> dict:
     total_leave_hours = sum(m.get("leave_hours", 0.0) for m in months)
     total_off_days = sum(m.get("off_days", 0) for m in months)
     total_off_hours = sum(m.get("off_hours", 0.0) for m in months)
+    total_parental_days = sum(m.get("parental_days", 0) for m in months)
+    total_parental_hours = sum(m.get("parental_hours", 0.0) for m in months)
 
     # Calculate deductions per type from monthly details
     sick_deduction = 0.0
@@ -803,6 +812,8 @@ def _build_year_summary(months: list[dict]) -> dict:
         "total_leave_hours": total_leave_hours,
         "total_off_days": total_off_days,
         "total_off_hours": total_off_hours,
+        "total_parental_days": total_parental_days,
+        "total_parental_hours": total_parental_hours,
         "sick_deduction": sick_deduction,
         "vab_deduction": vab_deduction,
         "leave_deduction": leave_deduction,

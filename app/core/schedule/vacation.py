@@ -67,6 +67,66 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
     return per_person
 
 
+def get_parental_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
+    """
+    Hämtar föräldraledighetsdatum för alla personer för ett år.
+
+    Merges week-based parental leave (User.parental_leave JSON) and
+    day-level parental leave (Absence records with type PARENTAL).
+
+    Returns:
+        Dict med person_id (rotationsposition) -> set av datum
+    """
+    from app.database.database import Absence, AbsenceType, SessionLocal, User
+
+    per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
+
+    db = SessionLocal()
+    try:
+        users = (
+            db.query(User)
+            .filter(
+                User.person_id.in_(PERSON_IDS),
+                User.is_active,
+            )
+            .all()
+        )
+
+        user_id_to_person_id = {u.id: u.person_id for u in users}
+
+        for user in users:
+            pl_by_year = user.parental_leave or {}
+            weeks_for_year = pl_by_year.get(str(year), []) or []
+
+            for week in weeks_for_year:
+                for day in range(1, 8):
+                    try:
+                        d = datetime.date.fromisocalendar(year, week, day)
+                        per_person[user.person_id].add(d)
+                    except ValueError:
+                        continue
+
+        # Merge day-level PARENTAL absences
+        day_absences = (
+            db.query(Absence)
+            .filter(
+                Absence.user_id.in_(user_id_to_person_id.keys()),
+                Absence.absence_type == AbsenceType.PARENTAL,
+                Absence.date >= datetime.date(year, 1, 1),
+                Absence.date <= datetime.date(year, 12, 31),
+            )
+            .all()
+        )
+        for absence in day_absences:
+            person_id = user_id_to_person_id.get(absence.user_id)
+            if person_id is not None:
+                per_person[person_id].add(absence.date)
+    finally:
+        db.close()
+
+    return per_person
+
+
 # ---------------------------------------------------------------------------
 # Vacation balance calculation
 # ---------------------------------------------------------------------------

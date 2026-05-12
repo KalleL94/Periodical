@@ -535,6 +535,20 @@ async def admin_vacation_user(
         .all()
     )
 
+    parental_absences = (
+        db.query(Absence)
+        .filter(
+            Absence.user_id == user_id,
+            Absence.absence_type == AbsenceType.PARENTAL,
+            Absence.date >= datetime.date(year, 1, 1),
+            Absence.date <= datetime.date(year, 12, 31),
+        )
+        .order_by(Absence.date)
+        .all()
+    )
+
+    parental_weeks = sorted((edit_user.parental_leave or {}).get(str(year), []))
+
     return render(
         "admin_vacation_user.html",
         {
@@ -545,6 +559,8 @@ async def admin_vacation_user(
             "vacation_weeks": sorted(vacation_weeks),
             "balance": balance,
             "day_absences": day_absences,
+            "parental_absences": parental_absences,
+            "parental_weeks": parental_weeks,
             "off_days_list": off_days_list,
             "day_colors": day_colors,
             "success": success,
@@ -589,6 +605,43 @@ async def admin_update_vacation_weeks(
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?year={year}&success=Semesterveckor+uppdaterade",
+        status_code=303,
+    )
+
+
+@router.post("/vacation/{user_id}/parental/weeks", name="admin_update_parental_weeks")
+async def admin_update_parental_weeks(
+    user_id: int,
+    year: int = Form(...),
+    weeks: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: update parental leave weeks for a user (stored in User.parental_leave JSON)."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        return RedirectResponse(url="/admin/vacation", status_code=302)
+
+    if not (2020 <= year <= 2100):
+        return RedirectResponse(url=f"/admin/vacation/{user_id}?year={year}", status_code=302)
+
+    week_list = []
+    if weeks.strip():
+        week_list = [int(w.strip()) for w in weeks.split(",") if w.strip().isdigit()]
+    week_list = sorted(set(w for w in week_list if 1 <= w <= 53))
+
+    parental_leave = edit_user.parental_leave or {}
+    parental_leave[str(year)] = week_list
+    edit_user.parental_leave = parental_leave
+    flag_modified(edit_user, "parental_leave")
+    db.commit()
+
+    clear_schedule_cache()
+
+    return RedirectResponse(
+        url=f"/admin/vacation/{user_id}?year={year}&success=Föräldraledigveckor+uppdaterade",
         status_code=303,
     )
 
@@ -645,51 +698,55 @@ async def admin_sync_vacation_days(
     user_id: int,
     year: int = Form(...),
     dates: str = Form(""),
+    parental_dates: str = Form(""),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    """Admin: sync day-level vacation for a year. Adds new, removes deselected."""
+    """Admin: sync day-level vacation and parental leave for a year."""
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    # Parse submitted dates
-    new_dates: set[datetime.date] = set()
-    for s in dates.split(","):
-        s = s.strip()
-        if s:
-            try:
-                new_dates.add(datetime.date.fromisoformat(s))
-            except ValueError:
-                continue
+    def _parse_dates(raw: str) -> set[datetime.date]:
+        result = set()
+        for s in raw.split(","):
+            s = s.strip()
+            if s:
+                try:
+                    result.add(datetime.date.fromisoformat(s))
+                except ValueError:
+                    continue
+        return result
 
-    # Get existing VACATION absences for this year
-    existing = (
-        db.query(Absence)
-        .filter(
-            Absence.user_id == user_id,
-            Absence.absence_type == AbsenceType.VACATION,
-            Absence.date >= datetime.date(year, 1, 1),
-            Absence.date <= datetime.date(year, 12, 31),
+    def _sync_type(new_dates: set[datetime.date], absence_type: AbsenceType) -> tuple[int, int]:
+        existing = (
+            db.query(Absence)
+            .filter(
+                Absence.user_id == user_id,
+                Absence.absence_type == absence_type,
+                Absence.date >= datetime.date(year, 1, 1),
+                Absence.date <= datetime.date(year, 12, 31),
+            )
+            .all()
         )
-        .all()
-    )
-    existing_dates = {a.date: a for a in existing}
+        existing_dates = {a.date: a for a in existing}
+        added = new_dates - set(existing_dates.keys())
+        removed = set(existing_dates.keys()) - new_dates
+        for d in added:
+            db.add(Absence(user_id=user_id, date=d, absence_type=absence_type))
+        for d in removed:
+            db.delete(existing_dates[d])
+        return len(added), len(removed)
 
-    # Add new dates
-    for d in new_dates - set(existing_dates.keys()):
-        db.add(Absence(user_id=user_id, date=d, absence_type=AbsenceType.VACATION))
-
-    # Remove deselected dates
-    for d in set(existing_dates.keys()) - new_dates:
-        db.delete(existing_dates[d])
+    vac_added, vac_removed = _sync_type(_parse_dates(dates), AbsenceType.VACATION)
+    par_added, par_removed = _sync_type(_parse_dates(parental_dates), AbsenceType.PARENTAL)
 
     db.commit()
     clear_schedule_cache()
 
-    added = len(new_dates - set(existing_dates.keys()))
-    removed = len(set(existing_dates.keys()) - new_dates)
-    msg = f"{added}+tillagda,+{removed}+borttagna" if added or removed else "Inga+ändringar"
+    total_added = vac_added + par_added
+    total_removed = vac_removed + par_removed
+    msg = f"{total_added}+tillagda,+{total_removed}+borttagna" if total_added or total_removed else "Inga+ändringar"
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?year={year}&success={msg}",
