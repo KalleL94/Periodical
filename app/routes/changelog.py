@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.21.2",
+        "date": "2026-05-14",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Cowork: semesterdagar (SEM) räknades som gemensamma pass i detaljvyn om båda personerna hade semester samma dag – enbart N1/N2/N3 räknas nu som arbetspass",
+                "en": "Cowork: vacation days (SEM) were counted as shared shifts in the detail view when both persons had vacation on the same day – only N1/N2/N3 now count as work shifts",
+            },
+        ],
+    },
+    {
         "version": "0.21.1",
         "date": "2026-05-14",
         "entries": [
