@@ -9,7 +9,17 @@ from app.auth.auth import get_admin_api_user, get_api_user
 from app.core.schedule.core import calculate_shift_hours, determine_shift_for_date, get_shift_types
 from app.core.schedule.ob import calculate_ob_pay, get_combined_rules_for_year
 from app.core.utils import APP_TIMEZONE, get_today
-from app.database.database import Absence, OvertimeShift, User, UserRole, get_db
+from app.database.database import (
+    Absence,
+    OnCallOverride,
+    OnCallOverrideType,
+    OvertimeShift,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+    get_db,
+)
 
 router = APIRouter(tags=["api-v1"])
 
@@ -581,6 +591,47 @@ async def get_user_absences(
 # ── Next shift ───────────────────────────────────────────────────────────────
 
 
+def _resolve_effective_shift(date: datetime.date, user: User, db: Session) -> tuple:
+    """Return (shift, rotation_week) for user on date, applying oncall overrides and accepted swaps."""
+    shift, rotation_week = determine_shift_for_date(date, user.rotation_person_id)
+
+    # Apply manual oncall override (ADD or REMOVE OC via day view)
+    override = db.query(OnCallOverride).filter(OnCallOverride.user_id == user.id, OnCallOverride.date == date).first()
+    if override:
+        shift_types = get_shift_types()
+        if override.override_type == OnCallOverrideType.ADD:
+            oc = next((s for s in shift_types if s.code == "OC"), None)
+            if oc:
+                shift = oc
+        elif override.override_type == OnCallOverrideType.REMOVE and shift and shift.code == "OC":
+            off = next((s for s in shift_types if s.code == "OFF"), None)
+            if off:
+                shift = off
+
+    # Apply accepted shift swap (if any)
+    swap = (
+        db.query(ShiftSwap)
+        .filter(
+            ShiftSwap.status == SwapStatus.ACCEPTED,
+            (ShiftSwap.requester_id == user.id) | (ShiftSwap.target_id == user.id),
+            (ShiftSwap.requester_date == date) | (ShiftSwap.target_date == date),
+        )
+        .first()
+    )
+    if swap is not None:
+        shift_types = get_shift_types()
+        if swap.requester_id == user.id and swap.requester_date == date:
+            shift, _ = determine_shift_for_date(date, swap.target.rotation_person_id)
+        elif swap.target_id == user.id and swap.requester_date == date:
+            shift = next((s for s in shift_types if s.code == swap.requester_shift_code), shift)
+        elif swap.requester_id == user.id and swap.target_date == date:
+            shift = next((s for s in shift_types if s.code == swap.target_shift_code), shift)
+        elif swap.target_id == user.id and swap.target_date == date:
+            shift, _ = determine_shift_for_date(date, swap.requester.rotation_person_id)
+
+    return shift, rotation_week
+
+
 @router.get("/users/{user_id}/next-shift")
 async def get_user_next_shift(
     user_id: int,
@@ -610,7 +661,7 @@ async def get_user_next_shift(
     yesterday = today - datetime.timedelta(days=1)
     yesterday_absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == yesterday).first()
     if not yesterday_absence:
-        prev_shift, prev_rw = determine_shift_for_date(yesterday, target.rotation_person_id)
+        prev_shift, prev_rw = _resolve_effective_shift(yesterday, target, db)
         if prev_shift and prev_shift.code not in ("OFF", "OC") and _is_overnight(prev_shift):
             prev_end = datetime.time.fromisoformat(prev_shift.end_time)
             if current_time < prev_end:
@@ -625,7 +676,7 @@ async def get_user_next_shift(
         absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == candidate).first()
         if absence:
             continue
-        shift, rotation_week = determine_shift_for_date(candidate, target.rotation_person_id)
+        shift, rotation_week = _resolve_effective_shift(candidate, target, db)
         if not shift or shift.code == "OFF":
             continue
         if offset == 0:
