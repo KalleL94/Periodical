@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.21.1",
+        "date": "2026-05-14",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "API: /next-shift tog inte hänsyn till manuella OC-ändringar (tillagda eller borttagna via dagvyn) – endpointen tillämpar nu oncall-overrides korrekt",
+                "en": "API: /next-shift did not respect manually added or removed on-call shifts (via the day view) – the endpoint now applies oncall overrides correctly",
+            },
+        ],
+    },
+    {
         "version": "0.21.0",
         "date": "2026-05-12",
         "entries": [
