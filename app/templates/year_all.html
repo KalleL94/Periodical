@@ -143,10 +143,12 @@
     </div>
 
 <script>
+var _filterInit = false;
 function togglePersonCol(pid, show) {
     document.querySelectorAll('[data-person="' + pid + '"]').forEach(function(c) {
         c.style.display = show ? '' : 'none';
     });
+    if (!_filterInit) _saveFilterState();
 }
 function setAllPersonCols(show) {
     document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
@@ -172,6 +174,50 @@ function toggleOriginalMode() {
         btn.style.color = '';
     }
     applyShiftMode();
+    _saveFilterState();
+}
+
+function _saveFilterState() {
+    var hidden = [];
+    document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        if (!cb.checked) {
+            var m = cb.getAttribute('onchange').match(/\((\d+)/);
+            if (m) hidden.push(+m[1]);
+        }
+    });
+    try {
+        localStorage.setItem('p_filter_persons', JSON.stringify(hidden));
+        localStorage.setItem('p_filter_orig', showOriginal ? '1' : '0');
+    } catch(e) {}
+}
+
+function _loadFilterState() {
+    _filterInit = true;
+    try {
+        var hiddenSet = new Set(JSON.parse(localStorage.getItem('p_filter_persons') || '[]'));
+        if (hiddenSet.size > 0) {
+            document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+                var m = cb.getAttribute('onchange').match(/\((\d+)/);
+                if (m && hiddenSet.has(+m[1])) {
+                    cb.checked = false;
+                    togglePersonCol(+m[1], false);
+                }
+            });
+        }
+        if (localStorage.getItem('p_filter_orig') === '1') {
+            showOriginal = true;
+            var btn = document.getElementById('orig-toggle-btn');
+            var lang = document.documentElement.lang || 'sv';
+            if (btn) {
+                btn.textContent = lang === 'en' ? 'Show actual' : 'Visa aktuellt';
+                btn.classList.remove('secondary');
+                btn.style.background = 'var(--accent)';
+                btn.style.color = 'var(--bg)';
+            }
+            applyShiftMode();
+        }
+    } catch(e) {}
+    _filterInit = false;
 }
 
 function applyShiftMode() {
@@ -226,6 +272,8 @@ function togglePastRows() {
         }
     }
 }
+
+_loadFilterState();
 
 // Lazy-load OB totals via AJAX for better performance
 document.addEventListener('DOMContentLoaded', function() {

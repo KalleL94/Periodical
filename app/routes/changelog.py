@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.21.3",
+        "date": "2026-05-14",
+        "entries": [
+            {
+                "type": "förbättring",
+                "sv": "Månads- och årsvy (alla): filterinställningar (dolda kolumner och rotationsläge) sparas nu i webbläsaren och behålls vid sidladdning och navigering mellan månader/år",
+                "en": "Month and year views (all): filter settings (hidden columns and rotation mode) are now saved in the browser and preserved across page loads and navigation between months/years",
+            },
+        ],
+    },
+    {
         "version": "0.21.2",
         "date": "2026-05-14",
         "entries": [
