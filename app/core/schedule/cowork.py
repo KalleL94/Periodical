@@ -194,10 +194,10 @@ def build_cowork_details(
         target_shift = target.get("shift")
         other_shift = other.get("shift")
 
-        # Båda måste jobba
-        if not target_shift or target_shift.code == "OFF":
+        # Båda måste jobba ett riktigt arbetspass (N1/N2/N3)
+        if not target_shift or target_shift.code not in ("N1", "N2", "N3"):
             continue
-        if not other_shift or other_shift.code == "OFF":
+        if not other_shift or other_shift.code not in ("N1", "N2", "N3"):
             continue
 
         # Samma skifttyp
