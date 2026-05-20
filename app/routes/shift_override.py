@@ -8,8 +8,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
+from app.core.helpers import require_own_or_admin
 from app.core.schedule import clear_schedule_cache
-from app.database.database import ShiftOverride, User, UserRole, get_db
+from app.database.database import ShiftOverride, User, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 
@@ -24,8 +25,7 @@ async def add_shift_override(
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id:
-        raise HTTPException(status_code=403, detail="Du kan bara lägga till manuella pass för dig själv")
+    require_own_or_admin(current_user, user_id, "Du kan bara lägga till manuella pass för dig själv")
 
     if shift_code not in _ALLOWED_CODES:
         raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3")
@@ -69,8 +69,7 @@ async def delete_shift_override(
     if not override:
         raise HTTPException(status_code=404, detail="Override hittades inte")
 
-    if current_user.role != UserRole.ADMIN and current_user.id != override.user_id:
-        raise HTTPException(status_code=403, detail="Du kan bara ta bort dina egna manuella pass")
+    require_own_or_admin(current_user, override.user_id, "Du kan bara ta bort dina egna manuella pass")
 
     redirect_date = override.date
     redirect_user = override.user_id

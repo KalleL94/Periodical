@@ -207,8 +207,8 @@ def generate_period_data(
         combined_ob_rules.extend(get_combined_rules_for_year(yr))
 
     # Ladda semester- och föräldraledighetsdatum
-    vacation_dates = _load_vacation_dates(years_in_range)
-    parental_dates = _load_parental_dates(years_in_range)
+    vacation_dates = _load_vacation_dates(years_in_range, session=session)
+    parental_dates = _load_parental_dates(years_in_range, session=session)
 
     # Ladda löner om inte redan gjort
     if user_wages is None:
@@ -334,11 +334,11 @@ def _get_years_in_range(start: datetime.date, end: datetime.date) -> set[int]:
     return years
 
 
-def _load_vacation_dates(years: set[int]) -> dict[int, set[datetime.date]]:
+def _load_vacation_dates(years: set[int], session=None) -> dict[int, set[datetime.date]]:
     """Laddar semesterdatum för flera år."""
     vacation_dates: dict[int, set[datetime.date]] = {}
     for yr in years:
-        year_vacations = get_vacation_dates_for_year(yr)
+        year_vacations = get_vacation_dates_for_year(yr, session=session)
         for pid, dates in year_vacations.items():
             if pid not in vacation_dates:
                 vacation_dates[pid] = set()
@@ -346,11 +346,11 @@ def _load_vacation_dates(years: set[int]) -> dict[int, set[datetime.date]]:
     return vacation_dates
 
 
-def _load_parental_dates(years: set[int]) -> dict[int, set[datetime.date]]:
+def _load_parental_dates(years: set[int], session=None) -> dict[int, set[datetime.date]]:
     """Laddar föräldraledighetsdatum för flera år."""
     parental_dates: dict[int, set[datetime.date]] = {}
     for yr in years:
-        year_parentals = get_parental_dates_for_year(yr)
+        year_parentals = get_parental_dates_for_year(yr, session=session)
         for pid, dates in year_parentals.items():
             if pid not in parental_dates:
                 parental_dates[pid] = set()

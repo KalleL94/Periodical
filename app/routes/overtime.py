@@ -10,13 +10,14 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
+from app.core.helpers import require_own_or_admin
 from app.core.schedule import (
     calculate_overtime_pay,
     clear_schedule_cache,
     get_ot_hourly_rate_from_stored_wage,
     get_user_wage,
 )
-from app.database.database import OvertimeShift, User, UserRole, get_db
+from app.database.database import OvertimeShift, User, get_db
 
 router = APIRouter(prefix="/overtime", tags=["overtime"])
 
@@ -39,9 +40,7 @@ async def add_overtime_shift(
     - Admin: can add for any user
     - User: can only add for themselves
     """
-    # Permission check
-    if current_user.role != UserRole.ADMIN and user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to add overtime for other users")
+    require_own_or_admin(current_user, user_id, "Not authorized to add overtime for other users")
 
     # Parse date first (needed for wage lookup)
     ot_date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -103,9 +102,7 @@ async def delete_overtime_shift(
     if not ot_shift:
         raise HTTPException(status_code=404, detail="Overtime shift not found")
 
-    # Permission check
-    if current_user.role != UserRole.ADMIN and ot_shift.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this overtime shift")
+    require_own_or_admin(current_user, ot_shift.user_id, "Not authorized to delete this overtime shift")
 
     # Save info for redirect
     user_id = ot_shift.user_id

@@ -6,7 +6,7 @@ import math
 from app.core.constants import PERSON_IDS
 
 
-def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
+def get_vacation_dates_for_year(year: int, session=None) -> dict[int, set[datetime.date]]:
     """
     Hämtar semesterdatum för alla personer för ett år.
 
@@ -20,7 +20,8 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
 
     per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
 
-    db = SessionLocal()
+    _owned = session is None
+    db = SessionLocal() if _owned else session
     try:
         # Query active users by rotation position, not by user.id
         users = (
@@ -62,12 +63,13 @@ def get_vacation_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
             if person_id is not None:
                 per_person[person_id].add(absence.date)
     finally:
-        db.close()
+        if _owned:
+            db.close()
 
     return per_person
 
 
-def get_parental_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
+def get_parental_dates_for_year(year: int, session=None) -> dict[int, set[datetime.date]]:
     """
     Hämtar föräldraledighetsdatum för alla personer för ett år.
 
@@ -81,7 +83,8 @@ def get_parental_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
 
     per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
 
-    db = SessionLocal()
+    _owned = session is None
+    db = SessionLocal() if _owned else session
     try:
         users = (
             db.query(User)
@@ -122,7 +125,8 @@ def get_parental_dates_for_year(year: int) -> dict[int, set[datetime.date]]:
             if person_id is not None:
                 per_person[person_id].add(absence.date)
     finally:
-        db.close()
+        if _owned:
+            db.close()
 
     return per_person
 
