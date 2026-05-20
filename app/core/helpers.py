@@ -5,13 +5,19 @@ Shared helper functions for templates and route handlers.
 
 from datetime import date
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 from app.database.database import User, UserRole
+
+
+def require_own_or_admin(current_user: User, target_user_id: int, detail: str = "Not authorized") -> None:
+    """Raise HTTP 403 if current_user is neither admin nor the target user."""
+    if current_user.role != UserRole.ADMIN and target_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail=detail)
 
 
 def contrast_color(hex_color: str) -> str:
