@@ -965,7 +965,9 @@ async def show_month_for_person(
                         "supplement_month": round(pay.get("supplement_per_day", 0) * sem_count, 0),
                     }
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Semestertillägg kunde inte beräknas för user_id=%s", user_id_for_wages, exc_info=True
+                    )
 
     # Hide summary stats if the entire month is before the viewer's employment start
     import calendar as _cal_mod

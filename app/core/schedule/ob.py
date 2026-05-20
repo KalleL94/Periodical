@@ -63,8 +63,7 @@ def calculate_ob_hours(
         )
         segment_end = min(end_dt, day_end)
 
-        # Hämta och prioritera dagens regler
-        todays_rules = _select_rules_for_date(current, rules)
+        todays_rules = select_ob_rules_for_date(current, rules)
         sorted_rules = sorted(todays_rules, key=_rule_priority, reverse=True)
 
         covered: list[tuple[datetime.datetime, datetime.datetime]] = []
@@ -78,7 +77,6 @@ def calculate_ob_hours(
             if overlap_end <= overlap_start:
                 continue
 
-            # Subtrahera redan täckta intervall
             uncovered = _subtract_covered(overlap_start, overlap_end, covered)
 
             for ustart, uend in uncovered:
@@ -120,10 +118,8 @@ def calculate_ob_pay(
         if h > 0:
             fixed_rate = overrides.get(rule.code)
             if fixed_rate is not None:
-                # Per-user override: fixed kr/tim
                 pays[rule.code] = h * float(fixed_rate)
             else:
-                # Default: salary / divisor
                 divisor = getattr(rule, "rate", None)
                 pays[rule.code] = h * (monthly_salary / float(divisor)) if divisor else 0.0
         else:
@@ -132,60 +128,11 @@ def calculate_ob_pay(
     return pays
 
 
-# === Privata hjälpfunktioner ===
-
-
-def _rule_priority(rule: ObRule) -> int:
-    """Returnerar prioritet för en OB-regel."""
-    return OB_PRIORITY_BY_CODE.get(rule.code, OB_PRIORITY_DEFAULT)
-
-
-def _select_rules_for_date(
-    dt: datetime.datetime,
-    rules: list[ObRule],
-) -> list[ObRule]:
-    """Väljer regler som gäller för ett specifikt datum."""
-    weekday = dt.weekday()
-    date_iso = dt.date().isoformat()
-
-    matching = []
-    for rule in rules:
-        match = False
-
-        # Matcha på veckodag
-        if getattr(rule, "days", None) and weekday in rule.days:
-            match = True
-
-        # Matcha på specifikt datum
-        if not match and getattr(rule, "specific_date", None) == date_iso:
-            match = True
-
-        # Matcha på lista av datum
-        if not match:
-            specific_dates = getattr(rule, "specific_dates", None)
-            if specific_dates and date_iso in specific_dates:
-                match = True
-
-        if match:
-            matching.append(rule)
-
-    return matching
-
-
-"""OB-tilläggsberäkningar."""
-
-# === Publika hjälpfunktioner ===
-
-
 def select_ob_rules_for_date(
     dt: datetime.datetime,
     rules: list[ObRule],
 ) -> list[ObRule]:
-    """
-    Väljer regler som gäller för ett specifikt datum.
-
-    Publik funktion för användning i routes.
-    """
+    """Väljer regler som gäller för ett specifikt datum."""
     weekday = dt.weekday()
     date_iso = dt.date().isoformat()
 
@@ -216,38 +163,6 @@ def select_ob_rules_for_date(
 def _rule_priority(rule: ObRule) -> int:
     """Returnerar prioritet för en OB-regel."""
     return OB_PRIORITY_BY_CODE.get(rule.code, OB_PRIORITY_DEFAULT)
-
-
-def _select_rules_for_date(
-    dt: datetime.datetime,
-    rules: list[ObRule],
-) -> list[ObRule]:
-    """Väljer regler som gäller för ett specifikt datum."""
-    weekday = dt.weekday()
-    date_iso = dt.date().isoformat()
-
-    matching = []
-    for rule in rules:
-        match = False
-
-        # Matcha på veckodag
-        if getattr(rule, "days", None) and weekday in rule.days:
-            match = True
-
-        # Matcha på specifikt datum
-        if not match and getattr(rule, "specific_date", None) == date_iso:
-            match = True
-
-        # Matcha på lista av datum
-        if not match:
-            specific_dates = getattr(rule, "specific_dates", None)
-            if specific_dates and date_iso in specific_dates:
-                match = True
-
-        if match:
-            matching.append(rule)
-
-    return matching
 
 
 def _rule_interval_for_day(
