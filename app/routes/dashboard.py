@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, render_template
+from app.core.logging_config import get_logger
 from app.core.oncall import _cached_oncall_rules, calculate_oncall_pay
 from app.core.rates import get_user_rates
 from app.core.schedule import (
@@ -42,6 +43,7 @@ from app.database.database import Absence, OnCallOverride, OnCallOverrideType, S
 from app.routes.shared import templates
 
 router = APIRouter(tags=["dashboard"])
+logger = get_logger(__name__)
 
 
 def _query_absence_and_deduction(
@@ -191,7 +193,7 @@ def _compute_month_summary(
             payment_year = year + 1 if month == 12 else year
             taxes = calculate_tax_from_table(gross_pay, tax_table, year=payment_year)
         except Exception:
-            pass
+            logger.warning("Skatteberäkning misslyckades för tabell %s", tax_table, exc_info=True)
 
     net_pay = gross_pay - taxes
     ob_pct = (ob_hours / total_hours * 100) if total_hours > 0 else 0.0

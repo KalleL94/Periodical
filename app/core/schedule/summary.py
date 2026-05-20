@@ -156,7 +156,9 @@ def summarize_month_for_person(
 
     # Använd förgenererad data eller generera ny
     if year_days is None:
-        days = generate_year_data(year, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map)
+        days = generate_month_data(
+            year, month, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map
+        )
     else:
         days = year_days
 
