@@ -2,6 +2,7 @@
 
 import calendar
 import datetime
+from dataclasses import dataclass
 from datetime import time as dt_time
 
 from app.core.constants import PERSON_IDS
@@ -27,6 +28,25 @@ from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
 _persons = None
+
+
+@dataclass
+class DayLookupContext:
+    """Pre-fetched period-wide data, static across all days in a schedule generation call."""
+
+    persons: list
+    vacation_dates: dict
+    parental_dates: dict
+    ot_shift_map: dict | None
+    absence_map: dict | None
+    oncall_override_map: dict | None
+    swap_map: dict | None
+    shift_override_map: dict | None
+    # Only populated in generate_period_data (not used by _build_person_day_basic):
+    combined_ob_rules: list | None = None
+    user_wages: dict | None = None
+    settings: object = None
+    user_rates_map: dict | None = None
 
 
 def _get_persons():
@@ -60,7 +80,6 @@ def build_week_data(
     sunday = monday + datetime.timedelta(days=6)
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
     persons = _get_persons()
-    shift_types = get_shift_types()
 
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
@@ -71,8 +90,19 @@ def build_week_data(
     swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
     shift_override_map = _batch_fetch_shift_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
     years_week = _get_years_in_range(monday, sunday)
-    vacation_dates = _load_vacation_dates(years_week)
-    parental_dates = _load_parental_dates(years_week)
+    vacation_dates = _load_vacation_dates(years_week, session=session)
+    parental_dates = _load_parental_dates(years_week, session=session)
+
+    ctx = DayLookupContext(
+        persons=persons,
+        vacation_dates=vacation_dates,
+        parental_dates=parental_dates,
+        ot_shift_map=ot_shift_map,
+        absence_map=absence_map,
+        oncall_override_map=oncall_override_map,
+        swap_map=swap_map,
+        shift_override_map=shift_override_map,
+    )
 
     days_in_week = []
 
@@ -85,41 +115,9 @@ def build_week_data(
         }
 
         if person_id is None:
-            day_info["persons"] = [
-                _build_person_day_basic(
-                    current_date,
-                    pid,
-                    persons,
-                    shift_types,
-                    session,
-                    vacation_dates,
-                    ot_shift_map,
-                    absence_map,
-                    oncall_override_map,
-                    swap_map,
-                    shift_override_map=shift_override_map,
-                    parental_dates=parental_dates,
-                )
-                for pid in person_ids
-            ]
+            day_info["persons"] = [_build_person_day_basic(current_date, pid, ctx, session) for pid in person_ids]
         else:
-            day_info.update(
-                _build_person_day_basic(
-                    current_date,
-                    person_id,
-                    persons,
-                    shift_types,
-                    session,
-                    vacation_dates,
-                    ot_shift_map,
-                    absence_map,
-                    oncall_override_map,
-                    swap_map,
-                    employment_start=employment_start,
-                    shift_override_map=shift_override_map,
-                    parental_dates=parental_dates,
-                )
-            )
+            day_info.update(_build_person_day_basic(current_date, person_id, ctx, session, employment_start))
 
         days_in_week.append(day_info)
 
@@ -234,6 +232,22 @@ def generate_period_data(
     # Generera dagdata
     persons = _get_persons()
     settings = get_settings()
+
+    ctx = DayLookupContext(
+        persons=persons,
+        vacation_dates=vacation_dates,
+        parental_dates=parental_dates,
+        ot_shift_map=ot_shift_map,
+        absence_map=absence_map,
+        oncall_override_map=oncall_override_map,
+        swap_map=swap_map,
+        shift_override_map=shift_override_map,
+        combined_ob_rules=combined_ob_rules,
+        user_wages=user_wages,
+        settings=settings,
+        user_rates_map=user_rates_map,
+    )
+
     days_out = []
 
     current_day = effective_start
@@ -245,42 +259,15 @@ def generate_period_data(
         }
 
         if person_id is None:
-            day_info["persons"] = [
-                _build_person_day_basic(
-                    current_day,
-                    pid,
-                    persons,
-                    get_shift_types(),
-                    session,
-                    vacation_dates,
-                    ot_shift_map,
-                    absence_map,
-                    oncall_override_map,
-                    swap_map,
-                    shift_override_map=shift_override_map,
-                    parental_dates=parental_dates,
-                )
-                for pid in person_ids
-            ]
+            day_info["persons"] = [_build_person_day_basic(current_day, pid, ctx, session) for pid in person_ids]
         else:
             _populate_single_person_day(
                 day_info,
                 current_day,
                 person_id,
-                vacation_dates,
-                combined_ob_rules,
-                user_wages,
+                ctx,
                 session,
-                persons,
-                settings,
-                ot_shift_map,
-                absence_map,
-                oncall_override_map,
-                swap_map,
-                user_rates_map=user_rates_map,
                 employment_start=employment_start,
-                shift_override_map=shift_override_map,
-                parental_dates=parental_dates,
             )
 
         days_out.append(day_info)
@@ -608,19 +595,20 @@ def _batch_fetch_swap_map(
 def _build_person_day_basic(
     date: datetime.date,
     person_id: int,
-    persons: list,
-    shift_types: list,
+    ctx: DayLookupContext,
     session=None,
-    vacation_dates: dict[int, set[datetime.date]] | None = None,
-    ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
-    absence_map: dict[tuple[int, datetime.date], object] | None = None,
-    oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
-    swap_map: dict[tuple[int, datetime.date], str] | None = None,
     employment_start: datetime.date | None = None,
-    shift_override_map: dict[tuple[int, datetime.date], str] | None = None,
-    parental_dates: dict[int, set[datetime.date]] | None = None,
 ) -> dict:
     """Bygger grundläggande dagdata för en person."""
+    persons = ctx.persons
+    shift_types = get_shift_types()
+    vacation_dates = ctx.vacation_dates
+    parental_dates = ctx.parental_dates
+    absence_map = ctx.absence_map
+    ot_shift_map = ctx.ot_shift_map
+    oncall_override_map = ctx.oncall_override_map
+    swap_map = ctx.swap_map
+    shift_override_map = ctx.shift_override_map
     vacation_shift = get_vacation_shift()
     rotation_length = get_rotation_length_for_date(date)
 
@@ -905,22 +893,23 @@ def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
     person_id: int,
-    vacation_dates: dict[int, set[datetime.date]],
-    combined_ob_rules: list,
-    user_wages: dict[int, int],
+    ctx: DayLookupContext,
     session,
-    persons: list,
-    settings,
-    ot_shift_map: dict[tuple[int, datetime.date], object] | None = None,
-    absence_map: dict[tuple[int, datetime.date], object] | None = None,
-    oncall_override_map: dict[tuple[int, datetime.date], object] | None = None,
-    swap_map: dict[tuple[int, datetime.date], str] | None = None,
-    user_rates_map: dict[int, dict] | None = None,
     employment_start: datetime.date | None = None,
-    shift_override_map: dict[tuple[int, datetime.date], str] | None = None,
-    parental_dates: dict[int, set[datetime.date]] | None = None,
 ) -> None:
     """Fyller i detaljerad daginfo för en person."""
+    vacation_dates = ctx.vacation_dates
+    combined_ob_rules = ctx.combined_ob_rules
+    user_wages = ctx.user_wages
+    persons = ctx.persons
+    settings = ctx.settings
+    ot_shift_map = ctx.ot_shift_map
+    absence_map = ctx.absence_map
+    oncall_override_map = ctx.oncall_override_map
+    swap_map = ctx.swap_map
+    user_rates_map = ctx.user_rates_map
+    shift_override_map = ctx.shift_override_map
+    parental_dates = ctx.parental_dates
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
 
