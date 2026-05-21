@@ -37,7 +37,6 @@ from app.core.schedule.wages import (
     get_karens_consumed_before_date,
     get_shift_times_for_date,
 )
-from app.core.storage import calculate_tax_from_table
 from app.core.utils import get_safe_today, get_today
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftSwap, SwapStatus, User, get_db
 from app.routes.shared import templates
@@ -84,133 +83,34 @@ def _compute_month_summary(
     show_salary: bool,
     db: Session,
 ) -> dict:
-    """
-    Compute month summary using the same logic as the dashboard loop.
-    Rates, wage and tax table are resolved with effective_date = first day of the
-    month so historical overrides are honoured correctly.
-    Used for both the displayed month and the trend (previous month).
-    """
-    month_start = date(year, month, 1)
-    month_end = date(year, month + 1, 1) - dt.timedelta(days=1) if month < 12 else date(year, 12, 31)
+    """Thin wrapper around summarize_month_for_person mapping keys to dashboard expectations."""
+    from app.core.schedule.summary import summarize_month_for_person
 
-    # Resolve wage and rates for the specific month (date-aware)
-    user_wage = get_effective_monthly_wage(db, user.id, effective_date=month_start)
-    _raw_wage = get_user_wage(db, user.id, effective_date=month_start)
-    user_rates = get_user_rates(user, session=db, effective_date=month_start)
-    user_id = user.id
-    tax_table = user.tax_table
-
-    combined_rules = ob_rules + _cached_special_rules(year)
-    oncall_rules = _cached_oncall_rules(year)
-
-    ot_shifts = get_overtime_shifts_for_month(db, user_id, year, month)
-    ot_map = {s.date: s for s in ot_shifts}
-
-    oncall_overrides = (
-        db.query(OnCallOverride)
-        .filter(OnCallOverride.user_id == user_id, OnCallOverride.date >= month_start, OnCallOverride.date <= month_end)
-        .all()
+    payment_year = year + 1 if month == 12 else year
+    s = summarize_month_for_person(
+        year,
+        month,
+        person_id,
+        session=db,
+        wage_user_id=user.id,
+        payment_year=payment_year,
     )
-    override_map = {o.date: o for o in oncall_overrides}
-
-    total_hours = 0.0
-    ob_hours = 0.0
-    total_ob_pay = 0.0
-    oc_pay = 0.0
-    ot_pay = 0.0
-    absence_deduction = 0.0
-
-    current_date = month_start
-    while current_date <= month_end:
-        absence, deduction = _query_absence_and_deduction(db, user_id, current_date, user_wage, show_salary)
-        absence_deduction += deduction
-
-        ot_shift = ot_map.get(current_date)
-        if ot_shift and not absence:
-            ot_start = datetime.combine(current_date, ot_shift.start_time)
-            ot_end = datetime.combine(current_date, ot_shift.end_time)
-            if ot_shift.end_time < ot_shift.start_time:
-                ot_end += dt.timedelta(days=1)
-            ot_hours_val = (ot_end - ot_start).total_seconds() / 3600.0
-            total_hours += ot_hours_val
-            if show_salary:
-                _ot_rate = (
-                    user_rates["ot"]
-                    if user_rates["ot"] is not None
-                    else get_ot_hourly_rate_from_stored_wage(db, user.id, _raw_wage)
-                )
-                ot_pay += calculate_overtime_pay(user_wage, ot_hours_val, ot_hourly_rate=_ot_rate)
-
-        result = determine_shift_for_date(current_date, start_week=person_id)
-        if result:
-            shift, _ = result
-            override = override_map.get(current_date)
-            has_rot_oc = shift and shift.code == "OC"
-            is_effective_oc = (
-                has_rot_oc and not (override and override.override_type == OnCallOverrideType.REMOVE)
-            ) or (override and override.override_type == OnCallOverrideType.ADD)
-
-            if is_effective_oc:
-                if show_salary:
-                    excluded = []
-                    if ot_shift and not absence:
-                        excluded = [
-                            (
-                                datetime.combine(current_date, ot_shift.start_time),
-                                datetime.combine(current_date, ot_shift.end_time)
-                                + (
-                                    dt.timedelta(days=1) if ot_shift.end_time < ot_shift.start_time else dt.timedelta(0)
-                                ),
-                            )
-                        ]
-                    oc_result = calculate_oncall_pay(
-                        current_date,
-                        user_wage,
-                        oncall_rules,
-                        rate_overrides=user_rates["oncall"],
-                        excluded_intervals=excluded or None,
-                    )
-                    oc_pay += oc_result["total_pay"]
-            elif shift and shift.code != "OFF" and shift.code != "OC":
-                hours, start_dt, end_dt = calculate_shift_hours(current_date, shift)
-                total_hours += hours
-                if start_dt and end_dt:
-                    ob_h = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                    ob_hours += sum(ob_h.values())
-                    if show_salary:
-                        ob_p = calculate_ob_pay(
-                            start_dt, end_dt, combined_rules, user_wage, rate_overrides=user_rates["ob"]
-                        )
-                        total_ob_pay += sum(ob_p.values())
-
-        current_date += dt.timedelta(days=1)
-
-    gross_pay = total_ob_pay + oc_pay + ot_pay + user_wage - absence_deduction
-
-    taxes = 0.0
-    if tax_table:
-        try:
-            payment_year = year + 1 if month == 12 else year
-            taxes = calculate_tax_from_table(gross_pay, tax_table, year=payment_year)
-        except Exception:
-            logger.warning("Skatteberäkning misslyckades för tabell %s", tax_table, exc_info=True)
-
-    net_pay = gross_pay - taxes
-    ob_pct = (ob_hours / total_hours * 100) if total_hours > 0 else 0.0
-
+    ob_hours_total = sum(s["ob_hours"].values())
+    total_ob_pay = sum(s["ob_pay"].values())
+    gross = s["brutto_pay"]
     return {
-        "total_hours": total_hours,
-        "ob_hours": ob_hours,
-        "ob_percentage": ob_pct,
+        "total_hours": s["total_hours"],
+        "ob_hours": ob_hours_total,
+        "ob_percentage": (ob_hours_total / s["total_hours"] * 100) if s["total_hours"] > 0 else 0.0,
         "total_ob_pay": total_ob_pay,
-        "oc_pay": oc_pay,
-        "ot_pay": ot_pay,
-        "absence_deduction": absence_deduction,
+        "oc_pay": s["oncall_pay"],
+        "ot_pay": s["ot_pay"],
+        "absence_deduction": s["absence_deduction"],
         "month_number": month,
         "year": year,
-        "gross_pay": gross_pay,
-        "taxes": taxes,
-        "net_pay": net_pay,
+        "gross_pay": gross,
+        "taxes": gross - s["netto_pay"],
+        "net_pay": s["netto_pay"],
     }
 
 
