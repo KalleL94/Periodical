@@ -16,10 +16,8 @@ from app.core.helpers import can_see_salary, render_template, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import (
-    _cached_oncall_rules,
     _get_storhelg_dates_for_year,
-    calculate_oncall_pay,
-    calculate_oncall_pay_for_period,
+    compute_oncall_details,
 )
 from app.core.schedule import (
     _cached_special_rules,
@@ -32,9 +30,9 @@ from app.core.schedule import (
     calculate_ob_hours,
     calculate_ob_pay,
     calculate_shift_hours,
+    compute_ot_details,
     determine_shift_for_date,
     get_effective_monthly_wage,
-    get_ot_hourly_rate_from_stored_wage,
     get_overtime_shift_for_date,
     get_rotation_length_for_date,
     get_user_wage,
@@ -241,32 +239,7 @@ async def show_day_for_person(
     midnight = datetime.combine(date_obj, time(0, 0))
     active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
 
-    # Fetch Overtime Shift for display (only if registered on current day)
-    # OT shifts are stored per user_id
-    ot_shift_for_display = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
-
-    # Also check previous day for OT affecting on-call (but not displayed as OT shift)
-    ot_shift_for_oncall = ot_shift_for_display
-    if not ot_shift_for_oncall:
-        from app.core.time_utils import parse_ot_times
-
-        prev_day = date_obj - timedelta(days=1)
-        prev_ot = get_overtime_shift_for_date(db, user_id_for_wages, prev_day)
-        if prev_ot:
-            try:
-                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
-                if ot_end_dt.date() > prev_day:
-                    # OT crosses midnight into current day - affects on-call but not displayed
-                    ot_shift_for_oncall = prev_ot
-            except ValueError:
-                pass
-
-    # Use ot_shift_for_display for showing OT shift and calculating OT pay
-    ot_shift = ot_shift_for_display
-    ot_shift_id = ot_shift.id if ot_shift else None
-    ot_details = {}
-
-    # Fetch absence for this person and date (check before calculating OT)
+    # Fetch absence for this person and date
     # Absences are stored per user_id
     absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
 
@@ -295,165 +268,47 @@ async def show_day_for_person(
         ob_hours = {code: 0.0 for code in ob_hours}
         ob_pay = {code: 0.0 for code in ob_pay}
 
-    if ot_shift and not absence:  # Skip OT if there's an absence
+    ot_result = compute_ot_details(db, user_id_for_wages, date_obj, monthly_salary, _user_rates["ot"], absence=absence)
+    ot_shift = ot_result["ot_shift"]
+    ot_shift_id = ot_shift.id if ot_shift else None
+    ot_details = ot_result["ot_details"]
+    ot_shift_for_oncall = ot_result["ot_shift_for_oncall"]
+
+    if ot_shift and not absence and not ot_shift.is_extension:
         from app.core.models import ShiftType
         from app.core.storage import load_shift_types
 
-        ot_start_str = str(ot_shift.start_time)
-        ot_end_str = str(ot_shift.end_time)
-        if len(ot_start_str.split(":")) == 3:
-            ot_start_str = ":".join(ot_start_str.split(":")[:2])
-        if len(ot_end_str.split(":")) == 3:
-            ot_end_str = ":".join(ot_end_str.split(":")[:2])
+        ot_start_str = ot_details["start_time"]
+        ot_end_str = ot_details["end_time"]
+        all_shifts = load_shift_types()
+        ot_shift_type = next((s for s in all_shifts if s.code == "OT"), None)
+        if ot_shift_type:
+            shift = ShiftType(
+                code="OT",
+                label=ot_shift_type.label,
+                start_time=ot_start_str,
+                end_time=ot_end_str,
+                color=ot_shift_type.color,
+            )
+            hours = ot_shift.hours
+            ot_start_full = ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
+            ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
+            try:
+                start_time_obj = datetime.strptime(ot_start_full, "%H:%M:%S").time()
+                end_time_obj = datetime.strptime(ot_end_full, "%H:%M:%S").time()
+                start_dt = datetime.combine(date_obj, start_time_obj)
+                end_dt = datetime.combine(date_obj, end_time_obj)
+                if end_dt <= start_dt:
+                    end_dt = end_dt + timedelta(days=1)
+            except ValueError:
+                pass
 
-        if not ot_shift.is_extension:
-            # Replace shift display with OT shift
-            all_shifts = load_shift_types()
-            ot_shift_type = next((s for s in all_shifts if s.code == "OT"), None)
-            if ot_shift_type:
-                shift = ShiftType(
-                    code="OT",
-                    label=ot_shift_type.label,
-                    start_time=ot_start_str,
-                    end_time=ot_end_str,
-                    color=ot_shift_type.color,
-                )
-                hours = ot_shift.hours
-
-                ot_start_full = ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
-                ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
-                try:
-                    start_time_obj = datetime.strptime(ot_start_full, "%H:%M:%S").time()
-                    end_time_obj = datetime.strptime(ot_end_full, "%H:%M:%S").time()
-                    start_dt = datetime.combine(date_obj, start_time_obj)
-                    end_dt = datetime.combine(date_obj, end_time_obj)
-                    if end_dt <= start_dt:
-                        end_dt = end_dt + timedelta(days=1)
-                except ValueError:
-                    pass
-
-        # Recalculate overtime pay based on historical wage
-        _raw_wage_for_ot = get_user_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date_obj)
-        hourly_rate = (
-            _user_rates["ot"]
-            if _user_rates["ot"] is not None
-            else get_ot_hourly_rate_from_stored_wage(db, user_id_for_wages, _raw_wage_for_ot)
-        )
-        ot_pay = hourly_rate * ot_shift.hours
-
-        ot_details = {
-            "start_time": ot_start_str,
-            "end_time": ot_end_str,
-            "hours": ot_shift.hours,
-            "pay": ot_pay,
-            "hourly_rate": hourly_rate,
-            "is_extension": ot_shift.is_extension,
-        }
-
-    # Calculate on-call pay if this is effectively an on-call shift (considering overrides)
     oncall_pay = 0.0
     oncall_details = {}
-
     if is_effective_oc:
-        oncall_rules = _cached_oncall_rules(year)
-
-        # Default: Full 24h calculation
-        oc_calc = calculate_oncall_pay(date_obj, monthly_salary, oncall_rules, rate_overrides=_user_rates["oncall"])
-
-        # If OT exists (including from previous day), recalculate OC pay for periods BEFORE and AFTER OT
-        if ot_shift_for_oncall:
-            day_start = datetime.combine(date_obj, time(0, 0))
-            day_end = datetime.combine(date_obj + timedelta(days=1), time(0, 0))
-
-            # Parse OT times from ot_shift_for_oncall (may be from previous day)
-            ot_start_time_val = ot_shift_for_oncall.start_time
-            ot_end_time_val = ot_shift_for_oncall.end_time
-
-            # Ensure we have time objects
-            if isinstance(ot_start_time_val, str):
-                try:
-                    ot_start_time_val = datetime.strptime(ot_start_time_val, "%H:%M:%S").time()
-                except ValueError:
-                    ot_start_time_val = datetime.strptime(ot_start_time_val, "%H:%M").time()
-
-            if isinstance(ot_end_time_val, str):
-                try:
-                    ot_end_time_val = datetime.strptime(ot_end_time_val, "%H:%M:%S").time()
-                except ValueError:
-                    ot_end_time_val = datetime.strptime(ot_end_time_val, "%H:%M").time()
-
-            # Use ot_shift_for_oncall.date for combining times (in case OT is from previous day)
-            ot_start_dt = datetime.combine(ot_shift_for_oncall.date, ot_start_time_val)
-            ot_end_dt = datetime.combine(ot_shift_for_oncall.date, ot_end_time_val)
-
-            # Handle shifts that cross midnight
-            if ot_end_time_val < ot_start_time_val:
-                ot_end_dt = datetime.combine(ot_shift_for_oncall.date + timedelta(days=1), ot_end_time_val)
-
-            total_pay = 0.0
-            combined_breakdown = {}
-            combined_details = {
-                "periods": [],
-                "total_pay": 0.0,
-                "total_hours": 0.0,
-            }
-
-            # Period 1: Before OT (00:00 to OT start)
-            if ot_start_dt > day_start:
-                period1 = calculate_oncall_pay_for_period(
-                    day_start, ot_start_dt, monthly_salary, oncall_rules, rate_overrides=_user_rates["oncall"]
-                )
-                total_pay += period1["total_pay"]
-                combined_details["periods"].append(
-                    {
-                        "start": day_start,
-                        "end": ot_start_dt,
-                        "hours": period1["total_hours"],
-                        "pay": period1["total_pay"],
-                    }
-                )
-                combined_details["total_hours"] += period1["total_hours"]
-
-                # Merge breakdown
-                for code, data in period1["breakdown"].items():
-                    if code not in combined_breakdown:
-                        combined_breakdown[code] = data.copy()
-                    else:
-                        combined_breakdown[code]["hours"] += data["hours"]
-                        combined_breakdown[code]["pay"] += data["pay"]
-
-            # Period 2: After OT (OT end to 24:00)
-            if ot_end_dt < day_end:
-                period2 = calculate_oncall_pay_for_period(
-                    ot_end_dt, day_end, monthly_salary, oncall_rules, rate_overrides=_user_rates["oncall"]
-                )
-                total_pay += period2["total_pay"]
-                combined_details["periods"].append(
-                    {
-                        "start": ot_end_dt,
-                        "end": day_end,
-                        "hours": period2["total_hours"],
-                        "pay": period2["total_pay"],
-                    }
-                )
-                combined_details["total_hours"] += period2["total_hours"]
-
-                # Merge breakdown
-                for code, data in period2["breakdown"].items():
-                    if code not in combined_breakdown:
-                        combined_breakdown[code] = data.copy()
-                    else:
-                        combined_breakdown[code]["hours"] += data["hours"]
-                        combined_breakdown[code]["pay"] += data["pay"]
-
-            combined_details["breakdown"] = combined_breakdown
-            combined_details["total_pay"] = total_pay
-            oncall_pay = total_pay
-            oc_calc = combined_details
-        else:
-            oncall_pay = oc_calc["total_pay"]
-
-        oncall_details = oc_calc
+        oc_result = compute_oncall_details(date_obj, year, monthly_salary, _user_rates["oncall"], ot_shift_for_oncall)
+        oncall_pay = oc_result["oncall_pay"]
+        oncall_details = oc_result["oncall_details"]
 
     show_salary = can_see_salary(current_user, rotation_position)
 

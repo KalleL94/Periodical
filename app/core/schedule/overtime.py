@@ -82,4 +82,60 @@ def build_ot_details(ot_shift, hourly_rate: float) -> dict:
         "hours": ot_shift.hours,
         "pay": hourly_rate * ot_shift.hours,
         "hourly_rate": hourly_rate,
+        "is_extension": ot_shift.is_extension,
+    }
+
+
+def compute_ot_details(
+    session,
+    user_id: int,
+    date: datetime.date,
+    monthly_salary: float,
+    ot_rate: float | None = None,
+    absence=None,
+) -> dict:
+    """Beräknar övertidsdetaljer för ett datum.
+
+    Hämtar övertidspass för dagen och föregående dag (för beredskapsberäkning),
+    beräknar ersättning och returnerar samlad info.
+
+    Returns:
+        Dict med ot_shift, ot_shift_for_oncall, ot_pay, ot_details.
+        ot_shift och ot_shift_for_oncall är None om inget övertidspass finns.
+    """
+    from app.core.time_utils import parse_ot_times
+
+    ot_shift = get_overtime_shift_for_date(session, user_id, date)
+
+    # Kolla föregående dag för OT som korsar midnatt (påverkar beredskap)
+    ot_shift_for_oncall = ot_shift
+    if not ot_shift_for_oncall:
+        prev_day = date - datetime.timedelta(days=1)
+        prev_ot = get_overtime_shift_for_date(session, user_id, prev_day)
+        if prev_ot:
+            try:
+                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
+                if ot_end_dt.date() > prev_day:
+                    ot_shift_for_oncall = prev_ot
+            except ValueError:
+                pass
+
+    ot_pay = 0.0
+    ot_details: dict = {}
+
+    if ot_shift and not absence:
+        from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
+
+        _raw_wage = get_user_wage(session, user_id, monthly_salary, effective_date=date)
+        hourly_rate = (
+            ot_rate if ot_rate is not None else get_ot_hourly_rate_from_stored_wage(session, user_id, _raw_wage)
+        )
+        ot_pay = hourly_rate * ot_shift.hours
+        ot_details = build_ot_details(ot_shift, hourly_rate)
+
+    return {
+        "ot_shift": ot_shift,
+        "ot_shift_for_oncall": ot_shift_for_oncall,
+        "ot_pay": ot_pay,
+        "ot_details": ot_details,
     }
