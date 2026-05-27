@@ -486,11 +486,11 @@ def _batch_fetch_shift_overrides(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
-) -> dict[tuple[int, datetime.date], str]:
+) -> dict[tuple[int, datetime.date], object]:
     """Batch-hämtar manuella passöverrides för flera personer och en period.
 
     Returns:
-        Dict med (rotation_position, date) -> shift_code
+        Dict med (rotation_position, date) -> ShiftOverride
     """
     if not session:
         return {}
@@ -514,7 +514,7 @@ def _batch_fetch_shift_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o.shift_code for o in overrides}
+    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
 
 
 def _batch_fetch_swap_map(
@@ -526,6 +526,10 @@ def _batch_fetch_swap_map(
 ) -> dict[tuple[int, datetime.date], str]:
     """
     Batch-hämtar accepterade skiftbyten för flera personer och en period.
+
+    Returns str (shift_code), not an ORM object -- the value is computed
+    by resolving which shift a person receives after a swap, derived from
+    multiple ShiftSwap rows and determine_shift_for_date lookups.
 
     Returns:
         Dict med (rotation_position, date) -> new_shift_code
@@ -752,9 +756,10 @@ def _build_person_day_basic(
                 "end": None,
             }
 
-    # Kolla manuell passöverride (admin-tilldelat N1/N2/N3 som ersätter rotation)
+    # Check for manual shift override (admin-assigned N1/N2/N3 replacing rotation)
     if shift_override_map is not None:
-        override_code = shift_override_map.get((person_id, date))
+        _shift_override_obj = shift_override_map.get((person_id, date))
+        override_code = _shift_override_obj.shift_code if _shift_override_obj else None
         if override_code:
             result = determine_shift_for_date(date, person_id)
             original_shift, rotation_week = result if result else (None, None)
@@ -1090,7 +1095,7 @@ def _populate_single_person_day(
         hours, start, end = 0.0, None, None
         ob = {}
     elif shift_override_map is not None and shift_override_map.get((person_id, current_day)):
-        override_code = shift_override_map[(person_id, current_day)]
+        override_code = shift_override_map[(person_id, current_day)].shift_code
         result = determine_shift_for_date(current_day, person_id)
         rotation_week = result[1] if result else None
         override_shift = next((s for s in shift_types if s.code == override_code), None)
