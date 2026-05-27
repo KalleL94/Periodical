@@ -219,8 +219,13 @@
         {% endif %}
     </div>
 
-    <div id="breakdown-section" style="display: none; margin-top: 1rem;">
-        <h3 style="margin-bottom: 0.5rem;">{{ t.month_breakdown_title }}</h3>
+    <div id="breakdown-section" style="display: none; margin-top: 1rem;" class="ob-by-shift">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <h3 style="margin: 0;">{{ t.month_breakdown_title }}</h3>
+            <button class="btn secondary" id="ob-day-toggle" onclick="toggleObDayMode()" style="font-size: 0.85rem;">
+                Visa OB per kalenderdag
+            </button>
+        </div>
         <div style="overflow-x: auto;">
             <table class="breakdown-table">
                 <thead>
@@ -278,97 +283,139 @@
 
                         {% set row_total = norm + ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + ot %}
 
-                        {% if row_total > 0 %}
-                            {% set ns.has_rows = true %}
-                            {% set ns.tot_norm = ns.tot_norm + norm %}
-                            {% set ns.tot_ob1 = ns.tot_ob1 + ob1 %}
-                            {% set ns.tot_ob2 = ns.tot_ob2 + ob2 %}
-                            {% set ns.tot_ob3 = ns.tot_ob3 + ob3 %}
-                            {% set ns.tot_ob4 = ns.tot_ob4 + ob4 %}
-                            {% set ns.tot_ob5 = ns.tot_ob5 + ob5 %}
-                            {% set ns.tot_vardag = ns.tot_vardag + oc_vardag %}
-                            {% set ns.tot_helg = ns.tot_helg + oc_helg %}
-                            {% set ns.tot_helgdag = ns.tot_helgdag + oc_helgdag %}
-                            {% set ns.tot_storhelg = ns.tot_storhelg + oc_storhelg %}
-                            {% set ns.tot_ot = ns.tot_ot + ot %}
+                        {# Per-calendar-day OB and OT: aggregated across all shifts touching this day #}
+                        {% set cd_ob = d.ob_hours_calendar_day if d.ob_hours_calendar_day is defined else {} %}
+                        {% set cd_ob1 = cd_ob.get('OB1', 0) or 0 %}
+                        {% set cd_ob2 = cd_ob.get('OB2', 0) or 0 %}
+                        {% set cd_ob3 = cd_ob.get('OB3', 0) or 0 %}
+                        {% set cd_ob4 = cd_ob.get('OB4', 0) or 0 %}
+                        {% set cd_ob5 = cd_ob.get('OB5', 0) or 0 %}
+                        {% set cd_ob_sum = cd_ob1 + cd_ob2 + cd_ob3 + cd_ob4 + cd_ob5 %}
+                        {% set cd_ot = d.ot_hours_calendar_day if d.ot_hours_calendar_day is defined else 0 %}
+                        {% set cd_row_total = cd_ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + cd_ot %}
 
-                            {# Shift type label and times #}
-                            {% set shift_label = d.shift.label if d.shift and d.shift.label else (d.shift.code if d.shift else '') %}
-                            {% if d.start and d.end %}
-                                {% set t_start = d.start | time_format %}
-                                {% set t_end = d.end | time_format %}
-                            {% elif d.shift and d.shift.start_time %}
-                                {% set t_start = d.shift.start_time %}
-                                {% set t_end = d.shift.end_time %}
-                            {% else %}
-                                {% set t_start = '' %}
-                                {% set t_end = '' %}
+                        {# Shift label (needed in both modes) #}
+                        {% set shift_label = d.shift.label if d.shift and d.shift.label else (d.shift.code if d.shift and d.shift.code != 'OFF' else '') %}
+
+                        {% if row_total > 0 or cd_row_total > 0 %}
+                            {% if row_total > 0 or cd_row_total > 0 %}{% set ns.has_rows = true %}{% endif %}
+
+                            {% if row_total > 0 %}
+                                {% set ns.tot_norm = ns.tot_norm + norm %}
+                                {% set ns.tot_ob1 = ns.tot_ob1 + ob1 %}
+                                {% set ns.tot_ob2 = ns.tot_ob2 + ob2 %}
+                                {% set ns.tot_ob3 = ns.tot_ob3 + ob3 %}
+                                {% set ns.tot_ob4 = ns.tot_ob4 + ob4 %}
+                                {% set ns.tot_ob5 = ns.tot_ob5 + ob5 %}
+                                {% set ns.tot_vardag = ns.tot_vardag + oc_vardag %}
+                                {% set ns.tot_helg = ns.tot_helg + oc_helg %}
+                                {% set ns.tot_helgdag = ns.tot_helgdag + oc_helgdag %}
+                                {% set ns.tot_storhelg = ns.tot_storhelg + oc_storhelg %}
+                                {% set ns.tot_ot = ns.tot_ot + ot %}
+
+                                {# Shift start/end times #}
+                                {% if d.start and d.end %}
+                                    {% set t_start = d.start | time_format %}
+                                    {% set t_end = d.end | time_format %}
+                                {% elif d.shift and d.shift.start_time %}
+                                    {% set t_start = d.shift.start_time %}
+                                    {% set t_end = d.shift.end_time %}
+                                {% else %}
+                                    {% set t_start = '' %}
+                                    {% set t_end = '' %}
+                                {% endif %}
+                                {# For extensions: show actual end time from OT data #}
+                                {% if d.ot_details and d.ot_details.get('is_extension') %}
+                                    {% set t_end = d.ot_details.end_time[:5] %}
+                                {% endif %}
+
+                                {% set has_oncall = (oc_vardag + oc_helg + oc_helgdag + oc_storhelg) > 0 %}
+                                {% set has_ot = ot > 0 %}
+
+                                {# ── Per-shift mode (default) ── #}
+                                {% if has_oncall and has_ot %}
+                                    {# Split into two rows: on-call and overtime separately #}
+                                    <tr class="ob-row-shift">
+                                        <td class="td_left num">{{ d.date }}</td>
+                                        <td class="td_left">{{ d.weekday_name }}</td>
+                                        <td class="td_left">Beredskap</td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                        <td class="td_right num"></td>
+                                    </tr>
+                                    <tr class="ob-row-shift">
+                                        <td class="td_left num">{{ d.date }}</td>
+                                        <td class="td_left">{{ d.weekday_name }}</td>
+                                        <td class="td_left">{{ shift_label }}</td>
+                                        <td class="td_right num">{{ t_start }}</td>
+                                        <td class="td_right num">{{ t_end }}</td>
+                                        <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num">{{ "%.1f"|format(ot) }}</td>
+                                    </tr>
+                                {% else %}
+                                    <tr class="ob-row-shift">
+                                        <td class="td_left num">{{ d.date }}</td>
+                                        <td class="td_left">{{ d.weekday_name }}</td>
+                                        <td class="td_left">{{ shift_label }}</td>
+                                        <td class="td_right num">{{ t_start }}</td>
+                                        <td class="td_right num">{{ t_end }}</td>
+                                        <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ot %}{{ "%.1f"|format(ot) }}{% endif %}</td>
+                                    </tr>
+                                {% endif %}
                             {% endif %}
-                            {# För förlängningar: visa faktisk sluttid från OT-data #}
-                            {% if d.ot_details and d.ot_details.get('is_extension') %}
-                                {% set t_end = d.ot_details.end_time[:5] %}
-                            {% endif %}
 
-                            {% set has_oncall = (oc_vardag + oc_helg + oc_helgdag + oc_storhelg) > 0 %}
-                            {% set has_ot = ot > 0 %}
-
-                            {% if has_oncall and has_ot %}
-                                {# Dela upp i två rader: beredskap och övertid var för sig #}
-                                <tr>
-                                    <td class="td_left num">{{ d.date }}</td>
-                                    <td class="td_left">{{ d.weekday_name }}</td>
-                                    <td class="td_left">Beredskap</td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
-                                    <td class="td_right num"></td>
-                                </tr>
-                                <tr>
-                                    <td class="td_left num">{{ d.date }}</td>
-                                    <td class="td_left">{{ d.weekday_name }}</td>
-                                    <td class="td_left">{{ shift_label }}</td>
-                                    <td class="td_right num">{{ t_start }}</td>
-                                    <td class="td_right num">{{ t_end }}</td>
-                                    <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num"></td>
-                                    <td class="td_right num">{{ "%.1f"|format(ot) }}</td>
-                                </tr>
-                            {% else %}
-                                <tr>
-                                    <td class="td_left num">{{ d.date }}</td>
-                                    <td class="td_left">{{ d.weekday_name }}</td>
-                                    <td class="td_left">{{ shift_label }}</td>
-                                    <td class="td_right num">{{ t_start }}</td>
-                                    <td class="td_right num">{{ t_end }}</td>
-                                    <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
-                                    <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
-                                    <td class="td_right num">{% if ot %}{{ "%.1f"|format(ot) }}{% endif %}</td>
-                                </tr>
+                            {# ── Per-calendar-day mode ── #}
+                            {# One row per calendar day with OB and OT aggregated from all
+                               shifts touching that day. Night shifts and overtime crossing
+                               midnight contribute to both their start day and the next. #}
+                            {% if cd_row_total > 0 %}
+                            <tr class="ob-row-day">
+                                <td class="td_left num">{{ d.date }}</td>
+                                <td class="td_left">{{ d.weekday_name }}</td>
+                                <td class="td_left">{{ shift_label }}</td>
+                                <td class="td_right num"></td>
+                                <td class="td_right num"></td>
+                                <td class="td_right num"></td>
+                                <td class="td_right num">{% if cd_ob1 %}{{ "%.1f"|format(cd_ob1) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob2 %}{{ "%.1f"|format(cd_ob2) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob3 %}{{ "%.1f"|format(cd_ob3) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob4 %}{{ "%.1f"|format(cd_ob4) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob5 %}{{ "%.1f"|format(cd_ob5) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ot %}{{ "%.1f"|format(cd_ot) }}{% endif %}</td>
+                            </tr>
                             {% endif %}
                         {% endif %}
                     {% endfor %}
@@ -604,6 +651,13 @@
     </div>
     {% endif %}
 
+    <style>
+    /* Per-shift mode (default): show shift rows, hide day rows */
+    #breakdown-section.ob-by-shift .ob-row-day  { display: none; }
+    /* Per-calendar-day mode: show day rows, hide shift rows */
+    #breakdown-section.ob-by-day   .ob-row-shift { display: none; }
+    </style>
+
     <script>
     function toggleBreakdown() {
         var section = document.getElementById('breakdown-section');
@@ -617,6 +671,20 @@
             section.style.display = 'none';
             btn.textContent = '{{ t.month_show_breakdown }}';
             history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+    }
+
+    function toggleObDayMode() {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('ob-day-toggle');
+        if (section.classList.contains('ob-by-shift')) {
+            section.classList.remove('ob-by-shift');
+            section.classList.add('ob-by-day');
+            btn.textContent = 'Visa OB per pass';
+        } else {
+            section.classList.remove('ob-by-day');
+            section.classList.add('ob-by-shift');
+            btn.textContent = 'Visa OB per kalenderdag';
         }
     }
 

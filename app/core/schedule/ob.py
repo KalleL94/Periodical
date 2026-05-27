@@ -89,6 +89,65 @@ def calculate_ob_hours(
     return ob_totals
 
 
+def calculate_ob_hours_by_day(
+    start_dt: datetime.datetime,
+    end_dt: datetime.datetime,
+    rules: list[ObRule],
+) -> dict[datetime.date, dict[str, float]]:
+    """
+    Calculate OB hours per code per calendar day.
+
+    Unlike calculate_ob_hours which returns a flat total per code, this
+    function returns a dict keyed by calendar date. Used for the per-day
+    breakdown toggle, where a night shift crossing midnight should show
+    OB on the day the hours actually fall on.
+
+    Args:
+        start_dt: Shift start time
+        end_dt: Shift end time
+        rules: List of OB rules to apply
+
+    Returns:
+        Dict mapping date -> {OB code -> hours}
+    """
+    if not start_dt or not end_dt or end_dt <= start_dt:
+        return {}
+
+    result: dict[datetime.date, dict[str, float]] = {}
+    current = start_dt
+
+    while current < end_dt:
+        day_end = datetime.datetime.combine(
+            current.date() + datetime.timedelta(days=1),
+            datetime.time(0, 0),
+        )
+        segment_end = min(end_dt, day_end)
+
+        ob_totals = {rule.code: 0.0 for rule in rules}
+        todays_rules = select_ob_rules_for_date(current, rules)
+        sorted_rules = sorted(todays_rules, key=_rule_priority, reverse=True)
+        covered: list[tuple[datetime.datetime, datetime.datetime]] = []
+
+        for rule in sorted_rules:
+            ob_start, ob_end = _rule_interval_for_day(rule, current)
+            overlap_start = max(current, ob_start)
+            overlap_end = min(segment_end, ob_end)
+
+            if overlap_end <= overlap_start:
+                continue
+
+            uncovered = _subtract_covered(overlap_start, overlap_end, covered)
+            for ustart, uend in uncovered:
+                hours = (uend - ustart).total_seconds() / 3600.0
+                ob_totals[rule.code] += hours
+                covered.append((ustart, uend))
+
+        result[current.date()] = ob_totals
+        current = segment_end
+
+    return result
+
+
 def calculate_ob_pay(
     start_dt: datetime.datetime,
     end_dt: datetime.datetime,
