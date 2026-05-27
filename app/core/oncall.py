@@ -935,6 +935,80 @@ def calculate_oncall_pay_for_month(
     }
 
 
+def compute_oncall_details(
+    date: datetime.date,
+    year: int,
+    monthly_salary: float,
+    rate_overrides: dict | None = None,
+    ot_shift_for_oncall=None,
+) -> dict:
+    """Beräknar beredskapsersättning för ett datum.
+
+    Hanterar OT-exkludering: om OT-pass finns (inkl. föregående dags OT över midnatt)
+    betalas beredskap bara för timmarna utanför OT-fönstret.
+
+    Returns:
+        Dict med oncall_pay (float) och oncall_details (dict med breakdown).
+    """
+    from app.core.time_utils import parse_ot_times
+
+    oncall_rules = _cached_oncall_rules(year)
+
+    if not ot_shift_for_oncall:
+        result = calculate_oncall_pay(date, monthly_salary, oncall_rules, rate_overrides=rate_overrides)
+        return {"oncall_pay": result["total_pay"], "oncall_details": result}
+
+    # OT finns -- räkna beredskap för timmarna utanför OT-fönstret
+    day_start = datetime.datetime.combine(date, datetime.time(0, 0))
+    day_end = datetime.datetime.combine(date + datetime.timedelta(days=1), datetime.time(0, 0))
+
+    try:
+        ot_start_dt, ot_end_dt = parse_ot_times(ot_shift_for_oncall, ot_shift_for_oncall.date)
+    except ValueError:
+        result = calculate_oncall_pay(date, monthly_salary, oncall_rules, rate_overrides=rate_overrides)
+        return {"oncall_pay": result["total_pay"], "oncall_details": result}
+
+    total_pay = 0.0
+    combined_breakdown: dict = {}
+    combined_details: dict = {"periods": [], "total_pay": 0.0, "total_hours": 0.0}
+
+    if ot_start_dt > day_start:
+        p1 = calculate_oncall_pay_for_period(
+            day_start, ot_start_dt, monthly_salary, oncall_rules, rate_overrides=rate_overrides
+        )
+        total_pay += p1["total_pay"]
+        combined_details["periods"].append(
+            {"start": day_start, "end": ot_start_dt, "hours": p1["total_hours"], "pay": p1["total_pay"]}
+        )
+        combined_details["total_hours"] += p1["total_hours"]
+        for code, data in p1["breakdown"].items():
+            if code not in combined_breakdown:
+                combined_breakdown[code] = data.copy()
+            else:
+                combined_breakdown[code]["hours"] += data["hours"]
+                combined_breakdown[code]["pay"] += data["pay"]
+
+    if ot_end_dt < day_end:
+        p2 = calculate_oncall_pay_for_period(
+            ot_end_dt, day_end, monthly_salary, oncall_rules, rate_overrides=rate_overrides
+        )
+        total_pay += p2["total_pay"]
+        combined_details["periods"].append(
+            {"start": ot_end_dt, "end": day_end, "hours": p2["total_hours"], "pay": p2["total_pay"]}
+        )
+        combined_details["total_hours"] += p2["total_hours"]
+        for code, data in p2["breakdown"].items():
+            if code not in combined_breakdown:
+                combined_breakdown[code] = data.copy()
+            else:
+                combined_breakdown[code]["hours"] += data["hours"]
+                combined_breakdown[code]["pay"] += data["pay"]
+
+    combined_details["breakdown"] = combined_breakdown
+    combined_details["total_pay"] = total_pay
+    return {"oncall_pay": total_pay, "oncall_details": combined_details}
+
+
 def clear_oncall_cache():
     """Clear cached on-call rules (call after rule changes)."""
     _cached_oncall_rules.cache_clear()
