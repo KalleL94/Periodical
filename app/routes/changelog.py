@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.22.0",
+        "date": "2026-05-27",
+        "entries": [
+            {
+                "type": "ny funktion",
+                "sv": "Månadsvy: ny toggle i detaljerad breakdown – 'Visa OB per kalenderdag' fördelar OB och ÖT på de kalenderdagar timmarna faktiskt faller på istället för att lägga allt på startdagen; nattpass som sträcker sig över midnatt visas uppdelade",
+                "en": "Month view: new toggle in the detailed breakdown – 'Show OB per calendar day' distributes OB and OT hours across the calendar days they actually fall on instead of attributing everything to the shift start day; night shifts crossing midnight are shown split accordingly",
+            },
+        ],
+    },
+    {
         "version": "0.21.3",
         "date": "2026-05-14",
         "entries": [

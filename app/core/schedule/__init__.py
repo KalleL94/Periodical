@@ -23,6 +23,7 @@ from .cowork import build_cowork_details, build_cowork_stats, build_handover_det
 from .holidays_ob import build_special_ob_rules_for_year
 from .ob import (
     calculate_ob_hours,
+    calculate_ob_hours_by_day,
     calculate_ob_pay,
     get_combined_rules_for_year,
     get_ob_rules,
@@ -85,6 +86,7 @@ __all__ = [
     "clear_schedule_cache",
     # ob
     "calculate_ob_hours",
+    "calculate_ob_hours_by_day",
     "calculate_ob_pay",
     "get_ob_rules",
     "get_special_rules_for_year",

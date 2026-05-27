@@ -2,8 +2,8 @@
 
 from app.core.storage import load_persons, load_tax_brackets
 
-from .core import get_settings
-from .ob import calculate_ob_hours, calculate_ob_pay, get_combined_rules_for_year
+from .core import get_settings, weekday_names
+from .ob import calculate_ob_hours, calculate_ob_hours_by_day, calculate_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, generate_year_data
 from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage, get_user_wage
 
@@ -203,6 +203,27 @@ def summarize_month_for_person(
             ob_rate_overrides=user_rates.get("ob") if user_rates else None,
         )
         days_out.append(day_data)
+
+    # Aggregate OB and OT hours per calendar day (used by the per-day breakdown toggle).
+    # A night shift crossing midnight contributes to both calendar days:
+    # e.g. Sat 22:00-Sun 06:30 gives 2h OB on Saturday and 6.5h OB on Sunday.
+    # If the person also works Sun-Mon, Sunday's totals are merged: 6.5 + 2 = 8.5h.
+    calendar_day_ob: dict = {}
+    for day_data in days_out:
+        for cal_date, ob_dict in day_data.get("ob_hours_by_day", {}).items():
+            bucket = calendar_day_ob.setdefault(cal_date, {})
+            for code, hrs in ob_dict.items():
+                bucket[code] = bucket.get(code, 0.0) + hrs
+
+    calendar_day_ot: dict = {}
+    for day_data in days_out:
+        for cal_date, ot_hrs in day_data.get("ot_hours_by_day", {}).items():
+            if ot_hrs > 0:
+                calendar_day_ot[cal_date] = calendar_day_ot.get(cal_date, 0.0) + ot_hrs
+
+    for day_data in days_out:
+        day_data["ob_hours_calendar_day"] = calendar_day_ob.get(day_data["date"], {})
+        day_data["ot_hours_calendar_day"] = calendar_day_ot.get(day_data["date"], 0.0)
 
     # Hämta frånvaroavdrag för månaden
     absence_details = []
@@ -449,15 +470,33 @@ def _process_day_for_summary(
     start = day.get("start")
     end = day.get("end")
 
-    # Beräkna OB om tillämpligt
+    # Calculate OB if applicable
     if shift and shift.code not in ("OFF", "OC", "OT") and start and end:
         ob_hours = calculate_ob_hours(start, end, combined_rules)
         ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary, rate_overrides=ob_rate_overrides)
+        ob_hours_by_day = calculate_ob_hours_by_day(start, end, combined_rules)
     else:
         ob_hours = {r.code: 0.0 for r in combined_rules}
         ob_pay = {r.code: 0.0 for r in combined_rules}
+        ob_hours_by_day = {}
 
-    # Uppdatera totaler (exkludera OC från shifts och hours)
+    # Compute midnight-crossing metadata (used for per-calendar-day OB aggregation)
+    from datetime import datetime as _dt
+    from datetime import time as _time
+    from datetime import timedelta as _td
+
+    date_next_day = None
+    weekday_name_next_day = None
+    hours_this_day = hours
+    hours_next_day = 0.0
+    if start and end and end.date() > start.date():
+        midnight = _dt.combine(end.date(), _time(0, 0))
+        hours_this_day = max((midnight - start).total_seconds() / 3600.0, 0.0)
+        hours_next_day = max((end - midnight).total_seconds() / 3600.0, 0.0)
+        date_next_day = end.date()
+        weekday_name_next_day = weekday_names[date_next_day.weekday()]
+
+    # Update totals (exclude OC from shifts and hours)
     if shift and shift.code != "OC":
         totals["total_hours"] += hours
 
@@ -471,12 +510,39 @@ def _process_day_for_summary(
         totals["ob_pay"][code] = totals["ob_pay"].get(code, 0.0) + p
         totals["brutto_pay"] += p
 
-    # Lägg till beredskap och övertid
+    # Add on-call and overtime
     oncall_pay = day.get("oncall_pay", 0.0)
     oncall_details = day.get("oncall_details", {})
     oncall_hours = oncall_details.get("total_hours", 0.0) if oncall_details else 0.0
     ot_pay = day.get("ot_pay", 0.0)
     ot_hours = day.get("ot_hours", 0.0)
+
+    # Compute per-calendar-day OT hours for midnight-crossing overtime shifts
+    ot_details_data = day.get("ot_details", {})
+    ot_hours_by_day: dict = {}
+    if ot_hours > 0 and ot_details_data:
+        _start_str = str(ot_details_data.get("start_time", ""))
+        _end_str = str(ot_details_data.get("end_time", ""))
+        if _start_str and _end_str:
+            try:
+                _day_date = day["date"]
+                _sh, _sm = int(_start_str[:2]), int(_start_str[3:5])
+                _eh, _em = int(_end_str[:2]), int(_end_str[3:5])
+                _ot_start = _dt(_day_date.year, _day_date.month, _day_date.day, _sh, _sm)
+                _ot_end = _dt(_day_date.year, _day_date.month, _day_date.day, _eh, _em)
+                if _ot_end <= _ot_start:
+                    _ot_end += _td(days=1)
+                if _ot_end.date() > _ot_start.date():
+                    _midnight = _dt.combine(_ot_end.date(), _time(0, 0))
+                    _ot_this = max((_midnight - _ot_start).total_seconds() / 3600.0, 0.0)
+                    _ot_next = max((_ot_end - _midnight).total_seconds() / 3600.0, 0.0)
+                    ot_hours_by_day = {_ot_start.date(): _ot_this, _ot_end.date(): _ot_next}
+                else:
+                    ot_hours_by_day = {_day_date: ot_hours}
+            except (ValueError, IndexError, KeyError):
+                ot_hours_by_day = {day["date"]: ot_hours}
+    elif ot_hours > 0:
+        ot_hours_by_day = {day["date"]: ot_hours}
 
     totals["brutto_pay"] += oncall_pay + ot_pay
     totals["oncall_pay"] += oncall_pay
@@ -494,10 +560,16 @@ def _process_day_for_summary(
         "hours": hours,
         "ob_hours": ob_hours,
         "ob_pay": ob_pay,
+        "ob_hours_by_day": ob_hours_by_day,
+        "hours_this_day": hours_this_day,
+        "hours_next_day": hours_next_day,
+        "date_next_day": date_next_day,
+        "weekday_name_next_day": weekday_name_next_day,
         "oncall_pay": oncall_pay,
         "oncall_details": day.get("oncall_details", {}),
         "ot_pay": ot_pay,
         "ot_hours": day.get("ot_hours", 0.0),
+        "ot_hours_by_day": ot_hours_by_day,
         "ot_details": day.get("ot_details", {}),
         "start": start,
         "end": end,
