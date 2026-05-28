@@ -280,9 +280,8 @@ def get_karens_consumed_before_date(session, user_id: int, sick_date: "date") ->
         if consumed >= KARENS_HOURS:
             break
         # Hämta frånvarotimmar för denna dag
-        _, _, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
-        shift_h = get_shift_hours_for_date(session, user_id, absence.date)
-        absent_h = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_h)
+        shift_h, shift_start_dt, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
+        absent_h = get_absent_hours_for_absence(absence, shift_start_dt, shift_end_dt, shift_h)
         karens_this_day = min(absent_h, KARENS_HOURS - consumed)
         consumed += karens_this_day
 
@@ -346,6 +345,47 @@ def get_absent_hours_from_left_at(left_at: str, shift_end_dt: datetime.datetime 
         return max(0.0, absent)
     except ValueError:
         return shift_hours
+
+
+def get_absent_hours_for_absence(
+    absence,
+    shift_start_dt: datetime.datetime | None,
+    shift_end_dt: datetime.datetime | None,
+    shift_hours: float,
+) -> float:
+    """
+    Calculates total absent hours for an absence record, handling left_at, arrived_at, or both.
+    Falls back to shift_hours for full-day absence or when shift times are unavailable.
+    """
+    left_at = getattr(absence, "left_at", None)
+    arrived_at = getattr(absence, "arrived_at", None)
+
+    if not left_at and not arrived_at:
+        return shift_hours
+
+    total = 0.0
+
+    # Hours missed at end of shift (left early)
+    if left_at and shift_end_dt is not None:
+        try:
+            left_time = datetime.datetime.strptime(left_at, "%H:%M").time()
+            left_dt = datetime.datetime.combine(shift_end_dt.date(), left_time)
+            if left_dt < shift_end_dt:
+                total += (shift_end_dt - left_dt).total_seconds() / 3600.0
+        except ValueError:
+            total += shift_hours
+
+    # Hours missed at start of shift (arrived late)
+    if arrived_at and shift_start_dt is not None:
+        try:
+            arrived_time = datetime.datetime.strptime(arrived_at, "%H:%M").time()
+            arrived_dt = datetime.datetime.combine(shift_start_dt.date(), arrived_time)
+            if arrived_dt > shift_start_dt:
+                total += (arrived_dt - shift_start_dt).total_seconds() / 3600.0
+        except ValueError:
+            total += shift_hours
+
+    return max(0.0, min(total, shift_hours))
 
 
 def get_absence_deductions_for_month(
@@ -434,8 +474,8 @@ def get_absence_deductions_for_month(
 
     for absence in absences:
         # Hämta antal timmar för det skift som skulle ha jobbats
-        shift_hours, start_dt, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
-        absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_hours)
+        shift_hours, shift_start_dt, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
+        absent_hours = get_absent_hours_for_absence(absence, shift_start_dt, shift_end_dt, shift_hours)
         total_hours += absent_hours
 
         if absence.absence_type == AbsenceType.SICK:
@@ -462,7 +502,7 @@ def get_absence_deductions_for_month(
 
             # OB på frånvarodagen: beräkna alltid för att kunna visa totalt tapp
             sjuklon_hours = absent_hours - karens_today
-            if ob_rules and start_dt is not None and shift_end_dt is not None and shift_hours > 0:
+            if ob_rules and shift_start_dt is not None and shift_end_dt is not None and shift_hours > 0:
                 from app.core.schedule.ob import calculate_ob_pay
 
                 _ob_overrides = ob_rate_overrides
@@ -478,9 +518,9 @@ def get_absence_deductions_for_month(
                 from app.core.schedule.ob import calculate_ob_hours as _calc_ob_hours
 
                 full_ob_by_code = calculate_ob_pay(
-                    start_dt, shift_end_dt, ob_rules, monthly_wage, rate_overrides=_ob_overrides
+                    shift_start_dt, shift_end_dt, ob_rules, monthly_wage, rate_overrides=_ob_overrides
                 )
-                full_ob_hours_by_code = _calc_ob_hours(start_dt, shift_end_dt, ob_rules)
+                full_ob_hours_by_code = _calc_ob_hours(shift_start_dt, shift_end_dt, ob_rules)
                 full_ob_total = sum(full_ob_by_code.values())
                 sick_total_ob += full_ob_total * (absent_hours / shift_hours)
 

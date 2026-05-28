@@ -674,17 +674,25 @@ def _build_person_day_basic(
     if absence:
         from app.database.database import AbsenceType
 
-        # Partiell frånvaro: visa originalskiftet men med trunkerad sluttid
-        if absence.left_at is not None and absence.absence_type != AbsenceType.VACATION:
+        # Partial absence: show original shift with truncated start/end
+        if (
+            absence.left_at is not None or absence.arrived_at is not None
+        ) and absence.absence_type != AbsenceType.VACATION:
             result = determine_shift_for_date(date, person_id)
             if result and result[0]:
                 original_shift, rotation_week = result
                 hours, start, end = calculate_shift_hours(date, original_shift.code)
-                if start is not None and absence.left_at:
-                    left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
-                    end = datetime.datetime.combine(date, left_time)
-                    if end <= start:
-                        end = start  # säkerhetsventil
+                if start is not None:
+                    if absence.left_at:
+                        left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
+                        end = datetime.datetime.combine(date, left_time)
+                        if end <= start:
+                            end = start
+                    if absence.arrived_at:
+                        arrived_time = datetime.datetime.strptime(absence.arrived_at, "%H:%M").time()
+                        start = datetime.datetime.combine(date, arrived_time)
+                        if start >= end:
+                            start = end
                     hours = (end - start).total_seconds() / 3600.0
                 return {
                     "person_id": person_id,
@@ -984,17 +992,25 @@ def _populate_single_person_day(
     if absence:
         from app.database.database import AbsenceType
 
-        # Partiell frånvaro: beräkna OB och timmar för jobbad del av passet
-        if absence.left_at is not None and absence.absence_type != AbsenceType.VACATION:
+        # Partial absence: calculate OB and hours for the worked portion of the shift
+        if (
+            absence.left_at is not None or absence.arrived_at is not None
+        ) and absence.absence_type != AbsenceType.VACATION:
             result = determine_shift_for_date(current_day, person_id)
             if result and result[0]:
                 original_shift, rotation_week = result
                 hours, start, end = calculate_shift_hours(current_day, original_shift.code)
-                if start is not None and absence.left_at:
-                    left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
-                    end = datetime.datetime.combine(current_day, left_time)
-                    if end <= start:
-                        end = start
+                if start is not None:
+                    if absence.left_at:
+                        left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
+                        end = datetime.datetime.combine(current_day, left_time)
+                        if end <= start:
+                            end = start
+                    if absence.arrived_at:
+                        arrived_time = datetime.datetime.strptime(absence.arrived_at, "%H:%M").time()
+                        start = datetime.datetime.combine(current_day, arrived_time)
+                        if start >= end:
+                            start = end
                     hours = (end - start).total_seconds() / 3600.0
                     ob = calculate_ob_hours(start, end, combined_ob_rules) if original_shift.code != "OC" else {}
                 else:

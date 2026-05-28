@@ -159,6 +159,7 @@ def _build_day_status(
             "rotation_week": rotation_week,
             "overtime": None,
             "partial_day": absence.left_at,
+            "arrived_late": absence.arrived_at,
         }
         if include_salary:
             result["ob_pay"] = None
@@ -583,6 +584,7 @@ async def get_user_absences(
             "date": a.date.isoformat(),
             "type": a.absence_type.value,
             "partial_day": a.left_at,
+            "arrived_late": a.arrived_at,
         }
         for a in rows
     ]

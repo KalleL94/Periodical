@@ -33,7 +33,7 @@ from app.core.schedule import (
 from app.core.schedule.wages import (
     KARENS_HOURS,
     calculate_absence_deduction,
-    get_absent_hours_from_left_at,
+    get_absent_hours_for_absence,
     get_karens_consumed_before_date,
     get_shift_times_for_date,
 )
@@ -56,8 +56,8 @@ def _query_absence_and_deduction(
     absence = db.query(Absence).filter(Absence.user_id == user_id, Absence.date == check_date).first()
     deduction = 0.0
     if absence and show_salary:
-        shift_hours, _, shift_end_dt = get_shift_times_for_date(db, user_id, check_date)
-        absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, shift_hours)
+        shift_hours, shift_start_dt, shift_end_dt = get_shift_times_for_date(db, user_id, check_date)
+        absent_hours = get_absent_hours_for_absence(absence, shift_start_dt, shift_end_dt, shift_hours)
         if absence.absence_type.value == "SICK":
             karens_consumed = get_karens_consumed_before_date(db, user_id, check_date)
             karens_remaining = max(0.0, KARENS_HOURS - karens_consumed)
