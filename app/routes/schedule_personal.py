@@ -243,8 +243,8 @@ async def show_day_for_person(
     # Absences are stored per user_id
     absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
 
-    # Partiell frånvaro: trunkera end_dt till left_at och räkna om OB
-    original_end_dt = end_dt  # Spara originalslut innan ev. trunkering
+    # Partial absence: truncate shift end/start and recalculate OB
+    original_end_dt = end_dt
     if absence and absence.left_at and start_dt is not None and end_dt is not None:
         left_time = datetime.strptime(absence.left_at, "%H:%M").time()
         truncated_end = datetime.combine(date_obj, left_time)
@@ -257,11 +257,24 @@ async def show_day_for_person(
                     start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
                 )
 
-    # Heldags-sjukfrånvaro: nollställ OB (ingen ordinarie OB utgår vid sjukdom)
+    if absence and absence.arrived_at and start_dt is not None and end_dt is not None:
+        arrived_time = datetime.strptime(absence.arrived_at, "%H:%M").time()
+        truncated_start = datetime.combine(date_obj, arrived_time)
+        if truncated_start < end_dt:
+            start_dt = truncated_start
+            hours = (end_dt - start_dt).total_seconds() / 3600.0
+            if not is_full_ot and not is_effective_oc:
+                ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
+                ob_pay = calculate_ob_pay(
+                    start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
+                )
+
+    # Full-day sick absence: zero out OB
     if (
         absence
         and absence.absence_type.value == "SICK"
         and absence.left_at is None
+        and absence.arrived_at is None
         and not is_full_ot
         and not is_effective_oc
     ):
@@ -328,14 +341,14 @@ async def show_day_for_person(
         from app.core.schedule.wages import (
             KARENS_HOURS,
             calculate_absence_deduction,
-            get_absent_hours_from_left_at,
+            get_absent_hours_for_absence,
             get_karens_consumed_before_date,
             get_shift_times_for_date,
         )
 
         # Get shift hours and times for the day
-        full_shift_hours, _, shift_end_dt = get_shift_times_for_date(db, rotation_position, date_obj)
-        absent_hours = get_absent_hours_from_left_at(absence.left_at, shift_end_dt, full_shift_hours)
+        full_shift_hours, shift_start_dt, shift_end_dt = get_shift_times_for_date(db, rotation_position, date_obj)
+        absent_hours = get_absent_hours_for_absence(absence, shift_start_dt, shift_end_dt, full_shift_hours)
         # absence_shift_hours visas i templaten
         absence_shift_hours = absent_hours
 
@@ -1003,6 +1016,7 @@ async def export_month_excel(
         "Beredskap Helgdag(112)",
         "Beredskap Storhelg(192)",
         "Övertid(x2)",
+        "Kommentar",
     ]
     # Indices for numeric columns (0-based, from COL_HEADERS)
     NUM_START = 5  # "Vanliga timmar" is col index 5
@@ -1036,6 +1050,16 @@ async def export_month_excel(
             shift_label = "Ledig"
         else:
             shift_label = shift.label if hasattr(shift, "label") and shift.label else shift.code
+
+        # Build comment from partial absence (arrived late / left early)
+        partial_absence = d.get("partial_absence") if d else None
+        comment_parts = []
+        if partial_absence:
+            if partial_absence.arrived_at:
+                comment_parts.append(f"Sen ankomst {partial_absence.arrived_at}")
+            if partial_absence.left_at:
+                comment_parts.append(f"Slutade tidigt {partial_absence.left_at}")
+        comment = ", ".join(comment_parts)
 
         if d and shift and shift.code not in ("OFF",):
             # Times
@@ -1076,13 +1100,13 @@ async def export_month_excel(
             oc_storhelg = oc_bd.get("OC_SPECIAL", {}).get("hours", 0) or 0
             ot = d.get("ot_hours", 0) or 0
 
-            num_vals = [norm, ob1, ob2, ob3, ob5, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, ot]
+            num_vals = [norm, ob1, ob2, ob3, ob5, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, ot, comment]
 
             oc_total = oc_vardag + oc_helg + oc_helgdag + oc_storhelg
             if oc_total > 0 and ot > 0:
                 # Dela upp i en beredskapsrad och en övertidsrad
-                oc_vals = [0, 0, 0, 0, 0, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, 0]
-                ot_vals = [norm, ob1, ob2, ob3, ob5, 0, 0, 0, 0, ot]
+                oc_vals = [0, 0, 0, 0, 0, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, 0, ""]
+                ot_vals = [norm, ob1, ob2, ob3, ob5, 0, 0, 0, 0, ot, comment]
                 rows.append([str(day_date), _SV_DAYS[day_date.weekday()], "Beredskap", "", ""] + oc_vals)
                 rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + ot_vals)
             else:
@@ -1090,10 +1114,10 @@ async def export_month_excel(
         else:
             start_str = ""
             end_t_str = ""
-            num_vals = [0.0] * 10
+            num_vals = [0.0] * 10 + [comment]
             rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + num_vals)
 
-        for i, v in enumerate(num_vals):
+        for i, v in enumerate(num_vals[:-1]):  # exclude comment column
             totals[NUM_START + i] = totals[NUM_START + i] + v
 
     # ── Determine which numeric columns have any data ───────────────────
@@ -1161,6 +1185,7 @@ async def export_month_excel(
         "Skifttyp": 14,
         "Start": 7,
         "Slut": 7,
+        "Kommentar": 28,
     }
     default_num_width = 22
     for i, h in enumerate(final_headers, start=1):

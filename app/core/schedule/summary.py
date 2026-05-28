@@ -573,6 +573,7 @@ def _process_day_for_summary(
         "ot_details": day.get("ot_details", {}),
         "start": start,
         "end": end,
+        "partial_absence": day.get("partial_absence"),
     }
 
 

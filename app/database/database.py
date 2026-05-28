@@ -177,7 +177,8 @@ class Absence(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     date = Column(Date, nullable=False)
     absence_type = Column(SQLEnum(AbsenceType), nullable=False)
-    left_at = Column(String(5), nullable=True)  # "HH:MM" - klockslag när de slutade jobba (None = heldag)
+    left_at = Column(String(5), nullable=True)  # "HH:MM" - time they left early (None = full day or on time)
+    arrived_at = Column(String(5), nullable=True)  # "HH:MM" - time they arrived late (None = full day or on time)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -185,12 +186,12 @@ class Absence(Base):
 
     @property
     def is_partial_day(self) -> bool:
-        return self.left_at is not None
+        return self.left_at is not None or self.arrived_at is not None
 
     def __repr__(self):
         return (
             f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, "
-            f"type={self.absence_type}, left_at={self.left_at})>"
+            f"type={self.absence_type}, left_at={self.left_at}, arrived_at={self.arrived_at})>"
         )
 
 

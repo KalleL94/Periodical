@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.23.0",
+        "date": "2026-05-28",
+        "entries": [
+            {
+                "type": "ny funktion",
+                "sv": "Frånvaro: stöd för sen ankomst – man kan nu registrera klockslag för när man kom till jobbet ('Kom HH:MM') på samma sätt som man redan kunde registrera tidig avgång; frånvarotimmar, OB och löneunderlag räknas om korrekt för den jobbade delen av passet",
+                "en": "Absence: support for late arrival – it is now possible to register the time of arrival ('Kom HH:MM') the same way early departure was already supported; absent hours, OB and salary base are recalculated correctly for the worked portion of the shift",
+            },
+            {
+                "type": "förbättring",
+                "sv": "Excel-export (min månad): ny kolumn 'Kommentar' som visar 'Sen ankomst HH:MM' och/eller 'Slutade tidigt HH:MM' för dagar med partiell frånvaro; kolumnen utelämnas automatiskt om inga sådana dagar finns i månaden",
+                "en": "Excel export (my month): new 'Kommentar' column showing 'Sen ankomst HH:MM' and/or 'Slutade tidigt HH:MM' for days with partial absence; the column is omitted automatically if no such days exist in the month",
+            },
+        ],
+    },
+    {
         "version": "0.22.0",
         "date": "2026-05-27",
         "entries": [
