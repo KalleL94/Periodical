@@ -42,34 +42,34 @@
 
                     {# ÖT – visa värdet #}
                     {% if r.get('ot') %}
-                        {% set _ = parts.append('ÖT: ' ~ r.ot ~ ' kr/tim') %}
+                        {% set _ = parts.append(t.rates_ot_label ~ ': ' ~ r.ot ~ ' ' ~ t.rates_ot_unit) %}
                     {% endif %}
 
                     {# Beredskap – deduplera helg-subkoder till "Helg" #}
                     {% if r.get('oncall') %}
                         {% set oc = r.oncall %}
                         {% set oc_items = [] %}
-                        {% if oc.get('OC_WEEKDAY') %}{% set _ = oc_items.append('Vardag: ' ~ oc.OC_WEEKDAY) %}{% endif %}
+                        {% if oc.get('OC_WEEKDAY') %}{% set _ = oc_items.append(t.rates_oncall_weekday ~ ': ' ~ oc.OC_WEEKDAY) %}{% endif %}
                         {% set helg = oc.get('OC_WEEKEND_SAT') or oc.get('OC_WEEKEND') %}
-                        {% if helg %}{% set _ = oc_items.append('Helg: ' ~ helg) %}{% endif %}
-                        {% if oc.get('OC_HOLIDAY') %}{% set _ = oc_items.append('Röd dag: ' ~ oc.OC_HOLIDAY) %}{% endif %}
-                        {% if oc.get('OC_SPECIAL') %}{% set _ = oc_items.append('Storhelg: ' ~ oc.OC_SPECIAL) %}{% endif %}
-                        {% if oc_items %}{% set _ = parts.append('Beredskap: ' ~ oc_items|join(' · ')) %}{% endif %}
+                        {% if helg %}{% set _ = oc_items.append(t.rates_oncall_weekend ~ ': ' ~ helg) %}{% endif %}
+                        {% if oc.get('OC_HOLIDAY') %}{% set _ = oc_items.append(t.rates_oncall_holiday ~ ': ' ~ oc.OC_HOLIDAY) %}{% endif %}
+                        {% if oc.get('OC_SPECIAL') %}{% set _ = oc_items.append(t.rates_oncall_special ~ ': ' ~ oc.OC_SPECIAL) %}{% endif %}
+                        {% if oc_items %}{% set _ = parts.append(t.rates_oncall_label ~ ': ' ~ oc_items|join(' · ')) %}{% endif %}
                     {% endif %}
 
                     {# Semester – visa procentsatserna #}
                     {% if r.get('vacation') %}
                         {% set v = r.vacation %}
                         {% set vac_items = [] %}
-                        {% if v.get('fixed_pct') is not none %}{% set _ = vac_items.append('Fast: ' ~ (v.fixed_pct * 100)|round(2) ~ '%') %}{% endif %}
-                        {% if v.get('variable_pct') is not none %}{% set _ = vac_items.append('Rörlig: ' ~ (v.variable_pct * 100)|round(2) ~ '%') %}{% endif %}
-                        {% if v.get('payout_pct') is not none %}{% set _ = vac_items.append('Utbet: ' ~ (v.payout_pct * 100)|round(2) ~ '%') %}{% endif %}
-                        {% if vac_items %}{% set _ = parts.append('Semester: ' ~ vac_items|join(' · ')) %}{% endif %}
+                        {% if v.get('fixed_pct') is not none %}{% set _ = vac_items.append(t.rates_vacation_fixed ~ ': ' ~ (v.fixed_pct * 100)|round(2) ~ '%') %}{% endif %}
+                        {% if v.get('variable_pct') is not none %}{% set _ = vac_items.append(t.rates_vacation_variable ~ ': ' ~ (v.variable_pct * 100)|round(2) ~ '%') %}{% endif %}
+                        {% if v.get('payout_pct') is not none %}{% set _ = vac_items.append(t.rates_vacation_payout ~ ': ' ~ (v.payout_pct * 100)|round(2) ~ '%') %}{% endif %}
+                        {% if vac_items %}{% set _ = parts.append(t.rates_vacation_label ~ ': ' ~ vac_items|join(' · ')) %}{% endif %}
                     {% endif %}
 
                     {# Sjuk OB #}
                     {% if r.get('sick', {}).get('ob_compensation') %}
-                        {% set _ = parts.append('Sjuk OB: Ja') %}
+                        {% set _ = parts.append(t.rates_sick_ob_yes) %}
                     {% endif %}
 
                     {% if parts %}

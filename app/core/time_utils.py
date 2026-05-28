@@ -56,7 +56,7 @@ def parse_ot_times(ot_shift: Any, date: datetime.date) -> tuple[datetime.datetim
     start_dt = datetime.datetime.combine(date, start_time)
     end_dt = datetime.datetime.combine(date, end_time)
 
-    # Pass över midnatt
+    # Shift crosses midnight
     if end_dt <= start_dt:
         end_dt += datetime.timedelta(days=1)
 

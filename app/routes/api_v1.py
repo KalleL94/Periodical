@@ -85,7 +85,7 @@ def _shift_to_dict(shift) -> dict:
 
 
 def _find_shift_for_overtime(ot_end: datetime.time) -> tuple[str, str]:
-    """Match overtime end time to a named shift; falls back to 'OT'/'Övertid'."""
+    """Match overtime end time to a named shift; falls back to 'OT'/'Overtime'."""
     ot_end_str = ot_end.strftime("%H:%M")
     for shift in get_shift_types():
         if shift.end_time == ot_end_str and shift.code not in ("OFF", "OC"):
@@ -748,7 +748,7 @@ _DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
 
 
 async def _admin_cookie_check(request, call_next):
-    """Middleware: kräver inloggad admin-session för docs-sidor."""
+    """Middleware: requires an authenticated admin session for docs pages."""
     if request.url.path in _DOCS_PATHS:
         from app.auth.auth import get_current_user_from_cookie
         from app.database.database import SessionLocal, UserRole

@@ -1,4 +1,4 @@
-"""Lönehantering från databas."""
+"""Wage calculations from the database."""
 
 import datetime
 from datetime import date, timedelta
@@ -243,7 +243,7 @@ def get_karens_consumed_before_date(session, user_id: int, sick_date: "date") ->
     """
     from app.database.database import Absence, AbsenceType
 
-    # Hämta alla sjukdagar bakåt från sick_date (upp till 30 dagar bakåt är tillräckligt)
+    # Look back up to 30 days to find prior sick days in the same sick period
     lookback = sick_date - timedelta(days=30)
     prev_sick_days = (
         session.query(Absence)
@@ -260,26 +260,25 @@ def get_karens_consumed_before_date(session, user_id: int, sick_date: "date") ->
     if not prev_sick_days:
         return 0.0
 
-    # Gå bakåt och samla dagar i samma sjukperiod (gap <= 5 dagar)
+    # Walk backward collecting days in the same sick period (gap <= 5 days)
     period_days: list = []
     prev_date = sick_date
     for absence in prev_sick_days:
         gap = (prev_date - absence.date).days
         if gap > 5:
-            break  # Ny sjukperiod - sluta leta
+            break  # New sick period, stop looking back
         period_days.append(absence)
         prev_date = absence.date
 
     if not period_days:
         return 0.0
 
-    # Räkna förbrukad karens (kronologisk ordning)
+    # Accumulate consumed waiting-day hours in chronological order
     period_days.reverse()
     consumed = 0.0
     for absence in period_days:
         if consumed >= KARENS_HOURS:
             break
-        # Hämta frånvarotimmar för denna dag
         shift_h, shift_start_dt, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
         absent_h = get_absent_hours_for_absence(absence, shift_start_dt, shift_end_dt, shift_h)
         karens_this_day = min(absent_h, KARENS_HOURS - consumed)
@@ -289,7 +288,7 @@ def get_karens_consumed_before_date(session, user_id: int, sick_date: "date") ->
 
 
 def _get_rotation_position(session, user_id: int) -> int:
-    """Hämtar rotation_person_id för en användare (fallback = user_id)."""
+    """Returns rotation_person_id for a user, falling back to user_id."""
     if session:
         from app.database.database import User
 
@@ -429,7 +428,7 @@ def get_absence_deductions_for_month(
 
     from app.database.database import Absence, AbsenceType
 
-    # Hämta alla frånvaror för månaden
+    # Fetch all absences for the month
     start_date = date(year, month, 1)
     if month == 12:
         end_date = date(year, 12, 31)
@@ -461,19 +460,18 @@ def get_absence_deductions_for_month(
     parental_hours = 0.0
     details = []
 
-    # Hämta user en gång för datumspecifik rates-lookup
+    # Load user once for date-specific rate lookups
     _sick_ob_user = None
     if ob_rules and session:
         from app.database.database import User as _User
 
         _sick_ob_user = session.query(_User).filter(_User.id == user_id).first()
 
-    # Spåra karensbudget och sjukperiod
+    # Track waiting-day budget and sick period continuity
     last_sick_date: date | None = None
     karens_consumed_in_period = 0.0
 
     for absence in absences:
-        # Hämta antal timmar för det skift som skulle ha jobbats
         shift_hours, shift_start_dt, shift_end_dt = get_shift_times_for_date(session, user_id, absence.date)
         absent_hours = get_absent_hours_for_absence(absence, shift_start_dt, shift_end_dt, shift_hours)
         total_hours += absent_hours
@@ -482,7 +480,7 @@ def get_absence_deductions_for_month(
             sick_days += 1
             sick_hours += absent_hours
 
-            # Ny sjukperiod om gap > 5 dagar
+            # New sick period if gap > 5 days
             if last_sick_date is None or (absence.date - last_sick_date).days > 5:
                 karens_consumed_in_period = 0.0
 

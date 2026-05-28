@@ -564,7 +564,7 @@ async def admin_transition_save(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    """Admin: spara anställningsövergång för en användare."""
+    """Admin: save employment transition for a user."""
     import datetime as _dt
 
     from app.database.database import ConsultantSalaryType, EmploymentTransition
@@ -693,7 +693,7 @@ async def admin_transition_delete(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    """Admin: ta bort anställningsövergång för en användare."""
+    """Admin: delete employment transition for a user."""
     from app.database.database import EmploymentTransition, RateHistory, WageHistory
 
     transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == user_id).first()

@@ -214,7 +214,7 @@
         <a class="btn secondary"
            href="/month/{{ person_id }}/export-excel?year={{ year }}&month={{ month }}"
            download>
-            Exportera Excel
+            {{ t.month_export_excel }}
         </a>
         {% endif %}
     </div>
@@ -222,8 +222,10 @@
     <div id="breakdown-section" style="display: none; margin-top: 1rem;" class="ob-by-shift">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
             <h3 style="margin: 0;">{{ t.month_breakdown_title }}</h3>
-            <button class="btn secondary" id="ob-day-toggle" onclick="toggleObDayMode()" style="font-size: 0.85rem;">
-                Visa OB per kalenderdag
+            <button class="btn secondary" id="ob-day-toggle" onclick="toggleObDayMode()" style="font-size: 0.85rem;"
+                data-label-shift="{{ t.month_ob_per_shift }}"
+                data-label-calendar="{{ t.month_ob_per_calendar_day }}">
+                {{ t.month_ob_per_calendar_day }}
             </button>
         </div>
         <div style="overflow-x: auto;">
@@ -338,7 +340,7 @@
                                     <tr class="ob-row-shift">
                                         <td class="td_left num">{{ d.date }}</td>
                                         <td class="td_left">{{ d.weekday_name }}</td>
-                                        <td class="td_left">Beredskap</td>
+                                        <td class="td_left">{{ t.month_payslip_oncall_row }}</td>
                                         <td class="td_right num"></td>
                                         <td class="td_right num"></td>
                                         <td class="td_right num"></td>
@@ -456,12 +458,12 @@
 
     {% if hourly_breakdown %}
     <div style="margin-top: 2rem;">
-        <h3 style="margin-bottom: 0.75rem;">Lönespecifikation</h3>
+        <h3 style="margin-bottom: 0.75rem;">{{ t.month_payslip_title }}</h3>
         <div style="overflow-x: auto;">
             <table class="breakdown-table">
                 <thead>
                     <tr>
-                        <th class="th_left">Benämning</th>
+                        <th class="th_left">{{ t.month_payslip_name_col }}</th>
                         <th class="th_left">Period</th>
                         <th class="th_right">Antal</th>
                         <th class="th_right">A-pris</th>
@@ -476,7 +478,7 @@
 
                     {% if rows.norm.hours > 0 %}
                     <tr>
-                        <td class="td_left">Arbetade timmar</td>
+                        <td class="td_left">{{ t.month_payslip_hours_worked }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.norm.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(hr) }}</td>
@@ -488,7 +490,7 @@
                     {% if rows.OB1.hours > 0 %}
                     {% set ob1_rate = rows.OB1.pay / rows.OB1.hours %}
                     <tr>
-                        <td class="td_left">Arbetade timmar med OB vardag 18:00-24:00</td>
+                        <td class="td_left">{{ t.month_payslip_ob1 }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.OB1.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ob1_rate) }}</td>
@@ -500,7 +502,7 @@
                     {% if rows.OB2.hours > 0 %}
                     {% set ob2_rate = rows.OB2.pay / rows.OB2.hours %}
                     <tr>
-                        <td class="td_left">Arbetade timmar med OB vardag 00:00-07:00</td>
+                        <td class="td_left">{{ t.month_payslip_ob2 }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.OB2.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ob2_rate) }}</td>
@@ -512,7 +514,7 @@
                     {% if rows.OB3.hours > 0 %}
                     {% set ob3_rate = rows.OB3.pay / rows.OB3.hours %}
                     <tr>
-                        <td class="td_left">Arbetade timmar med OB helg</td>
+                        <td class="td_left">{{ t.month_payslip_ob3 }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.OB3.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ob3_rate) }}</td>
@@ -524,7 +526,7 @@
                     {% if rows.OB4.hours > 0 %}
                     {% set ob4_rate = rows.OB4.pay / rows.OB4.hours %}
                     <tr>
-                        <td class="td_left">Arbetade timmar med OB helgdag</td>
+                        <td class="td_left">{{ t.month_payslip_ob4 }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.OB4.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ob4_rate) }}</td>
@@ -536,7 +538,7 @@
                     {% if rows.OB5.hours > 0 %}
                     {% set ob5_rate = rows.OB5.pay / rows.OB5.hours %}
                     <tr>
-                        <td class="td_left">Arbetade timmar med OB storhelg</td>
+                        <td class="td_left">{{ t.month_payslip_ob5 }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.OB5.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ob5_rate) }}</td>
@@ -548,7 +550,7 @@
                     {% if rows.oc_vardag.hours > 0 %}
                     {% set ocv_rate = rows.oc_vardag.pay / rows.oc_vardag.hours %}
                     <tr>
-                        <td class="td_left">Beredskap vardag</td>
+                        <td class="td_left">{{ t.month_payslip_oncall_weekday }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.oc_vardag.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ocv_rate) }}</td>
@@ -560,7 +562,7 @@
                     {% if rows.oc_helg.hours > 0 %}
                     {% set och_rate = rows.oc_helg.pay / rows.oc_helg.hours %}
                     <tr>
-                        <td class="td_left">Beredskap helg fre 17:00-mån 07:00</td>
+                        <td class="td_left">{{ t.month_payslip_oncall_weekend }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.oc_helg.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(och_rate) }}</td>
@@ -572,7 +574,7 @@
                     {% if rows.oc_helgdag.hours > 0 %}
                     {% set ochd_rate = rows.oc_helgdag.pay / rows.oc_helgdag.hours %}
                     <tr>
-                        <td class="td_left">Beredskap röd dag</td>
+                        <td class="td_left">{{ t.month_payslip_oncall_holiday }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.oc_helgdag.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ochd_rate) }}</td>
@@ -584,7 +586,7 @@
                     {% if rows.oc_storhelg.hours > 0 %}
                     {% set ocsh_rate = rows.oc_storhelg.pay / rows.oc_storhelg.hours %}
                     <tr>
-                        <td class="td_left">Beredskap storhelg</td>
+                        <td class="td_left">{{ t.month_payslip_oncall_special }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.oc_storhelg.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ocsh_rate) }}</td>
@@ -596,7 +598,7 @@
                     {% if rows.ot.hours > 0 %}
                     {% set ot_rate = rows.ot.pay / rows.ot.hours %}
                     <tr>
-                        <td class="td_left">Övertid</td>
+                        <td class="td_left">{{ t.month_payslip_ot }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(rows.ot.hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(ot_rate) }}</td>
@@ -605,17 +607,11 @@
                     {% set ns2.total = ns2.total + rows.ot.pay %}
                     {% endif %}
 
-                    {% set ob_labels = {
-                        "OB1": "vardag 18:00-24:00",
-                        "OB2": "vardag 00:00-07:00",
-                        "OB3": "helg",
-                        "OB4": "helgdag",
-                        "OB5": "storhelg"
-                    } %}
+                    {% set ob_labels = t.month_payslip_ob_short_labels %}
 
                     {% if hourly_breakdown.sjuklon_base_hours > 0 %}
                     <tr>
-                        <td class="td_left">Sjuklön ({{ hourly_breakdown.sick_days }} dag{% if hourly_breakdown.sick_days != 1 %}ar{% endif %})</td>
+                        <td class="td_left">{{ t.month_payslip_sick_pay_label }} ({{ hourly_breakdown.sick_days }} {{ t.month_payslip_sick_day }}{% if hourly_breakdown.sick_days != 1 %}{{ t.month_payslip_sick_plural_suffix }}{% endif %})</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(hourly_breakdown.sjuklon_base_hours) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(hr * 0.8) }}</td>
@@ -630,7 +626,7 @@
                     {% set sick_ob_rate = hr * 0.8 + ob_pay / ob_h %}
                     {% set sick_ob_total = ob_h * sick_ob_rate %}
                     <tr>
-                        <td class="td_left">Sjuklön timmar med OB {{ ob_labels.get(code, code) }}</td>
+                        <td class="td_left">{{ t.month_payslip_sick_ob_label }} {{ ob_labels.get(code, code) }}</td>
                         <td class="td_left num">{{ period }}</td>
                         <td class="td_right num">{{ "%.1f"|format(ob_h) }} st</td>
                         <td class="td_right num">{{ "%.2f"|format(sick_ob_rate) }}</td>
@@ -642,7 +638,7 @@
                 </tbody>
                 <tfoot>
                     <tr>
-                        <td class="td_left" colspan="4"><strong>Totalt</strong></td>
+                        <td class="td_left" colspan="4"><strong>{{ t.month_payslip_total }}</strong></td>
                         <td class="td_right num"><strong>{{ "{:,.0f}".format(ns2.total).replace(",", " ") }}</strong></td>
                     </tr>
                 </tfoot>
@@ -680,11 +676,11 @@
         if (section.classList.contains('ob-by-shift')) {
             section.classList.remove('ob-by-shift');
             section.classList.add('ob-by-day');
-            btn.textContent = 'Visa OB per pass';
+            btn.textContent = btn.dataset.labelShift;
         } else {
             section.classList.remove('ob-by-day');
             section.classList.add('ob-by-shift');
-            btn.textContent = 'Visa OB per kalenderdag';
+            btn.textContent = btn.dataset.labelCalendar;
         }
     }
 

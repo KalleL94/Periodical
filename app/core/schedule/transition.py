@@ -1,9 +1,9 @@
-"""Anställningsövergång — beräkningar för konsult → direktanställning.
+"""Employment transition — calculations for consultant → direct employment.
 
-Hanterar:
-- Automatisk beräkning av genomsnittlig daglig rörlig lön från intjänandeåret
-- Semesterutlösning enligt semesterlagen (sammalöneregeln)
-- Uppdelning av övergångsmånadens lön per arbetsgivare
+Handles:
+- Automatic calculation of average daily variable pay from the earning year
+- Vacation payout per the Swedish vacation act (same-pay rule)
+- Pay split for the transition month per employer
 """
 
 import datetime
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Hjälpfunktioner
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -35,7 +35,7 @@ def get_earning_year(
         return transition.earning_year_start, transition.earning_year_end
 
     end = transition.transition_date - datetime.timedelta(days=1)
-    # Senaste 1 april som infaller på eller innan sista konsultdagen
+    # Most recent April 1st on or before the last consultant day
     april_year = end.year if end.month >= 4 else end.year - 1
     start = datetime.date(april_year, 4, 1)
     return start, end
@@ -48,24 +48,24 @@ def calculate_consultant_vacation_days(
     session=None,
 ) -> int | None:
     """
-    Beräknar netto semesterdagar att betala ut vid konsultanställningens slut.
+    Calculates net vacation days to pay out at the end of the consultant engagement.
 
-    Formel (semesterlagen §7):
-        ceil(full_year_days * anställda_dagar / totala_dagar_i_intjänandeåret)
+    Formula (Swedish Vacation Act §7):
+        ceil(full_year_days * employed_days / total_days_in_earning_year)
 
-    Itererar över ALLA intjänandeår (1 april–31 mars) från employment_start_date
-    till dagen före transition_date. Per intjänandeår räknas:
-        intjänade dagar - använda dagar i motsvarande semesterår (fr.o.m. semesterårets
-        start t.o.m. transition_date - 1)
+    Iterates over ALL earning years (1 April–31 March) from employment_start_date
+    to the day before transition_date. Per earning year:
+        earned days - days used in the corresponding vacation year (from vacation year
+        start up to but not including transition_date)
 
-    Om session anges hämtas faktiskt använda dagar från databasen.
-    Utan session returneras brutto (använda dagar räknas ej av).
+    If a session is provided, actual used days are fetched from the database.
+    Without session, gross earned days are returned (used days not deducted).
 
-    Om transition.earning_year_start/end är manuellt satta används de som ett
-    enda anpassat intjänandeår (bakåtkompatibelt med äldre konfigurationer).
+    If transition.earning_year_start/end are manually set, they are used as a single
+    custom earning year (backward-compatible with older configurations).
 
     Returns:
-        Netto antal dagar att betala ut (avrundat uppåt per år), eller None om data saknas.
+        Net days to pay out (ceiling per year), or None if data is missing.
     """
     if not user.employment_start_date:
         return None
@@ -108,7 +108,7 @@ def calculate_consultant_vacation_days(
             # up to (but not including) the transition date
             used = 0
             if session and earned > 0:
-                vac_year_start = next_april  # Semesteråret börjar månaden efter intjänandeårets slut
+                vac_year_start = next_april  # Vacation year starts the month after the earning year ends
                 vac_year_end = min(last_day, datetime.date(next_april.year + 1, 4, 1) - datetime.timedelta(days=1))
                 if vac_year_start <= vac_year_end:
                     used_data = count_vacation_days_used(
@@ -128,7 +128,7 @@ def calculate_consultant_vacation_days(
 
 
 def _iter_months(start: datetime.date, end: datetime.date) -> list[tuple[int, int]]:
-    """Returnerar lista av (år, månad) för alla månader i intervallet."""
+    """Returns a list of (year, month) tuples for every month in the range."""
     months = []
     current = datetime.date(start.year, start.month, 1)
     while current <= end:
@@ -141,7 +141,7 @@ def _iter_months(start: datetime.date, end: datetime.date) -> list[tuple[int, in
 
 
 # ---------------------------------------------------------------------------
-# Rörlig genomsnittslön
+# Variable average pay
 # ---------------------------------------------------------------------------
 
 
@@ -152,14 +152,14 @@ def calculate_variable_avg_daily(
     earning_end: datetime.date,
 ) -> float | None:
     """
-    Beräknar genomsnittlig daglig rörlig lön under intjänandeåret.
+    Calculates the average daily variable pay during the earning year.
 
-    Rörlig lön = OB-tillägg + beredskapsersättning + övertid.
-    Nämnaren är faktiska arbetsdagar (skift N1/N2/N3/OC/OT),
-    ej OFF-, SEM- eller dagar innan anställningsstart.
+    Variable pay = OB supplement + on-call compensation + overtime.
+    The denominator is actual working days (shifts N1/N2/N3/OC/OT),
+    excluding OFF, SEM, and days before the employment start date.
 
     Returns:
-        Genomsnittlig rörlig lön per dag i SEK, eller None om data saknas.
+        Average variable pay per day in SEK, or None if data is missing.
     """
     from app.core.schedule.period import generate_period_data
     from app.core.schedule.summary import summarize_month_for_person
@@ -168,7 +168,7 @@ def calculate_variable_avg_daily(
     if not person_id or not (1 <= person_id <= 10):
         return None
 
-    # Räkna faktiska arbetsdagar via period-data (ej OB-beräkning — den görs nedan via summary)
+    # Count actual working days via period data (OB not needed here — calculated below via summary)
     try:
         all_days = generate_period_data(
             start_date=earning_start,
@@ -192,7 +192,7 @@ def calculate_variable_avg_daily(
     if working_days == 0:
         return None
 
-    # Summera rörliga lönedelar per månad (samma mönster som vacation.py)
+    # Sum variable pay components per month (same pattern as vacation.py)
     ob_total = 0.0
     ot_total = 0.0
     oncall_total = 0.0
@@ -222,7 +222,7 @@ def calculate_variable_avg_daily(
 
 
 # ---------------------------------------------------------------------------
-# Semesterutlösning (semesterlagen — sammalöneregeln)
+# Vacation payout (Swedish Vacation Act — same-pay rule)
 # ---------------------------------------------------------------------------
 
 
@@ -232,19 +232,19 @@ def calculate_consultant_vacation_payout(
     session,
 ) -> dict:
     """
-    Beräknar semesterutlösning vid konsultanställningens slut.
+    Calculates the vacation payout at the end of the consultant engagement.
 
-    Formel (semesterlagen, sammalöneregeln):
-        Grundkomponent:  (månadslön / 21,75) × dagar × (1 + tilläggsprocent)
-        Rörlig komponent: genomsnittlig daglig rörlig lön × dagar
+    Formula (Swedish Vacation Act, same-pay rule):
+        Base component:     (monthly_salary / 21.75) × days × (1 + supplement_pct)
+        Variable component: average daily variable pay × days
 
     Args:
-        transition: EmploymentTransition-objekt för användaren
-        user: User-objekt
-        session: SQLAlchemy-session
+        transition: EmploymentTransition object for the user
+        user: User object
+        session: SQLAlchemy session
 
     Returns:
-        Dict med nedbruten beräkning:
+        Dict with detailed breakdown:
         {
             "vacation_days": float,
             "monthly_salary": int,
@@ -268,18 +268,18 @@ def calculate_consultant_vacation_payout(
     days = calculate_consultant_vacation_days(user, transition, session=session) or 0
     supplement_pct = transition.consultant_supplement_pct
 
-    # Konsultlön: lönen dagen innan övergången (från WageHistory eller User.wage)
+    # Consultant wage: wage on the day before the transition (from WageHistory or User.wage)
     last_consultant_day = transition.transition_date - datetime.timedelta(days=1)
     monthly_salary = get_effective_monthly_wage(
         session, user.id, fallback=user.wage, effective_date=last_consultant_day
     )
 
-    # Grundkomponent: sammalöneregeln
+    # Base component: same-pay rule
     base_per_day = monthly_salary / 21.75
     base_with_supplement_per_day = round(base_per_day * (1 + supplement_pct), 4)
     base_payout = round(base_with_supplement_per_day * days, 2)
 
-    # Rörlig komponent
+    # Variable component
     variable_auto_calculated = transition.variable_avg_daily_override is None
     if variable_auto_calculated:
         avg_daily = calculate_variable_avg_daily(user, session, earning_start, earning_end)
@@ -306,7 +306,7 @@ def calculate_consultant_vacation_payout(
 
 
 # ---------------------------------------------------------------------------
-# Övergångsmånadens löneuppdelning
+# Transition month pay breakdown
 # ---------------------------------------------------------------------------
 
 
@@ -316,18 +316,18 @@ def calculate_transition_month_summary(
     session,
 ) -> dict:
     """
-    Beräknar förväntad löneutbetalning för övergångsmånaden, uppdelad per arbetsgivare.
+    Calculates the expected pay for the transition month, split per employer.
 
-    Regler:
-    - TRAILING (släpande konsultlön):
-        Konsultarbetsgivare betalar: sista konsultmånadens grundlön + semesterutlösning
-        Direktarbetsgivare betalar: innestående grundlön för övergångsmånaden
-    - CURRENT (innestående konsultlön):
-        Konsultarbetsgivare betalar: semesterutlösning (ingen extra grundlön)
-        Direktarbetsgivare betalar: innestående grundlön för övergångsmånaden
+    Rules:
+    - TRAILING (lagging consultant pay):
+        Consultant employer pays: last consultant month's base + vacation payout
+        Direct employer pays: accrued base salary for the transition month
+    - CURRENT (current consultant pay):
+        Consultant employer pays: vacation payout only (no extra base)
+        Direct employer pays: accrued base salary for the transition month
 
-    Notering: Handels rörliga delar (OB/beredskap) i övergångsmånaden
-    betalas ut månaden efter (släpande rörliga), ej inkluderat här.
+    Note: Handels variable components (OB/on-call) for the transition month
+    are paid the following month (trailing variable), not included here.
 
     Returns:
         {
@@ -336,17 +336,17 @@ def calculate_transition_month_summary(
             "transition_date": date,
             "consultant_salary_type": str,
             "consultant_employer": {
-                "trailing_base": float | None,     # Sista konsultmånadens grundlön (om TRAILING)
-                "trailing_variable": float | None, # Sista konsultmånadens rörliga (OB+OC+OT, om TRAILING)
+                "trailing_base": float | None,     # Last consultant month's base (if TRAILING)
+                "trailing_variable": float | None, # Last consultant month's variable (OB+OC+OT, if TRAILING)
                 "trailing_variable_breakdown": dict | None,  # {ob, oncall, ot}
-                "vacation_payout": dict,            # Semesterutlösning (se calculate_consultant_vacation_payout)
+                "vacation_payout": dict,            # Vacation payout (see calculate_consultant_vacation_payout)
                 "total": float,
             },
             "direct_employer": {
-                "base_salary": int,                # Innestående grundlön övergångsmånaden
-                "note_variable": str,              # Förklaring om varför rörliga ej ingår
+                "base_salary": int,                # Accrued base salary for the transition month
+                "note_variable": str,              # Explanation for why variable pay is excluded
             },
-            "grand_total_gross": float,            # Summa brutto båda arbetsgivarna
+            "grand_total_gross": float,            # Total gross from both employers
         }
     """
     from app.core.schedule.summary import summarize_month_for_person
@@ -356,18 +356,18 @@ def calculate_transition_month_summary(
     t_date = transition.transition_date
     last_consultant_day = t_date - datetime.timedelta(days=1)
 
-    # Konsultlön (lönen dagen innan övergången)
+    # Consultant wage (wage on the day before the transition)
     consultant_monthly = get_effective_monthly_wage(
         session, user.id, fallback=user.wage, effective_date=last_consultant_day
     )
 
-    # Direktlön (lönen på/efter övergångsdatumet)
+    # Direct employer wage (wage on/after the transition date)
     direct_monthly = get_effective_monthly_wage(session, user.id, fallback=user.wage, effective_date=t_date)
 
-    # Semesterutlösning från konsultarbetsgivaren
+    # Vacation payout from the consultant employer
     vacation_payout = calculate_consultant_vacation_payout(transition, user, session)
 
-    # Konsultarbetsgivaren betalar ev. släpande grundlön + rörliga delar
+    # Consultant employer may also pay trailing base + variable components
     trailing_base: float | None = None
     trailing_variable: float | None = None
     trailing_variable_breakdown: dict | None = None
@@ -375,7 +375,7 @@ def calculate_transition_month_summary(
     if transition.consultant_salary_type == ConsultantSalaryType.TRAILING:
         trailing_base = float(consultant_monthly)
 
-        # Rörliga delar från sista konsultmånaden (månaden för last_consultant_day)
+        # Variable components from the last consultant month
         person_id = user.rotation_person_id
         if person_id and 1 <= person_id <= 10:
             try:
