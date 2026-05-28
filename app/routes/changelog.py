@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.23.1",
+        "date": "2026-05-28",
+        "entries": [
+            {
+                "type": "förbättring",
+                "sv": "Månadsvy: lönespecifikationens radrubriker, Excel-knappen och OB-toggle-knappen visas nu korrekt på engelska när appen används på engelska; tidigare var dessa hårdkodade på svenska",
+                "en": "Month view: pay slip row labels, the Excel export button and the OB toggle button now display correctly in English when the app is used in English; previously these were hardcoded in Swedish",
+            },
+        ],
+    },
+    {
         "version": "0.23.0",
         "date": "2026-05-28",
         "entries": [
