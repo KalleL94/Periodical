@@ -323,7 +323,7 @@ async def export_calendar(
     current_user: User = Depends(get_current_user),
     lang: str = "sv",
 ) -> Response:
-    """Exporterar användarens schema som iCal-fil."""
+    """Exports the user's schedule as an iCal file."""
     from datetime import timedelta
 
     from app.core.calendar_export import generate_ical

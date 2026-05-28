@@ -1,4 +1,4 @@
-"""Generering av schemaperioder."""
+"""Schedule period generation."""
 
 import calendar
 import datetime
@@ -283,7 +283,7 @@ def generate_year_data(
     user_wages: dict[int, int] | None = None,
     user_rates_map: dict[int, dict] | None = None,
 ) -> list[dict]:
-    """Genererar schemadat för ett helt år."""
+    """Generates schedule data for a full year."""
     start_date = datetime.date(year, 1, 1)
     end_date = datetime.date(year, 12, 31)
     return generate_period_data(start_date, end_date, person_id, session, user_wages, user_rates_map)
@@ -298,7 +298,7 @@ def generate_month_data(
     user_rates_map: dict[int, dict] | None = None,
     employment_start: datetime.date | None = None,
 ) -> list[dict]:
-    """Genererar schemadat för en specifik månad."""
+    """Generates schedule data for a specific month."""
     start_date = datetime.date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
     end_date = datetime.date(year, month, last_day)
@@ -311,7 +311,7 @@ def generate_month_data(
 
 
 def _get_years_in_range(start: datetime.date, end: datetime.date) -> set[int]:
-    """Returnerar alla år som finns i ett datumintervall."""
+    """Returns all years present in a date range."""
     years = set()
     temp = start
     while temp <= end:
@@ -322,7 +322,7 @@ def _get_years_in_range(start: datetime.date, end: datetime.date) -> set[int]:
 
 
 def _load_vacation_dates(years: set[int], session=None) -> dict[int, set[datetime.date]]:
-    """Laddar semesterdatum för flera år."""
+    """Loads vacation dates for multiple years."""
     vacation_dates: dict[int, set[datetime.date]] = {}
     for yr in years:
         year_vacations = get_vacation_dates_for_year(yr, session=session)
@@ -334,7 +334,7 @@ def _load_vacation_dates(years: set[int], session=None) -> dict[int, set[datetim
 
 
 def _load_parental_dates(years: set[int], session=None) -> dict[int, set[datetime.date]]:
-    """Laddar föräldraledighetsdatum för flera år."""
+    """Loads parental leave dates for multiple years."""
     parental_dates: dict[int, set[datetime.date]] = {}
     for yr in years:
         year_parentals = get_parental_dates_for_year(yr, session=session)
@@ -380,7 +380,7 @@ def _batch_fetch_absences(
 
     from app.database.database import Absence
 
-    # Hämta faktiska user_ids (kan skilja sig från rotationsposition)
+    # Resolve actual user_ids (may differ from rotation position)
     if rotation_to_user_id:
         user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
         user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
@@ -426,7 +426,7 @@ def _batch_fetch_ot_shifts(
         user_ids = person_ids
         user_id_to_rotation = {}
 
-    # Hämta också dagen före start_date för att fånga OT som går över midnatt
+    # Also fetch the day before start_date to catch OT shifts crossing midnight
     fetch_start = start_date - datetime.timedelta(days=1)
 
     ot_shifts = (
@@ -487,7 +487,7 @@ def _batch_fetch_shift_overrides(
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
-    """Batch-hämtar manuella passöverrides för flera personer och en period.
+    """Batch-fetches manual shift overrides for multiple persons and a period.
 
     Returns:
         Dict med (rotation_position, date) -> ShiftOverride
@@ -603,7 +603,7 @@ def _build_person_day_basic(
     session=None,
     employment_start: datetime.date | None = None,
 ) -> dict:
-    """Bygger grundläggande dagdata för en person."""
+    """Builds basic day data for a person."""
     persons = ctx.persons
     shift_types = get_shift_types()
     vacation_dates = ctx.vacation_dates
@@ -836,7 +836,7 @@ def _build_person_day_basic(
         from app.database.database import OnCallOverrideType
 
         if oncall_override.override_type == OnCallOverrideType.ADD:
-            # Lägg till OC-pass - ersätt skiftet med OC
+            # Add on-call shift, replacing the regular shift
             oc_shift = next((s for s in shift_types if s.code == "OC"), None)
             if oc_shift:
                 shift = oc_shift
@@ -910,7 +910,7 @@ def _populate_single_person_day(
     session,
     employment_start: datetime.date | None = None,
 ) -> None:
-    """Fyller i detaljerad daginfo för en person."""
+    """Populates detailed day info for a person."""
     vacation_dates = ctx.vacation_dates
     combined_ob_rules = ctx.combined_ob_rules
     user_wages = ctx.user_wages
@@ -1178,7 +1178,7 @@ def _populate_single_person_day(
         from app.database.database import OnCallOverrideType
 
         if oncall_override.override_type == OnCallOverrideType.ADD:
-            # Lägg till OC-pass - ersätt skiftet med OC
+            # Add on-call shift, replacing the regular shift
             oc_shift = next((s for s in shift_types if s.code == "OC"), None)
             if oc_shift:
                 shift = oc_shift
@@ -1193,7 +1193,7 @@ def _populate_single_person_day(
                     hours, start, end = 0.0, None, None
                     ob = {}
 
-    # Beräkna beredskap-ersättning
+    # Calculate on-call pay
     oncall_pay = 0.0
     oncall_details = {}
     _person_rates = (user_rates_map or {}).get(person_id) or {}
@@ -1251,7 +1251,7 @@ def _populate_single_person_day(
     ot_details = {}
 
     if ot_shift:
-        # Beräkna övertidsersättning med temporal wage query
+        # Calculate overtime pay using a temporal wage query
         from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
 
         # Get raw stored wage for this date (temporal query)
@@ -1315,9 +1315,9 @@ def _recalculate_oncall_before_ot(
     settings,
     oncall_rate_overrides: dict[str, int | float] | None = None,
 ) -> tuple[float, dict]:
-    """Räknar om beredskap-ersättning för perioden före OCH efter övertid.
+    """Recalculates on-call pay for the period before AND after overtime.
 
-    Beredskap betalas för 24h minus övertidstimmar.
+    On-call is paid for 24h minus overtime hours.
     Ex: 24h beredskap - 8.5h övertid = 15.5h beredskapsersättning
     """
     day_start = datetime.datetime.combine(current_day, dt_time(0, 0))

@@ -1,4 +1,4 @@
-"""Generering av iCal-filer för användarscheman."""
+"""iCal file generation for user schedules."""
 
 import datetime
 from typing import TYPE_CHECKING
@@ -14,10 +14,10 @@ from app.core.schedule.core import (
 if TYPE_CHECKING:
     from app.core.models import ShiftType
 
-# Tidszon för Sverige
+# Swedish timezone
 SWE_TZ = ZoneInfo("Europe/Stockholm")
 
-# Mappning av skiftkoder till svenska namn
+# Shift code to Swedish display name mapping
 SHIFT_NAMES_SV: dict[str, str] = {
     "N1": "Dagpass",
     "N2": "Kvällspass",
@@ -28,7 +28,7 @@ SHIFT_NAMES_SV: dict[str, str] = {
     "OFF": "Ledig",
 }
 
-# Mappning av skiftkoder till engelska namn
+# Shift code to English display name mapping
 SHIFT_NAMES_EN: dict[str, str] = {
     "N1": "Day shift",
     "N2": "Evening shift",
@@ -41,7 +41,7 @@ SHIFT_NAMES_EN: dict[str, str] = {
 
 
 def _get_shift_display_name(shift: "ShiftType", lang: str = "sv") -> str:
-    """Hämtar visningsnamn för ett skift."""
+    """Returns the display name for a shift in the given language."""
     SHIFT_NAMES = SHIFT_NAMES_SV if lang == "sv" else SHIFT_NAMES_EN
     return SHIFT_NAMES.get(shift.code, shift.label)
 
@@ -53,17 +53,16 @@ def generate_ical(
     lang: str = "sv",
 ) -> str:
     """
-    Genererar en iCal-fil för en persons schema.
+    Generates an iCal file for a person's schedule.
 
     Args:
-        person_id: Personens ID (1-10)
-        start_date: Första datum i intervallet
-        end_date: Sista datum i intervallet
+        person_id: Person ID (1-10)
+        start_date: First date in the range
+        end_date: Last date in the range
 
     Returns:
-        iCal-formaterad sträng
+        iCal-formatted string
     """
-    # Skapa kalender
     cal = Calendar()
     cal.add("prodid", "-//Periodical Schedule//periodical.app//")
     cal.add("version", "2.0")
@@ -72,17 +71,15 @@ def generate_ical(
     cal.add("x-wr-calname", f"Schema Person {person_id}")
     cal.add("x-wr-timezone", "Europe/Stockholm")
 
-    # Loopa genom varje dag i intervallet
     current_date = start_date
     while current_date <= end_date:
         shift, rotation_week = determine_shift_for_date(current_date, person_id)
 
-        # Skippa om inget skift eller ledig dag
+        # Skip off days
         if shift is None or shift.code == "OFF":
             current_date += datetime.timedelta(days=1)
             continue
 
-        # Skapa event för arbetsdagen
         event = _create_shift_event(current_date, person_id, shift, lang)
         cal.add_component(event)
 
@@ -98,39 +95,34 @@ def _create_shift_event(
     lang: str = "sv",
 ) -> Event:
     """
-    Skapar ett VEVENT för ett skift.
+    Creates a VEVENT for a shift.
 
     Args:
-        date: Datum för skiftet
-        person_id: Personens ID
-        shift: Skifttyp-objekt
+        date: Shift date
+        person_id: Person ID
+        shift: ShiftType object
 
     Returns:
-        icalendar Event-objekt
+        icalendar Event object
     """
     event = Event()
 
-    # Hämta visningsnamn
     display_name = _get_shift_display_name(shift, lang)
     event.add("summary", display_name)
 
-    # Generera unik UID
     uid = f"{date.isoformat()}_{person_id}_{shift.code}@periodical"
     event.add("uid", uid)
 
-    # Beräkna start/sluttid
     hours, start_dt, end_dt = calculate_shift_hours(date, shift)
 
     if start_dt and end_dt:
-        # Skift med specifika tider
         event.add("dtstart", start_dt)
         event.add("dtend", end_dt)
     else:
-        # Heldagsevent (t.ex. semester utan specifika tider)
+        # All-day event (e.g. vacation with no specific times)
         event.add("dtstart", date)
         event.add("dtend", date + datetime.timedelta(days=1))
 
-    # Lägg till beskrivning
     description_parts = [f"Skiftkod: {shift.code}"]
     if hours > 0:
         description_parts.append(f"Arbetstid: {hours:.1f} timmar")
@@ -139,7 +131,6 @@ def _create_shift_event(
 
     event.add("description", "\n".join(description_parts))
 
-    # Tidsstämpel för när eventet skapades
     event.add("dtstamp", datetime.datetime.now(SWE_TZ))
 
     return event
@@ -152,15 +143,15 @@ def generate_ical_for_month(
     lang: str = "sv",
 ) -> str:
     """
-    Genererar iCal för en specifik månad.
+    Generates iCal for a specific month.
 
     Args:
-        person_id: Personens ID
-        year: År
-        month: Månad (1-12)
+        person_id: Person ID
+        year: Year
+        month: Month (1-12)
 
     Returns:
-        iCal-formaterad sträng
+        iCal-formatted string
     """
     import calendar
 
@@ -177,14 +168,14 @@ def generate_ical_for_year(
     lang: str = "sv",
 ) -> str:
     """
-    Genererar iCal för ett helt år.
+    Generates iCal for an entire year.
 
     Args:
-        person_id: Personens ID
-        year: År
+        person_id: Person ID
+        year: Year
 
     Returns:
-        iCal-formaterad sträng
+        iCal-formatted string
     """
     start_date = datetime.date(year, 1, 1)
     end_date = datetime.date(year, 12, 31)

@@ -1,4 +1,4 @@
-"""Grundläggande schemalogik och skiftbestämning."""
+"""Core schedule logic and shift determination."""
 
 import datetime
 from functools import cache
@@ -124,20 +124,20 @@ def _get_effective_start_week(
     # Kolla om det finns en föregående era
     prev_era = get_rotation_era_for_date(era_start - datetime.timedelta(days=1))
     if prev_era is None or prev_era.start_date == era_start:
-        # Första eran: använd original_start_week som stagger-offset
+        # First era: use original_start_week as the stagger offset
         return original_start_week
 
-    # Beräkna den nya erans första måndag
+    # Find the first Monday of the new era
     days_to_monday_new = (7 - era_start.weekday()) % 7
     first_monday_new = era_start + datetime.timedelta(days=days_to_monday_new)
 
-    # Den sista måndagen INNAN den nya erans första måndag (= sista ISO-veckan i föregående era)
+    # The last Monday BEFORE the new era's first Monday (= last ISO week of the previous era)
     last_monday_prev = first_monday_new - datetime.timedelta(days=7)
 
-    # Hämta den effektiva startveckan för föregående era (rekursivt för kedjor av eror)
+    # Get the effective start week for the previous era (recursive for chained eras)
     prev_eff_start = _get_effective_start_week(prev_era.start_date, prev_era.rotation_length, original_start_week)
 
-    # Beräkna weeks_passed för last_monday_prev i föregående era
+    # Calculate weeks_passed for last_monday_prev within the previous era
     days_to_monday_prev = (7 - prev_era.start_date.weekday()) % 7
     first_monday_prev = prev_era.start_date + datetime.timedelta(days=days_to_monday_prev)
 
@@ -146,11 +146,11 @@ def _get_effective_start_week(
     else:
         weeks_passed_prev = 1 + ((last_monday_prev - first_monday_prev).days // 7)
 
-    # Personens rotationsvecka vid den sista måndagen i föregående era
+    # Person's rotation week at the last Monday of the previous era
     rotation_week_at_lm = ((weeks_passed_prev + (prev_eff_start - 1)) % prev_era.rotation_length) + 1
 
-    # Den nya erans effektiva startvecka: fortsätt från samma rotationsposition
-    # (mappas till 1..era_length om längden ändrats)
+    # New era's effective start week: continue from the same rotation position
+    # (mapped to 1..era_length if the rotation length changed)
     return ((rotation_week_at_lm - 1) % era_length) + 1
 
 
@@ -160,16 +160,16 @@ def determine_shift_for_date(
     start_week: int = 1,
 ) -> tuple["ShiftType | None", int | None]:
     """
-    Bestämmer skift för ett datum baserat på rotation era.
+    Determines the shift for a date based on the rotation era.
 
     Args:
-        date: Datum att kontrollera
-        start_week: Personens startvecka i rotationen
+        date: Date to check
+        start_week: Person's start week in the rotation
 
     Returns:
-        (shift, rotation_week) eller (None, None) om ingen era finns för datumet
+        (shift, rotation_week) or (None, None) if no era exists for the date
     """
-    # Hämta rätt rotation era för datumet
+    # Get the correct rotation era for the date
     era = get_rotation_era_for_date(date)
     if era is None:
         return None, None
@@ -177,17 +177,17 @@ def determine_shift_for_date(
     shift_types = get_shift_types()
     rotation_start = era.start_date
 
-    # Beräkna effektiv startvecka med hänsyn till föregående eror
+    # Compute effective start week taking previous eras into account
     effective_start_week = _get_effective_start_week(era.start_date, era.rotation_length, start_week)
 
-    # Beräkna första måndagen efter rotationsstart
+    # Find the first Monday on or after the rotation start date
     days_to_monday = (7 - rotation_start.weekday()) % 7
     if days_to_monday == 0 and rotation_start.weekday() != 0:
         days_to_monday = 7 - rotation_start.weekday()
 
     first_monday = rotation_start + datetime.timedelta(days=days_to_monday)
 
-    # Beräkna veckor sedan start
+    # Calculate weeks elapsed since the first Monday
     if date < first_monday:
         weeks_passed = 0
     else:
@@ -209,7 +209,7 @@ def _calculate_shift_hours_cached(
     date: datetime.date,
     shift_code: str,
 ) -> tuple[float, datetime.datetime | None, datetime.datetime | None]:
-    """Intern cachad version som tar shift_code som sträng."""
+    """Internal cached version that accepts shift_code as a string."""
     shift = next((s for s in get_shift_types() if s.code == shift_code), None)
 
     if shift is None or shift.code == "OFF":
@@ -263,7 +263,7 @@ def calculate_shift_hours(
 
 
 def clear_schedule_cache() -> None:
-    """Rensar alla cachade schemaberäkningar."""
+    """Clears all cached schedule calculations."""
     get_rotation_era_for_date.cache_clear()
     _get_effective_start_week.cache_clear()
     determine_shift_for_date.cache_clear()

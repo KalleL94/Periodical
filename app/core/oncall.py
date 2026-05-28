@@ -70,10 +70,10 @@ def _get_holidays_for_year(year: int) -> set[datetime.date]:
     holidays.add(nyarsafton(year))  # 31 dec
 
     # Easter-related (moveable)
-    holidays.add(langfredagen(year))  # Långfredag
-    holidays.add(easter_sunday(year))  # Påskdagen
-    holidays.add(annandagpask(year))  # Annandag påsk
-    holidays.add(skartorsdagen(year))  # Skärtorsdag (afton)
+    holidays.add(langfredagen(year))  # Good Friday
+    holidays.add(easter_sunday(year))  # Easter Sunday
+    holidays.add(annandagpask(year))  # Easter Monday
+    holidays.add(skartorsdagen(year))  # Maundy Thursday (evening)
 
     # Ascension Day
     holidays.add(kristi_himmelsfardsdag(year))
@@ -942,13 +942,13 @@ def compute_oncall_details(
     rate_overrides: dict | None = None,
     ot_shift_for_oncall=None,
 ) -> dict:
-    """Beräknar beredskapsersättning för ett datum.
+    """Calculates on-call pay for a date.
 
-    Hanterar OT-exkludering: om OT-pass finns (inkl. föregående dags OT över midnatt)
-    betalas beredskap bara för timmarna utanför OT-fönstret.
+    Handles OT exclusion: if an OT shift exists (including previous day's OT crossing midnight),
+    on-call is only paid for hours outside the OT window.
 
     Returns:
-        Dict med oncall_pay (float) och oncall_details (dict med breakdown).
+        Dict with oncall_pay (float) and oncall_details (dict with breakdown).
     """
     from app.core.time_utils import parse_ot_times
 
@@ -958,7 +958,7 @@ def compute_oncall_details(
         result = calculate_oncall_pay(date, monthly_salary, oncall_rules, rate_overrides=rate_overrides)
         return {"oncall_pay": result["total_pay"], "oncall_details": result}
 
-    # OT finns -- räkna beredskap för timmarna utanför OT-fönstret
+    # OT shift present — calculate on-call only for hours outside the OT window
     day_start = datetime.datetime.combine(date, datetime.time(0, 0))
     day_end = datetime.datetime.combine(date + datetime.timedelta(days=1), datetime.time(0, 0))
 

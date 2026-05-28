@@ -1,4 +1,4 @@
-"""Övertidsberäkningar och databashantering."""
+"""Overtime calculations and database handling."""
 
 import datetime
 
@@ -72,7 +72,7 @@ def get_overtime_shifts_for_month(
 
 
 def build_ot_details(ot_shift, hourly_rate: float) -> dict:
-    """Bygger detaljerad info om ett övertidspass.
+    """Builds detailed info for an overtime shift.
 
     Recalculates pay based on the provided hourly_rate instead of using stored value.
     """
@@ -94,20 +94,20 @@ def compute_ot_details(
     ot_rate: float | None = None,
     absence=None,
 ) -> dict:
-    """Beräknar övertidsdetaljer för ett datum.
+    """Calculates overtime details for a date.
 
-    Hämtar övertidspass för dagen och föregående dag (för beredskapsberäkning),
-    beräknar ersättning och returnerar samlad info.
+    Fetches the overtime shift for the day and the previous day (for on-call calculation),
+    computes pay and returns aggregated info.
 
     Returns:
-        Dict med ot_shift, ot_shift_for_oncall, ot_pay, ot_details.
-        ot_shift och ot_shift_for_oncall är None om inget övertidspass finns.
+        Dict with ot_shift, ot_shift_for_oncall, ot_pay, ot_details.
+        ot_shift and ot_shift_for_oncall are None if no overtime shift exists.
     """
     from app.core.time_utils import parse_ot_times
 
     ot_shift = get_overtime_shift_for_date(session, user_id, date)
 
-    # Kolla föregående dag för OT som korsar midnatt (påverkar beredskap)
+    # Also check previous day for OT that crosses midnight (affects on-call pay)
     ot_shift_for_oncall = ot_shift
     if not ot_shift_for_oncall:
         prev_day = date - datetime.timedelta(days=1)

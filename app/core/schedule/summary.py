@@ -1,4 +1,4 @@
-"""Sammanfattningar för månader och år."""
+"""Monthly and yearly schedule summaries."""
 
 from app.core.storage import load_persons, load_tax_brackets
 
@@ -43,15 +43,15 @@ def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: in
 
     logger = logging.getLogger(__name__)
 
-    # Om skattetabell är angiven, använd den
+    # Use the tax table if one is configured
     if tax_table:
         try:
             return calculate_tax_from_table(brutto, tax_table, year=payment_year)
         except Exception as e:
-            # Fallback till tax_brackets om något går fel
+            # Fall back to tax brackets if the table lookup fails
             logger.warning(f"Failed to calculate tax from table {tax_table}: {e}. Using fallback.")
 
-    # Fallback till gamla systemet
+    # Fallback to legacy tax-bracket system
     return calculate_tax_bracket(brutto, _get_tax_brackets())
 
 
@@ -110,7 +110,7 @@ def summarize_month_for_person(
     settings = get_settings()
     persons = _get_persons()
 
-    # Hämta lön för denna specifika månad (använd första dagen i månaden)
+    # Resolve wage for this specific month using the first day of the month
     from datetime import date as dt_date
 
     month_start_date = dt_date(year, month, 1)
@@ -131,7 +131,7 @@ def summarize_month_for_person(
         except Exception:
             base_salary = settings.monthly_salary
 
-    # Hämta användare för skattetabell och per-user rates
+    # Load user for tax table and per-user rate lookups
     tax_table = None
     user = None
     if session:
@@ -154,7 +154,7 @@ def summarize_month_for_person(
     user_rates = get_user_rates(user, session=session, effective_date=month_start_date) if user else None
     _rates_map = {person_id: user_rates} if user_rates else None
 
-    # Använd förgenererad data eller generera ny
+    # Use pre-generated data if provided, otherwise generate it
     if year_days is None:
         days = generate_month_data(
             year, month, person_id, session=session, user_wages=user_wages, user_rates_map=_rates_map
@@ -162,7 +162,7 @@ def summarize_month_for_person(
     else:
         days = year_days
 
-    # Initiera totaler
+    # Initialize totals
     totals = {
         "total_hours": 0.0,
         "num_shifts": 0,
@@ -191,7 +191,7 @@ def summarize_month_for_person(
     days_out = []
 
     for day in days:
-        # Filtrera på både år och månad (viktigt när all_work_days innehåller flera år)
+        # Filter to the correct year and month (important when all_work_days spans multiple years)
         if day["date"].year != year or day["date"].month != month:
             continue
 
@@ -225,7 +225,7 @@ def summarize_month_for_person(
         day_data["ob_hours_calendar_day"] = calendar_day_ob.get(day_data["date"], {})
         day_data["ot_hours_calendar_day"] = calendar_day_ot.get(day_data["date"], 0.0)
 
-    # Hämta frånvaroavdrag för månaden
+    # Fetch absence deductions for the month
     absence_details = []
     if session:
         absence_info = get_absence_deductions_for_month(
@@ -256,12 +256,12 @@ def summarize_month_for_person(
         totals["parental_hours"] = absence_info.get("parental_hours", 0.0)
         absence_details = absence_info["details"]
 
-        # Dra av frånvaroavdrag och lägg till OB-sjuklön
+        # Subtract absence deduction and add sick-pay OB compensation
         totals["brutto_pay"] -= totals["absence_deduction"]
         totals["brutto_pay"] += totals["sick_ob_pay"]
 
-        # För timlönsanvändare: ersätt det teoretiska månadslöneunderlaget (hourly_rate×173.33)
-        # med faktiska schemalagda timmar × timlön så att brutto stämmer med spec-tabellen
+        # For hourly-wage users: replace the theoretical monthly base (hourly_rate×173.33)
+        # with actual scheduled hours × hourly rate so gross matches the pay-slip table
         from app.database.database import WageType
 
         if user and user.wage_type == WageType.HOURLY:
@@ -269,16 +269,16 @@ def summarize_month_for_person(
                 get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
             )
             worked_hours = totals["total_hours"] - totals["ot_hours"]
-            # absence_hours är frånvarotimmar som period.py sätter till 0 (ej inkl i total_hours).
-            # Absence_deduction är designad för månadslön och förutsätter att dessa timmar
-            # redan betalats – för timlön måste vi lägga till dem explicit så att
-            # (worked + absent) × hourly_rate - absence_deduction ger rätt sjuklöneunderlag.
+            # absence_hours are the absent hours that period.py sets to 0 (not in total_hours).
+            # absence_deduction is designed for monthly salary and assumes those hours were already
+            # paid — for hourly wage we must add them back explicitly so that
+            # (worked + absent) × hourly_rate - absence_deduction gives the correct sick-pay base.
             absent_hours = totals.get("absence_hours", 0.0)
             totals["brutto_pay"] = (
                 totals["brutto_pay"] - base_salary + (worked_hours + absent_hours) * actual_hourly_rate
             )
 
-    # Beräkna netto med användarens skattetabell (använd payment_year för rätt skattetabell)
+    # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
 
     # Get person name from history system if session available
@@ -350,10 +350,10 @@ def build_calendar_grid_for_month(
     from datetime import date as dt_date
     from datetime import timedelta
 
-    # Hämta befintlig månadssammanfattning
+    # Get the monthly summary for totals and day data
     month_summary = summarize_month_for_person(year, month, person_id, session, user_wages, payment_year=year)
 
-    # Beräkna grid-gränser baserat på första och sista dagens veckodag
+    # Determine grid boundaries from the weekday of the first and last day
     first_day = dt_date(year, month, 1)
     first_weekday = first_day.weekday()  # 0=Monday, 6=Sunday
 
@@ -361,11 +361,11 @@ def build_calendar_grid_for_month(
     last_day = dt_date(year, month, last_day_num)
     last_weekday = last_day.weekday()
 
-    # Beräkna extended range för att inkludera hela veckor
+    # Expand range to include full weeks at both ends
     grid_start = first_day - timedelta(days=first_weekday)
     grid_end = last_day + timedelta(days=(6 - last_weekday))
 
-    # Hämta data för extended range
+    # Generate schedule data for the extended range
     extended_days = generate_period_data(
         grid_start, grid_end, person_id, session=session, user_wages=user_wages, employment_start=employment_start
     )
@@ -379,7 +379,7 @@ def build_calendar_grid_for_month(
         # Build lookup: date -> persons list
         all_persons_data = {day["date"]: day.get("persons", []) for day in all_persons_extended}
 
-    # Bygg date lookup med is_current_month flag
+    # Build date lookup with is_current_month flag
     days_by_date = {}
     for day in extended_days:
         day_date = day["date"]
@@ -426,7 +426,7 @@ def build_calendar_grid_for_month(
 
         days_by_date[day_date] = day_data
 
-    # Bygg grid struktur (lista med veckor, varje vecka = 7 dagar)
+    # Build grid structure (list of weeks, each week = 7 days)
     grid = []
     current_date = grid_start
 
@@ -692,14 +692,14 @@ def summarize_year_for_person(
                 session, uid_for_wages, settings.monthly_salary, effective_date=dt.date(2025, 12, 1)
             )
 
-            # Hämta skattetabell för korrekt netto-beräkning
+            # Load tax table for correct net-pay calculation
             tax_table = None
             if session:
                 user = session.query(User).filter(User.id == uid_for_wages).first()
                 if user and user.tax_table:
                     tax_table = user.tax_table
 
-            # Beräkna netto med rätt skattetabell för utbetalningsåret (2026)
+            # Calculate net pay using the correct tax table for the payment year
             netto_pay = base_salary - _calculate_tax(base_salary, tax_table, payment_year=mapping["payment_year"])
 
             m = {
@@ -749,12 +749,12 @@ def summarize_year_for_person(
                 wage_user_id=wage_user_id,
             )
 
-        # Lägg till utbetalnings-metadata
+        # Attach payment metadata
         m["payment_date"] = payment_date
         m["payment_month"] = mapping["payment_month"]
         m["payment_year"] = mapping["payment_year"]
 
-        # Beräkna total OB
+        # Compute total OB pay
         ob_pay = m.get("ob_pay", {}) or {}
         total_ob = sum(float(ob_pay.get(code, 0.0) or 0.0) for code in ("OB1", "OB2", "OB3", "OB4", "OB5"))
         m["total_ob"] = total_ob
@@ -807,7 +807,7 @@ def summarize_year_for_person(
 
 
 def _build_year_summary(months: list[dict]) -> dict:
-    """Bygger årssammanfattning från månadsdata."""
+    """Builds a yearly summary from monthly data."""
     month_count = len(months) or 1
 
     # Summera totaler

@@ -1,4 +1,4 @@
-"""Semesterhantering – veckobaserad, dagsnivå och saldoberäkning."""
+"""Vacation management – week-based, day-level and balance calculations."""
 
 import datetime
 import math
@@ -319,7 +319,7 @@ def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict,
     supplement_per_day = pay.get("supplement_per_day", 0)
     payout_pct = pay.get("payout_pct", 0.046)
 
-    # Semesterersättning = payout_pct base + semestertillägg
+    # Vacation compensation = payout_pct base + vacation supplement
     payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
     if remaining_total <= 0:
@@ -432,9 +432,9 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
         vacation_rates=user_rates["vacation"],
     )
 
-    # Förskottssemester: ICA fyller upp till full kvot det första direktanställningsåret.
-    # Antal förskottsdagar = faktiskt använda dagar utöver intjänade, max (full_days - entitled_days).
-    # Förskottsdagar ger inget rörligt tillägg, blend:a semestertillägget.
+    # Advance vacation: ICA tops up to the full quota in the first direct-employment year.
+    # Advance days = days used beyond entitlement, capped at (full_days - entitled_days).
+    # Advance days carry no variable supplement; blend the supplement accordingly.
     if is_first_year and transition and used["total"] > 0:
         max_advance = max(0, full_days - entitled_days)
         advance_used = max(0, min(used["total"] - entitled_days, max_advance))

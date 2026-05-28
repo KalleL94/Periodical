@@ -24,7 +24,7 @@ def _get_transition_context(
     db: Session,
     error: str | None = None,
 ) -> dict:
-    """Bygg template-kontext för transition-sidan."""
+    """Build template context for the transition page."""
     from app.core.schedule.transition import (
         calculate_consultant_vacation_days,
         calculate_transition_month_summary,
@@ -34,7 +34,7 @@ def _get_transition_context(
 
     transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == user.id).first()
 
-    # Auto-beräkna rörlig genomsnittslön och semesterdagar om transition finns
+    # Auto-calculate variable average pay and vacation days if a transition exists
     auto_variable_avg = None
     auto_consultant_vacation_days = None
     preview = None
@@ -69,7 +69,7 @@ async def transition_page(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Visa inställningssida för anställningsövergång."""
+    """Show the employment transition settings page."""
     ctx = _get_transition_context(request, current_user, db)
     return render("transition.html", ctx)
 
@@ -90,7 +90,7 @@ async def transition_save(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Spara eller uppdatera anställningsövergång. PRG-redirect."""
+    """Save or update employment transition. PRG redirect."""
     # Validering
     try:
         t_date = datetime.date.fromisoformat(transition_date)
@@ -108,7 +108,7 @@ async def transition_save(
         )
         return render("transition.html", ctx, status_code=400)
 
-    # Parsning av optionella fält
+    # Parse optional fields
     variable_override: float | None = None
     if variable_avg_daily_override.strip():
         try:
@@ -132,7 +132,7 @@ async def transition_save(
             ctx = _get_transition_context(request, current_user, db, error="Ogiltigt slutdatum för intjänandeår.")
             return render("transition.html", ctx, status_code=400)
 
-    # Semesterdagar: manuell override eller auto-beräknat från anställningsdatum
+    # Vacation days: manual override or auto-calculated from employment date
     parsed_vacation_days: float
     if consultant_vacation_days.strip():
         try:
@@ -154,7 +154,7 @@ async def transition_save(
 
     salary_type = ConsultantSalaryType(consultant_salary_type)
 
-    # Hämta eller skapa transition-post
+    # Fetch or create the transition record
     transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == current_user.id).first()
     if transition is None:
         transition = EmploymentTransition(user_id=current_user.id)
@@ -176,7 +176,7 @@ async def transition_save(
         db.rollback()
         raise
 
-    # Sätt ny direktlön från övergångsdatum
+    # Set new direct-employment wage from the transition date
     if new_direct_salary.strip():
         try:
             salary_int = int(new_direct_salary.strip())
@@ -206,7 +206,7 @@ async def transition_save(
         except (ValueError, Exception):
             pass
 
-    # Återgå till standardsatser (OB/OT/beredskap) från övergångsdatum
+    # Reset to default rates (OB/OT/on-call) from the transition date
     if reset_rates_to_default.strip():
         from app.core.rates import add_new_rates
         from app.core.schedule import clear_schedule_cache

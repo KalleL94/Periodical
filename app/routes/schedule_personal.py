@@ -366,7 +366,7 @@ async def show_day_for_person(
                 karens_remaining=karens_remaining,
             )
 
-            # OB-kompensation vid sjukfrånvaro (80% av OB på sjuklönetimmarna)
+            # OB compensation for sick absence (80% of OB on sick-pay hours)
             if (
                 _user_rates.get("sick", {}).get("ob_compensation")
                 and sjuklon_hours_today > 0
@@ -958,7 +958,7 @@ async def export_month_excel(
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """Exportera månadsdata som Excel-fil."""
+    """Export monthly data as an Excel file."""
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -1104,7 +1104,7 @@ async def export_month_excel(
 
             oc_total = oc_vardag + oc_helg + oc_helgdag + oc_storhelg
             if oc_total > 0 and ot > 0:
-                # Dela upp i en beredskapsrad och en övertidsrad
+                # Split into an on-call row and an overtime row
                 oc_vals = [0, 0, 0, 0, 0, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, 0, ""]
                 ot_vals = [norm, ob1, ob2, ob3, ob5, 0, 0, 0, 0, ot, comment]
                 rows.append([str(day_date), _SV_DAYS[day_date.weekday()], "Beredskap", "", ""] + oc_vals)
@@ -1454,7 +1454,7 @@ async def cowork_view(
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """Dedikerad sida för co-work-statistik för en specifik person."""
+    """Dedicated page for co-work statistics for a specific person."""
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 

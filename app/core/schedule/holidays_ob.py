@@ -1,4 +1,4 @@
-"""Bygger OB-regler för helgdagar."""
+"""Builds OB rules for public holidays."""
 
 import datetime
 
@@ -142,7 +142,7 @@ def _build_eve_block(
 
 
 def _build_new_years_rules(year: int) -> list[ObRule]:
-    """Bygger nyårsregler (från föregående år och för aktuellt år)."""
+    """Builds New Year's rules (from the previous year and for the current year)."""
     rules = []
 
     # Nyårsafton föregående år -> nyårsdagen detta år

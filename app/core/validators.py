@@ -38,12 +38,12 @@ def validate_date_params(
             return datetime.date(year, month, day)
 
         if month is not None and day is None:
-            # Validera månad (genom att testa dag 1)
+            # Validate month by trying day 1
             datetime.date(year, month, 1)
             return None
 
         if month is None and day is None:
-            # Bara år, inget att validera här
+            # Year only, nothing to validate
             return None
 
         # month är None men day är satt -> orimlig kombination

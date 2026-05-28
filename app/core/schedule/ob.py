@@ -1,4 +1,4 @@
-"""OB-tilläggsberäkningar."""
+"""Unsocial hours (OB) supplement calculations."""
 
 import datetime
 from functools import lru_cache
@@ -11,7 +11,7 @@ _ob_rules: list[ObRule] | None = None
 
 
 def get_ob_rules() -> list[ObRule]:
-    """Hämtar bas-OB-regler."""
+    """Returns the base OB rules."""
     global _ob_rules
     if _ob_rules is None:
         _ob_rules = load_ob_rules()
@@ -20,14 +20,14 @@ def get_ob_rules() -> list[ObRule]:
 
 @lru_cache(maxsize=10)
 def get_special_rules_for_year(year: int) -> list[ObRule]:
-    """Cachad hämtning av specialregler (helgdagar) för ett år."""
+    """Cached fetch of special rules (public holidays) for a year."""
     from .holidays_ob import build_special_ob_rules_for_year
 
     return build_special_ob_rules_for_year(year)
 
 
 def get_combined_rules_for_year(year: int) -> list[ObRule]:
-    """Returnerar alla OB-regler (bas + special) för ett år."""
+    """Returns all OB rules (base + special) for a year."""
     return list(get_ob_rules()) + get_special_rules_for_year(year)
 
 
@@ -191,7 +191,7 @@ def select_ob_rules_for_date(
     dt: datetime.datetime,
     rules: list[ObRule],
 ) -> list[ObRule]:
-    """Väljer regler som gäller för ett specifikt datum."""
+    """Selects the rules that apply for a specific date."""
     weekday = dt.weekday()
     date_iso = dt.date().isoformat()
 
@@ -220,7 +220,7 @@ def select_ob_rules_for_date(
 
 
 def _rule_priority(rule: ObRule) -> int:
-    """Returnerar prioritet för en OB-regel."""
+    """Returns the priority of an OB rule."""
     return OB_PRIORITY_BY_CODE.get(rule.code, OB_PRIORITY_DEFAULT)
 
 
@@ -228,7 +228,7 @@ def _rule_interval_for_day(
     rule: ObRule,
     dt: datetime.datetime,
 ) -> tuple[datetime.datetime, datetime.datetime]:
-    """Bygger tidsintervall för en regel på en specifik dag."""
+    """Builds time intervals for a rule on a specific day."""
     start_h, start_m = map(int, rule.start_time.split(":"))
     end_h, end_m = map(int, rule.end_time.split(":"))
 
@@ -251,7 +251,7 @@ def _subtract_covered(
     end: datetime.datetime,
     covered: list[tuple[datetime.datetime, datetime.datetime]],
 ) -> list[tuple[datetime.datetime, datetime.datetime]]:
-    """Returnerar otäckta intervall efter subtraktion av redan täckta."""
+    """Returns uncovered intervals after subtracting already-covered ones."""
     result = []
     cursor = start
 
