@@ -1009,6 +1009,64 @@ def compute_oncall_details(
     return {"oncall_pay": total_pay, "oncall_details": combined_details}
 
 
+def apply_oncall_hours_override(
+    hour_overrides: dict[str, float],
+    original_breakdown: dict,
+    monthly_salary: int,
+    oncall_rules: list,
+    rate_overrides: dict | None = None,
+) -> tuple[float, dict]:
+    """Rebuild oncall pay and details from manually overridden hours per type code.
+
+    For types present in original_breakdown the per-hour rate is derived from
+    the original result. For new types the rate is looked up from oncall_rules.
+    Returns (total_pay, details_dict).
+    """
+    new_breakdown: dict[str, dict] = {}
+    overrides = rate_overrides or {}
+
+    for code, raw_hours in hour_overrides.items():
+        h = float(raw_hours)
+        if h <= 0:
+            continue
+
+        # Try to derive per-hour rate from original breakdown
+        orig = original_breakdown.get(code, {})
+        if orig.get("hours", 0) > 0:
+            pay_per_hour = orig["pay"] / orig["hours"]
+            label = orig.get("label", code)
+            rate_display = orig.get("rate", pay_per_hour)
+        else:
+            # Look up rate from rules
+            rule = next((r for r in oncall_rules if r.code == code), None)
+            if rule is None:
+                continue
+            override_val = overrides.get(code)
+            if override_val is not None:
+                pay_per_hour = float(override_val)
+            elif rule.fixed_hourly_rate is not None:
+                pay_per_hour = float(rule.fixed_hourly_rate)
+            else:
+                pay_per_hour = monthly_salary / rule.rate
+            label = rule.label
+            rate_display = pay_per_hour
+
+        pay = round(h * pay_per_hour, 2)
+        new_breakdown[code] = {"hours": h, "rate": rate_display, "pay": pay, "label": label}
+
+    total_pay = round(sum(b["pay"] for b in new_breakdown.values()), 2)
+    total_hours = round(sum(b["hours"] for b in new_breakdown.values()), 2)
+
+    return total_pay, {
+        "total_pay": total_pay,
+        "total_hours": total_hours,
+        "effective_rate": 0.0,
+        "breakdown": new_breakdown,
+        "segments": [],
+        "is_overridden": True,
+    }
+
+
 def clear_oncall_cache():
     """Clear cached on-call rules (call after rule changes)."""
     _cached_oncall_rules.cache_clear()

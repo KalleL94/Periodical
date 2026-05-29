@@ -26,6 +26,7 @@ from app.routes.api_v1 import create_admin_api_app, create_api_app
 from app.routes.auth_routes import router as auth_router
 from app.routes.changelog import router as changelog_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.day_pay_override import router as day_pay_override_router
 from app.routes.oncall import router as oncall_router
 from app.routes.overtime import router as overtime_router
 from app.routes.profile import router as profile_router
@@ -283,6 +284,7 @@ app.include_router(overtime_router)
 app.include_router(oncall_router)
 app.include_router(shift_swap_router)
 app.include_router(shift_override_router)
+app.include_router(day_pay_override_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
 app.include_router(profile_router)

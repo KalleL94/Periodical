@@ -16,7 +16,11 @@ from app.core.helpers import can_see_salary, render_template, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import (
+    _cached_oncall_rules as _get_oncall_rules,
+)
+from app.core.oncall import (
     _get_storhelg_dates_for_year,
+    apply_oncall_hours_override,
     compute_oncall_details,
 )
 from app.core.schedule import (
@@ -45,12 +49,14 @@ from app.core.schedule import (
 from app.core.schedule import (
     persons as person_list,
 )
+from app.core.schedule.ob import apply_ob_hours_override
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import (
     Absence,
     AbsenceType,
+    DayPayOverride,
     OnCallOverride,
     OnCallOverrideType,
     ShiftOverride,
@@ -323,7 +329,37 @@ async def show_day_for_person(
         oncall_pay = oc_result["oncall_pay"]
         oncall_details = oc_result["oncall_details"]
 
+    # Apply manual hour overrides if one exists for this user and date
+    day_pay_override = (
+        db.query(DayPayOverride)
+        .filter(DayPayOverride.user_id == user_id_for_wages, DayPayOverride.date == date_obj)
+        .first()
+    )
+    if day_pay_override:
+        if day_pay_override.ob_hours_override:
+            ob_hours, ob_pay = apply_ob_hours_override(
+                day_pay_override.ob_hours_override, monthly_salary, combined_rules, _user_rates["ob"]
+            )
+        if day_pay_override.oncall_hours_override:
+            _oncall_rules = _get_oncall_rules(year)
+            oncall_pay, oncall_details = apply_oncall_hours_override(
+                day_pay_override.oncall_hours_override,
+                oncall_details.get("breakdown", {}),
+                monthly_salary,
+                _oncall_rules,
+                _user_rates["oncall"],
+            )
+
     show_salary = can_see_salary(current_user, rotation_position)
+
+    # Build deduplicated ordered list of all on-call type codes+labels for the override form
+    _all_oc_rules = _get_oncall_rules(year)
+    seen_oc_codes: set[str] = set()
+    all_oncall_types: list[dict] = []
+    for _r in sorted(_all_oc_rules, key=lambda r: r.priority):
+        if _r.code not in seen_oc_codes:
+            seen_oc_codes.add(_r.code)
+            all_oncall_types.append({"code": _r.code, "label": _r.label})
 
     # Check if this date is a storhelg (major holiday)
     storhelg_dates = _get_storhelg_dates_for_year(year)
@@ -497,6 +533,8 @@ async def show_day_for_person(
             "is_effective_oc": is_effective_oc,
             "shift_override": shift_override,
             "is_vacation_day": is_vacation_day,
+            "day_pay_override": day_pay_override,
+            "all_oncall_types": all_oncall_types,
             **nav,
         },
         user=current_user,
