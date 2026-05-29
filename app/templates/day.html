@@ -708,29 +708,38 @@
             {# On-call compensation section - for effective OC shifts (including ADD overrides) #}
                 <h3>{{ t.day_oncall_pay_title }}</h3>
                 {% set oncall = oncall_details %}
-                {% if oncall and oncall.breakdown %}
+                {% set oc_breakdown = oncall.breakdown if oncall and oncall.breakdown else {} %}
+                {% if oc_breakdown or all_oncall_types %}
                     <table>
                         <thead>
                             <tr>
                                 <th class="th_left">{{ t.day_oncall_type_header }}</th>
                                 <th class="th_center">{{ t.day_oncall_hours_header }}</th>
-                                <th class="th_center">{{ t.day_oncall_pay_header }}</th>
+                                <th class="th_center pay-view">{{ t.day_oncall_pay_header }}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for code, details in oncall.breakdown.items() %}
-                                <tr>
-                                    <td class="td_left">{{ details.label }}</td>
-                                    <td class="td_right num">{{ "%.2f"|format(details.hours) }}</td>
-                                    <td class="td_right num">{{ "%.2f"|format(details.pay) }} kr</td>
-                            </tr>
+                            {% for oc_type in all_oncall_types %}
+                                {% set h = oc_breakdown[oc_type.code].hours if oc_type.code in oc_breakdown else 0.0 %}
+                                {% set p = oc_breakdown[oc_type.code].pay if oc_type.code in oc_breakdown else 0.0 %}
+                                <tr{% if h == 0 %} class="pay-zero-row" style="display:none"{% endif %}>
+                                    <td class="td_left">{{ oc_type.label }}</td>
+                                    <td class="td_right num">
+                                        <span class="pay-view">{{ "%.2f"|format(h) }}</span>
+                                        <input class="pay-edit" form="pay-override-form"
+                                               name="oc_hours_{{ oc_type.code }}" type="number"
+                                               step="0.01" min="0" value="{{ "%.2f"|format(h) }}"
+                                               style="display:none; width:5rem; text-align:right;">
+                                    </td>
+                                    <td class="td_right num pay-view">{{ "%.2f"|format(p) }} kr</td>
+                                </tr>
                             {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr>
                                 <td class="td_left foot_left"><strong>{{ t.day_oncall_total_row }}</strong></td>
-                                <td class="td_right foot_right num"><strong>{{ "%.2f"|format(oncall.total_hours) }}</strong></td>
-                                <td class="td_right foot_right num"><strong>{{ "%.2f"|format(oncall_pay) }} kr</strong></td>
+                                <td class="td_right foot_right num pay-view"><strong>{{ "%.2f"|format(oncall.total_hours if oncall else 0) }}</strong></td>
+                                <td class="td_right foot_right num pay-view"><strong>{{ "%.2f"|format(oncall_pay) }} kr</strong></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -742,7 +751,7 @@
                 <h3>{{ t.day_ob_hours_title }}</h3>
                 {% if ob_codes %}
                     {% set total_ob_hours = ob_hours.values() | sum %}
-                    {# Create a mapping of code to label from ob_rules #}
+                    {# Build ob_labels once and reuse below #}
                     {% set ob_labels = {} %}
                     {% for rule in ob_rules %}
                         {% if rule.code not in ob_labels %}
@@ -758,16 +767,23 @@
                         </thead>
                         <tbody>
                             {% for code in ob_codes %}
-                                <tr>
+                                {% set h = ob_hours.get(code, 0.0) %}
+                                <tr{% if h == 0 %} class="pay-zero-row" style="display:none"{% endif %}>
                                     <td class="num">{{ ob_labels.get(code, code) }}</td>
-                                    <td class="td_right num">{{ "%.2f"|format(ob_hours.get(code, 0.0)) }}</td>
+                                    <td class="td_right num">
+                                        <span class="pay-view">{{ "%.2f"|format(h) }}</span>
+                                        <input class="pay-edit" form="pay-override-form"
+                                               name="ob_hours_{{ code }}" type="number"
+                                               step="0.01" min="0" value="{{ "%.2f"|format(h) }}"
+                                               style="display:none; width:5rem; text-align:right;">
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr>
                                 <td class="foot_left"><strong>{{ t.day_total_ob_hours }}</strong></td>
-                                <td class="td_right foot_right num"><strong>{{ "%.2f"|format(total_ob_hours) }}</strong></td>
+                                <td class="td_right foot_right num pay-view"><strong>{{ "%.2f"|format(total_ob_hours) }}</strong></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -836,9 +852,37 @@
             {% else %}
                 <p>{{ t.day_no_ob_rules }}</p>
             {% endif %}
+
+            {% endif %}{# end is_effective_oc #}
+
+            {# Manual hour override - visible on both OC and OB days #}
+            {% if user and (user.id == person_id or user.id == 0) %}
+                <form id="pay-override-form" method="POST" action="/day-pay-override/set">
+                    <input type="hidden" name="user_id" value="{{ person_id }}">
+                    <input type="hidden" name="date" value="{{ date }}">
+                </form>
+
+                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-top:0.75rem;">
+                    {% if day_pay_override %}
+                        <span class="badge pay-view" style="background:#f59e0b; color:white;">{{ t.day_pay_override_active_ob if not is_effective_oc else t.day_pay_override_active_oncall }}</span>
+                        {% if day_pay_override.reason %}
+                            <span class="pay-view" style="color:var(--text-muted); font-size:0.875rem;">{{ day_pay_override.reason }}</span>
+                        {% endif %}
+                        <form method="POST" action="/day-pay-override/{{ day_pay_override.id }}/delete" style="display:inline;" class="pay-view">
+                            <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_pay_override_remove_confirm }}')">{{ t.day_pay_override_remove }}</button>
+                        </form>
+                    {% endif %}
+                    <button type="button" class="btn btn-secondary pay-view" onclick="togglePayOverrideEdit()">{{ t.day_pay_override_edit }}</button>
+                    <input type="text" class="pay-edit" form="pay-override-form" name="reason"
+                           placeholder="{{ t.day_pay_override_reason_label }}"
+                           value="{{ day_pay_override.reason or '' }}"
+                           style="display:none; max-width:14rem;">
+                    <button type="submit" form="pay-override-form" class="btn btn-primary pay-edit" style="display:none;">{{ t.day_pay_override_save }}</button>
+                    <button type="button" class="btn btn-secondary pay-edit" onclick="togglePayOverrideEdit()" style="display:none;">{{ t.day_oncall_undo }}</button>
+                </div>
+            {% endif %}
         </section>
-        {% endif %}
-        {% endif %}
+        {% endif %}{# end show_salary #}
 
 
     </div>
@@ -850,6 +894,20 @@ function toggleDayEdit() {
     var open = panel.style.display !== 'none';
     panel.style.display = open ? 'none' : 'block';
     btn.textContent = open ? '{{ t.day_edit_toggle }} ▾' : '{{ t.day_edit_close }} ▲';
+}
+
+function togglePayOverrideEdit() {
+    var firstEdit = document.querySelector('.pay-edit');
+    var editing = firstEdit && getComputedStyle(firstEdit).display !== 'none';
+    document.querySelectorAll('.pay-view').forEach(function(el) {
+        el.style.display = editing ? '' : 'none';
+    });
+    document.querySelectorAll('.pay-edit').forEach(function(el) {
+        el.style.display = editing ? 'none' : '';
+    });
+    document.querySelectorAll('tr.pay-zero-row').forEach(function(el) {
+        el.style.display = editing ? 'none' : 'table-row';
+    });
 }
 </script>
 

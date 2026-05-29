@@ -471,7 +471,13 @@ def _process_day_for_summary(
     end = day.get("end")
 
     # Calculate OB if applicable
-    if shift and shift.code not in ("OFF", "OC", "OT") and start and end:
+    ob_hours_override = day.get("ob_hours_override")
+    if ob_hours_override:
+        from .ob import apply_ob_hours_override
+
+        ob_hours, ob_pay = apply_ob_hours_override(ob_hours_override, base_salary, combined_rules, ob_rate_overrides)
+        ob_hours_by_day = {}
+    elif shift and shift.code not in ("OFF", "OC", "OT") and start and end:
         ob_hours = calculate_ob_hours(start, end, combined_rules)
         ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary, rate_overrides=ob_rate_overrides)
         ob_hours_by_day = calculate_ob_hours_by_day(start, end, combined_rules)

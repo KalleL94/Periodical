@@ -266,3 +266,35 @@ def _subtract_covered(
         result.append((cursor, end))
 
     return result
+
+
+def apply_ob_hours_override(
+    hour_overrides: dict[str, float],
+    monthly_salary: int,
+    combined_rules: list[ObRule],
+    rate_overrides: dict[str, float] | None = None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Recalculate OB hours and pay from manually overridden hours per code.
+
+    Always includes all codes from combined_rules (same shape as calculate_ob_hours).
+    Returns (ob_hours, ob_pay) dicts keyed by OB code.
+    """
+    overrides = rate_overrides or {}
+    ob_hours: dict[str, float] = {r.code: 0.0 for r in combined_rules}
+    ob_pay: dict[str, float] = {r.code: 0.0 for r in combined_rules}
+
+    for code, raw_hours in hour_overrides.items():
+        h = float(raw_hours)
+        ob_hours[code] = h
+        if h <= 0:
+            ob_pay[code] = 0.0
+            continue
+        fixed_rate = overrides.get(code)
+        if fixed_rate is not None:
+            ob_pay[code] = h * float(fixed_rate)
+        else:
+            rule = next((r for r in combined_rules if r.code == code), None)
+            divisor = getattr(rule, "rate", None) if rule else None
+            ob_pay[code] = h * (monthly_salary / float(divisor)) if divisor else 0.0
+
+    return ob_hours, ob_pay

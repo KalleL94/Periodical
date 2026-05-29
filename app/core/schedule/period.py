@@ -47,6 +47,7 @@ class DayLookupContext:
     user_wages: dict | None = None
     settings: object = None
     user_rates_map: dict | None = None
+    day_pay_override_map: dict | None = None
 
 
 def _get_persons():
@@ -228,6 +229,9 @@ def generate_period_data(
     shift_override_map = _batch_fetch_shift_overrides(
         session, person_ids, effective_start, end_date, rotation_to_user_id
     )
+    day_pay_override_map = _batch_fetch_day_pay_overrides(
+        session, person_ids, effective_start, end_date, rotation_to_user_id
+    )
 
     # Generera dagdata
     persons = _get_persons()
@@ -246,6 +250,7 @@ def generate_period_data(
         user_wages=user_wages,
         settings=settings,
         user_rates_map=user_rates_map,
+        day_pay_override_map=day_pay_override_map,
     )
 
     days_out = []
@@ -510,6 +515,43 @@ def _batch_fetch_shift_overrides(
             ShiftOverride.user_id.in_(user_ids),
             ShiftOverride.date >= start_date,
             ShiftOverride.date <= end_date,
+        )
+        .all()
+    )
+
+    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+
+
+def _batch_fetch_day_pay_overrides(
+    session,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
+) -> dict[tuple[int, datetime.date], object]:
+    """Batch-fetches manual pay overrides (OB/oncall) for multiple persons and a period.
+
+    Returns:
+        Dict with (rotation_position, date) -> DayPayOverride
+    """
+    if not session:
+        return {}
+
+    from app.database.database import DayPayOverride
+
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
+    overrides = (
+        session.query(DayPayOverride)
+        .filter(
+            DayPayOverride.user_id.in_(user_ids),
+            DayPayOverride.date >= start_date,
+            DayPayOverride.date <= end_date,
         )
         .all()
     )
@@ -1287,6 +1329,27 @@ def _populate_single_person_day(
                 except ValueError:
                     start, end = None, None
 
+    # Apply manual hour overrides if one exists for this person and date
+    day_pay_override_map = ctx.day_pay_override_map or {}
+    day_pay_override = day_pay_override_map.get((person_id, current_day))
+    ob_hours_override = None
+    if day_pay_override:
+        if day_pay_override.oncall_hours_override:
+            from app.core.oncall import _cached_oncall_rules as _get_oc_rules
+            from app.core.oncall import apply_oncall_hours_override
+
+            _oc_rules = _get_oc_rules(current_day.year)
+            _person_oc_rates = (_person_rates or {}).get("oncall")
+            oncall_pay, oncall_details = apply_oncall_hours_override(
+                day_pay_override.oncall_hours_override,
+                oncall_details.get("breakdown", {}),
+                user_wages.get(person_id, settings.monthly_salary),
+                _oc_rules,
+                _person_oc_rates,
+            )
+        if day_pay_override.ob_hours_override:
+            ob_hours_override = day_pay_override.ob_hours_override
+
     day_info.update(
         {
             "person_id": person_id,
@@ -1303,6 +1366,7 @@ def _populate_single_person_day(
             "ot_pay": ot_pay,
             "ot_hours": ot_hours,
             "ot_details": ot_details,
+            "ob_hours_override": ob_hours_override,
         }
     )
 

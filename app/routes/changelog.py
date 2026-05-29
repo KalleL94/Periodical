@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.24.0",
+        "date": "2026-05-29",
+        "entries": [
+            {
+                "type": "ny funktion",
+                "sv": "Dagvy: manuell override av OB- och beredskapstimmar – klicka 'Redigera timmar' i lönesektionen för att justera antalet timmar per typ (t.ex. flytta 7h röd dag till vardag); lönen räknas om automatiskt med befintliga taxor och overriden slår igenom i alla vyer (dagvy, månadsvy, löneunderlag)",
+                "en": "Day view: manual override of OB and on-call hours – click 'Edit hours' in the pay section to adjust the number of hours per type (e.g. move 7h public holiday to weekday rate); pay is recalculated automatically using existing rates and the override is applied consistently across all views (day view, month view, pay basis)",
+            },
+        ],
+    },
+    {
         "version": "0.23.1",
         "date": "2026-05-28",
         "entries": [

@@ -286,6 +286,35 @@ class RateHistory(Base):
         )
 
 
+class DayPayOverride(Base):
+    """Manual hour overrides for OB and/or on-call pay on a specific day.
+
+    Stores overridden hours per type code. Pay is recalculated automatically
+    from the overridden hours using the standard rate tables.
+    Example: {"OC_HOLIDAY": 0.0, "OC_WEEKDAY": 24.0} moves all hours to weekday rate.
+    """
+
+    __tablename__ = "day_pay_overrides"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    ob_hours_override = Column(JSON, nullable=True)  # {code: hours} e.g. {"OB1": 3.5, "OB2": 0.0}
+    oncall_hours_override = Column(JSON, nullable=True)  # {code: hours} e.g. {"OC_WEEKDAY": 24.0}
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return (
+            f"<DayPayOverride(id={self.id}, user_id={self.user_id}, date={self.date}, "
+            f"ob_h={self.ob_hours_override}, oc_h={self.oncall_hours_override})>"
+        )
+
+
 class PersonHistory(Base):
     """Person history model for tracking person changes over time with temporal validity.
 
