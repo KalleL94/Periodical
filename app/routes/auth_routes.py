@@ -12,11 +12,14 @@ from sqlalchemy.orm import Session
 from app.auth.auth import (
     authenticate_user,
     clear_auth_cookie,
+    clear_login_attempts,
     create_access_token,
     get_current_user_allow_pwd_change,
     get_current_user_from_cookie,
     get_current_user_optional,
     get_password_hash,
+    is_login_locked,
+    record_failed_login,
     set_auth_cookie,
 )
 from app.core.logging_config import get_logger
@@ -61,13 +64,34 @@ async def login(
     db: Session = Depends(get_db),
 ):
     """Process login form."""
-    user = authenticate_user(db, username, password)
-    if not user:
+    ip = request.client.host if request.client else "unknown"
+
+    # Brute-force protection: reject further attempts once the limit is reached.
+    if is_login_locked(db, username, ip):
         log_auth_event(
             event_type="login",
             username=username,
             success=False,
-            details={"ip": request.client.host if request.client else "unknown"},
+            details={"ip": ip, "reason": "rate_limited"},
+        )
+        return render(
+            "login.html",
+            {
+                "request": request,
+                "error": "För många misslyckade försök. Försök igen om en stund.",
+                "next": next,
+            },
+            status_code=429,
+        )
+
+    user = authenticate_user(db, username, password)
+    if not user:
+        record_failed_login(db, username, ip)
+        log_auth_event(
+            event_type="login",
+            username=username,
+            success=False,
+            details={"ip": ip},
         )
 
         return render(
@@ -75,6 +99,9 @@ async def login(
             {"request": request, "error": "Fel användarnamn eller lösenord", "next": next},
             status_code=401,
         )
+
+    # Successful login clears the failed-attempt counter for this key.
+    clear_login_attempts(db, username, ip)
 
     log_auth_event(
         event_type="login",

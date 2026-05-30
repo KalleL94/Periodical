@@ -439,6 +439,24 @@ class EmploymentTransition(Base):
         )
 
 
+class LoginAttempt(Base):
+    """A failed login attempt, used for brute-force rate limiting on /login.
+
+    Rows are keyed by (username, ip) and pruned once they age out of the rate-limit
+    window. A successful login clears the matching rows.
+    """
+
+    __tablename__ = "login_attempts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), nullable=False, index=True)
+    ip = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return f"<LoginAttempt(username={self.username!r}, ip={self.ip!r}, at={self.created_at})>"
+
+
 def create_tables():
     """Create all database tables."""
     Base.metadata.create_all(bind=engine)
