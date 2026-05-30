@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from app.database.database import User, UserRole, get_db
+from app.database.database import LoginAttempt, User, UserRole, get_db
 
 # Configuration - reads from environment variables for security
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
@@ -47,6 +47,51 @@ def _require_password_change(user: "User | None") -> None:
     """Raise PasswordChangeRequired when the user has a pending mandatory password change."""
     if user is not None and user.must_change_password == 1:
         raise PasswordChangeRequired()
+
+
+# Login brute-force protection
+# After LOGIN_MAX_ATTEMPTS failures for the same (username, ip) within LOGIN_WINDOW_MINUTES,
+# further attempts are rejected until the oldest failure ages out of the window.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_MINUTES = 15
+
+
+def _login_window_start() -> datetime:
+    return datetime.utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
+
+
+def is_login_locked(db: Session, username: str, ip: str) -> bool:
+    """Return True when (username, ip) has reached the failed-attempt limit in the window."""
+    recent = (
+        db.query(LoginAttempt)
+        .filter(
+            LoginAttempt.username == username,
+            LoginAttempt.ip == ip,
+            LoginAttempt.created_at >= _login_window_start(),
+        )
+        .count()
+    )
+    return recent >= LOGIN_MAX_ATTEMPTS
+
+
+def record_failed_login(db: Session, username: str, ip: str) -> None:
+    """Record a failed attempt and prune attempts for this key that fell out of the window."""
+    db.add(LoginAttempt(username=username, ip=ip))
+    db.query(LoginAttempt).filter(
+        LoginAttempt.username == username,
+        LoginAttempt.ip == ip,
+        LoginAttempt.created_at < _login_window_start(),
+    ).delete(synchronize_session=False)
+    db.commit()
+
+
+def clear_login_attempts(db: Session, username: str, ip: str) -> None:
+    """Clear recorded attempts for a key, called after a successful login."""
+    db.query(LoginAttempt).filter(
+        LoginAttempt.username == username,
+        LoginAttempt.ip == ip,
+    ).delete(synchronize_session=False)
+    db.commit()
 
 
 # Password hashing

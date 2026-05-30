@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -37,8 +38,15 @@ def test_db():
     Yields:
         SQLAlchemy Session: Database session for test use
     """
-    # Create in-memory database
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    # Create in-memory database.
+    # StaticPool keeps a single shared connection so the schema survives commits and is
+    # visible across threads (the TestClient runs requests off the main thread); without
+    # it, an in-memory SQLite DB silently loses its tables after a mid-request commit.
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     # Create all tables
