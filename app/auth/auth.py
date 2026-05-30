@@ -33,6 +33,22 @@ if SECRET_KEY == "your-secret-key-change-this-in-production":
             stacklevel=2,
         )
 
+
+class PasswordChangeRequired(Exception):
+    """Raised when an authenticated user must change their password before proceeding.
+
+    Translated into a redirect to /change-password by an exception handler in main.py.
+    Lets the enforcement live in the auth dependencies (centralised, testable) instead
+    of in middleware that bypasses the get_db override.
+    """
+
+
+def _require_password_change(user: "User | None") -> None:
+    """Raise PasswordChangeRequired when the user has a pending mandatory password change."""
+    if user is not None and user.must_change_password == 1:
+        raise PasswordChangeRequired()
+
+
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -121,8 +137,12 @@ async def get_current_user_from_cookie(request: Request, db: Session = Depends(g
     return user
 
 
-async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    """Get current authenticated user. Raises 401 if not authenticated."""
+async def get_current_user_allow_pwd_change(request: Request, db: Session = Depends(get_db)) -> User:
+    """Get current authenticated user WITHOUT enforcing a pending password change.
+
+    Used by the change-password and logout routes so a user with must_change_password=1
+    can actually reach them instead of being redirected back in a loop.
+    """
     user = await get_current_user_from_cookie(request, db)
     if user is None:
         raise HTTPException(
@@ -133,9 +153,24 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     return user
 
 
+async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """Get current authenticated user. Raises 401 if not authenticated.
+
+    Enforces a pending mandatory password change by raising PasswordChangeRequired.
+    """
+    user = await get_current_user_allow_pwd_change(request, db)
+    _require_password_change(user)
+    return user
+
+
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> User | None:
-    """Get current user if authenticated, None otherwise."""
-    return await get_current_user_from_cookie(request, db)
+    """Get current user if authenticated, None otherwise.
+
+    Still enforces a pending mandatory password change for authenticated users.
+    """
+    user = await get_current_user_from_cookie(request, db)
+    _require_password_change(user)
+    return user
 
 
 async def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
