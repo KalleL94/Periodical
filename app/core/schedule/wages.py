@@ -480,8 +480,13 @@ def get_absence_deductions_for_month(
             sick_days += 1
             sick_hours += absent_hours
 
-            # New sick period if gap > 5 days
-            if last_sick_date is None or (absence.date - last_sick_date).days > 5:
+            if last_sick_date is None:
+                # First sick day in this month: seed the budget from any karens already
+                # consumed earlier in an ongoing sick period (e.g. one that started in the
+                # previous month). Returns 0.0 when this is a fresh period.
+                karens_consumed_in_period = get_karens_consumed_before_date(session, user_id, absence.date)
+            elif (absence.date - last_sick_date).days > 5:
+                # Gap > 5 days within the month: a new sick period, budget resets.
                 karens_consumed_in_period = 0.0
 
             karens_remaining = max(0.0, KARENS_HOURS - karens_consumed_in_period)
