@@ -4,6 +4,9 @@ import datetime
 import math
 
 from app.core.constants import PERSON_IDS
+from app.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_vacation_dates_for_year(year: int, session=None) -> dict[int, set[datetime.date]]:
@@ -570,7 +573,17 @@ def calculate_vacation_pay(
                 ot_total += summary.get("ot_pay", 0.0)
                 oncall_total += summary.get("oncall_pay", 0.0)
             except Exception:
-                pass
+                # Keep going so one bad month does not break the whole vacation
+                # calculation, but log it: silently dropping a month understates the
+                # variable part of the vacation supplement (0.5% of variable earnings).
+                logger.warning(
+                    "Vacation pay: failed to summarise %d-%02d for user_id=%s; "
+                    "its variable earnings are excluded from the supplement",
+                    current.year,
+                    current.month,
+                    user.id,
+                    exc_info=True,
+                )
 
             if current.month == 12:
                 current = datetime.date(current.year + 1, 1, 1)
