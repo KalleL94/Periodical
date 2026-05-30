@@ -228,6 +228,22 @@ def _wants_json(request: Request) -> bool:
     return "application/json" in accept and "text/html" not in accept
 
 
+from app.auth.auth import PasswordChangeRequired  # noqa: E402
+
+
+@app.exception_handler(PasswordChangeRequired)
+async def password_change_required_handler(request: Request, exc: PasswordChangeRequired):
+    """Redirect users with a pending mandatory password change to the change form.
+
+    API/JSON clients get 403 instead of an HTML redirect.
+    """
+    from fastapi.responses import RedirectResponse
+
+    if _wants_json(request):
+        return JSONResponse(status_code=403, content={"detail": "Password change required"})
+    return RedirectResponse("/change-password", status_code=302)
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if _wants_json(request):

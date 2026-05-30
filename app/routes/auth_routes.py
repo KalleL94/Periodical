@@ -13,7 +13,8 @@ from app.auth.auth import (
     authenticate_user,
     clear_auth_cookie,
     create_access_token,
-    get_current_user,
+    get_current_user_allow_pwd_change,
+    get_current_user_from_cookie,
     get_current_user_optional,
     get_password_hash,
     set_auth_cookie,
@@ -103,7 +104,7 @@ async def login(
 
 
 @router.get("/logout", name="logout")
-async def logout(response: Response, current_user: User | None = Depends(get_current_user_optional)):
+async def logout(response: Response, current_user: User | None = Depends(get_current_user_from_cookie)):
     """Log out user."""
     if current_user:
         log_auth_event(
@@ -122,7 +123,7 @@ async def logout(response: Response, current_user: User | None = Depends(get_cur
 @router.get("/change-password", response_class=HTMLResponse, name="change_password_page")
 async def change_password_page(
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_pwd_change),
 ):
     """Show mandatory password change page for users with must_change_password=1."""
     return render(
@@ -141,7 +142,7 @@ async def change_password_submit(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_allow_pwd_change),
     db: Session = Depends(get_db),
 ):
     """Process mandatory password change."""
