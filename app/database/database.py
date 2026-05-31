@@ -4,7 +4,7 @@ SQLAlchemy database setup and models.
 """
 
 import enum
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
@@ -43,6 +43,15 @@ def set_sqlite_pragmas(dbapi_connection, connection_record):
 
 
 Base = declarative_base()
+
+
+def utcnow() -> datetime:
+    """Naive UTC timestamp, a drop-in replacement for the deprecated utcnow.
+
+    Returns the current UTC time with tzinfo stripped so stored/compared values keep the
+    same naive-UTC semantics the app has always used.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class UserRole(str, enum.Enum):
@@ -128,8 +137,8 @@ class User(Base):
     custom_rates = Column(JSON, default=dict)  # Per-user rate overrides (OB, OT, oncall, vacation)
     language = Column(String(5), default="sv", nullable=False)  # UI language: "sv" or "en"
     api_key = Column(String(64), unique=True, nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     @property
     def rotation_person_id(self) -> int:
@@ -157,7 +166,7 @@ class OvertimeShift(Base):
     hours = Column(Float, nullable=False)
     ot_pay = Column(Float, nullable=False)
     is_extension = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"))
 
     # Relationships
@@ -179,7 +188,7 @@ class Absence(Base):
     absence_type = Column(SQLEnum(AbsenceType), nullable=False)
     left_at = Column(String(5), nullable=True)  # "HH:MM" - time they left early (None = full day or on time)
     arrived_at = Column(String(5), nullable=True)  # "HH:MM" - time they arrived late (None = full day or on time)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
@@ -205,7 +214,7 @@ class OnCallOverride(Base):
     date = Column(Date, nullable=False)
     override_type = Column(SQLEnum(OnCallOverrideType), nullable=False)
     reason = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
@@ -225,7 +234,7 @@ class ShiftOverride(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     date = Column(Date, nullable=False)
     shift_code = Column(String(10), nullable=False)  # N1, N2, N3
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id])
@@ -245,7 +254,7 @@ class WageHistory(Base):
     wage = Column(Integer, nullable=False)  # Monthly wage in SEK
     effective_from = Column(Date, nullable=False)  # When this wage becomes effective
     effective_to = Column(Date, nullable=True)  # When this wage ends (NULL = current wage)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
@@ -273,7 +282,7 @@ class RateHistory(Base):
     rates = Column(JSON, nullable=False)  # Same format as User.custom_rates
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)  # NULL = current
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id])
@@ -302,7 +311,7 @@ class DayPayOverride(Base):
     ob_hours_override = Column(JSON, nullable=True)  # {code: hours} e.g. {"OB1": 3.5, "OB2": 0.0}
     oncall_hours_override = Column(JSON, nullable=True)  # {code: hours} e.g. {"OC_WEEKDAY": 24.0}
     reason = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id])
@@ -335,7 +344,7 @@ class PersonHistory(Base):
     is_active = Column(Integer, nullable=False)  # 1=active, 0=inactive during this period
     effective_from = Column(Date, nullable=False)  # Start date of this employment period
     effective_to = Column(Date, nullable=True)  # End date (NULL = currently employed)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
@@ -364,7 +373,7 @@ class RotationEra(Base):
     end_date = Column(Date, nullable=True, index=True)  # When this era ends (NULL = current/ongoing)
     rotation_length = Column(Integer, nullable=False)  # Number of weeks in rotation cycle
     weeks_pattern = Column(JSON, nullable=False)  # Week definitions: {"1": ["OFF", "OFF", ...], ...}
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
@@ -392,7 +401,7 @@ class ShiftSwap(Base):
     status = Column(SQLEnum(SwapStatus), default=SwapStatus.PENDING, nullable=False)
     message = Column(String(255), nullable=True)
     responded_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     requester = relationship("User", foreign_keys=[requester_id])
@@ -426,8 +435,8 @@ class EmploymentTransition(Base):
     earning_year_end = Column(Date, nullable=True)  # NULL = auto: day before transition_date
     advance_vacation_days = Column(Integer, nullable=True, default=None)  # Forskottsemester fran Handels
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     # Relationships
     user = relationship("User", back_populates="employment_transition")
@@ -451,7 +460,7 @@ class LoginAttempt(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(50), nullable=False, index=True)
     ip = Column(String(64), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
 
     def __repr__(self):
         return f"<LoginAttempt(username={self.username!r}, ip={self.ip!r}, at={self.created_at})>"

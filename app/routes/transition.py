@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.database.database import ConsultantSalaryType, EmploymentTransition, User, get_db
+from app.database.database import ConsultantSalaryType, EmploymentTransition, User, get_db, utcnow
 from app.routes.shared import render
 
 router = APIRouter(tags=["transition"])
@@ -168,7 +168,7 @@ async def transition_save(
     transition.earning_year_start = earning_start
     transition.earning_year_end = earning_end
     transition.notes = notes.strip() or None
-    transition.updated_at = datetime.datetime.utcnow()
+    transition.updated_at = utcnow()
 
     try:
         db.commit()

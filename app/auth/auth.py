@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from app.database.database import LoginAttempt, User, UserRole, get_db
+from app.database.database import LoginAttempt, User, UserRole, get_db, utcnow
 
 # Configuration - reads from environment variables for security
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
@@ -57,7 +57,7 @@ LOGIN_WINDOW_MINUTES = 15
 
 
 def _login_window_start() -> datetime:
-    return datetime.utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
+    return utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
 
 
 def is_login_locked(db: Session, username: str, ip: str) -> bool:
@@ -117,9 +117,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     """Create a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt

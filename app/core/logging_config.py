@@ -11,7 +11,7 @@ import logging
 import logging.handlers
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Determine if running in production
@@ -37,7 +37,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).replace(tzinfo=None).isoformat() + "Z",
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -174,9 +174,7 @@ def setup_logging() -> None:
             encoding="utf-8",
         )
         file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(
-            logging.Formatter("%(levelname)s %(asctime)s [%(name)s:%(lineno)d] %(message)s")
-        )
+        file_handler.setFormatter(logging.Formatter("%(levelname)s %(asctime)s [%(name)s:%(lineno)d] %(message)s"))
         root_logger.addHandler(file_handler)
 
     # Configure uvicorn loggers
