@@ -4,6 +4,7 @@ import calendar
 import datetime
 from dataclasses import dataclass
 from datetime import time as dt_time
+from typing import NamedTuple
 
 from app.core.constants import PERSON_IDS
 from app.core.oncall import _cached_oncall_rules as get_oncall_rules
@@ -1118,6 +1119,65 @@ def _populate_parental_day(
     return True
 
 
+class _ShiftResolution(NamedTuple):
+    shift: object
+    rotation_week: object
+    hours: float
+    start: object
+    end: object
+    ob: dict
+
+
+def _resolve_effective_shift(
+    current_day: datetime.date,
+    person_id: int,
+    vacation_shift,
+    vacation_dates,
+    shift_override_map,
+    swap_map,
+    shift_types,
+    combined_ob_rules,
+) -> _ShiftResolution:
+    """Resolve the effective shift for a day, in priority order.
+
+    Vacation (SEM) > manual shift override > accepted shift swap > the rotation shift. Returns
+    the shift plus its hours/start/end and OB hours (OC shifts and missing shifts carry no OB).
+    """
+
+    def _with_ob(shift, rotation_week) -> _ShiftResolution:
+        if shift is None:
+            return _ShiftResolution(None, None, 0.0, None, None, {})
+        hours, start, end = calculate_shift_hours(current_day, shift.code)
+        ob = calculate_ob_hours(start, end, combined_ob_rules) if (start is not None and shift.code != "OC") else {}
+        return _ShiftResolution(shift, rotation_week, hours, start, end, ob)
+
+    # Vacation
+    if vacation_shift and current_day in vacation_dates.get(person_id, set()):
+        return _ShiftResolution(vacation_shift, None, 0.0, None, None, {})
+
+    # Manual shift override
+    if shift_override_map is not None and shift_override_map.get((person_id, current_day)):
+        override_code = shift_override_map[(person_id, current_day)].shift_code
+        result = determine_shift_for_date(current_day, person_id)
+        rotation_week = result[1] if result else None
+        override_shift = next((s for s in shift_types if s.code == override_code), None)
+        return _with_ob(override_shift, rotation_week if override_shift else None)
+
+    # Accepted shift swap
+    if swap_map is not None and (person_id, current_day) in swap_map:
+        new_code = swap_map[(person_id, current_day)]
+        result = determine_shift_for_date(current_day, person_id)
+        rotation_week = result[1] if result else None
+        swapped_shift = next((s for s in shift_types if s.code == new_code), None)
+        return _with_ob(swapped_shift, rotation_week if swapped_shift else None)
+
+    # Rotation shift
+    result = determine_shift_for_date(current_day, person_id)
+    if result is None or result[0] is None:
+        return _ShiftResolution(None, None, 0.0, None, None, {})
+    return _with_ob(result[0], result[1])
+
+
 def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
@@ -1191,58 +1251,17 @@ def _populate_single_person_day(
     if _populate_parental_day(day_info, current_day, person_id, person_name, parental_dates, shift_types):
         return
 
-    # Kolla semester
-    if vacation_shift and current_day in vacation_dates.get(person_id, set()):
-        shift = vacation_shift
-        rotation_week = None
-        hours, start, end = 0.0, None, None
-        ob = {}
-    elif shift_override_map is not None and shift_override_map.get((person_id, current_day)):
-        override_code = shift_override_map[(person_id, current_day)].shift_code
-        result = determine_shift_for_date(current_day, person_id)
-        rotation_week = result[1] if result else None
-        override_shift = next((s for s in shift_types if s.code == override_code), None)
-        if override_shift:
-            shift = override_shift
-            hours, start, end = calculate_shift_hours(current_day, override_shift.code)
-            if start is not None and override_shift.code != "OC":
-                ob = calculate_ob_hours(start, end, combined_ob_rules)
-            else:
-                ob = {}
-        else:
-            shift, rotation_week = None, None
-            hours, start, end = 0.0, None, None
-            ob = {}
-    elif swap_map is not None and (person_id, current_day) in swap_map:
-        # Skiftbyte: ersätt med det nya skiftet
-        new_code = swap_map[(person_id, current_day)]
-        result = determine_shift_for_date(current_day, person_id)
-        rotation_week = result[1] if result else None
-        swapped_shift = next((s for s in shift_types if s.code == new_code), None)
-        if swapped_shift:
-            shift = swapped_shift
-            hours, start, end = calculate_shift_hours(current_day, shift.code)
-            if start is not None and shift.code != "OC":
-                ob = calculate_ob_hours(start, end, combined_ob_rules)
-            else:
-                ob = {}
-        else:
-            shift, rotation_week = None, None
-            hours, start, end = 0.0, None, None
-            ob = {}
-    else:
-        result = determine_shift_for_date(current_day, person_id)
-        if result is None or result[0] is None:
-            shift, rotation_week = None, None
-            hours, start, end = 0.0, None, None
-            ob = {}
-        else:
-            shift, rotation_week = result
-            hours, start, end = calculate_shift_hours(current_day, shift.code)
-            if start is not None and shift.code != "OC":
-                ob = calculate_ob_hours(start, end, combined_ob_rules)
-            else:
-                ob = {}
+    # Kolla semester / override / byte / normalt skift (i prioritetsordning)
+    shift, rotation_week, hours, start, end, ob = _resolve_effective_shift(
+        current_day,
+        person_id,
+        vacation_shift,
+        vacation_dates,
+        shift_override_map,
+        swap_map,
+        shift_types,
+        combined_ob_rules,
+    )
 
     # Rotationsskiftet (för coworker-matchning och "visa rotation"-toggle i alla-vyer)
     _rot = determine_shift_for_date(current_day, person_id)
