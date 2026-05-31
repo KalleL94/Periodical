@@ -130,3 +130,16 @@ def test_partial_absence_renders_worked_portion(char_session):
     assert day["shift"].code == "N2"
     assert day["hours"] == 6.0
     assert "partial_absence" in day
+
+
+def test_week_based_parental_leave_renders_leave(char_session):
+    # Week-based parental leave (User.parental_leave JSON) renders LEAVE for the whole ISO week.
+    user = char_session.query(User).filter(User.id == 1).first()
+    user.parental_leave = {"2026": [11]}  # ISO week 11 = 9-15 March 2026
+    char_session.commit()
+
+    days = generate_month_data(2026, 3, 1, session=char_session)
+    leave_days = [d for d in days if d["shift"] and d["shift"].code == "LEAVE"]
+
+    assert len(leave_days) == 7
+    assert all(d["hours"] == 0.0 for d in leave_days)
