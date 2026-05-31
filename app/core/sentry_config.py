@@ -70,7 +70,7 @@ def init_sentry() -> bool:
             before_send=before_send_hook,
         )
 
-        env = os.getenv('SENTRY_ENVIRONMENT', 'production')
+        env = os.getenv("SENTRY_ENVIRONMENT", "production")
         logger.info(f"Sentry initialized successfully (environment: {env})")
         return True
 

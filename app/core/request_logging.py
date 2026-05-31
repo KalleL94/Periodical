@@ -74,8 +74,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Log level based on status code
             if error:
                 logger.error(
-                    f"{request.method} {request.url.path} - {status_code} "
-                    f"({duration_ms:.2f}ms) - ERROR: {error}",
+                    f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms) - ERROR: {error}",
                     extra=extra,
                     exc_info=True,
                 )
@@ -93,14 +92,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 # Don't log health checks at INFO level (reduces noise)
                 if request.url.path == "/health":
                     logger.debug(
-                        f"{request.method} {request.url.path} - {status_code} "
-                        f"({duration_ms:.2f}ms)",
+                        f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
                         extra=extra,
                     )
                 else:
                     logger.info(
-                        f"{request.method} {request.url.path} - {status_code} "
-                        f"({duration_ms:.2f}ms)",
+                        f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
                         extra=extra,
                     )
 

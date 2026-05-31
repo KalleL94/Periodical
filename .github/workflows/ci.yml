@@ -7,31 +7,34 @@ on:
 
 jobs:
   test:
-    name: Run Tests and Syntax Check
+    name: Lint and Test
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
-          cache: "pip" # Detta aktiverar automatisk caching av dependencies
+          # Match the version run in production (venv) and used to compile requirements.txt
+          python-version: "3.12"
+          cache: "pip" # Enables automatic caching of dependencies
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Installerar projektet + dev-dependencies (pytest, ruff etc) definierade i pyproject.toml
+          # Installs the project plus dev dependencies (pytest, ruff, etc.) from pyproject.toml
           pip install ".[dev]"
 
-      - name: Basic Syntax Check
-        run: python -m py_compile app/main.py
+      - name: Lint with Ruff
+        run: |
+          ruff check .
+          ruff format --check .
 
       - name: Run Tests
         env:
-          # Sätter dummy-variabler ifall testerna laddar app-konfigurationen
+          # Dummy variables in case the tests load the application configuration
           SECRET_KEY: "test_secret_key_for_ci"
           PRODUCTION: "false"
         run: |

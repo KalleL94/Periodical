@@ -679,7 +679,7 @@ curl http://127.0.0.1:8000/health
 pytest
 
 # Om de fungerar lokalt men inte i CI:
-# - Kontrollera Python-version (CI använder 3.11)
+# - Kontrollera Python-version (CI använder 3.12)
 # - Kontrollera att alla dependencies finns i pyproject.toml
 ```
 
@@ -833,8 +833,8 @@ Se `docs/CORS.md` för fullständig guide.
 # Uppdatera system
 sudo apt update && sudo apt upgrade -y
 
-# Verifiera Python-version (kräver 3.11 eller senare)
-python3 --version  # Ska visa Python 3.11+ (projektet använder Python 3.12)
+# Verifiera Python-version (projektet använder Python 3.12)
+python3 --version  # Ska visa Python 3.12.x
 
 # Installera dependencies
 sudo apt install python3 python3-pip python3-venv nginx certbot python3-certbot-nginx git sqlite3
