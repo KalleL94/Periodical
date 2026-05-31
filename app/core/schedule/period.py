@@ -1081,6 +1081,43 @@ def _populate_absence_day(
     return False
 
 
+def _populate_parental_day(
+    day_info: dict,
+    current_day: datetime.date,
+    person_id: int,
+    person_name: str,
+    parental_dates,
+    shift_types,
+) -> bool:
+    """Fill day_info for a week-based parental-leave day (LEAVE shift). Returns True when handled."""
+    if not (parental_dates and current_day in parental_dates.get(person_id, set())):
+        return False
+    leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
+    if not leave_shift:
+        return False
+    result = determine_shift_for_date(current_day, person_id)
+    original_shift, rotation_week = result if result else (None, None)
+    day_info.update(
+        {
+            "person_id": person_id,
+            "person_name": person_name,
+            "shift": leave_shift,
+            "original_shift": original_shift,
+            "rotation_week": rotation_week,
+            "hours": 0.0,
+            "start": None,
+            "end": None,
+            "ob": {},
+            "oncall_pay": 0.0,
+            "oncall_details": {},
+            "ot_pay": 0.0,
+            "ot_hours": 0.0,
+            "ot_details": {},
+        }
+    )
+    return True
+
+
 def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
@@ -1151,30 +1188,8 @@ def _populate_single_person_day(
         return
 
     # Kolla föräldraledighet (veckobaserad + dagsnivå via parental_dates)
-    if parental_dates and current_day in parental_dates.get(person_id, set()):
-        leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
-        if leave_shift:
-            result = determine_shift_for_date(current_day, person_id)
-            original_shift, rotation_week = result if result else (None, None)
-            day_info.update(
-                {
-                    "person_id": person_id,
-                    "person_name": person_name,
-                    "shift": leave_shift,
-                    "original_shift": original_shift,
-                    "rotation_week": rotation_week,
-                    "hours": 0.0,
-                    "start": None,
-                    "end": None,
-                    "ob": {},
-                    "oncall_pay": 0.0,
-                    "oncall_details": {},
-                    "ot_pay": 0.0,
-                    "ot_hours": 0.0,
-                    "ot_details": {},
-                }
-            )
-            return
+    if _populate_parental_day(day_info, current_day, person_id, person_name, parental_dates, shift_types):
+        return
 
     # Kolla semester
     if vacation_shift and current_day in vacation_dates.get(person_id, set()):
