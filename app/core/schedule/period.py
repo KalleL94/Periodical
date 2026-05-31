@@ -1194,6 +1194,31 @@ def _compute_oncall_pay(
     return oncall_calc["total_pay"], oncall_calc
 
 
+def _compute_overtime_pay(
+    ot_shift, current_day, person_id, session, settings, ot_rate_override
+) -> tuple[float, float, dict]:
+    """Overtime pay/hours/details for an OT shift, using the historical wage for the date."""
+    from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
+
+    wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
+    hourly_rate = (
+        float(ot_rate_override)
+        if ot_rate_override is not None
+        else get_ot_hourly_rate_from_stored_wage(session, person_id, wage_for_date)
+    )
+    ot_hours = ot_shift.hours
+    ot_pay = hourly_rate * ot_hours
+    ot_details = {
+        "start_time": str(ot_shift.start_time),
+        "end_time": str(ot_shift.end_time),
+        "hours": ot_hours,
+        "pay": ot_pay,
+        "hourly_rate": hourly_rate,
+        "is_extension": ot_shift.is_extension,
+    }
+    return ot_pay, ot_hours, ot_details
+
+
 def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
@@ -1364,30 +1389,9 @@ def _populate_single_person_day(
     ot_details = {}
 
     if ot_shift:
-        # Calculate overtime pay using a temporal wage query
-        from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
-
-        # Get raw stored wage for this date (temporal query)
-        wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
-        _ot_custom = _person_rates.get("ot")
-        hourly_rate = (
-            float(_ot_custom)
-            if _ot_custom is not None
-            else get_ot_hourly_rate_from_stored_wage(session, person_id, wage_for_date)
+        ot_pay, ot_hours, ot_details = _compute_overtime_pay(
+            ot_shift, current_day, person_id, session, settings, _person_rates.get("ot")
         )
-
-        # Recalculate overtime pay based on historical wage
-        ot_hours = ot_shift.hours
-        ot_pay = hourly_rate * ot_hours
-
-        ot_details = {
-            "start_time": str(ot_shift.start_time),
-            "end_time": str(ot_shift.end_time),
-            "hours": ot_hours,
-            "pay": ot_pay,
-            "hourly_rate": hourly_rate,
-            "is_extension": ot_shift.is_extension,
-        }
 
         # Ersätt skift med OT för visning – men inte om det är en förlängning
         if not ot_shift.is_extension:

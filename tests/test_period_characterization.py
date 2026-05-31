@@ -21,7 +21,7 @@ sys.path.insert(0, str(project_root))
 import app.database.database as db_module
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule.period import generate_month_data
-from app.database.database import Absence, AbsenceType, Base, RotationEra, User, UserRole, WageType
+from app.database.database import Absence, AbsenceType, Base, OvertimeShift, RotationEra, User, UserRole, WageType
 
 TEST_DB_URL = "sqlite:///file:test_period_char_memdb?mode=memory&cache=shared&uri=true"
 test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False, "uri": True})
@@ -165,3 +165,25 @@ def test_oncall_pay_per_day(char_session):
 
     assert len(oncall_days) == 3
     assert round(sum(d["oncall_pay"] for d in days), 2) == 6082.0
+
+
+def test_overtime_day_renders_ot_shift_and_pay(char_session):
+    # A 4h non-extension OT shift renders the OT display shift and pays wage/72 per hour.
+    char_session.add(
+        OvertimeShift(
+            user_id=1,
+            date=datetime.date(2026, 3, 5),
+            start_time=datetime.time(8, 0),
+            end_time=datetime.time(12, 0),
+            hours=4.0,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    char_session.commit()
+
+    day = _day(generate_month_data(2026, 3, 1, session=char_session), datetime.date(2026, 3, 5))
+
+    assert day["shift"].code == "OT"
+    assert day["ot_hours"] == 4.0
+    assert round(day["ot_pay"], 2) == 1666.67
