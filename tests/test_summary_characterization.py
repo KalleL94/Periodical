@@ -25,7 +25,11 @@ sys.path.insert(0, str(project_root))
 import app.database.database as db_module
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule.core import determine_shift_for_date
-from app.core.schedule.summary import summarize_month_for_person
+from app.core.schedule.summary import (
+    _apply_absence_info_to_totals,
+    _hourly_corrected_gross,
+    summarize_month_for_person,
+)
 from app.database.database import Absence, AbsenceType, Base, RotationEra, User, UserRole, WageType
 
 YEAR = 2026
@@ -140,6 +144,39 @@ def test_summary_structure_and_invariants(char_session):
     assert s["total_hours"] > 0
     assert s["num_shifts"] > 0
     assert s["netto_pay"] <= s["brutto_pay"]
+
+
+def test_hourly_corrected_gross():
+    # current_gross 30000, base 30000 -> swap base for 160h worked at 200/h = 32000.
+    assert _hourly_corrected_gross(30000.0, 30000.0, 150.0, 10.0, 200.0) == 32000.0
+    # No hours worked or absent -> the monthly base is fully removed.
+    assert _hourly_corrected_gross(30000.0, 30000.0, 0.0, 0.0, 200.0) == 0.0
+
+
+def test_apply_absence_info_to_totals():
+    totals = {"brutto_pay": 30000.0}
+    absence_info = {
+        "total_deduction": 2000.0,
+        "total_hours": 16.0,
+        "sick_days": 2,
+        "sick_hours": 16.0,
+        "sick_ob_pay": 300.0,
+        "vab_days": 0,
+        "vab_hours": 0.0,
+        "leave_days": 0,
+        "leave_hours": 0.0,
+        "off_days": 0,
+        "off_hours": 0.0,
+        "details": [{"date": "x"}],
+    }
+
+    details = _apply_absence_info_to_totals(totals, absence_info)
+
+    assert totals["absence_deduction"] == 2000.0
+    assert totals["sick_days"] == 2
+    # gross = 30000 - 2000 deduction + 300 sick OB compensation
+    assert totals["brutto_pay"] == 28300.0
+    assert details == [{"date": "x"}]
 
 
 def test_summary_reflects_a_sick_day(char_session):

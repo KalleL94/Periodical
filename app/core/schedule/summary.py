@@ -116,6 +116,51 @@ def _resolve_person_name(session, person_id: int, on_date, persons) -> str:
     return persons[person_id - 1].name
 
 
+def _apply_absence_info_to_totals(totals: dict, absence_info: dict) -> list:
+    """Copy a month's absence figures into the running totals and adjust gross pay.
+
+    Subtracts the absence deduction and adds back sick-pay OB compensation. Returns the
+    per-day absence details list.
+    """
+    totals["absence_deduction"] = absence_info["total_deduction"]
+    totals["absence_hours"] = absence_info["total_hours"]
+    totals["sick_days"] = absence_info["sick_days"]
+    totals["sick_hours"] = absence_info["sick_hours"]
+    totals["sick_ob_pay"] = absence_info.get("sick_ob_pay", 0.0)
+    totals["sick_ob_pay_by_code"] = absence_info.get("sick_ob_pay_by_code", {})
+    totals["sick_ob_hours_by_code"] = absence_info.get("sick_ob_hours_by_code", {})
+    totals["sick_total_ob"] = absence_info.get("sick_total_ob", 0.0)
+    totals["sick_ob_lost"] = absence_info.get("sick_ob_lost", 0.0)
+    totals["vab_days"] = absence_info["vab_days"]
+    totals["vab_hours"] = absence_info["vab_hours"]
+    totals["leave_days"] = absence_info["leave_days"]
+    totals["leave_hours"] = absence_info["leave_hours"]
+    totals["off_days"] = absence_info["off_days"]
+    totals["off_hours"] = absence_info["off_hours"]
+    totals["parental_days"] = absence_info.get("parental_days", 0)
+    totals["parental_hours"] = absence_info.get("parental_hours", 0.0)
+
+    totals["brutto_pay"] -= totals["absence_deduction"]
+    totals["brutto_pay"] += totals["sick_ob_pay"]
+
+    return absence_info["details"]
+
+
+def _hourly_corrected_gross(
+    current_gross: float,
+    base_salary: float,
+    worked_hours: float,
+    absent_hours: float,
+    hourly_rate: float,
+) -> float:
+    """Gross pay for an hourly worker: swap the theoretical monthly base for actual hours.
+
+    absence_hours are the hours period.py zeroes out (not in worked_hours); they are added
+    back so (worked + absent) x hourly_rate - absence_deduction yields the correct sick-pay base.
+    """
+    return current_gross - base_salary + (worked_hours + absent_hours) * hourly_rate
+
+
 def summarize_month_for_person(
     year: int,
     month: int,
@@ -255,31 +300,10 @@ def summarize_month_for_person(
             ob_rules=combined_rules,
             ob_rate_overrides=user_rates.get("ob") if user_rates else None,
         )
-        totals["absence_deduction"] = absence_info["total_deduction"]
-        totals["absence_hours"] = absence_info["total_hours"]
-        totals["sick_days"] = absence_info["sick_days"]
-        totals["sick_hours"] = absence_info["sick_hours"]
-        totals["sick_ob_pay"] = absence_info.get("sick_ob_pay", 0.0)
-        totals["sick_ob_pay_by_code"] = absence_info.get("sick_ob_pay_by_code", {})
-        totals["sick_ob_hours_by_code"] = absence_info.get("sick_ob_hours_by_code", {})
-        totals["sick_total_ob"] = absence_info.get("sick_total_ob", 0.0)
-        totals["sick_ob_lost"] = absence_info.get("sick_ob_lost", 0.0)
-        totals["vab_days"] = absence_info["vab_days"]
-        totals["vab_hours"] = absence_info["vab_hours"]
-        totals["leave_days"] = absence_info["leave_days"]
-        totals["leave_hours"] = absence_info["leave_hours"]
-        totals["off_days"] = absence_info["off_days"]
-        totals["off_hours"] = absence_info["off_hours"]
-        totals["parental_days"] = absence_info.get("parental_days", 0)
-        totals["parental_hours"] = absence_info.get("parental_hours", 0.0)
-        absence_details = absence_info["details"]
-
-        # Subtract absence deduction and add sick-pay OB compensation
-        totals["brutto_pay"] -= totals["absence_deduction"]
-        totals["brutto_pay"] += totals["sick_ob_pay"]
+        absence_details = _apply_absence_info_to_totals(totals, absence_info)
 
         # For hourly-wage users: replace the theoretical monthly base (hourly_rate×173.33)
-        # with actual scheduled hours × hourly rate so gross matches the pay-slip table
+        # with actual scheduled hours × hourly rate so gross matches the pay-slip table.
         from app.database.database import WageType
 
         if user and user.wage_type == WageType.HOURLY:
@@ -287,13 +311,8 @@ def summarize_month_for_person(
                 get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
             )
             worked_hours = totals["total_hours"] - totals["ot_hours"]
-            # absence_hours are the absent hours that period.py sets to 0 (not in total_hours).
-            # absence_deduction is designed for monthly salary and assumes those hours were already
-            # paid — for hourly wage we must add them back explicitly so that
-            # (worked + absent) × hourly_rate - absence_deduction gives the correct sick-pay base.
-            absent_hours = totals.get("absence_hours", 0.0)
-            totals["brutto_pay"] = (
-                totals["brutto_pay"] - base_salary + (worked_hours + absent_hours) * actual_hourly_rate
+            totals["brutto_pay"] = _hourly_corrected_gross(
+                totals["brutto_pay"], base_salary, worked_hours, totals.get("absence_hours", 0.0), actual_hourly_rate
             )
 
     # Calculate net pay using the user's tax table for the payment year
