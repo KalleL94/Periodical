@@ -156,3 +156,12 @@ def test_week_based_vacation_renders_sem(char_session):
 
     assert len(sem_days) == 7
     assert all(d["hours"] == 0.0 for d in sem_days)
+
+
+def test_oncall_pay_per_day(char_session):
+    # The rotation has three OC days in March 2026; their on-call pay sums to a fixed total.
+    days = generate_month_data(2026, 3, 1, session=char_session)
+    oncall_days = [d for d in days if d["oncall_pay"] > 0]
+
+    assert len(oncall_days) == 3
+    assert round(sum(d["oncall_pay"] for d in days), 2) == 6082.0

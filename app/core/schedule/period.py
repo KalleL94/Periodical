@@ -1178,6 +1178,22 @@ def _resolve_effective_shift(
     return _with_ob(result[0], result[1])
 
 
+def _compute_oncall_pay(
+    shift, current_day, person_id, user_wages, settings, oncall_rate_override
+) -> tuple[float, dict]:
+    """On-call pay for a day. Returns (pay, details); (0.0, {}) for non-OC shifts."""
+    if not (shift and shift.code == "OC"):
+        return 0.0, {}
+    oncall_rules = get_oncall_rules(current_day.year)
+    oncall_calc = calculate_oncall_pay(
+        current_day,
+        user_wages.get(person_id, settings.monthly_salary),
+        oncall_rules,
+        rate_overrides=oncall_rate_override,
+    )
+    return oncall_calc["total_pay"], oncall_calc
+
+
 def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
@@ -1300,19 +1316,10 @@ def _populate_single_person_day(
                     ob = {}
 
     # Calculate on-call pay
-    oncall_pay = 0.0
-    oncall_details = {}
     _person_rates = (user_rates_map or {}).get(person_id) or {}
-    if shift and shift.code == "OC":
-        oncall_rules = get_oncall_rules(current_day.year)
-        oncall_calc = calculate_oncall_pay(
-            current_day,
-            user_wages.get(person_id, settings.monthly_salary),
-            oncall_rules,
-            rate_overrides=_person_rates.get("oncall"),
-        )
-        oncall_pay = oncall_calc["total_pay"]
-        oncall_details = oncall_calc
+    oncall_pay, oncall_details = _compute_oncall_pay(
+        shift, current_day, person_id, user_wages, settings, _person_rates.get("oncall")
+    )
 
     # Kolla övertid - både på aktuell dag (för visning) och föregående dag (för beredskap)
     ot_shift = None
