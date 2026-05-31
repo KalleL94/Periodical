@@ -162,20 +162,45 @@ def _count_weekdays_in_vacation_weeks(
     iso_year: int,
     period_start: datetime.date,
     period_end: datetime.date,
+    off_dates: set[datetime.date] | None = None,
 ) -> int:
     """
-    Count weekdays (Mon-Fri) in the given ISO weeks that fall within [period_start, period_end].
+    Count vacation days consumed by the given ISO weeks within [period_start, period_end].
+
+    When off_dates is provided, a week consumes only the days the employee was actually
+    scheduled to work (all seven weekdays minus OFF-shift days), so week-based vacation is
+    counted the same way as day-level vacation. Without off_dates it falls back to a flat
+    Mon-Fri (5 days/week).
     """
     count = 0
+    # With a known schedule, consider all 7 days and drop the OFF ones; otherwise Mon-Fri.
+    day_range = range(1, 8) if off_dates is not None else range(1, 6)
     for week in weeks:
-        for iso_day in range(1, 6):  # 1=Monday .. 5=Friday
+        for iso_day in day_range:
             try:
                 d = datetime.date.fromisocalendar(iso_year, week, iso_day)
             except ValueError:
                 continue
-            if period_start <= d <= period_end:
-                count += 1
+            if not (period_start <= d <= period_end):
+                continue
+            if off_dates is not None and d in off_dates:
+                continue
+            count += 1
     return count
+
+
+def _scheduled_off_dates(user, start: datetime.date, end: datetime.date) -> set[datetime.date]:
+    """Return the OFF-shift dates for a user across [start, end] based on the rotation."""
+    from app.core.schedule.core import determine_shift_for_date
+
+    off: set[datetime.date] = set()
+    d = start
+    while d <= end:
+        shift, _ = determine_shift_for_date(d, user.rotation_person_id)
+        if shift and shift.code == "OFF":
+            off.add(d)
+        d += datetime.timedelta(days=1)
+    return off
 
 
 def count_vacation_days_used(
@@ -224,7 +249,7 @@ def count_vacation_days_used(
     for cal_year in calendar_years:
         weeks = vacation_json.get(str(cal_year), []) or []
         if weeks:
-            week_based += _count_weekdays_in_vacation_weeks(weeks, cal_year, year_start, year_end)
+            week_based += _count_weekdays_in_vacation_weeks(weeks, cal_year, year_start, year_end, off_dates)
 
     # Count day-level vacation from absences (exclude OFF-shift days)
     absences = (
@@ -386,6 +411,12 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
 
     # Vacation year boundaries
     year_start, year_end = get_vacation_year_boundaries(target_year, start_month)
+
+    # Count vacation in scheduled work days: both week-based and day-level vacation exclude
+    # the employee's OFF-shift days. Compute the OFF days for the vacation year when the
+    # caller did not supply them, so every entry point counts consistently.
+    if off_dates is None:
+        off_dates = _scheduled_off_dates(user, year_start, year_end)
 
     # Earning year is the year before the vacation year
     earning_start, earning_end = get_vacation_year_boundaries(target_year - 1, start_month)
