@@ -15,6 +15,27 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.24.1",
+        "date": "2026-05-31",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Karens vid sjukfrånvaro som sträcker sig över ett månadsskifte beräknas nu korrekt; tidigare kunde hela karensavdraget (8h) dras en gång till i den nya månaden, vilket gav ett för stort löneavdrag",
+                "en": "Waiting-day (karens) deductions for sick leave that spans a month boundary are now calculated correctly; previously the full 8h waiting period could be charged again in the new month, over-deducting from pay",
+            },
+            {
+                "type": "fix",
+                "sv": "Veckobaserad semester räknas nu i schemalagda arbetsdagar (OFF-dagar exkluderas), precis som dag-baserad semester; tidigare räknades alltid 5 vardagar per vecka vilket gav fel semestersaldo för skiftarbetare",
+                "en": "Week-based vacation is now counted in scheduled work days (OFF days excluded), the same way as day-level vacation; previously a flat 5 weekdays per week were counted, giving an incorrect balance for shift workers",
+            },
+            {
+                "type": "förbättring",
+                "sv": "Säkerhet vid inloggning: skydd mot lösenordsgissning (tillfälligt kontolås efter upprepade misslyckade försök), obligatoriskt lösenordsbyte tvingas nu fram på alla sidor (inte bara direkt efter inloggning), och inloggningssvar avslöjar inte längre om ett användarnamn finns",
+                "en": "Login security: brute-force protection (temporary lockout after repeated failed attempts), the mandatory password change is now enforced on every page (not only right after login), and login responses no longer reveal whether a username exists",
+            },
+        ],
+    },
+    {
         "version": "0.24.0",
         "date": "2026-05-29",
         "entries": [
