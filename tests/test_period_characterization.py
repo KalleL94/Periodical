@@ -21,7 +21,7 @@ sys.path.insert(0, str(project_root))
 import app.database.database as db_module
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule.period import generate_month_data
-from app.database.database import Base, RotationEra, User, UserRole, WageType
+from app.database.database import Absence, AbsenceType, Base, RotationEra, User, UserRole, WageType
 
 TEST_DB_URL = "sqlite:///file:test_period_char_memdb?mode=memory&cache=shared&uri=true"
 test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False, "uri": True})
@@ -103,3 +103,30 @@ def test_month_total_scheduled_hours(char_session):
 def test_every_day_has_person_name(char_session):
     days = generate_month_data(2026, 3, 1, session=char_session)
     assert all(d["person_name"] == "Characterization" for d in days)
+
+
+def _day(days, d: datetime.date) -> dict:
+    return next(x for x in days if x["date"] == d)
+
+
+def test_full_day_sick_renders_absence_shift(char_session):
+    # 2026-03-01 is an N2 work day; a full sick day renders the SICK shift with no hours.
+    char_session.add(Absence(user_id=1, date=datetime.date(2026, 3, 1), absence_type=AbsenceType.SICK))
+    char_session.commit()
+
+    day = _day(generate_month_data(2026, 3, 1, session=char_session), datetime.date(2026, 3, 1))
+
+    assert day["shift"].code == "SICK"
+    assert day["hours"] == 0.0
+
+
+def test_partial_absence_renders_worked_portion(char_session):
+    # Leaving an 8.5h N2 shift at 20:00 leaves 6h worked, keeping the original shift.
+    char_session.add(Absence(user_id=1, date=datetime.date(2026, 3, 2), absence_type=AbsenceType.SICK, left_at="20:00"))
+    char_session.commit()
+
+    day = _day(generate_month_data(2026, 3, 1, session=char_session), datetime.date(2026, 3, 2))
+
+    assert day["shift"].code == "N2"
+    assert day["hours"] == 6.0
+    assert "partial_absence" in day

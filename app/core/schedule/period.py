@@ -986,6 +986,101 @@ def _resolve_day_person(
     return person_name, show_off_before_employment
 
 
+def _populate_absence_day(
+    day_info: dict,
+    absence,
+    current_day: datetime.date,
+    person_id: int,
+    person_name: str,
+    combined_ob_rules,
+    vacation_shift,
+    shift_types,
+) -> bool:
+    """Fill day_info for a day with an absence. Returns True when handled (caller stops).
+
+    Returns False when the absence does not resolve to a shift (e.g. a partial absence on a
+    day with no scheduled shift, or an unknown absence type), so the caller continues.
+    """
+    from app.database.database import AbsenceType
+
+    # Partial absence: calculate OB and hours for the worked portion of the shift
+    if (absence.left_at is not None or absence.arrived_at is not None) and absence.absence_type != AbsenceType.VACATION:
+        result = determine_shift_for_date(current_day, person_id)
+        if result and result[0]:
+            original_shift, rotation_week = result
+            hours, start, end = calculate_shift_hours(current_day, original_shift.code)
+            if start is not None:
+                if absence.left_at:
+                    left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
+                    end = datetime.datetime.combine(current_day, left_time)
+                    if end <= start:
+                        end = start
+                if absence.arrived_at:
+                    arrived_time = datetime.datetime.strptime(absence.arrived_at, "%H:%M").time()
+                    start = datetime.datetime.combine(current_day, arrived_time)
+                    if start >= end:
+                        start = end
+                hours = (end - start).total_seconds() / 3600.0
+                ob = calculate_ob_hours(start, end, combined_ob_rules) if original_shift.code != "OC" else {}
+            else:
+                ob = {}
+
+            day_info.update(
+                {
+                    "person_id": person_id,
+                    "person_name": person_name,
+                    "shift": original_shift,
+                    "original_shift": original_shift,
+                    "rotation_week": rotation_week,
+                    "hours": hours,
+                    "start": start,
+                    "end": end,
+                    "ob": ob,
+                    "oncall_pay": 0.0,
+                    "oncall_details": {},
+                    "ot_pay": 0.0,
+                    "ot_hours": 0.0,
+                    "ot_details": {},
+                    "partial_absence": absence,
+                }
+            )
+            return True
+
+    # VACATION absences use the SEM shift (same as week-based vacation)
+    # PARENTAL falls back to LEAVE shift since no dedicated shift type exists
+    if absence.absence_type == AbsenceType.VACATION:
+        absence_shift = vacation_shift
+    elif absence.absence_type == AbsenceType.PARENTAL:
+        absence_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
+    else:
+        absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+    if absence_shift:
+        # Get original shift for coworker matching
+        result = determine_shift_for_date(current_day, person_id)
+        original_shift, rotation_week = result if result else (None, None)
+        day_info.update(
+            {
+                "person_id": person_id,
+                "person_name": person_name,
+                "shift": absence_shift,
+                "original_shift": original_shift,  # For coworker matching
+                "rotation_week": rotation_week,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
+                "ob": {},
+                "oncall_pay": 0.0,
+                "oncall_details": {},
+                "ot_pay": 0.0,
+                "ot_hours": 0.0,
+                "ot_details": {},
+            }
+        )
+        return True
+
+    return False
+
+
 def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
@@ -1050,94 +1145,10 @@ def _populate_single_person_day(
 
         absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == current_day).first()
 
-    if absence:
-        from app.database.database import AbsenceType
-
-        # Partial absence: calculate OB and hours for the worked portion of the shift
-        if (
-            absence.left_at is not None or absence.arrived_at is not None
-        ) and absence.absence_type != AbsenceType.VACATION:
-            result = determine_shift_for_date(current_day, person_id)
-            if result and result[0]:
-                original_shift, rotation_week = result
-                hours, start, end = calculate_shift_hours(current_day, original_shift.code)
-                if start is not None:
-                    if absence.left_at:
-                        left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
-                        end = datetime.datetime.combine(current_day, left_time)
-                        if end <= start:
-                            end = start
-                    if absence.arrived_at:
-                        arrived_time = datetime.datetime.strptime(absence.arrived_at, "%H:%M").time()
-                        start = datetime.datetime.combine(current_day, arrived_time)
-                        if start >= end:
-                            start = end
-                    hours = (end - start).total_seconds() / 3600.0
-                    ob = calculate_ob_hours(start, end, combined_ob_rules) if original_shift.code != "OC" else {}
-                else:
-                    ob = {}
-
-                day_info.update(
-                    {
-                        "person_id": person_id,
-                        "person_name": person_name,
-                        "shift": original_shift,
-                        "original_shift": original_shift,
-                        "rotation_week": rotation_week,
-                        "hours": hours,
-                        "start": start,
-                        "end": end,
-                        "ob": ob,
-                        "oncall_pay": 0.0,
-                        "oncall_details": {},
-                        "ot_pay": 0.0,
-                        "ot_hours": 0.0,
-                        "ot_details": {},
-                        "partial_absence": absence,
-                    }
-                )
-                return
-
-        # VACATION absences use the SEM shift (same as week-based vacation)
-        # PARENTAL falls back to LEAVE shift since no dedicated shift type exists
-        if absence.absence_type == AbsenceType.VACATION:
-            absence_shift = vacation_shift
-        elif absence.absence_type == AbsenceType.PARENTAL:
-            absence_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
-        else:
-            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
-        if absence_shift:
-            shift = absence_shift
-            # Get original shift for coworker matching
-            result = determine_shift_for_date(current_day, person_id)
-            original_shift, rotation_week = result if result else (None, None)
-            hours, start, end = 0.0, None, None
-            ob = {}
-            oncall_pay = 0.0
-            oncall_details = {}
-            ot_pay = 0.0
-            ot_hours = 0.0
-            ot_details = {}
-
-            day_info.update(
-                {
-                    "person_id": person_id,
-                    "person_name": person_name,
-                    "shift": shift,
-                    "original_shift": original_shift,  # For coworker matching
-                    "rotation_week": rotation_week,
-                    "hours": hours,
-                    "start": start,
-                    "end": end,
-                    "ob": ob,
-                    "oncall_pay": oncall_pay,
-                    "oncall_details": oncall_details,
-                    "ot_pay": ot_pay,
-                    "ot_hours": ot_hours,
-                    "ot_details": ot_details,
-                }
-            )
-            return
+    if absence and _populate_absence_day(
+        day_info, absence, current_day, person_id, person_name, combined_ob_rules, vacation_shift, shift_types
+    ):
+        return
 
     # Kolla föräldraledighet (veckobaserad + dagsnivå via parental_dates)
     if parental_dates and current_day in parental_dates.get(person_id, set()):
