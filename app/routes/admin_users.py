@@ -14,7 +14,7 @@ from app.core.constants import DEFAULT_PASSWORD
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
-from app.database.database import User, UserRole, WageType, get_db
+from app.database.database import User, UserRole, WageType, get_db, utcnow
 from app.routes.shared import _parse_rates_form, render
 
 logger = get_logger(__name__)
@@ -633,7 +633,7 @@ async def admin_transition_save(
     transition.earning_year_start = earning_start
     transition.earning_year_end = earning_end
     transition.notes = notes.strip() or None
-    transition.updated_at = _dt.datetime.utcnow()
+    transition.updated_at = utcnow()
 
     try:
         db.commit()

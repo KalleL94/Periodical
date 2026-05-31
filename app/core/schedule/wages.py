@@ -204,7 +204,7 @@ def calculate_absence_deduction(
         - LEAVE: 100% avdrag (obetald ledighet)
         - OFF: 0% avdrag (betald ledighet)
     """
-    hourly_wage = monthly_wage / 173.33
+    hourly_wage = monthly_wage / _MONTHLY_HOURS
     hours = absent_hours if absent_hours is not None else shift_hours
 
     if absence_type == "SICK":

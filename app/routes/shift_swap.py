@@ -13,7 +13,7 @@ from app.core.helpers import render_template
 from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache
 from app.core.schedule.core import determine_shift_for_date
 from app.core.utils import get_today
-from app.database.database import ShiftSwap, SwapStatus, User, get_db
+from app.database.database import ShiftSwap, SwapStatus, User, get_db, utcnow
 from app.routes.shared import templates
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
@@ -442,7 +442,7 @@ async def accept_swap(
         raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
 
     swap.status = SwapStatus.ACCEPTED
-    swap.responded_at = datetime.utcnow()
+    swap.responded_at = utcnow()
     db.commit()
     clear_schedule_cache()
 
@@ -465,7 +465,7 @@ async def reject_swap(
         raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
 
     swap.status = SwapStatus.REJECTED
-    swap.responded_at = datetime.utcnow()
+    swap.responded_at = utcnow()
     db.commit()
 
     return RedirectResponse(url="/swaps", status_code=303)
@@ -491,7 +491,7 @@ async def cancel_swap(
         raise HTTPException(status_code=400, detail="Kan bara avbryta väntande eller accepterade byten")
 
     swap.status = SwapStatus.CANCELLED
-    swap.responded_at = datetime.utcnow()
+    swap.responded_at = utcnow()
     db.commit()
     clear_schedule_cache()
 
