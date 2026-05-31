@@ -147,14 +147,19 @@ if IS_PRODUCTION:
         )
 
     allowed_origins = CORS_ORIGINS
+    allowed_origin_regex = None
     allow_credentials = True
     allowed_methods = ["GET", "POST"]  # Only allow methods we use
     allowed_headers = ["*"]
 
     logger.info(f"CORS configured for production with origins: {allowed_origins}")
 else:
-    # Development: Permissive CORS for easier testing
-    allowed_origins = ["*"]
+    # Development: Permissive CORS for easier testing.
+    # Use an origin regex rather than allow_origins=["*"]: a literal "*" is invalid with
+    # allow_credentials=True (browsers reject it), so Starlette must reflect the request
+    # origin instead for cookies/credentials to work cross-origin in dev.
+    allowed_origins = []
+    allowed_origin_regex = ".*"
     allow_credentials = True
     allowed_methods = ["*"]
     allowed_headers = ["*"]
@@ -164,6 +169,7 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=allowed_origin_regex,
     allow_credentials=allow_credentials,
     allow_methods=allowed_methods,
     allow_headers=allowed_headers,
