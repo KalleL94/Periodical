@@ -143,3 +143,16 @@ def test_week_based_parental_leave_renders_leave(char_session):
 
     assert len(leave_days) == 7
     assert all(d["hours"] == 0.0 for d in leave_days)
+
+
+def test_week_based_vacation_renders_sem(char_session):
+    # Week-based vacation (User.vacation JSON) renders the SEM shift for the whole ISO week.
+    user = char_session.query(User).filter(User.id == 1).first()
+    user.vacation = {"2026": [11]}
+    char_session.commit()
+
+    days = generate_month_data(2026, 3, 1, session=char_session)
+    sem_days = [d for d in days if d["shift"] and d["shift"].code == "SEM"]
+
+    assert len(sem_days) == 7
+    assert all(d["hours"] == 0.0 for d in sem_days)
