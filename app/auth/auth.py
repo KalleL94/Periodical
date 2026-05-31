@@ -113,6 +113,11 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
+# Precomputed hash used to equalise authentication timing when the username does not exist,
+# so an attacker cannot tell valid usernames apart by measuring response time.
+_DUMMY_PASSWORD_HASH = pwd_context.hash("timing-equalisation-placeholder")
+
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
@@ -154,6 +159,9 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
     """
     user = get_user_by_username(db, username)
     if not user:
+        # Verify against a dummy hash so a missing user costs ~the same time as a wrong
+        # password, preventing username enumeration via response timing.
+        verify_password(password, _DUMMY_PASSWORD_HASH)
         return None
     if not verify_password(password, user.password_hash):
         return None
