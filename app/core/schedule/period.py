@@ -659,33 +659,8 @@ def _build_person_day_basic(
     vacation_shift = get_vacation_shift()
     rotation_length = get_rotation_length_for_date(date)
 
-    # Get person name via PersonHistory (shows correct person for this specific date)
-    # Also check if date is before any person's employment at this position
-    person_name = persons[person_id - 1].name  # Default fallback
-    show_off_before_employment = False
-
-    if session:
-        # First check who held this position on this specific date
-        date_person = get_person_for_date(session, person_id, date)
-        if date_person:
-            # Someone held this position on this date - use their name, no OFF
-            person_name = date_person["name"]
-        else:
-            # No one held the position on this date - check if there's a future person
-            current_person = get_current_person_for_position(session, person_id)
-            if current_person:
-                person_name = current_person["name"]
-                # Only show OFF if date is before the current person's employment started
-                if current_person.get("effective_from") and date < current_person["effective_from"]:
-                    show_off_before_employment = True
-
-    # Override: if the viewing user hasn't started yet, show before_employment
-    if employment_start and date < employment_start and not show_off_before_employment:
-        if session:
-            current_person = get_current_person_for_position(session, person_id)
-            if current_person:
-                person_name = current_person["name"]
-        show_off_before_employment = True
+    # Get person name via PersonHistory and whether the date precedes employment.
+    person_name, show_off_before_employment = _resolve_day_person(session, person_id, date, persons, employment_start)
 
     # If date is before current person's employment, show OFF
     if show_off_before_employment:

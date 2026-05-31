@@ -20,7 +20,7 @@ sys.path.insert(0, str(project_root))
 # ruff: noqa: E402
 import app.database.database as db_module
 from app.core.schedule import clear_schedule_cache
-from app.core.schedule.period import generate_month_data
+from app.core.schedule.period import build_week_data, generate_month_data
 from app.database.database import (
     Absence,
     AbsenceType,
@@ -222,3 +222,13 @@ def test_oncall_override_remove_clears_oc_day(char_session):
 
     assert day["shift"].code == "OFF"
     assert day["oncall_pay"] == 0.0
+
+
+def test_build_week_data_basic(char_session):
+    # build_week_data feeds _build_person_day_basic (coworker matching); pin its per-day output.
+    days = build_week_data(2026, 11, person_id=1, session=char_session)
+
+    assert len(days) == 7
+    assert [d["shift"].code for d in days] == ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"]
+    assert all(d["person_name"] == "Characterization" for d in days)
+    assert all(d["rotation_length"] == 10 for d in days)
