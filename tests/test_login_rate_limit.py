@@ -4,7 +4,7 @@ After LOGIN_MAX_ATTEMPTS failed attempts for the same (username, ip) within the 
 further attempts are rejected with 429 until they age out; a successful login clears them.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from app.auth.auth import (
     LOGIN_MAX_ATTEMPTS,
@@ -13,7 +13,7 @@ from app.auth.auth import (
     is_login_locked,
     record_failed_login,
 )
-from app.database.database import LoginAttempt
+from app.database.database import LoginAttempt, utcnow
 
 IP = "1.2.3.4"
 
@@ -47,7 +47,7 @@ def test_clear_attempts_unlocks(test_db):
 
 
 def test_attempts_outside_window_do_not_count(test_db):
-    old = datetime.utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES + 1)
+    old = utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES + 1)
     for _ in range(LOGIN_MAX_ATTEMPTS):
         test_db.add(LoginAttempt(username="bob", ip=IP, created_at=old))
     test_db.commit()
