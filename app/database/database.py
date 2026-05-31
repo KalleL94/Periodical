@@ -53,12 +53,12 @@ def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-class UserRole(str, enum.Enum):
+class UserRole(enum.StrEnum):
     USER = "user"
     ADMIN = "admin"
 
 
-class AbsenceType(str, enum.Enum):
+class AbsenceType(enum.StrEnum):
     """Types of absence with different compensation rules."""
 
     SICK = "SICK"  # Sjukfrånvaro - ger sjuklön efter dag 1
@@ -69,28 +69,28 @@ class AbsenceType(str, enum.Enum):
     PARENTAL = "PARENTAL"  # Föräldraledig - ingen semesterdag, ingen ersättning
 
 
-class WageType(str, enum.Enum):
+class WageType(enum.StrEnum):
     """Whether the user is paid a monthly salary or an hourly rate."""
 
     MONTHLY = "monthly"
     HOURLY = "hourly"
 
 
-class OnCallOverrideType(str, enum.Enum):
+class OnCallOverrideType(enum.StrEnum):
     """Types of on-call override."""
 
     ADD = "ADD"  # Manuellt tillagt OC-pass
     REMOVE = "REMOVE"  # Avbokat OC-pass från rotation
 
 
-class ConsultantSalaryType(str, enum.Enum):
+class ConsultantSalaryType(enum.StrEnum):
     """Whether the consultant's salary is paid for the current or previous month."""
 
     TRAILING = "trailing"  # Släpande — lön för föregående månad
     CURRENT = "current"  # Innestående — lön för aktuell månad
 
 
-class SwapStatus(str, enum.Enum):
+class SwapStatus(enum.StrEnum):
     """Status of a shift swap request."""
 
     PENDING = "PENDING"
