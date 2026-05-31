@@ -1219,6 +1219,30 @@ def _compute_overtime_pay(
     return ot_pay, ot_hours, ot_details
 
 
+def _apply_oncall_override(override, shift, hours, start, end, ob, shift_types):
+    """Apply a manual on-call override to the day's shift.
+
+    ADD replaces the shift with OC; REMOVE turns an OC shift into OFF. Returns the (possibly
+    modified) (shift, hours, start, end, ob); unchanged when there is no override.
+    """
+    if override is None:
+        return shift, hours, start, end, ob
+
+    from app.database.database import OnCallOverrideType
+
+    if override.override_type == OnCallOverrideType.ADD:
+        oc_shift = next((s for s in shift_types if s.code == "OC"), None)
+        if oc_shift:
+            return oc_shift, 0.0, None, None, {}  # OC har inga specifika tider
+    elif override.override_type == OnCallOverrideType.REMOVE:
+        if shift and shift.code == "OC":
+            off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+            if off_shift:
+                return off_shift, 0.0, None, None, {}
+
+    return shift, hours, start, end, ob
+
+
 def _populate_single_person_day(
     day_info: dict,
     current_day: datetime.date,
@@ -1321,24 +1345,7 @@ def _populate_single_person_day(
             .first()
         )
 
-    if oncall_override:
-        from app.database.database import OnCallOverrideType
-
-        if oncall_override.override_type == OnCallOverrideType.ADD:
-            # Add on-call shift, replacing the regular shift
-            oc_shift = next((s for s in shift_types if s.code == "OC"), None)
-            if oc_shift:
-                shift = oc_shift
-                hours, start, end = 0.0, None, None  # OC har inga specifika tider
-                ob = {}
-        elif oncall_override.override_type == OnCallOverrideType.REMOVE:
-            # Ta bort OC-pass - om skiftet är OC, ersätt med OFF
-            if shift and shift.code == "OC":
-                off_shift = next((s for s in shift_types if s.code == "OFF"), None)
-                if off_shift:
-                    shift = off_shift
-                    hours, start, end = 0.0, None, None
-                    ob = {}
+    shift, hours, start, end, ob = _apply_oncall_override(oncall_override, shift, hours, start, end, ob, shift_types)
 
     # Calculate on-call pay
     _person_rates = (user_rates_map or {}).get(person_id) or {}
