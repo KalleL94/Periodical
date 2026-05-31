@@ -944,31 +944,18 @@ def _build_person_day_basic(
     }
 
 
-def _populate_single_person_day(
-    day_info: dict,
-    current_day: datetime.date,
-    person_id: int,
-    ctx: DayLookupContext,
+def _resolve_day_person(
     session,
-    employment_start: datetime.date | None = None,
-) -> None:
-    """Populates detailed day info for a person."""
-    vacation_dates = ctx.vacation_dates
-    combined_ob_rules = ctx.combined_ob_rules
-    user_wages = ctx.user_wages
-    persons = ctx.persons
-    settings = ctx.settings
-    ot_shift_map = ctx.ot_shift_map
-    absence_map = ctx.absence_map
-    oncall_override_map = ctx.oncall_override_map
-    swap_map = ctx.swap_map
-    user_rates_map = ctx.user_rates_map
-    shift_override_map = ctx.shift_override_map
-    parental_dates = ctx.parental_dates
-    vacation_shift = get_vacation_shift()
-    shift_types = get_shift_types()
+    person_id: int,
+    current_day: datetime.date,
+    persons,
+    employment_start: datetime.date | None,
+) -> tuple[str, bool]:
+    """Resolve (person_name, show_off_before_employment) for a position on a date.
 
-    # Get person name via PersonHistory (shows correct person for this specific date)
+    Uses PersonHistory to find who held the position on the date, falling back to the current
+    holder, and flags before-employment when the date precedes their start (or the viewer's).
+    """
     person_name = persons[person_id - 1].name  # Default fallback
     show_off_before_employment = False
 
@@ -995,6 +982,38 @@ def _populate_single_person_day(
             if current_person:
                 person_name = current_person["name"]
         show_off_before_employment = True
+
+    return person_name, show_off_before_employment
+
+
+def _populate_single_person_day(
+    day_info: dict,
+    current_day: datetime.date,
+    person_id: int,
+    ctx: DayLookupContext,
+    session,
+    employment_start: datetime.date | None = None,
+) -> None:
+    """Populates detailed day info for a person."""
+    vacation_dates = ctx.vacation_dates
+    combined_ob_rules = ctx.combined_ob_rules
+    user_wages = ctx.user_wages
+    persons = ctx.persons
+    settings = ctx.settings
+    ot_shift_map = ctx.ot_shift_map
+    absence_map = ctx.absence_map
+    oncall_override_map = ctx.oncall_override_map
+    swap_map = ctx.swap_map
+    user_rates_map = ctx.user_rates_map
+    shift_override_map = ctx.shift_override_map
+    parental_dates = ctx.parental_dates
+    vacation_shift = get_vacation_shift()
+    shift_types = get_shift_types()
+
+    # Get person name via PersonHistory (shows correct person for this specific date)
+    person_name, show_off_before_employment = _resolve_day_person(
+        session, person_id, current_day, persons, employment_start
+    )
 
     # If date is before current person's employment, show OFF
     if show_off_before_employment:
