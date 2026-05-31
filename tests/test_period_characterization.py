@@ -21,7 +21,18 @@ sys.path.insert(0, str(project_root))
 import app.database.database as db_module
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule.period import generate_month_data
-from app.database.database import Absence, AbsenceType, Base, OvertimeShift, RotationEra, User, UserRole, WageType
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    Base,
+    OnCallOverride,
+    OnCallOverrideType,
+    OvertimeShift,
+    RotationEra,
+    User,
+    UserRole,
+    WageType,
+)
 
 TEST_DB_URL = "sqlite:///file:test_period_char_memdb?mode=memory&cache=shared&uri=true"
 test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False, "uri": True})
@@ -187,3 +198,27 @@ def test_overtime_day_renders_ot_shift_and_pay(char_session):
     assert day["shift"].code == "OT"
     assert day["ot_hours"] == 4.0
     assert round(day["ot_pay"], 2) == 1666.67
+
+
+def test_oncall_override_add_creates_oc_day(char_session):
+    # Manually adding on-call on an OFF day turns it into an OC shift with on-call pay.
+    char_session.add(OnCallOverride(user_id=1, date=datetime.date(2026, 3, 6), override_type=OnCallOverrideType.ADD))
+    char_session.commit()
+
+    day = _day(generate_month_data(2026, 3, 1, session=char_session), datetime.date(2026, 3, 6))
+
+    assert day["shift"].code == "OC"
+    assert day["oncall_pay"] > 0
+
+
+def test_oncall_override_remove_clears_oc_day(char_session):
+    # Removing on-call on a rotation OC day turns it into OFF with no on-call pay.
+    char_session.add(
+        OnCallOverride(user_id=1, date=datetime.date(2026, 3, 17), override_type=OnCallOverrideType.REMOVE)
+    )
+    char_session.commit()
+
+    day = _day(generate_month_data(2026, 3, 1, session=char_session), datetime.date(2026, 3, 17))
+
+    assert day["shift"].code == "OFF"
+    assert day["oncall_pay"] == 0.0
