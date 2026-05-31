@@ -80,6 +80,42 @@ def summarize_year_by_month(year: int, person_id: int) -> dict[int, dict]:
     return summary
 
 
+def _attach_calendar_day_breakdown(days_out: list[dict]) -> None:
+    """Aggregate OB/OT hours per calendar day and attach them to each day in place.
+
+    A night shift crossing midnight contributes to both calendar days, e.g. Sat 22:00-Sun
+    06:30 gives 2h OB on Saturday and 6.5h on Sunday; days that overlap are merged
+    (Sunday 6.5 + 2 = 8.5h when the person also works Sun-Mon).
+    """
+    calendar_day_ob: dict = {}
+    for day_data in days_out:
+        for cal_date, ob_dict in day_data.get("ob_hours_by_day", {}).items():
+            bucket = calendar_day_ob.setdefault(cal_date, {})
+            for code, hrs in ob_dict.items():
+                bucket[code] = bucket.get(code, 0.0) + hrs
+
+    calendar_day_ot: dict = {}
+    for day_data in days_out:
+        for cal_date, ot_hrs in day_data.get("ot_hours_by_day", {}).items():
+            if ot_hrs > 0:
+                calendar_day_ot[cal_date] = calendar_day_ot.get(cal_date, 0.0) + ot_hrs
+
+    for day_data in days_out:
+        day_data["ob_hours_calendar_day"] = calendar_day_ob.get(day_data["date"], {})
+        day_data["ot_hours_calendar_day"] = calendar_day_ot.get(day_data["date"], 0.0)
+
+
+def _resolve_person_name(session, person_id: int, on_date, persons) -> str:
+    """Resolve the display name for a rotation position on a date via the history system."""
+    if session:
+        from app.core.schedule.person_history import get_person_for_date
+
+        person_info = get_person_for_date(session, person_id, on_date)
+        if person_info:
+            return person_info["name"]
+    return persons[person_id - 1].name
+
+
 def summarize_month_for_person(
     year: int,
     month: int,
@@ -204,26 +240,8 @@ def summarize_month_for_person(
         )
         days_out.append(day_data)
 
-    # Aggregate OB and OT hours per calendar day (used by the per-day breakdown toggle).
-    # A night shift crossing midnight contributes to both calendar days:
-    # e.g. Sat 22:00-Sun 06:30 gives 2h OB on Saturday and 6.5h OB on Sunday.
-    # If the person also works Sun-Mon, Sunday's totals are merged: 6.5 + 2 = 8.5h.
-    calendar_day_ob: dict = {}
-    for day_data in days_out:
-        for cal_date, ob_dict in day_data.get("ob_hours_by_day", {}).items():
-            bucket = calendar_day_ob.setdefault(cal_date, {})
-            for code, hrs in ob_dict.items():
-                bucket[code] = bucket.get(code, 0.0) + hrs
-
-    calendar_day_ot: dict = {}
-    for day_data in days_out:
-        for cal_date, ot_hrs in day_data.get("ot_hours_by_day", {}).items():
-            if ot_hrs > 0:
-                calendar_day_ot[cal_date] = calendar_day_ot.get(cal_date, 0.0) + ot_hrs
-
-    for day_data in days_out:
-        day_data["ob_hours_calendar_day"] = calendar_day_ob.get(day_data["date"], {})
-        day_data["ot_hours_calendar_day"] = calendar_day_ot.get(day_data["date"], 0.0)
+    # Aggregate OB/OT hours per calendar day for the per-day breakdown toggle.
+    _attach_calendar_day_breakdown(days_out)
 
     # Fetch absence deductions for the month
     absence_details = []
@@ -281,14 +299,7 @@ def summarize_month_for_person(
     # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
 
-    # Get person name from history system if session available
-    if session:
-        from app.core.schedule.person_history import get_person_for_date
-
-        person_info = get_person_for_date(session, person_id, month_start_date)
-        person_name = person_info["name"] if person_info else persons[person_id - 1].name
-    else:
-        person_name = persons[person_id - 1].name
+    person_name = _resolve_person_name(session, person_id, month_start_date, persons)
 
     return {
         "year": year,
