@@ -1,5 +1,7 @@
 """Monthly and yearly schedule summaries."""
 
+from typing import NamedTuple
+
 from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings, weekday_names
@@ -161,6 +163,57 @@ def _hourly_corrected_gross(
     return current_gross - base_salary + (worked_hours + absent_hours) * hourly_rate
 
 
+class _MonthWageContext(NamedTuple):
+    base_salary: int
+    tax_table: str | None
+    user: object | None
+    user_rates: dict | None
+
+
+def _resolve_month_wage_context(
+    session,
+    uid_for_wages: int,
+    settings,
+    month_start_date,
+    fetch_tax_table: bool,
+    user_wages: dict[int, int] | None,
+) -> _MonthWageContext:
+    """Resolve base salary, tax table, the User row and per-user rates for the month."""
+    if user_wages and uid_for_wages in user_wages:
+        base_salary = get_effective_monthly_wage(
+            session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
+        )
+    else:
+        try:
+            base_salary = get_effective_monthly_wage(
+                session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
+            )
+        except Exception:
+            base_salary = settings.monthly_salary
+
+    tax_table = None
+    user = None
+    if session:
+        from app.database.database import User
+
+        user = session.query(User).filter(User.id == uid_for_wages).first()
+
+    if fetch_tax_table and user:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"Looking up tax_table for user_id={uid_for_wages}, user found: {user is not None}")
+        logger.info(f"User {user.username} has tax_table: {user.tax_table}")
+        if user.tax_table:
+            tax_table = user.tax_table
+
+    from app.core.rates import get_user_rates
+
+    user_rates = get_user_rates(user, session=session, effective_date=month_start_date) if user else None
+
+    return _MonthWageContext(base_salary, tax_table, user, user_rates)
+
+
 def summarize_month_for_person(
     year: int,
     month: int,
@@ -200,39 +253,11 @@ def summarize_month_for_person(
     # This allows Rickard (user_id=11, rotation_position=3) to see his own wage
     uid_for_wages = wage_user_id if wage_user_id is not None else person_id
 
-    if user_wages and uid_for_wages in user_wages:
-        base_salary = get_effective_monthly_wage(
-            session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
-        )
-    else:
-        try:
-            base_salary = get_effective_monthly_wage(
-                session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
-            )
-        except Exception:
-            base_salary = settings.monthly_salary
-
-    # Load user for tax table and per-user rate lookups
-    tax_table = None
-    user = None
-    if session:
-        from app.database.database import User
-
-        user = session.query(User).filter(User.id == uid_for_wages).first()
-
-    if fetch_tax_table and user:
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info(f"Looking up tax_table for user_id={uid_for_wages}, user found: {user is not None}")
-        logger.info(f"User {user.username} has tax_table: {user.tax_table}")
-        if user.tax_table:
-            tax_table = user.tax_table
-
-    # Resolve per-user rates (OB, OT, oncall, vacation)
-    from app.core.rates import get_user_rates
-
-    user_rates = get_user_rates(user, session=session, effective_date=month_start_date) if user else None
+    ctx = _resolve_month_wage_context(session, uid_for_wages, settings, month_start_date, fetch_tax_table, user_wages)
+    base_salary = ctx.base_salary
+    tax_table = ctx.tax_table
+    user = ctx.user
+    user_rates = ctx.user_rates
     _rates_map = {person_id: user_rates} if user_rates else None
 
     # Use pre-generated data if provided, otherwise generate it
