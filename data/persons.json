@@ -1,9 +1,9 @@
 [
     {
         "id": 1,
-        "username": "exkaau",
-        "name": "Al-Amin",
-        "wage": 37000,
+        "username": "user01",
+        "name": "Person 1",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -12,9 +12,9 @@
     },
     {
         "id": 2,
-        "username": "jqu453",
-        "name": "Adriana",
-        "wage": 31500,
+        "username": "user02",
+        "name": "Person 2",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -23,9 +23,9 @@
     },
     {
         "id": 3,
-        "username": "gjc023",
-        "name":  "Christopher",
-        "wage": 47000,
+        "username": "user03",
+        "name": "Person 3",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -34,9 +34,9 @@
     },
     {
         "id": 4,
-        "username": "tbz193",
-        "name":  "Ahmed",
-        "wage": 27000,
+        "username": "user04",
+        "name": "Person 4",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -45,9 +45,9 @@
     },
     {
         "id": 5,
-        "username": "isa082",
-        "name":  "Isak",
-        "wage": 42000,
+        "username": "user05",
+        "name": "Person 5",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -56,9 +56,9 @@
     },
     {
         "id": 6,
-        "username": "ddf412",
-        "name":  "Kalle",
-        "wage": 37000,
+        "username": "user06",
+        "name": "Person 6",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -67,9 +67,9 @@
     },
     {
         "id": 7,
-        "username": "pnf956",
-        "name":  "Marcus",
-        "wage": 27000,
+        "username": "user07",
+        "name": "Person 7",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -78,9 +78,9 @@
     },
     {
         "id": 8,
-        "username": "yzt114",
-        "name":  "Okan",
-        "wage": 39500,
+        "username": "user08",
+        "name": "Person 8",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -89,9 +89,9 @@
     },
     {
         "id": 9,
-        "username": "uyr674",
-        "name":  "Pierre",
-        "wage": 37000,
+        "username": "user09",
+        "name": "Person 9",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -100,9 +100,9 @@
     },
     {
         "id": 10,
-        "username": "mgu229",
-        "name":  "Robin",
-        "wage": 37000,
+        "username": "user10",
+        "name": "Person 10",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
@@ -111,9 +111,9 @@
     },
     {
         "id": 11,
-        "username": "bwx196",
-        "name":  "Rickard",
-        "wage": 37000,
+        "username": "user11",
+        "name": "Person 11",
+        "wage": 30000,
         "vacation": {
             "2026": [],
             "2027": [],
