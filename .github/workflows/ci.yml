@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           # Match the version run in production (venv) and used to compile requirements.txt
-          python-version: "3.12"
+          python-version: "3.14"
           cache: "pip" # Enables automatic caching of dependencies
 
       - name: Install dependencies
