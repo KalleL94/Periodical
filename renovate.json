@@ -17,6 +17,11 @@
   },
   "packageRules": [
     {
+      "description": "Hold the Python version on 3.12 to match the production venv and the compiled lockfile. Bump deliberately as a coordinated change (prod venv + recompile + CI + Dockerfile).",
+      "matchDepNames": ["python"],
+      "enabled": false
+    },
+    {
       "matchManagers": ["pip-compile"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "minor and patch dependencies",
