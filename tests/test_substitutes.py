@@ -80,13 +80,13 @@ def test_substitute_full_flow(test_client, test_db, admin_user):
     assert shifts == {date(2026, 7, 7): "OC"}
 
 
-def test_substitute_shown_as_coworker_in_personal_month(test_db):
+def test_substitute_shown_as_coworker_in_personal_month(rotation_session):
     """A substitute working the same shift appears as a coworker in the personal month calendar."""
     from app.core.schedule import clear_schedule_cache
     from app.core.schedule.summary import build_calendar_grid_for_month
 
     # Find a working day for rotation position 1 in this month
-    grid = build_calendar_grid_for_month(2026, 7, person_id=1, session=test_db, include_coworkers=True)
+    grid = build_calendar_grid_for_month(2026, 7, person_id=1, session=rotation_session, include_coworkers=True)
     target = None
     code = None
     for week in grid["grid"]:
@@ -99,13 +99,13 @@ def test_substitute_shown_as_coworker_in_personal_month(test_db):
     assert target is not None, "expected at least one working day for position 1"
 
     sub = Substitute(name="VikKollega", is_active=1)
-    test_db.add(sub)
-    test_db.commit()
-    test_db.add(SubstituteShift(substitute_id=sub.id, date=target, shift_code=code))
-    test_db.commit()
+    rotation_session.add(sub)
+    rotation_session.commit()
+    rotation_session.add(SubstituteShift(substitute_id=sub.id, date=target, shift_code=code))
+    rotation_session.commit()
     clear_schedule_cache()
 
-    grid2 = build_calendar_grid_for_month(2026, 7, person_id=1, session=test_db, include_coworkers=True)
+    grid2 = build_calendar_grid_for_month(2026, 7, person_id=1, session=rotation_session, include_coworkers=True)
     found = False
     for week in grid2["grid"]:
         for dd in week:
