@@ -543,9 +543,10 @@
             {% endif %}
         {% endif %}
 
-        {# Manuellt pass – visa om override finns, eller om personen är OFF/OC och saknar frånvaro #}
+        {# Manuellt pass – byt/tilldela vilket pass man jobbar på en dag #}
         {% if user and (user.id == person_id or user.id == 0) %}
-            {% if shift_override or (not absence and shift and shift.code in ('OFF', 'OC')) %}
+            {% if shift_override or (not absence and shift and shift.code in ('N1', 'N2', 'N3', 'OFF', 'OC')) %}
+                {% set is_work_shift = shift and shift.code in ('N1', 'N2', 'N3') %}
                 <h3>{{ t.day_shift_override_title }}</h3>
 
                 {% if shift_override %}
@@ -554,7 +555,6 @@
                             <thead>
                                 <tr>
                                     <th>{{ t.day_shift_override_current }}</th>
-                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -562,36 +562,39 @@
                                     <td>
                                         <span class="badge" style="background: #3b82f6; color: white;">{{ shift_override.shift_code }}</span>
                                     </td>
-                                    <td>
-                                        <form method="POST" action="/shift-override/{{ shift_override.id }}/delete" style="display: inline;">
-                                            <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_shift_override_remove_confirm }}')">{{ t.day_shift_override_remove }}</button>
-                                        </form>
-                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                {% else %}
-                    <form method="POST" action="/shift-override/add">
-                        <input type="hidden" name="user_id" value="{{ person_id }}">
-                        <input type="hidden" name="date" value="{{ date }}">
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="shift_code">{{ t.day_shift_override_label }}</label>
-                                <select id="shift_code" name="shift_code" required>
-                                    <option value="N1">N1 – {{ t.handover_morning }}</option>
-                                    <option value="N2">N2 – {{ t.handover_evening }}</option>
-                                    <option value="N3">N3 – {{ t.handover_night }}</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary">{{ t.day_shift_override_add }}</button>
-                    </form>
-
-                    <p class="info-text">{{ t.day_shift_override_note }}</p>
                 {% endif %}
+
+                <form method="POST" action="/shift-override/add">
+                    <input type="hidden" name="user_id" value="{{ person_id }}">
+                    <input type="hidden" name="date" value="{{ date }}">
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="shift_code">{{ t.day_shift_override_label }}</label>
+                            <select id="shift_code" name="shift_code" required>
+                                <option value="N1"{% if shift and shift.code == 'N1' %} selected{% endif %}>N1 – {{ t.handover_morning }}</option>
+                                <option value="N2"{% if shift and shift.code == 'N2' %} selected{% endif %}>N2 – {{ t.handover_evening }}</option>
+                                <option value="N3"{% if shift and shift.code == 'N3' %} selected{% endif %}>N3 – {{ t.handover_night }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        {%- if shift_override or is_work_shift %}{{ t.day_shift_override_change }}{% else %}{{ t.day_shift_override_add }}{% endif -%}
+                    </button>
+                </form>
+
+                {% if shift_override %}
+                    <form method="POST" action="/shift-override/{{ shift_override.id }}/delete" style="margin-top: 0.75rem;">
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_shift_override_revert_confirm }}')">{{ t.day_shift_override_revert }}</button>
+                    </form>
+                {% endif %}
+
+                <p class="info-text">{{ t.day_shift_override_note }}</p>
             {% endif %}
         {% endif %}
 

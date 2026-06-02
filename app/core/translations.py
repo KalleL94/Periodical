@@ -33,6 +33,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "changelog_current_version": "Aktuell version",
         "changelog_latest": "SENASTE",
         "changelog_type_nyhet": "Nyhet",
+        "changelog_type_forbattring": "Förbättring",
         "changelog_type_fix": "Fix",
         # ── Login ──────────────────────────────────────────────────
         "login_title": "Logga in",
@@ -531,6 +532,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "day_shift_override_remove": "Ta bort",
         "day_shift_override_remove_confirm": "Ta bort det manuella passet?",
         "day_shift_override_add": "Tilldela pass",
+        "day_shift_override_change": "Byt pass",
+        "day_shift_override_revert": "Återställ till rotation",
+        "day_shift_override_revert_confirm": "Återställa passet till rotationen?",
         "day_shift_override_label": "Pass",
         "day_shift_override_note": "Manuellt tilldelat pass åsidosätter rotationen och visas som ett ordinarie pass.",
         # ── Day pay override ───────────────────────────────────────
@@ -1013,6 +1017,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "changelog_current_version": "Current version",
         "changelog_latest": "LATEST",
         "changelog_type_nyhet": "New",
+        "changelog_type_forbattring": "Improvement",
         "changelog_type_fix": "Fix",
         # ── Login ──────────────────────────────────────────────────
         "login_title": "Log in",
@@ -1511,6 +1516,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "day_shift_override_remove": "Remove",
         "day_shift_override_remove_confirm": "Remove the manual shift assignment?",
         "day_shift_override_add": "Assign shift",
+        "day_shift_override_change": "Change shift",
+        "day_shift_override_revert": "Revert to rotation",
+        "day_shift_override_revert_confirm": "Revert the shift to the rotation?",
         "day_shift_override_label": "Shift",
         "day_shift_override_note": "A manually assigned shift overrides the rotation and appears as a regular shift.",
         # ── Day pay override ───────────────────────────────────────

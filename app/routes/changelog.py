@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.25.0",
+        "date": "2026-06-02",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Dagvy: byt vilket pass du jobbar på en dag – 'Manuellt pass' går nu att använda även på dagar där rotationen redan ger ett arbetspass (N1/N2/N3), inte bara på lediga dagar och jourdagar; välj nytt pass i listan eller återställ till rotationen, och bytet slår igenom i alla vyer",
+                "en": "Day view: change which shift you work on a day – 'Manual shift' can now be used on days where the rotation already assigns a working shift (N1/N2/N3), not only on days off and on-call days; pick a new shift from the list or revert to the rotation, and the change is applied across all views",
+            },
+        ],
+    },
+    {
         "version": "0.24.1",
         "date": "2026-05-31",
         "entries": [
@@ -40,7 +51,7 @@ VERSIONS = [
         "date": "2026-05-29",
         "entries": [
             {
-                "type": "ny funktion",
+                "type": "nyhet",
                 "sv": "Dagvy: manuell override av OB- och beredskapstimmar – klicka 'Redigera timmar' i lönesektionen för att justera antalet timmar per typ (t.ex. flytta 7h röd dag till vardag); lönen räknas om automatiskt med befintliga taxor och overriden slår igenom i alla vyer (dagvy, månadsvy, löneunderlag)",
                 "en": "Day view: manual override of OB and on-call hours – click 'Edit hours' in the pay section to adjust the number of hours per type (e.g. move 7h public holiday to weekday rate); pay is recalculated automatically using existing rates and the override is applied consistently across all views (day view, month view, pay basis)",
             },
@@ -62,7 +73,7 @@ VERSIONS = [
         "date": "2026-05-28",
         "entries": [
             {
-                "type": "ny funktion",
+                "type": "nyhet",
                 "sv": "Frånvaro: stöd för sen ankomst – man kan nu registrera klockslag för när man kom till jobbet ('Kom HH:MM') på samma sätt som man redan kunde registrera tidig avgång; frånvarotimmar, OB och löneunderlag räknas om korrekt för den jobbade delen av passet",
                 "en": "Absence: support for late arrival – it is now possible to register the time of arrival ('Kom HH:MM') the same way early departure was already supported; absent hours, OB and salary base are recalculated correctly for the worked portion of the shift",
             },
@@ -78,7 +89,7 @@ VERSIONS = [
         "date": "2026-05-27",
         "entries": [
             {
-                "type": "ny funktion",
+                "type": "nyhet",
                 "sv": "Månadsvy: ny toggle i detaljerad breakdown – 'Visa OB per kalenderdag' fördelar OB och ÖT på de kalenderdagar timmarna faktiskt faller på istället för att lägga allt på startdagen; nattpass som sträcker sig över midnatt visas uppdelade",
                 "en": "Month view: new toggle in the detailed breakdown – 'Show OB per calendar day' distributes OB and OT hours across the calendar days they actually fall on instead of attributing everything to the shift start day; night shifts crossing midnight are shown split accordingly",
             },
