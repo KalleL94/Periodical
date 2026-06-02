@@ -428,8 +428,8 @@ async def show_day_for_person(
     from app.core.schedule import generate_period_data
     from app.core.schedule.cowork import get_coworkers_for_day
 
-    # Fetch all persons' data for this single day
-    all_persons_day = generate_period_data(date_obj, date_obj, person_id=None, session=db)
+    # Fetch all persons' data for this single day (include substitutes so they show as coworkers)
+    all_persons_day = generate_period_data(date_obj, date_obj, person_id=None, session=db, include_substitutes=True)
 
     persons_today = []
     persons_today_with_shift = []

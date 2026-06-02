@@ -1,0 +1,92 @@
+{# app/templates/admin_substitute_manage.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – {{ substitute.name }}{% endblock %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/admin/substitutes" class="btn secondary">{{ t.admin_substitute_back }}</a>
+    </div>
+</div>
+
+<h2 class="page-title">
+    {{ substitute.name }}
+    <span class="badge" style="background: #3b82f6; color: white;">{{ t.substitute_tag }}</span>
+    {% if not substitute.is_active %}
+        <span class="badge" style="background: var(--muted); color: var(--bg);">{{ t.admin_substitutes_archived }}</span>
+    {% endif %}
+</h2>
+
+<p class="info-text">{{ t.admin_substitute_calendar_help }}</p>
+
+{% set weekday_names_short = t.week_day_names | from_json %}
+
+<div style="max-width: 760px;">
+    <div class="page-header" style="margin-bottom: 0.75rem;">
+        <div class="page-header-left">
+            <a href="/admin/substitutes/{{ substitute.id }}?year={{ prev_year }}&month={{ prev_month }}" class="btn secondary">&larr;</a>
+            <strong style="margin: 0 0.75rem;">{{ year }}-{{ '%02d'|format(month) }}</strong>
+            <a href="/admin/substitutes/{{ substitute.id }}?year={{ next_year }}&month={{ next_month }}" class="btn secondary">&rarr;</a>
+        </div>
+    </div>
+
+    <form method="POST" action="/admin/substitutes/{{ substitute.id }}/save">
+        <input type="hidden" name="year" value="{{ year }}">
+        <input type="hidden" name="month" value="{{ month }}">
+
+        <table class="sub-calendar" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    {% for d in range(7) %}
+                        <th style="padding: 4px; text-align: center; color: var(--muted); font-size: 0.8rem;">{{ weekday_names_short[d] }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in weeks %}
+                    <tr>
+                        {% for day in week %}
+                            {% if day.month == month %}
+                                {% set iso = day.isoformat() %}
+                                {% set current_code = shift_by_date.get(iso, '') %}
+                                <td class="sub-cal-cell {% if current_code %}has-shift{% endif %}"
+                                    style="border: 1px solid var(--border); padding: 4px; vertical-align: top; height: 56px;">
+                                    <div style="font-size: 0.75rem; color: var(--muted);">{{ day.day }}</div>
+                                    <select name="shift_{{ iso }}" onchange="markCell(this)"
+                                            style="width: 100%; font-size: 0.8rem; box-sizing: border-box;">
+                                        <option value="">&ndash;</option>
+                                        {% for code in allowed_codes %}
+                                            <option value="{{ code }}" {% if current_code == code %}selected{% endif %}>{{ code }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            {% else %}
+                                <td style="border: 1px solid var(--border); padding: 4px; background: var(--muted-bg, #1c1c24);"></td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <button type="submit" class="btn" style="margin-top: 1rem;">{{ t.admin_substitute_save }}</button>
+    </form>
+</div>
+
+<style>
+    .sub-cal-cell.has-shift { background: rgba(59,130,246,0.12); }
+</style>
+<script>
+function markCell(sel) {
+    var cell = sel.closest('td');
+    if (sel.value) {
+        cell.classList.add('has-shift');
+    } else {
+        cell.classList.remove('has-shift');
+    }
+}
+</script>
+
+{% endblock %}

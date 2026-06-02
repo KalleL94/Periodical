@@ -16,6 +16,7 @@ from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import _get_storhelg_dates_for_year
 from app.core.schedule import (
+    build_substitute_month_summaries,
     build_week_data,
     generate_month_data,
     generate_year_data,
@@ -119,6 +120,9 @@ async def show_month_all(
         if not can_see_salary(current_user, pid):
             summary = strip_salary_data(summary)
         persons.append(summary)
+
+    # Append substitutes (schedule only, no salary) after the regular positions
+    persons.extend(build_substitute_month_summaries(year, month, db))
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
 

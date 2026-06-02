@@ -1,0 +1,72 @@
+{# app/templates/admin_substitutes.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – Admin: {{ t.admin_substitutes_title }}{% endblock %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/admin/users" class="btn secondary">{{ t.admin_back }}</a>
+    </div>
+</div>
+
+<h2 class="page-title">{{ t.admin_substitutes_title }}</h2>
+
+<div style="max-width: 700px;">
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <h3 style="margin-top: 0;">{{ t.admin_substitutes_new }}</h3>
+        {% if error %}
+            <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+                {{ error }}
+            </div>
+        {% endif %}
+        <form method="POST" action="/admin/substitutes/create" style="display: flex; gap: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+                <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_substitutes_name }}</label>
+                <input type="text" id="name" name="name" required style="width: 100%; box-sizing: border-box;">
+            </div>
+            <button type="submit" class="btn">{{ t.admin_substitutes_create }}</button>
+        </form>
+    </div>
+
+    <div class="card">
+        {% if substitutes and substitutes|length > 0 %}
+            <table style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>{{ t.admin_substitutes_name }}</th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in substitutes %}
+                    <tr>
+                        <td>
+                            {{ s.name }}
+                            {% if not s.is_active %}
+                                <span class="badge" style="background: var(--muted); color: var(--bg);">{{ t.admin_substitutes_archived }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: right;">
+                            <a href="/admin/substitutes/{{ s.id }}" class="btn secondary">{{ t.admin_substitutes_manage }}</a>
+                        </td>
+                        <td style="text-align: right;">
+                            <form method="POST" action="/admin/substitutes/{{ s.id }}/toggle" style="display: inline;">
+                                <button type="submit" class="btn secondary">
+                                    {% if s.is_active %}{{ t.admin_substitutes_archive }}{% else %}{{ t.admin_substitutes_restore }}{% endif %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="info-text">{{ t.admin_substitutes_none }}</p>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

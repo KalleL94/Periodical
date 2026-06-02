@@ -91,6 +91,12 @@ def build_week_data(
     oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
     swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
     shift_override_map = _batch_fetch_shift_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
+
+    # Substitutes (vikarier) are only included in the all-persons view
+    substitutes = _get_substitutes_with_shifts(session, monday, sunday) if person_id is None else []
+    substitute_shift_map = _fetch_substitute_shifts(session, [s.id for s in substitutes], monday, sunday)
+    sub_shift_types = get_shift_types() if substitutes else []
+
     years_week = _get_years_in_range(monday, sunday)
     vacation_dates = _load_vacation_dates(years_week, session=session)
     parental_dates = _load_parental_dates(years_week, session=session)
@@ -117,7 +123,9 @@ def build_week_data(
         }
 
         if person_id is None:
-            day_info["persons"] = [_build_person_day_basic(current_date, pid, ctx, session) for pid in person_ids]
+            day_info["persons"] = [_build_person_day_basic(current_date, pid, ctx, session) for pid in person_ids] + [
+                _build_substitute_day(current_date, s, substitute_shift_map, sub_shift_types) for s in substitutes
+            ]
         else:
             day_info.update(_build_person_day_basic(current_date, person_id, ctx, session, employment_start))
 
@@ -173,6 +181,7 @@ def generate_period_data(
     user_wages: dict[int, int] | None = None,
     user_rates_map: dict[int, dict] | None = None,
     employment_start: datetime.date | None = None,
+    include_substitutes: bool = False,
 ) -> list[dict]:
     """
     Genererar schemadat för en godtycklig period.
@@ -216,6 +225,15 @@ def generate_period_data(
 
     # Förbered person-lista
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
+
+    # Substitutes (vikarier): only when explicitly requested and building the all-persons view
+    substitutes = (
+        _get_substitutes_with_shifts(session, effective_start, end_date)
+        if include_substitutes and person_id is None
+        else []
+    )
+    substitute_shift_map = _fetch_substitute_shifts(session, [s.id for s in substitutes], effective_start, end_date)
+    sub_shift_types = get_shift_types() if substitutes else []
 
     # Bygg mappning rotation_position -> user_id (hanterar Peter/Rickard som har olika user_id)
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
@@ -265,7 +283,9 @@ def generate_period_data(
         }
 
         if person_id is None:
-            day_info["persons"] = [_build_person_day_basic(current_day, pid, ctx, session) for pid in person_ids]
+            day_info["persons"] = [_build_person_day_basic(current_day, pid, ctx, session) for pid in person_ids] + [
+                _build_substitute_day(current_day, s, substitute_shift_map, sub_shift_types) for s in substitutes
+            ]
         else:
             _populate_single_person_day(
                 day_info,
@@ -366,6 +386,136 @@ def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[
         if u.person_id is not None:
             result[u.person_id] = u.id
     return result
+
+
+def _get_substitutes_with_shifts(session, start_date: datetime.date, end_date: datetime.date) -> list:
+    """Return active substitutes that have at least one shift in the range.
+
+    Substitutes have an empty base schedule, so they are only shown on days they
+    actually work. Listing only those with shifts in range keeps empty rows out of
+    the week/month views.
+    """
+    if not session:
+        return []
+    from app.database.database import Substitute, SubstituteShift
+
+    subs = session.query(Substitute).filter(Substitute.is_active == 1).all()
+    if not subs:
+        return []
+    sub_ids = [s.id for s in subs]
+    rows = (
+        session.query(SubstituteShift.substitute_id)
+        .filter(
+            SubstituteShift.substitute_id.in_(sub_ids),
+            SubstituteShift.date >= start_date,
+            SubstituteShift.date <= end_date,
+        )
+        .distinct()
+        .all()
+    )
+    active_ids = {r[0] for r in rows}
+    return [s for s in subs if s.id in active_ids]
+
+
+def _fetch_substitute_shifts(
+    session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
+) -> dict[tuple[int, datetime.date], object]:
+    """Batch-fetch substitute shifts, keyed by (substitute_id, date)."""
+    if not session or not sub_ids:
+        return {}
+    from app.database.database import SubstituteShift
+
+    rows = (
+        session.query(SubstituteShift)
+        .filter(
+            SubstituteShift.substitute_id.in_(sub_ids),
+            SubstituteShift.date >= start_date,
+            SubstituteShift.date <= end_date,
+        )
+        .all()
+    )
+    return {(r.substitute_id, r.date): r for r in rows}
+
+
+def _build_substitute_day(date: datetime.date, sub, sub_shift_map: dict, shift_types: list) -> dict:
+    """Build a single day's schedule dict for a substitute.
+
+    The base schedule is OFF; a working shift only appears where a SubstituteShift exists.
+    Matches the shape produced by _build_person_day_basic so the templates can render
+    substitutes alongside regular persons. The person_id uses a "sub-<id>" namespace to
+    avoid colliding with rotation positions (1-10).
+    """
+    rotation_length = get_rotation_length_for_date(date)
+    off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+    pid = f"sub-{sub.id}"
+    entry = sub_shift_map.get((sub.id, date))
+    if entry:
+        shift = next((s for s in shift_types if s.code == entry.shift_code), None)
+        if shift:
+            hours, start, end = calculate_shift_hours(date, shift.code)
+            return {
+                "date": date,
+                "person_id": pid,
+                "substitute_id": sub.id,
+                "person_name": sub.name,
+                "shift": shift,
+                "original_shift": None,
+                "rotation_week": None,
+                "rotation_length": rotation_length,
+                "hours": hours,
+                "start": start,
+                "end": end,
+                "is_substitute": True,
+            }
+    return {
+        "date": date,
+        "person_id": pid,
+        "substitute_id": sub.id,
+        "person_name": sub.name,
+        "shift": off_shift,
+        "original_shift": None,
+        "rotation_week": None,
+        "rotation_length": rotation_length,
+        "hours": 0.0,
+        "start": None,
+        "end": None,
+        "is_substitute": True,
+    }
+
+
+def build_substitute_month_summaries(year: int, month: int, session) -> list[dict]:
+    """Build per-substitute month summaries (schedule only, no salary) for the month view.
+
+    Each summary mirrors the shape produced by summarize_month_for_person enough for
+    month_all.html to render: person_id, person_name, days and an empty ob_pay.
+    """
+    start_date = datetime.date(year, month, 1)
+    end_date = datetime.date(year, month, calendar.monthrange(year, month)[1])
+    substitutes = _get_substitutes_with_shifts(session, start_date, end_date)
+    if not substitutes:
+        return []
+
+    shift_map = _fetch_substitute_shifts(session, [s.id for s in substitutes], start_date, end_date)
+    shift_types = get_shift_types()
+
+    summaries = []
+    for sub in substitutes:
+        days = []
+        current = start_date
+        while current <= end_date:
+            days.append(_build_substitute_day(current, sub, shift_map, shift_types))
+            current += datetime.timedelta(days=1)
+        summaries.append(
+            {
+                "person_id": f"sub-{sub.id}",
+                "substitute_id": sub.id,
+                "person_name": sub.name,
+                "days": days,
+                "ob_pay": {},
+                "is_substitute": True,
+            }
+        )
+    return summaries
 
 
 def _batch_fetch_absences(
@@ -748,28 +898,32 @@ def _build_person_day_basic(
                 "end": None,
             }
 
-    # Kolla semester
+    # Kolla semester (veckobaserad). Visa endast SEM på dagar personen är schemalagd
+    # (icke-OFF), så markeringen matchar hur semesterdagar räknas. OFF-dagar lämnas
+    # orörda och renderas som vanligt nedan. Dagsnivå-semester hanteras av absence-blocket ovan.
     if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
         result = determine_shift_for_date(date, person_id)
         original_shift, rotation_week = result if result else (None, None)
-        return {
-            "person_id": person_id,
-            "person_name": person_name,
-            "shift": vacation_shift,
-            "original_shift": original_shift,  # For coworker matching
-            "rotation_week": rotation_week,
-            "rotation_length": rotation_length,
-            "hours": 0.0,
-            "start": None,
-            "end": None,
-        }
+        if original_shift and original_shift.code != "OFF":
+            return {
+                "person_id": person_id,
+                "person_name": person_name,
+                "shift": vacation_shift,
+                "original_shift": original_shift,  # For coworker matching
+                "rotation_week": rotation_week,
+                "rotation_length": rotation_length,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
+            }
 
-    # Kolla föräldraledighet (veckobaserad + dagsnivå)
+    # Kolla föräldraledighet (veckobaserad). Samma regel: visa LEAVE endast på schemalagda
+    # (icke-OFF) dagar. Dagsnivå-föräldraledighet hanteras av absence-blocket ovan.
     if parental_dates and date in parental_dates.get(person_id, set()):
         leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
-        if leave_shift:
-            result = determine_shift_for_date(date, person_id)
-            original_shift, rotation_week = result if result else (None, None)
+        result = determine_shift_for_date(date, person_id)
+        original_shift, rotation_week = result if result else (None, None)
+        if leave_shift and original_shift and original_shift.code != "OFF":
             return {
                 "person_id": person_id,
                 "person_name": person_name,
@@ -1073,6 +1227,9 @@ def _populate_parental_day(
         return False
     result = determine_shift_for_date(current_day, person_id)
     original_shift, rotation_week = result if result else (None, None)
+    # Week-based parental leave only marks scheduled (non-OFF) days; OFF days stay OFF.
+    if not (original_shift and original_shift.code != "OFF"):
+        return False
     day_info.update(
         {
             "person_id": person_id,
@@ -1126,9 +1283,13 @@ def _resolve_effective_shift(
         ob = calculate_ob_hours(start, end, combined_ob_rules) if (start is not None and shift.code != "OC") else {}
         return _ShiftResolution(shift, rotation_week, hours, start, end, ob)
 
-    # Vacation
+    # Vacation (week-based): only mark scheduled (non-OFF) days; OFF days fall through
+    # to the rotation shift below so they render as OFF.
     if vacation_shift and current_day in vacation_dates.get(person_id, set()):
-        return _ShiftResolution(vacation_shift, None, 0.0, None, None, {})
+        rot = determine_shift_for_date(current_day, person_id)
+        rot_shift = rot[0] if rot else None
+        if rot_shift and rot_shift.code != "OFF":
+            return _ShiftResolution(vacation_shift, None, 0.0, None, None, {})
 
     # Manual shift override
     if shift_override_map is not None and shift_override_map.get((person_id, current_day)):

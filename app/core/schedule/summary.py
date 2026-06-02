@@ -429,7 +429,7 @@ def build_calendar_grid_for_month(
     all_persons_data = None
     if include_coworkers and person_id is not None:
         all_persons_extended = generate_period_data(
-            grid_start, grid_end, person_id=None, session=session, user_wages=user_wages
+            grid_start, grid_end, person_id=None, session=session, user_wages=user_wages, include_substitutes=True
         )
         # Build lookup: date -> persons list
         all_persons_data = {day["date"]: day.get("persons", []) for day in all_persons_extended}

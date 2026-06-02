@@ -423,8 +423,10 @@ def get_coworkers_for_day(
                 }
             )
 
-    # Sort by person_id and return just names
-    coworkers.sort(key=lambda x: x["id"])
+    # Sort by person_id and return just names. person_id may be an int (rotation
+    # position) or a string (substitute, e.g. "sub-3"), so sort ints first among
+    # themselves, then strings, to avoid comparing str with int.
+    coworkers.sort(key=lambda x: (isinstance(x["id"], str), x["id"]))
     return [c["name"] for c in coworkers]
 
 

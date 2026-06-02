@@ -144,29 +144,45 @@ def test_partial_absence_renders_worked_portion(char_session):
 
 
 def test_week_based_parental_leave_renders_leave(char_session):
-    # Week-based parental leave (User.parental_leave JSON) renders LEAVE for the whole ISO week.
+    # Week-based parental leave (User.parental_leave JSON) renders LEAVE only on scheduled
+    # (non-OFF) days of the ISO week; OFF days stay OFF.
     user = char_session.query(User).filter(User.id == 1).first()
     user.parental_leave = {"2026": [11]}  # ISO week 11 = 9-15 March 2026
     char_session.commit()
 
-    days = generate_month_data(2026, 3, 1, session=char_session)
-    leave_days = [d for d in days if d["shift"] and d["shift"].code == "LEAVE"]
+    days = build_week_data(2026, 11, person_id=1, session=char_session)
 
-    assert len(leave_days) == 7
-    assert all(d["hours"] == 0.0 for d in leave_days)
+    saw_off = saw_leave = False
+    for d in days:
+        if d["original_shift"] and d["original_shift"].code == "OFF":
+            assert d["shift"].code == "OFF"
+            saw_off = True
+        else:
+            assert d["shift"].code == "LEAVE"
+            assert d["hours"] == 0.0
+            saw_leave = True
+    assert saw_off and saw_leave
 
 
 def test_week_based_vacation_renders_sem(char_session):
-    # Week-based vacation (User.vacation JSON) renders the SEM shift for the whole ISO week.
+    # Week-based vacation (User.vacation JSON) renders the SEM shift only on scheduled
+    # (non-OFF) days of the ISO week; OFF days stay OFF.
     user = char_session.query(User).filter(User.id == 1).first()
     user.vacation = {"2026": [11]}
     char_session.commit()
 
-    days = generate_month_data(2026, 3, 1, session=char_session)
-    sem_days = [d for d in days if d["shift"] and d["shift"].code == "SEM"]
+    days = build_week_data(2026, 11, person_id=1, session=char_session)
 
-    assert len(sem_days) == 7
-    assert all(d["hours"] == 0.0 for d in sem_days)
+    saw_off = saw_sem = False
+    for d in days:
+        if d["original_shift"] and d["original_shift"].code == "OFF":
+            assert d["shift"].code == "OFF"
+            saw_off = True
+        else:
+            assert d["shift"].code == "SEM"
+            assert d["hours"] == 0.0
+            saw_sem = True
+    assert saw_off and saw_sem
 
 
 def test_oncall_pay_per_day(char_session):
