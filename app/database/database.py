@@ -243,6 +243,50 @@ class ShiftOverride(Base):
         return f"<ShiftOverride(id={self.id}, user_id={self.user_id}, date={self.date}, shift_code={self.shift_code})>"
 
 
+class Substitute(Base):
+    """Summer substitute (vikarie): not a login user, just a named person who works some shifts.
+
+    Substitutes have no rotation and no salary/vacation tracking. Their shifts are entered
+    manually (see SubstituteShift) and only appear in the week/month all-person schedules.
+    """
+
+    __tablename__ = "substitutes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    is_active = Column(Integer, default=1, nullable=False)  # 1=active, 0=archived
+    created_at = Column(DateTime, default=utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    creator = relationship("User", foreign_keys=[created_by])
+    shifts = relationship("SubstituteShift", back_populates="substitute", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Substitute(id={self.id}, name={self.name!r}, is_active={self.is_active})>"
+
+
+class SubstituteShift(Base):
+    """A single shift worked by a substitute on a given day (N1/N2/N3)."""
+
+    __tablename__ = "substitute_shifts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    substitute_id = Column(Integer, ForeignKey("substitutes.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    shift_code = Column(String(10), nullable=False)  # N1, N2, N3
+    created_at = Column(DateTime, default=utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    substitute = relationship("Substitute", back_populates="shifts")
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return (
+            f"<SubstituteShift(id={self.id}, substitute_id={self.substitute_id}, "
+            f"date={self.date}, shift_code={self.shift_code})>"
+        )
+
+
 class WageHistory(Base):
     """Wage history model for tracking wage changes over time with temporal validity."""
 

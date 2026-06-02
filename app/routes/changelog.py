@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.26.0",
+        "date": "2026-06-02",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Vikarier: lägg till sommarvikarier (utan inloggning) under Admin → Vikarier och fyll deras pass i en månadskalender (N1/N2/N3/OC, flera dagar). Vikarier visas som egen rad/kolumn i vecko- och månadsschemat för alla, och som kollega i din dag-, vecko- och månadsvy de dagar ni jobbar samma pass",
+                "en": "Substitutes: add summer substitutes (no login) under Admin → Substitutes and fill their shifts in a month calendar (N1/N2/N3/OC, multiple days). Substitutes appear as their own row/column in the all-persons week and month schedules, and as a coworker in your day, week and month views on days you share a shift",
+            },
+            {
+                "type": "förbättring",
+                "sv": "Veckobaserad semester och föräldraledighet visas nu bara på dagar du faktiskt är schemalagd; lediga dagar (OFF) i en vald vecka förblir OFF i stället för att markeras som SEM/LEAVE. Detta matchar hur semesterdagar räknas",
+                "en": "Week-based vacation and parental leave now only show on days you are actually scheduled; days off (OFF) in a selected week stay OFF instead of being marked as SEM/LEAVE, matching how leave days are counted",
+            },
+        ],
+    },
+    {
         "version": "0.25.0",
         "date": "2026-06-02",
         "entries": [

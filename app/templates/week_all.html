@@ -57,19 +57,27 @@
             </tr>
         </thead>
         <tbody>
-            {# Build rows for each person #}
-            {% for person_id in person_ids %}
+            {# Build rows for each person (regular positions plus any substitutes with shifts this week) #}
+            {% for person_entry in (days[0].persons if days and days|length > 0 else []) %}
+                {% set person_id = person_entry.person_id %}
                 <tr class="person-row">
                     {# Person name column (sticky left) #}
                     <td class="person-name-cell">
-                        {% if days and days|length > 0 and days[0].persons|length >= person_id %}
-                            {% set person_data = days[0].persons[person_id - 1] %}
+                        {% if person_entry.is_substitute %}
+                            {% if user and user.role.value == 'admin' %}
+                                <a href="/admin/substitutes/{{ person_entry.substitute_id }}">
+                                    {{ person_entry.person_name }}<br>
+                                    <small>({{ t.substitute_tag }})</small>
+                                </a>
+                            {% else %}
+                                {{ person_entry.person_name }}<br>
+                                <small>({{ t.substitute_tag }})</small>
+                            {% endif %}
+                        {% else %}
                             <a href="/week/{{ person_id }}?year={{ year }}&week={{ week }}">
-                                {{ person_data.person_name }}<br>
+                                {{ person_entry.person_name }}<br>
                                 <small>(#{{ person_id }})</small>
                             </a>
-                        {% else %}
-                            Person {{ person_id }}
                         {% endif %}
                     </td>
 
@@ -112,8 +120,8 @@
                             style="border-left: 4px solid {% if wp and wp.shift %}{{ wp.shift.color }}{% else %}#ddd{% endif %};">
 
                             {% if wp and wp.shift %}
-                                {# Länka till day-sida bara om admin eller egen #}
-                                {% if user and (user.role.value == 'admin' or user.id == person_id) %}
+                                {# Länka till day-sida bara om admin eller egen (ej vikarier, de saknar dagsida) #}
+                                {% if not person_entry.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
                                     <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                        class="shift-link"
                                        style="color: var(--text); text-decoration: none;">
@@ -132,7 +140,7 @@
                                     </div>
                                 {% endif %}
 
-                                {% if user and (user.role.value == 'admin' or user.id == person_id) %}
+                                {% if not person_entry.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
                                     </a>
                                 {% endif %}
                             {% else %}

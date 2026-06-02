@@ -37,6 +37,7 @@ from .overtime import (
     get_overtime_shifts_for_month,
 )
 from .period import (
+    build_substitute_month_summaries,
     build_week_data,
     generate_month_data,
     generate_period_data,
@@ -110,6 +111,7 @@ __all__ = [
     "get_vacation_dates_for_year",
     # period
     "build_week_data",
+    "build_substitute_month_summaries",
     "generate_period_data",
     "generate_year_data",
     "generate_month_data",
