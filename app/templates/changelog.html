@@ -24,6 +24,8 @@
                 <li style="display: flex; gap: 0.6rem; align-items: baseline;">
                     {% if entry.type == "nyhet" %}
                     <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg, #2a2a35); color: var(--accent, #4f9cf9); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_nyhet }}</span>
+                    {% elif entry.type == "förbättring" %}
+                    <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg, #2a2a35); color: var(--success, #7bd389); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_forbattring }}</span>
                     {% else %}
                     <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg, #2a2a35); color: var(--warning, #e0a84e); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_fix }}</span>
                     {% endif %}

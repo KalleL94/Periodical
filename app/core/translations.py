@@ -33,6 +33,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "changelog_current_version": "Aktuell version",
         "changelog_latest": "SENASTE",
         "changelog_type_nyhet": "Nyhet",
+        "changelog_type_forbattring": "Förbättring",
         "changelog_type_fix": "Fix",
         # ── Login ──────────────────────────────────────────────────
         "login_title": "Logga in",
@@ -1016,6 +1017,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "changelog_current_version": "Current version",
         "changelog_latest": "LATEST",
         "changelog_type_nyhet": "New",
+        "changelog_type_forbattring": "Improvement",
         "changelog_type_fix": "Fix",
         # ── Login ──────────────────────────────────────────────────
         "login_title": "Log in",
