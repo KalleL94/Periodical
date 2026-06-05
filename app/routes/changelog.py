@@ -767,11 +767,6 @@ VERSIONS = [
                 "sv": "Komplett frånvarohantering med karens och OB-justering",
                 "en": "Complete absence tracking with deductible and OB adjustment",
             },
-            {
-                "type": "nyhet",
-                "sv": "Automatisk databasbackup vid driftsättning",
-                "en": "Automatic database backup on deployment",
-            },
         ],
     },
     {

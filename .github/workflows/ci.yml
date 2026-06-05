@@ -38,4 +38,5 @@ jobs:
           SECRET_KEY: "test_secret_key_for_ci"
           PRODUCTION: "false"
         run: |
-          pytest
+          # Fail the build if coverage drops below the floor (guards against regression, not a target)
+          pytest --cov=app --cov-report=term-missing --cov-fail-under=45
