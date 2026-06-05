@@ -188,11 +188,6 @@ VERSIONS = [
                 "sv": "Admin: föräldraledigveckor kan hanteras per användare i admin-semestervyn med eget formulär och spara-knapp",
                 "en": "Admin: parental leave weeks can be managed per user in the admin vacation view with a dedicated form and save button",
             },
-            {
-                "type": "nyhet",
-                "sv": "Databas: ny kolumn parental_leave (JSON) i users-tabellen – kör add_parental_leave_column.py vid driftsättning",
-                "en": "Database: new parental_leave (JSON) column in the users table – run add_parental_leave_column.py on deployment",
-            },
         ],
     },
     {
