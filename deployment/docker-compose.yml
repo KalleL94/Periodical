@@ -38,7 +38,7 @@ services:
     container_name: ica-schedule
     restart: unless-stopped
     environment:
-      - SECRET_KEY=${SECRET_KEY:-change-me-to-random-secret}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
       - PRODUCTION=true
       - TZ=Europe/Stockholm
     volumes:
