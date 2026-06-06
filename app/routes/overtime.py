@@ -65,19 +65,34 @@ async def add_overtime_shift(
     start_t = datetime.strptime(start_time, "%H:%M").time()
     end_t = datetime.strptime(end_time, "%H:%M").time()
 
-    # Create overtime shift record
-    ot_shift = OvertimeShift(
-        user_id=user_id,
-        date=ot_date,
-        start_time=start_t,
-        end_time=end_t,
-        hours=hours,
-        ot_pay=ot_pay,
-        is_extension=is_extension,
-        created_by=current_user.id,
+    existing_shifts = (
+        session.query(OvertimeShift)
+        .filter(OvertimeShift.user_id == user_id, OvertimeShift.date == ot_date)
+        .order_by(OvertimeShift.id)
+        .all()
     )
+    if existing_shifts:
+        ot_shift = existing_shifts[0]
+        ot_shift.start_time = start_t
+        ot_shift.end_time = end_t
+        ot_shift.hours = hours
+        ot_shift.ot_pay = ot_pay
+        ot_shift.is_extension = is_extension
+        for duplicate in existing_shifts[1:]:
+            session.delete(duplicate)
+    else:
+        ot_shift = OvertimeShift(
+            user_id=user_id,
+            date=ot_date,
+            start_time=start_t,
+            end_time=end_t,
+            hours=hours,
+            ot_pay=ot_pay,
+            is_extension=is_extension,
+            created_by=current_user.id,
+        )
+        session.add(ot_shift)
 
-    session.add(ot_shift)
     session.commit()
 
     # Clear schedule cache to reflect changes
