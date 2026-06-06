@@ -4,6 +4,7 @@ SQLAlchemy database setup and models.
 """
 
 import enum
+import os
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -27,18 +28,35 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
-DATABASE_URL = "sqlite:///./app/database/schedule.db"
+DEFAULT_DATABASE_URL = "sqlite:///./app/database/schedule.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+def get_database_url() -> str:
+    """Return the configured database URL, falling back to the bundled SQLite DB."""
+    return os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+
+
+def get_engine_connect_args(database_url: str) -> dict[str, object]:
+    """Return SQLAlchemy connect_args appropriate for the configured backend."""
+    if database_url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    return {}
+
+
+DATABASE_URL = get_database_url()
+
+engine = create_engine(DATABASE_URL, connect_args=get_engine_connect_args(DATABASE_URL))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-@event.listens_for(engine, "connect")
-def set_sqlite_pragmas(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA wal_autocheckpoint=100")
-    cursor.close()
+if engine.url.get_backend_name() == "sqlite":
+
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragmas(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA wal_autocheckpoint=100")
+        cursor.close()
 
 
 Base = declarative_base()
