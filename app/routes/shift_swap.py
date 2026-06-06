@@ -138,6 +138,59 @@ def _check_weekly_rest_ok(work_date, new_shift_code, rotation_person_id, origina
     return True
 
 
+def _swap_participant_dates(requester_id: int, target_id: int, requester_date, target_date) -> set[tuple[int, object]]:
+    """Return every user/date slot affected by a swap."""
+    return {
+        (requester_id, requester_date),
+        (target_id, requester_date),
+        (requester_id, target_date),
+        (target_id, target_date),
+    }
+
+
+def _find_active_swap_conflict(
+    db: Session,
+    participant_dates: set[tuple[int, object]],
+    statuses: tuple[SwapStatus, ...],
+    exclude_swap_id: int | None = None,
+) -> ShiftSwap | None:
+    """Return an active swap that already uses any of the affected user/date slots."""
+    if not participant_dates:
+        return None
+
+    user_ids = {user_id for user_id, _ in participant_dates}
+    dates = {date for _, date in participant_dates}
+    query = db.query(ShiftSwap).filter(
+        ShiftSwap.status.in_(statuses),
+        (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
+        (ShiftSwap.requester_date.in_(dates) | ShiftSwap.target_date.in_(dates)),
+    )
+    if exclude_swap_id is not None:
+        query = query.filter(ShiftSwap.id != exclude_swap_id)
+
+    for swap in query.all():
+        existing_dates = _swap_participant_dates(
+            swap.requester_id, swap.target_id, swap.requester_date, swap.target_date
+        )
+        if participant_dates & existing_dates:
+            return swap
+    return None
+
+
+def _raise_if_swap_conflicts(
+    db: Session,
+    requester_id: int,
+    target_id: int,
+    requester_date,
+    target_date,
+    statuses: tuple[SwapStatus, ...],
+    exclude_swap_id: int | None = None,
+) -> None:
+    participant_dates = _swap_participant_dates(requester_id, target_id, requester_date, target_date)
+    if _find_active_swap_conflict(db, participant_dates, statuses, exclude_swap_id):
+        raise HTTPException(status_code=400, detail="Ett byte finns redan för någon av personerna på dessa datum")
+
+
 @router.get("/api/shifts/{user_id}")
 async def get_user_shifts(
     user_id: int,
@@ -371,6 +424,15 @@ async def propose_swap(
     if existing:
         raise HTTPException(status_code=400, detail="Byte redan föreslaget för dessa datum")
 
+    _raise_if_swap_conflicts(
+        db,
+        current_user.id,
+        target_id,
+        req_date,
+        tgt_date,
+        (SwapStatus.PENDING, SwapStatus.ACCEPTED),
+    )
+
     # Get shift codes for both dates
     req_result = determine_shift_for_date(req_date, start_week=current_user.rotation_person_id)
     tgt_result = determine_shift_for_date(tgt_date, start_week=target_user.rotation_person_id)
@@ -440,6 +502,16 @@ async def accept_swap(
         raise HTTPException(status_code=403, detail="Inte behörig")
     if swap.status != SwapStatus.PENDING:
         raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
+
+    _raise_if_swap_conflicts(
+        db,
+        swap.requester_id,
+        swap.target_id,
+        swap.requester_date,
+        swap.target_date,
+        (SwapStatus.ACCEPTED,),
+        exclude_swap_id=swap.id,
+    )
 
     swap.status = SwapStatus.ACCEPTED
     swap.responded_at = utcnow()
