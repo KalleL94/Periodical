@@ -36,7 +36,7 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app"]
+include = ["app", "app.*"]
 
 [tool.ruff]
 line-length = 120

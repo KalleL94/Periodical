@@ -21,17 +21,20 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 dagar
 
 # Validate SECRET_KEY in production
 is_production = os.getenv("PRODUCTION", "false").lower() == "true"
-if SECRET_KEY == "your-secret-key-change-this-in-production":
-    if is_production:
-        raise RuntimeError("SECRET_KEY must be set in production!")
-    else:
-        import warnings
+INSECURE_SECRET_KEYS = {
+    "your-secret-key-change-this-in-production",
+    "change-me-to-random-secret",
+}
+if is_production and (SECRET_KEY in INSECURE_SECRET_KEYS or len(SECRET_KEY) < 32):
+    raise RuntimeError("SECRET_KEY must be set to a strong random value in production!")
+if not is_production and SECRET_KEY in INSECURE_SECRET_KEYS:
+    import warnings
 
-        warnings.warn(
-            "WARNING: Using default SECRET_KEY! Set SECRET_KEY environment variable for production.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+    warnings.warn(
+        "WARNING: Using default SECRET_KEY! Set SECRET_KEY environment variable for production.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 class PasswordChangeRequired(Exception):
