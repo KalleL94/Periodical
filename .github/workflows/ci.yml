@@ -39,4 +39,4 @@ jobs:
           PRODUCTION: "false"
         run: |
           # Fail the build if coverage drops below the floor (guards against regression, not a target)
-          pytest --cov=app --cov-report=term-missing --cov-fail-under=45
+          pytest --cov=app --cov-report=term-missing --cov-fail-under=50
