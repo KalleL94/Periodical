@@ -15,7 +15,15 @@
   "pip-compile": {
     "enabled": true
   },
+  "pre-commit": {
+    "enabled": true
+  },
   "packageRules": [
+    {
+      "description": "Bump ruff in pyproject.toml and .pre-commit-config.yaml together so the pins stay in sync.",
+      "matchPackageNames": ["ruff", "astral-sh/ruff-pre-commit"],
+      "groupName": "ruff"
+    },
     {
       "description": "Hold the Python version on 3.12 to match the production venv and the compiled lockfile. Bump deliberately as a coordinated change (prod venv + recompile + CI + Dockerfile).",
       "matchDepNames": ["python"],
