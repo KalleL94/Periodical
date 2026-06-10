@@ -3,9 +3,12 @@
 Authentication and authorization utilities.
 """
 
+import base64
+import hashlib
 import os
 from datetime import datetime, timedelta
 
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer
 from jose import JWTError, jwt
@@ -256,6 +259,43 @@ def clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(key="access_token")
 
 
+def hash_api_key(api_key: str) -> str:
+    """Return the SHA-256 hex digest of an API key.
+
+    Only the digest is used for authentication lookups, so a leaked database
+    does not expose usable keys. SHA-256 (rather than bcrypt) keeps lookups
+    indexable and is sufficient because keys are high-entropy random tokens.
+    """
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+# Fernet key derived from SECRET_KEY, used to encrypt API keys at rest so the
+# profile page can still display them. Lookups always go through hash_api_key;
+# the encrypted copy exists only for display.
+def _api_key_fernet() -> Fernet:
+    digest = hashlib.sha256(SECRET_KEY.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def encrypt_api_key(api_key: str) -> str:
+    """Encrypt an API key for at-rest storage (display purposes only)."""
+    return _api_key_fernet().encrypt(api_key.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_api_key(token: str | None) -> str | None:
+    """Decrypt a stored API key, or None if missing or undecryptable.
+
+    Returns None when SECRET_KEY has changed since the key was encrypted; the
+    key still works for authentication (hash lookup) but cannot be displayed.
+    """
+    if not token:
+        return None
+    try:
+        return _api_key_fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+    except InvalidToken:
+        return None
+
+
 async def get_api_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Authenticate via Bearer API key in Authorization header."""
     auth_header = request.headers.get("Authorization", "")
@@ -266,7 +306,7 @@ async def get_api_user(request: Request, db: Session = Depends(get_db)) -> User:
             headers={"WWW-Authenticate": "Bearer"},
         )
     api_key = auth_header[7:]
-    user = db.query(User).filter(User.api_key == api_key).first()
+    user = db.query(User).filter(User.api_key == hash_api_key(api_key)).first()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
