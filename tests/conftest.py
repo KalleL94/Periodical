@@ -12,10 +12,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from starlette.routing import Mount
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -103,13 +105,18 @@ def test_client(test_db):
         finally:
             pass
 
-    app.dependency_overrides[get_db] = override_get_db
+    # Mounted sub-apps (/api/v1, /api/v1/admin) have their own dependency_overrides,
+    # so the override must be applied to each of them as well as the main app.
+    sub_apps = [route.app for route in app.routes if isinstance(route, Mount) and isinstance(route.app, FastAPI)]
+    for target in [app, *sub_apps]:
+        target.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as client:
         yield client
 
     # Clean up
-    app.dependency_overrides.clear()
+    for target in [app, *sub_apps]:
+        target.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="function")

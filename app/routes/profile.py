@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.auth.auth import get_current_user, get_password_hash
+from app.auth.auth import decrypt_api_key, encrypt_api_key, get_current_user, get_password_hash, hash_api_key
 from app.core.schedule import clear_schedule_cache
 from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, User, UserRole, WageType, get_db
@@ -39,6 +39,7 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
             "rate_defaults": get_all_defaults(),
             "custom_rates": current_user.custom_rates or {},
             "rate_history": get_rate_history(db, current_user.id),
+            "api_key_plain": decrypt_api_key(current_user.api_key_encrypted),
         },
     )
 
@@ -292,9 +293,14 @@ async def generate_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Generate a new API key for the current user."""
+    """Generate a new API key for the current user.
+
+    Authentication lookups use the SHA-256 hash; an encrypted copy is stored
+    so the profile page can keep displaying the key.
+    """
     new_key = secrets.token_urlsafe(32)
-    current_user.api_key = new_key
+    current_user.api_key = hash_api_key(new_key)
+    current_user.api_key_encrypted = encrypt_api_key(new_key)
     try:
         db.commit()
     except Exception:
@@ -310,6 +316,7 @@ async def revoke_api_key(
 ):
     """Revoke the current user's API key."""
     current_user.api_key = None
+    current_user.api_key_encrypted = None
     try:
         db.commit()
     except Exception:

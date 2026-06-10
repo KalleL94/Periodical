@@ -228,9 +228,11 @@
         <div class="card">
             <p style="color: var(--muted); margin-top: 0;">{{ t.profile_api_key_desc }}</p>
 
-            {% if user.api_key %}
-                <input type="text" value="{{ user.api_key }}" readonly
+            {% if api_key_plain %}
+                <input type="text" value="{{ api_key_plain }}" readonly
                        style="width: 100%; box-sizing: border-box; font-family: monospace; margin-bottom: 12px;">
+            {% elif user.api_key %}
+                <p style="color: var(--muted);">{{ t.profile_api_key_configured }}</p>
             {% else %}
                 <p style="color: var(--muted);">{{ t.profile_api_key_none }}</p>
             {% endif %}

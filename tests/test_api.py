@@ -133,6 +133,28 @@ class TestProtectedRoutes:
 
         assert response.status_code in [302, 303, 307, 401, 403]
 
+    def test_year_totals_requires_authentication(self, test_client, test_user):
+        """GET /api/year/{year}/totals/{person_id} without auth should return 401 JSON.
+
+        Regression test: this endpoint used to return a (dict, status) tuple, which
+        FastAPI serialised as a 200 response with the tuple as the body.
+        """
+        response = test_client.get("/api/year/2026/totals/1")
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Not authenticated"}
+
+    def test_year_totals_accessible_when_authenticated(self, test_client, test_user, rotation_session):
+        """GET /api/year/{year}/totals/{person_id} with valid auth should not be rejected."""
+        test_client.post(
+            "/login",
+            data={"username": "testuser", "password": "testpass123"},
+        )
+
+        response = test_client.get("/api/year/2026/totals/1")
+
+        assert response.status_code == 200
+
     def test_profile_accessible_when_authenticated(self, test_client, test_user):
         """GET /profile with valid auth should return profile page."""
         # Login first
