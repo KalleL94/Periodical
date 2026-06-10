@@ -3,7 +3,7 @@
 API endpoints for schedule data - used for AJAX/lazy loading.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
@@ -24,7 +24,7 @@ async def get_year_totals(
 ):
     """API endpoint to get year OB totals for a specific person (for lazy loading)."""
     if current_user is None:
-        return {"error": "Not authenticated"}, 401
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     person_id = validate_person_id(person_id)
 
