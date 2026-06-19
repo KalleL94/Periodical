@@ -25,7 +25,7 @@
       "groupName": "ruff"
     },
     {
-      "description": "Hold the Python version on 3.12 to match the production venv and the compiled lockfile. Bump deliberately as a coordinated change (prod venv + recompile + CI + Dockerfile).",
+      "description": "Hold the Python version on 3.14 to match the production venv and the compiled lockfile. Bump deliberately as a coordinated change (prod venv + recompile + CI + Dockerfile).",
       "matchDepNames": ["python"],
       "enabled": false
     },
