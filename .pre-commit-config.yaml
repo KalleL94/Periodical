@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.16  # Keep in sync with the ruff pin in pyproject.toml [project.optional-dependencies] dev
+    rev: v0.15.18  # Keep in sync with the ruff pin in pyproject.toml [project.optional-dependencies] dev
     hooks:
       - id: ruff        # Runs ruff check --fix
       - id: ruff-format # Runs ruff format
