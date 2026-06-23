@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.26.1",
+        "date": "2026-06-24",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Månadsvy (alla): en vikaries frånvaro syns nu i schemat (visas som frånvaropass den dagen), även om vikarien inte har något inlagt arbetspass den månaden",
+                "en": "Month view (all): a substitute's absence now appears in the schedule (shown as an absence shift on that day), even when the substitute has no scheduled shift that month",
+            },
+            {
+                "type": "fix",
+                "sv": "Månadsvy (alla): en vikaries övertidspass visas nu som ÖT i schemat, och beredskap på en jourdag minskas med de timmar som jobbats som övertid under jouren",
+                "en": "Month view (all): a substitute's overtime now appears as OT in the schedule, and on-call standby on an on-call day is reduced by the hours worked as overtime during the on-call period",
+            },
+        ],
+    },
+    {
         "version": "0.26.0",
         "date": "2026-06-02",
         "entries": [

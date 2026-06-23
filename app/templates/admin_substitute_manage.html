@@ -73,6 +73,77 @@
 
         <button type="submit" class="btn" style="margin-top: 1rem;">{{ t.admin_substitute_save }}</button>
     </form>
+
+    {# Overtime entries (hours only, no pay for substitutes) #}
+    <h3 style="margin-top: 2rem;">Övertid</h3>
+    <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/add"
+          style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-bottom: 0.75rem;">
+        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Datum
+            <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
+        </label>
+        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Från
+            <input type="time" name="start_time" required>
+        </label>
+        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Till
+            <input type="time" name="end_time" required>
+        </label>
+        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Timmar
+            <input type="number" name="hours" step="0.25" min="0" style="width: 6rem;" required>
+        </label>
+        <button type="submit" class="btn">Lägg till</button>
+    </form>
+    {% if overtime_shifts %}
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 1rem;">
+            <tbody>
+                {% for ot in overtime_shifts %}
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 4px;">{{ ot.date }}</td>
+                        <td style="padding: 4px;">{{ '%02d:%02d'|format(ot.start_time.hour, ot.start_time.minute) }}&ndash;{{ '%02d:%02d'|format(ot.end_time.hour, ot.end_time.minute) }}</td>
+                        <td style="padding: 4px;">{{ ot.hours }} h</td>
+                        <td style="padding: 4px; text-align: right;">
+                            <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/{{ ot.id }}/delete" style="display: inline;">
+                                <button type="submit" class="btn secondary" style="padding: 2px 8px;">Ta bort</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    {# Absence entries (day tracking only, no deduction for substitutes) #}
+    <h3 style="margin-top: 1.5rem;">Frånvaro</h3>
+    <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/add"
+          style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-bottom: 0.75rem;">
+        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Datum
+            <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
+        </label>
+        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Typ
+            <select name="absence_type" required>
+                {% for at in absence_types %}
+                    <option value="{{ at }}">{{ at }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit" class="btn">Lägg till</button>
+    </form>
+    {% if absences %}
+        <table style="width: 100%; border-collapse: collapse;">
+            <tbody>
+                {% for a in absences %}
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 4px;">{{ a.date }}</td>
+                        <td style="padding: 4px;">{{ a.absence_type }}</td>
+                        <td style="padding: 4px; text-align: right;">
+                            <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/{{ a.id }}/delete" style="display: inline;">
+                                <button type="submit" class="btn secondary" style="padding: 2px 8px;">Ta bort</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
 </div>
 
 <style>

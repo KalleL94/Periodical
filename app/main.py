@@ -30,6 +30,7 @@ from app.routes.day_pay_override import router as day_pay_override_router
 from app.routes.oncall import router as oncall_router
 from app.routes.overtime import router as overtime_router
 from app.routes.profile import router as profile_router
+from app.routes.reports import router as reports_router
 from app.routes.schedule_all import router as schedule_all_router
 from app.routes.schedule_api import router as schedule_api_router
 from app.routes.schedule_personal import router as schedule_personal_router
@@ -312,6 +313,7 @@ app.include_router(day_pay_override_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
+app.include_router(reports_router)
 app.include_router(admin_users_router)
 app.include_router(admin_router)
 app.include_router(transition_router)
