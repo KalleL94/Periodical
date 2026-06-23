@@ -17,12 +17,22 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_admin_user
 from app.core.schedule import clear_schedule_cache
 from app.core.utils import get_today
-from app.database.database import Substitute, SubstituteShift, User, get_db
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    OvertimeShift,
+    Substitute,
+    SubstituteShift,
+    User,
+    get_db,
+)
 from app.routes.shared import render
 
 router = APIRouter(tags=["substitutes"])
 
 _ALLOWED_CODES = {"N1", "N2", "N3", "OC"}
+# Absence types selectable for substitutes (we only track days, no pay).
+_ABSENCE_TYPES = ["SICK", "VAB", "LEAVE", "OFF", "PARENTAL", "VACATION"]
 
 
 @router.get("/admin/substitutes", response_class=HTMLResponse, name="admin_substitutes")
@@ -98,6 +108,28 @@ async def admin_substitute_manage_page(
     )
     shift_by_date = {s.date.isoformat(): s.shift_code for s in shifts}
 
+    # Overtime and absence entries for the displayed month (substitutes track hours/days only)
+    overtime_shifts = (
+        db.query(OvertimeShift)
+        .filter(
+            OvertimeShift.substitute_id == substitute_id,
+            OvertimeShift.date >= first_day,
+            OvertimeShift.date <= last_day,
+        )
+        .order_by(OvertimeShift.date)
+        .all()
+    )
+    absences = (
+        db.query(Absence)
+        .filter(
+            Absence.substitute_id == substitute_id,
+            Absence.date >= first_day,
+            Absence.date <= last_day,
+        )
+        .order_by(Absence.date)
+        .all()
+    )
+
     prev_month = month - 1 or 12
     prev_year = year - 1 if month == 1 else year
     next_month = month + 1 if month < 12 else 1
@@ -111,6 +143,9 @@ async def admin_substitute_manage_page(
             "substitute": substitute,
             "weeks": weeks,
             "shift_by_date": shift_by_date,
+            "overtime_shifts": overtime_shifts,
+            "absences": absences,
+            "absence_types": _ABSENCE_TYPES,
             "year": year,
             "month": month,
             "allowed_codes": ["N1", "N2", "N3", "OC"],
@@ -194,6 +229,127 @@ async def admin_substitute_save(
             db.delete(row)
         current += timedelta(days=1)
 
+    db.commit()
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/substitutes/{substitute_id}?year={year}&month={month}", status_code=303)
+
+
+def _require_substitute(db: Session, substitute_id: int) -> Substitute:
+    substitute = db.query(Substitute).filter(Substitute.id == substitute_id).first()
+    if not substitute:
+        raise HTTPException(status_code=404, detail="Substitute not found")
+    return substitute
+
+
+@router.post("/admin/substitutes/{substitute_id}/overtime/add", name="admin_substitute_overtime_add")
+async def admin_substitute_overtime_add(
+    substitute_id: int,
+    date: str = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    hours: float = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Add an overtime entry for a substitute (hours only; ot_pay is always 0)."""
+    _require_substitute(db, substitute_id)
+
+    from datetime import datetime as _dt
+
+    ot_date = _dt.strptime(date, "%Y-%m-%d").date()
+    start_t = _dt.strptime(start_time, "%H:%M").time()
+    end_t = _dt.strptime(end_time, "%H:%M").time()
+
+    db.add(
+        OvertimeShift(
+            substitute_id=substitute_id,
+            date=ot_date,
+            start_time=start_t,
+            end_time=end_t,
+            hours=hours,
+            ot_pay=0.0,
+            is_extension=False,
+            created_by=current_user.id,
+        )
+    )
+    db.commit()
+    clear_schedule_cache()
+
+    return RedirectResponse(
+        url=f"/admin/substitutes/{substitute_id}?year={ot_date.year}&month={ot_date.month}", status_code=303
+    )
+
+
+@router.post("/admin/substitutes/{substitute_id}/overtime/{ot_id}/delete", name="admin_substitute_overtime_delete")
+async def admin_substitute_overtime_delete(
+    substitute_id: int,
+    ot_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Delete an overtime entry belonging to a substitute."""
+    ot = db.query(OvertimeShift).filter(OvertimeShift.id == ot_id, OvertimeShift.substitute_id == substitute_id).first()
+    if not ot:
+        raise HTTPException(status_code=404, detail="Overtime entry not found")
+    year, month = ot.date.year, ot.date.month
+    db.delete(ot)
+    db.commit()
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/substitutes/{substitute_id}?year={year}&month={month}", status_code=303)
+
+
+@router.post("/admin/substitutes/{substitute_id}/absence/add", name="admin_substitute_absence_add")
+async def admin_substitute_absence_add(
+    substitute_id: int,
+    date: str = Form(...),
+    absence_type: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Add an absence day for a substitute (day tracking only, no deduction)."""
+    _require_substitute(db, substitute_id)
+
+    if absence_type not in _ABSENCE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid absence type")
+
+    from datetime import datetime as _dt
+
+    abs_date = _dt.strptime(date, "%Y-%m-%d").date()
+
+    existing = db.query(Absence).filter(Absence.substitute_id == substitute_id, Absence.date == abs_date).first()
+    if existing:
+        existing.absence_type = AbsenceType(absence_type)
+    else:
+        db.add(
+            Absence(
+                substitute_id=substitute_id,
+                date=abs_date,
+                absence_type=AbsenceType(absence_type),
+            )
+        )
+    db.commit()
+    clear_schedule_cache()
+
+    return RedirectResponse(
+        url=f"/admin/substitutes/{substitute_id}?year={abs_date.year}&month={abs_date.month}", status_code=303
+    )
+
+
+@router.post("/admin/substitutes/{substitute_id}/absence/{absence_id}/delete", name="admin_substitute_absence_delete")
+async def admin_substitute_absence_delete(
+    substitute_id: int,
+    absence_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Delete an absence day belonging to a substitute."""
+    absence = db.query(Absence).filter(Absence.id == absence_id, Absence.substitute_id == substitute_id).first()
+    if not absence:
+        raise HTTPException(status_code=404, detail="Absence not found")
+    year, month = absence.date.year, absence.date.month
+    db.delete(absence)
     db.commit()
     clear_schedule_cache()
 

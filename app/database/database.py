@@ -177,18 +177,21 @@ class OvertimeShift(Base):
     __tablename__ = "overtime_shifts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Exactly one of user_id / substitute_id is set (enforced at the route layer).
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    substitute_id = Column(Integer, ForeignKey("substitutes.id"), nullable=True)
     date = Column(Date, nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     hours = Column(Float, nullable=False)
-    ot_pay = Column(Float, nullable=False)
+    ot_pay = Column(Float, nullable=False)  # Always 0.0 for substitutes (hours tracked, no pay)
     is_extension = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"))
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id], back_populates="overtime_shifts")
+    substitute = relationship("Substitute", foreign_keys=[substitute_id])
     creator = relationship("User", foreign_keys=[created_by])
 
     def __repr__(self):
@@ -201,7 +204,9 @@ class Absence(Base):
     __tablename__ = "absences"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Exactly one of user_id / substitute_id is set (enforced at the route layer).
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    substitute_id = Column(Integer, ForeignKey("substitutes.id"), nullable=True)
     date = Column(Date, nullable=False)
     absence_type = Column(SQLEnum(AbsenceType), nullable=False)
     left_at = Column(String(5), nullable=True)  # "HH:MM" - time they left early (None = full day or on time)
@@ -210,6 +215,7 @@ class Absence(Base):
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
+    substitute = relationship("Substitute", foreign_keys=[substitute_id])
 
     @property
     def is_partial_day(self) -> bool:
@@ -228,7 +234,9 @@ class OnCallOverride(Base):
     __tablename__ = "oncall_overrides"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Exactly one of user_id / substitute_id is set (enforced at the route layer).
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    substitute_id = Column(Integer, ForeignKey("substitutes.id"), nullable=True)
     date = Column(Date, nullable=False)
     override_type = Column(SQLEnum(OnCallOverrideType), nullable=False)
     reason = Column(String(255), nullable=True)
@@ -237,6 +245,7 @@ class OnCallOverride(Base):
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
+    substitute = relationship("Substitute", foreign_keys=[substitute_id])
     creator = relationship("User", foreign_keys=[created_by])
 
     def __repr__(self):

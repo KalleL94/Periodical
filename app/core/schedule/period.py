@@ -437,10 +437,34 @@ def _fetch_substitute_shifts(
     return {(r.substitute_id, r.date): r for r in rows}
 
 
-def _build_substitute_day(date: datetime.date, sub, sub_shift_map: dict, shift_types: list) -> dict:
+def _substitute_absence_shift_code(absence_type) -> str:
+    """Map a substitute's absence type to the shift code used to render it.
+
+    Mirrors the agent mapping: VACATION shows as SEM, PARENTAL falls back to LEAVE,
+    everything else uses the absence type's own code (SICK, VAB, LEAVE, OFF).
+    """
+    from app.database.database import AbsenceType
+
+    if absence_type == AbsenceType.VACATION:
+        return "SEM"
+    if absence_type == AbsenceType.PARENTAL:
+        return "LEAVE"
+    return absence_type.value
+
+
+def _build_substitute_day(
+    date: datetime.date,
+    sub,
+    sub_shift_map: dict,
+    shift_types: list,
+    absence_map: dict | None = None,
+    ot_map: dict | None = None,
+) -> dict:
     """Build a single day's schedule dict for a substitute.
 
     The base schedule is OFF; a working shift only appears where a SubstituteShift exists.
+    Priority mirrors the agent chain: an absence wins, then an overtime entry (shown as OT,
+    like agents), then the scheduled shift, otherwise OFF.
     Matches the shape produced by _build_person_day_basic so the templates can render
     substitutes alongside regular persons. The person_id uses a "sub-<id>" namespace to
     avoid colliding with rotation positions (1-10).
@@ -448,6 +472,58 @@ def _build_substitute_day(date: datetime.date, sub, sub_shift_map: dict, shift_t
     rotation_length = get_rotation_length_for_date(date)
     off_shift = next((s for s in shift_types if s.code == "OFF"), None)
     pid = f"sub-{sub.id}"
+
+    absence = absence_map.get((sub.id, date)) if absence_map else None
+    if absence is not None:
+        code = _substitute_absence_shift_code(absence.absence_type)
+        absence_shift = next((s for s in shift_types if s.code == code), None)
+        if absence_shift:
+            return {
+                "date": date,
+                "person_id": pid,
+                "substitute_id": sub.id,
+                "person_name": sub.name,
+                "shift": absence_shift,
+                "original_shift": None,
+                "rotation_week": None,
+                "rotation_length": rotation_length,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
+                "is_substitute": True,
+                "is_absence": True,
+            }
+
+    # Overtime is shown as the OT shift (same convention as agents), taking display
+    # priority over the scheduled shift. Substitute overtime is never an extension.
+    ot_entries = ot_map.get((sub.id, date)) if ot_map else None
+    ot_entry = ot_entries[0] if ot_entries else None
+    if ot_entry is not None:
+        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+        if ot_shift_type:
+            start = datetime.datetime.combine(date, ot_entry.start_time) if ot_entry.start_time else None
+            end = datetime.datetime.combine(date, ot_entry.end_time) if ot_entry.end_time else None
+            if start and end and end <= start:
+                end += datetime.timedelta(days=1)
+            return {
+                "date": date,
+                "person_id": pid,
+                "substitute_id": sub.id,
+                "person_name": sub.name,
+                "shift": ot_shift_type,
+                "original_shift": next(
+                    (s for s in shift_types if s.code == sub_shift_map[(sub.id, date)].shift_code), None
+                )
+                if (sub.id, date) in sub_shift_map
+                else None,
+                "rotation_week": None,
+                "rotation_length": rotation_length,
+                "hours": ot_entry.hours or 0.0,
+                "start": start,
+                "end": end,
+                "is_substitute": True,
+            }
+
     entry = sub_shift_map.get((sub.id, date))
     if entry:
         shift = next((s for s in shift_types if s.code == entry.shift_code), None)
@@ -483,28 +559,204 @@ def _build_substitute_day(date: datetime.date, sub, sub_shift_map: dict, shift_t
     }
 
 
-def build_substitute_month_summaries(year: int, month: int, session) -> list[dict]:
+def _fetch_substitute_ot_by_date(
+    session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
+) -> dict[tuple[int, datetime.date], list]:
+    """Batch-fetch substitute overtime entries, keyed by (substitute_id, date)."""
+    if not session or not sub_ids:
+        return {}
+    from app.database.database import OvertimeShift
+
+    rows = (
+        session.query(OvertimeShift)
+        .filter(
+            OvertimeShift.substitute_id.in_(sub_ids),
+            OvertimeShift.date >= start_date,
+            OvertimeShift.date <= end_date,
+        )
+        .order_by(OvertimeShift.date, OvertimeShift.start_time)
+        .all()
+    )
+    by_date: dict[tuple[int, datetime.date], list] = {}
+    for r in rows:
+        by_date.setdefault((r.substitute_id, r.date), []).append(r)
+    return by_date
+
+
+def _fetch_substitute_ot_hours(
+    session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
+) -> dict[int, float]:
+    """Sum overtime hours per substitute for the range (no pay; hours only)."""
+    if not session or not sub_ids:
+        return {}
+    from app.database.database import OvertimeShift
+
+    rows = (
+        session.query(OvertimeShift)
+        .filter(
+            OvertimeShift.substitute_id.in_(sub_ids),
+            OvertimeShift.date >= start_date,
+            OvertimeShift.date <= end_date,
+        )
+        .all()
+    )
+    totals: dict[int, float] = {}
+    for r in rows:
+        totals[r.substitute_id] = totals.get(r.substitute_id, 0.0) + (r.hours or 0.0)
+    return totals
+
+
+def _fetch_substitute_absences_by_date(
+    session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
+) -> dict[tuple[int, datetime.date], object]:
+    """Batch-fetch substitute absences, keyed by (substitute_id, date)."""
+    if not session or not sub_ids:
+        return {}
+    from app.database.database import Absence
+
+    rows = (
+        session.query(Absence)
+        .filter(
+            Absence.substitute_id.in_(sub_ids),
+            Absence.date >= start_date,
+            Absence.date <= end_date,
+        )
+        .all()
+    )
+    return {(r.substitute_id, r.date): r for r in rows}
+
+
+def _fetch_substitute_absence_counts(
+    session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
+) -> dict[int, dict[str, int]]:
+    """Count absence days per type per substitute for the range."""
+    if not session or not sub_ids:
+        return {}
+    from app.database.database import Absence
+
+    rows = (
+        session.query(Absence)
+        .filter(
+            Absence.substitute_id.in_(sub_ids),
+            Absence.date >= start_date,
+            Absence.date <= end_date,
+        )
+        .all()
+    )
+    counts: dict[int, dict[str, int]] = {}
+    for r in rows:
+        bucket = counts.setdefault(r.substitute_id, {})
+        key = str(r.absence_type)
+        bucket[key] = bucket.get(key, 0) + 1
+    return counts
+
+
+def _get_substitutes_with_activity(
+    session, start_date: datetime.date, end_date: datetime.date, include_overtime: bool = True
+) -> list:
+    """Active substitutes with activity in range: a shift or an absence (and optionally overtime).
+
+    The month schedule view shows substitutes with a shift or an absence (an absence renders
+    as a day shift). The report additionally pulls in overtime-only substitutes (include_overtime)
+    so their hours appear in the totals even without a scheduled day.
+    """
+    if not session:
+        return []
+    from app.database.database import Absence, OvertimeShift, Substitute
+
+    subs = session.query(Substitute).filter(Substitute.is_active == 1).all()
+    if not subs:
+        return []
+    sub_ids = [s.id for s in subs]
+
+    active_ids = {s.id for s in _get_substitutes_with_shifts(session, start_date, end_date)}
+    models = [Absence, OvertimeShift] if include_overtime else [Absence]
+    for model in models:
+        rows = (
+            session.query(model.substitute_id)
+            .filter(
+                model.substitute_id.in_(sub_ids),
+                model.date >= start_date,
+                model.date <= end_date,
+            )
+            .distinct()
+            .all()
+        )
+        active_ids.update(r[0] for r in rows)
+
+    return [s for s in subs if s.id in active_ids]
+
+
+def build_substitute_month_summaries(year: int, month: int, session, include_overtime: bool = False) -> list[dict]:
     """Build per-substitute month summaries (schedule only, no salary) for the month view.
 
     Each summary mirrors the shape produced by summarize_month_for_person enough for
-    month_all.html to render: person_id, person_name, days and an empty ob_pay.
+    month_all.html to render: person_id, person_name, days and an empty ob_pay. It also
+    carries aggregate totals (hours, overtime, on-call, absence days per type) used by the
+    monthly report. Substitutes have no salary, so all pay figures are zero.
+
+    Substitutes with a scheduled shift or an absence in the month are returned (an absence
+    renders as a day shift). With include_overtime=True, overtime-only substitutes are also
+    included so their hours appear in the report totals (used by the report).
     """
     start_date = datetime.date(year, month, 1)
     end_date = datetime.date(year, month, calendar.monthrange(year, month)[1])
-    substitutes = _get_substitutes_with_shifts(session, start_date, end_date)
+    substitutes = _get_substitutes_with_activity(session, start_date, end_date, include_overtime=include_overtime)
     if not substitutes:
         return []
 
-    shift_map = _fetch_substitute_shifts(session, [s.id for s in substitutes], start_date, end_date)
+    sub_ids = [s.id for s in substitutes]
+    shift_map = _fetch_substitute_shifts(session, sub_ids, start_date, end_date)
+    ot_hours_map = _fetch_substitute_ot_hours(session, sub_ids, start_date, end_date)
+    ot_by_date = _fetch_substitute_ot_by_date(session, sub_ids, start_date, end_date)
+    absence_counts = _fetch_substitute_absence_counts(session, sub_ids, start_date, end_date)
+    absence_by_date = _fetch_substitute_absences_by_date(session, sub_ids, start_date, end_date)
     shift_types = get_shift_types()
+
+    # OB rules for the month (same rules agents use); covers any year in range.
+    combined_ob_rules: list = []
+    for yr in {start_date.year, end_date.year}:
+        combined_ob_rules.extend(get_combined_rules_for_year(yr))
 
     summaries = []
     for sub in substitutes:
         days = []
+        worked_hours = 0.0
+        oncall_hours = 0.0
+        num_shifts = 0
+        ob_hours: dict[str, float] = {}
         current = start_date
         while current <= end_date:
-            days.append(_build_substitute_day(current, sub, shift_map, shift_types))
+            day = _build_substitute_day(current, sub, shift_map, shift_types, absence_by_date, ot_by_date)
+            days.append(day)
+
+            # Counting reads raw data, not the displayed shift, so that a day shown as OT
+            # is still counted by its underlying scheduled shift (e.g. OC + OT same day).
+            absence = absence_by_date.get((sub.id, current))
+            entry = shift_map.get((sub.id, current))
+            code = entry.shift_code if entry else None
+            day_ot_hours = sum(o.hours or 0.0 for o in ot_by_date.get((sub.id, current), []))
+
+            if absence is not None:
+                # Absence days are counted via absence_counts below, not as worked shifts.
+                pass
+            elif code == "OC":
+                # On-call standby is reduced by overtime worked during the on-call period.
+                oc_hours, _, _ = calculate_shift_hours(current, "OC")
+                oncall_hours += max(oc_hours - day_ot_hours, 0.0)
+            elif code in ("N1", "N2", "N3"):
+                hours, start, end = calculate_shift_hours(current, code)
+                worked_hours += hours
+                num_shifts += 1
+                # OB hours for the worked shift, accumulated per OB code
+                day_ob = calculate_ob_hours(start, end, combined_ob_rules)
+                for ob_code, ob_h in day_ob.items():
+                    if ob_h:
+                        ob_hours[ob_code] = ob_hours.get(ob_code, 0.0) + ob_h
             current += datetime.timedelta(days=1)
+
+        ot_hours = ot_hours_map.get(sub.id, 0.0)
+        counts = absence_counts.get(sub.id, {})
         summaries.append(
             {
                 "person_id": f"sub-{sub.id}",
@@ -512,7 +764,22 @@ def build_substitute_month_summaries(year: int, month: int, session) -> list[dic
                 "person_name": sub.name,
                 "days": days,
                 "ob_pay": {},
+                "ob_hours": ob_hours,
                 "is_substitute": True,
+                "num_shifts": num_shifts,
+                "total_hours": worked_hours + ot_hours,
+                "ot_hours": ot_hours,
+                "ot_pay": 0.0,
+                "oncall_hours": oncall_hours,
+                "oncall_pay": 0.0,
+                "sick_days": counts.get("SICK", 0),
+                "vab_days": counts.get("VAB", 0),
+                "leave_days": counts.get("LEAVE", 0),
+                "off_days": counts.get("OFF", 0),
+                "parental_days": counts.get("PARENTAL", 0),
+                "vacation_days": counts.get("VACATION", 0),
+                "brutto_pay": 0.0,
+                "netto_pay": 0.0,
             }
         )
     return summaries
@@ -934,6 +1201,9 @@ def _build_person_day_basic(
                 "hours": 0.0,
                 "start": None,
                 "end": None,
+                # Week-based parental leave renders as LEAVE; flag it so summaries can
+                # count it as parental rather than ordinary leave.
+                "parental_leave": True,
             }
 
     # Check for manual shift override (admin-assigned N1/N2/N3 replacing rotation)
@@ -1246,6 +1516,9 @@ def _populate_parental_day(
             "ot_pay": 0.0,
             "ot_hours": 0.0,
             "ot_details": {},
+            # Week-based parental leave renders as LEAVE; flag it so summaries can
+            # count it as parental rather than ordinary leave.
+            "parental_leave": True,
         }
     )
     return True

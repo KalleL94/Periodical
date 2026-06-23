@@ -45,6 +45,7 @@ from .period import (
 )
 from .summary import (
     build_calendar_grid_for_month,
+    build_month_report,
     summarize_month_for_person,
     summarize_year_by_month,
     summarize_year_for_person,
@@ -111,6 +112,7 @@ __all__ = [
     "get_vacation_dates_for_year",
     # period
     "build_week_data",
+    "build_month_report",
     "build_substitute_month_summaries",
     "generate_period_data",
     "generate_year_data",

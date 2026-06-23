@@ -1,0 +1,124 @@
+# app/routes/reports.py
+"""Admin monthly report: one row per agent and substitute with hours, overtime,
+on-call and absence figures, viewable in the browser and exportable as CSV."""
+
+import csv
+import io
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from sqlalchemy.orm import Session
+
+from app.auth.auth import get_admin_user
+from app.core.helpers import render_template
+from app.core.schedule import build_month_report, rotation_start_date
+from app.core.utils import get_safe_today
+from app.core.validators import validate_date_params
+from app.database.database import User, get_db
+from app.routes.shared import templates
+
+router = APIRouter(tags=["reports"])
+
+MONTH_NAMES_SV = [
+    "Januari",
+    "Februari",
+    "Mars",
+    "April",
+    "Maj",
+    "Juni",
+    "Juli",
+    "Augusti",
+    "September",
+    "Oktober",
+    "November",
+    "December",
+]
+
+# CSV column order: (dict key, header label)
+CSV_COLUMNS = [
+    ("person_name", "Namn"),
+    ("num_shifts", "Antal pass"),
+    ("total_hours", "Timmar"),
+    ("ot_hours", "Övertid (h)"),
+    ("oncall_hours", "Beredskap (h)"),
+    ("ob_kvall", "Kväll 150 (h)"),
+    ("ob_natt", "Natt 151 (h)"),
+    ("ob_helg", "Helg 152 (h)"),
+    ("ob_storhelg", "Storhelg 153 (h)"),
+    ("sick_days", "Sjuk (dgr)"),
+    ("vab_days", "VAB (dgr)"),
+    ("leave_days", "Ledigt (dgr)"),
+    ("off_days", "Frånvaro övrigt (dgr)"),
+    ("parental_days", "Föräldraledigt (dgr)"),
+    ("vacation_days", "Semester (dgr)"),
+]
+
+
+def _resolve_year_month(year: int | None, month: int | None) -> tuple[int, int]:
+    safe_today = get_safe_today(rotation_start_date)
+    year = year or safe_today.year
+    month = month or safe_today.month
+    validate_date_params(year, month, None)
+    return year, month
+
+
+@router.get("/admin/report", response_class=HTMLResponse, name="admin_report")
+async def admin_report(
+    request: Request,
+    year: int = None,
+    month: int = None,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Monthly report table for all agents and substitutes."""
+    year, month = _resolve_year_month(year, month)
+    rows = build_month_report(year, month, db)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month + 1 if month < 12 else 1
+    next_year = year + 1 if month == 12 else year
+
+    return render_template(
+        templates,
+        "admin_report.html",
+        request,
+        {
+            "year": year,
+            "month": month,
+            "month_name": MONTH_NAMES_SV[month - 1],
+            "rows": rows,
+            "prev_year": prev_year,
+            "prev_month": prev_month,
+            "next_year": next_year,
+            "next_month": next_month,
+        },
+        user=current_user,
+    )
+
+
+@router.get("/admin/report.csv", name="admin_report_csv")
+async def admin_report_csv(
+    year: int = None,
+    month: int = None,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Download the monthly report as a CSV file (UTF-8 with BOM for Excel)."""
+    year, month = _resolve_year_month(year, month)
+    rows = build_month_report(year, month, db)
+
+    buffer = io.StringIO()
+    buffer.write("﻿")  # BOM so Excel reads UTF-8 (åäö) correctly
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow([label for _, label in CSV_COLUMNS])
+    for row in rows:
+        writer.writerow([row.get(key, "") for key, _ in CSV_COLUMNS])
+
+    buffer.seek(0)
+    filename = f"rapport-{year}-{month:02d}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

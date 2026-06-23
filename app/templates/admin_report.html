@@ -1,0 +1,85 @@
+{# app/templates/admin_report.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – Månadsrapport{% endblock %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="/admin/users" class="btn secondary">&larr; Tillbaka</a>
+    </div>
+</div>
+
+<h2 class="page-title">Månadsrapport</h2>
+
+<div class="page-header" style="margin-bottom: 1rem;">
+    <div class="page-header-left">
+        <a href="/admin/report?year={{ prev_year }}&month={{ prev_month }}" class="btn secondary">&larr;</a>
+        <strong style="margin: 0 0.75rem;">{{ month_name }} {{ year }}</strong>
+        <a href="/admin/report?year={{ next_year }}&month={{ next_month }}" class="btn secondary">&rarr;</a>
+    </div>
+    <div class="page-header-right">
+        <a href="/admin/report.csv?year={{ year }}&month={{ month }}" class="btn">Exportera CSV</a>
+    </div>
+</div>
+
+<div style="overflow-x: auto;">
+<table class="report-table">
+    <thead>
+        <tr>
+            <th class="name-col">Namn</th>
+            <th>Pass</th>
+            <th>Timmar</th>
+            <th>Övertid</th>
+            <th>Beredskap</th>
+            <th>Kväll</th>
+            <th>Natt</th>
+            <th>Helg</th>
+            <th>Storhelg</th>
+            <th>Sjuk</th>
+            <th>VAB</th>
+            <th>Ledigt</th>
+            <th>Övrigt</th>
+            <th>Föräldra</th>
+            <th>Semester</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+            <tr>
+                <td class="name-col">
+                    {{ r.person_name }}
+                    {% if r.is_substitute %}
+                        <span class="badge" style="background: #3b82f6; color: white;">Vikarie</span>
+                    {% endif %}
+                </td>
+                <td>{{ r.num_shifts }}</td>
+                <td>{{ r.total_hours }}</td>
+                <td>{{ r.ot_hours }}</td>
+                <td>{{ r.oncall_hours }}</td>
+                <td>{{ r.ob_kvall }}</td>
+                <td>{{ r.ob_natt }}</td>
+                <td>{{ r.ob_helg }}</td>
+                <td>{{ r.ob_storhelg }}</td>
+                <td>{{ r.sick_days }}</td>
+                <td>{{ r.vab_days }}</td>
+                <td>{{ r.leave_days }}</td>
+                <td>{{ r.off_days }}</td>
+                <td>{{ r.parental_days }}</td>
+                <td>{{ r.vacation_days }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<style>
+    .report-table { width: 100%; border-collapse: collapse; }
+    .report-table th,
+    .report-table td { padding: 6px; border: 1px solid var(--border); text-align: right; }
+    .report-table th { border-bottom-width: 2px; }
+    .report-table .name-col { text-align: left; }
+</style>
+
+{% endblock %}

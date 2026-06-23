@@ -292,14 +292,24 @@ def summarize_month_for_person(
         "leave_hours": 0.0,
         "parental_days": 0,
         "parental_hours": 0.0,
+        "vacation_days": 0,
     }
 
     days_out = []
+    week_parental_days = 0
 
     for day in days:
         # Filter to the correct year and month (important when all_work_days spans multiple years)
         if day["date"].year != year or day["date"].month != month:
             continue
+
+        shift = day.get("shift")
+        if shift is not None and getattr(shift, "code", None) == "SEM":
+            totals["vacation_days"] += 1
+        # Week-based parental leave renders as LEAVE but is flagged; count it separately
+        # so it is not lost (day-level parental is counted via absence records below).
+        if day.get("parental_leave"):
+            week_parental_days += 1
 
         day_data = _process_day_for_summary(
             day,
@@ -340,6 +350,9 @@ def summarize_month_for_person(
                 totals["brutto_pay"], base_salary, worked_hours, totals.get("absence_hours", 0.0), actual_hourly_rate
             )
 
+    # Add week-based parental leave (flagged days) on top of day-level parental absences.
+    totals["parental_days"] += week_parental_days
+
     # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
 
@@ -357,6 +370,7 @@ def summarize_month_for_person(
         "oncall_pay": totals["oncall_pay"],
         "oncall_hours": totals["oncall_hours"],
         "ot_pay": totals["ot_pay"],
+        "ot_hours": totals.get("ot_hours", 0.0),
         "absence_deduction": totals["absence_deduction"],
         "absence_hours": totals["absence_hours"],
         "sick_days": totals["sick_days"],
@@ -370,8 +384,11 @@ def summarize_month_for_person(
         "vab_hours": totals.get("vab_hours", 0.0),
         "leave_days": totals["leave_days"],
         "leave_hours": totals.get("leave_hours", 0.0),
+        "off_days": totals.get("off_days", 0),
+        "off_hours": totals.get("off_hours", 0.0),
         "parental_days": totals.get("parental_days", 0),
         "parental_hours": totals.get("parental_hours", 0.0),
+        "vacation_days": totals.get("vacation_days", 0),
         "absence_details": absence_details,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
@@ -865,6 +882,72 @@ def summarize_year_for_person(
         "months": months,
         "year_summary": year_summary,
     }
+
+
+def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
+    """Flatten a month summary (agent or substitute) into a single report row.
+
+    Pulls the figures the monthly report needs: hours, overtime, on-call, OB total
+    and absence days per type. The report tracks time only, not salary.
+    """
+    ob_hours_map = summary.get("ob_hours", {}) or {}
+
+    def _ob_sum(*codes: str) -> float:
+        return round(sum(float(ob_hours_map.get(c, 0.0) or 0.0) for c in codes), 1)
+
+    return {
+        "person_name": summary.get("person_name", ""),
+        "person_id": summary.get("person_id"),
+        "substitute_id": summary.get("substitute_id"),
+        "is_substitute": is_substitute,
+        "num_shifts": summary.get("num_shifts", 0) or 0,
+        "total_hours": round(summary.get("total_hours", 0.0) or 0.0, 1),
+        "ot_hours": round(summary.get("ot_hours", 0.0) or 0.0, 1),
+        "oncall_hours": round(summary.get("oncall_hours", 0.0) or 0.0, 1),
+        # OB split into pay-code groups: evening, night, weekend, major holiday
+        "ob_kvall": _ob_sum("OB1"),
+        "ob_natt": _ob_sum("OB2"),
+        "ob_helg": _ob_sum("OB3", "OB4"),
+        "ob_storhelg": _ob_sum("OB5"),
+        "sick_days": summary.get("sick_days", 0) or 0,
+        "vab_days": summary.get("vab_days", 0) or 0,
+        "leave_days": summary.get("leave_days", 0) or 0,
+        "off_days": summary.get("off_days", 0) or 0,
+        "parental_days": summary.get("parental_days", 0) or 0,
+        "vacation_days": summary.get("vacation_days", 0) or 0,
+    }
+
+
+def build_month_report(year: int, month: int, session, fetch_tax_table: bool = False) -> list[dict]:
+    """Build one report row per agent (rotation positions 1-10) plus substitutes.
+
+    Reuses summarize_month_for_person for agents and build_substitute_month_summaries
+    for substitutes, returning a flat list of rows ready for the report table / CSV.
+    The report tracks time only, so tax lookups are skipped by default.
+    """
+    from .period import build_substitute_month_summaries
+
+    user_wages = get_all_user_wages(session)
+
+    rows = []
+    for pid in range(1, 11):
+        month_days = generate_month_data(year, month, pid, session=session, user_wages=user_wages)
+        summary = summarize_month_for_person(
+            year,
+            month,
+            pid,
+            session=session,
+            user_wages=user_wages,
+            year_days=month_days,
+            fetch_tax_table=fetch_tax_table,
+            payment_year=year,
+        )
+        rows.append(_report_row_from_summary(summary, is_substitute=False))
+
+    for sub_summary in build_substitute_month_summaries(year, month, session, include_overtime=True):
+        rows.append(_report_row_from_summary(sub_summary, is_substitute=True))
+
+    return rows
 
 
 def _build_year_summary(months: list[dict]) -> dict:
