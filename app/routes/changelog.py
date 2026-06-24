@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.26.2",
+        "date": "2026-06-24",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Antal pass i månads-, års- och statistikvyn räknar nu bara faktiskt arbetade pass (dag/kväll/natt och övertid). Beredskap, semester, sjuk- och frånvarodagar räknas inte längre som pass, så siffran kan vara lägre än tidigare",
+                "en": "The shift count in the month, year and statistics views now counts only actually worked shifts (day/evening/night and overtime). On-call, vacation, sick and absence days no longer count as shifts, so the number may be lower than before",
+            },
+        ],
+    },
+    {
         "version": "0.26.1",
         "date": "2026-06-24",
         "entries": [

@@ -112,6 +112,42 @@ def test_report_page_and_csv(test_client, test_db, admin_user):
     assert "Rapportvik" in body
 
 
+def test_report_xlsx_export(test_client, test_db, admin_user):
+    """The Excel export has a summary sheet plus one sheet per agent with 15x headers."""
+    import io
+
+    import openpyxl
+
+    _login_admin(test_client, admin_user)
+
+    # A substitute with a worked shift so it gets its own tab
+    test_client.post("/admin/substitutes/create", data={"name": "Excelvik"})
+    sub = test_db.query(Substitute).filter(Substitute.name == "Excelvik").first()
+    test_client.post(
+        f"/admin/substitutes/{sub.id}/save",
+        data={"year": "2026", "month": "7", "shift_2026-07-06": "N1"},
+    )
+
+    r = test_client.get("/admin/report.xlsx?year=2026&month=7")
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert "rapport-2026-07.xlsx" in r.headers["content-disposition"]
+
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    # First sheet is the consolidated summary, same headers as the CSV
+    assert wb.sheetnames[0] == "Sammanställning"
+    summary_headers = [c.value for c in wb["Sammanställning"][1]]
+    assert summary_headers[:3] == ["Namn", "Antal pass", "Timmar"]
+    # One sheet per agent (rotation positions 1-10) plus one per active substitute
+    assert len(wb.sheetnames) == 12
+    assert "Excelvik" in wb.sheetnames
+    # Agent/substitute tabs use the payroll-code (15x) OB headers, not /month multiplier labels
+    agent_headers = [c.value for c in wb[wb.sheetnames[1]][1]]
+    assert "Kväll 150" in agent_headers
+    assert "Natt 151" in agent_headers
+    assert all("x1," not in (h or "") for h in agent_headers)
+
+
 def test_substitute_overtime_on_oncall_day(test_client, test_db, admin_user):
     """Overtime on an on-call day shows as OT in the month view and reduces standby hours."""
     from datetime import date
