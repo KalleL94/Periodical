@@ -118,6 +118,11 @@ async def admin_report(
     next_month = month + 1 if month < 12 else 1
     next_year = year + 1 if month == 12 else year
 
+    # Admins see a copyable share link (built from the configured token); token-only
+    # visitors already have the link, so it is not re-exposed to them.
+    is_admin = current_user is not None and current_user.role == UserRole.ADMIN
+    share_token = REPORT_TOKEN if is_admin else ""
+
     return render_template(
         templates,
         "admin_report.html",
@@ -133,6 +138,9 @@ async def admin_report(
             "next_month": next_month,
             # Propagated through page links so shared-token users keep access while navigating.
             "token": token,
+            # The shared report token, shown to admins as a copyable link (empty if unset).
+            "share_token": share_token,
+            "is_admin": is_admin,
         },
         user=current_user,
     )

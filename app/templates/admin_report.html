@@ -28,6 +28,40 @@
     </div>
 </div>
 
+{% if is_admin %}
+    {% if share_token %}
+    <div style="margin-bottom: 1rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--muted-bg, #1c1c24);">
+        <div style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem;">
+            Delningslänk (öppnar rapporten utan inloggning, t.ex. för chef):
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <input id="share-link" type="text" readonly
+                   style="flex: 1; min-width: 280px; padding: 6px; font-size: 0.85rem;">
+            <button type="button" class="btn secondary" onclick="copyShareLink()">Kopiera</button>
+        </div>
+    </div>
+    <script>
+    // Build the link from the browser's actual origin so it is correct on dev and prod.
+    var SHARE_TOKEN = {{ share_token | tojson }};
+    document.getElementById('share-link').value = window.location.origin + '/admin/report?token=' + SHARE_TOKEN;
+    function copyShareLink() {
+        var el = document.getElementById('share-link');
+        el.select();
+        navigator.clipboard.writeText(el.value).then(function () {
+            var btn = event.target;
+            var orig = btn.textContent;
+            btn.textContent = 'Kopierad!';
+            setTimeout(function () { btn.textContent = orig; }, 1500);
+        });
+    }
+    </script>
+    {% else %}
+    <p class="info-text" style="margin-bottom: 1rem;">
+        Delningslänk är inte konfigurerad. Sätt miljövariabeln <code>REPORT_TOKEN</code> för att aktivera en länk som öppnar rapporten utan inloggning.
+    </p>
+    {% endif %}
+{% endif %}
+
 <div style="overflow-x: auto;">
 <table class="report-table">
     <thead>
