@@ -1,23 +1,42 @@
 # app/routes/reports.py
 """Admin monthly report: one row per agent and substitute with hours, overtime,
-on-call and absence figures, viewable in the browser and exportable as CSV."""
+on-call and absence figures, viewable in the browser and exportable as Excel.
+
+Access is granted to logged-in admins, or via a shared secret link: appending
+?token=<REPORT_TOKEN> lets someone without an account (e.g. a manager) open the report
+and download the Excel. The token is configured via the REPORT_TOKEN environment variable;
+when unset, only admins have access."""
 
 import csv
 import io
+import os
+import secrets
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.auth.auth import get_admin_user
+from app.auth.auth import get_current_user_optional
 from app.core.helpers import render_template
 from app.core.schedule import build_month_report, rotation_start_date
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
-from app.database.database import User, get_db
+from app.database.database import User, UserRole, get_db
 from app.routes.shared import templates
 
 router = APIRouter(tags=["reports"])
+
+REPORT_TOKEN = os.getenv("REPORT_TOKEN", "")
+
+
+def _has_report_access(current_user: User | None, token: str) -> bool:
+    """Allow logged-in admins, or anyone presenting the configured shared report token."""
+    if current_user is not None and current_user.role == UserRole.ADMIN:
+        return True
+    if REPORT_TOKEN and token and secrets.compare_digest(token, REPORT_TOKEN):
+        return True
+    return False
+
 
 MONTH_NAMES_SV = [
     "Januari",
@@ -83,10 +102,14 @@ async def admin_report(
     request: Request,
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_admin_user),
+    token: str = "",
+    current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Monthly report table for all agents and substitutes."""
+    if not _has_report_access(current_user, token):
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
     year, month = _resolve_year_month(year, month)
     rows = build_month_report(year, month, db)
 
@@ -108,6 +131,8 @@ async def admin_report(
             "prev_month": prev_month,
             "next_year": next_year,
             "next_month": next_month,
+            # Propagated through page links so shared-token users keep access while navigating.
+            "token": token,
         },
         user=current_user,
     )
@@ -117,10 +142,13 @@ async def admin_report(
 async def admin_report_csv(
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_admin_user),
+    token: str = "",
+    current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Download the monthly report as a CSV file (UTF-8 with BOM for Excel)."""
+    if not _has_report_access(current_user, token):
+        raise HTTPException(status_code=403, detail="Åtkomst nekad")
     year, month = _resolve_year_month(year, month)
     rows = build_month_report(year, month, db)
 
@@ -144,7 +172,8 @@ async def admin_report_csv(
 async def admin_report_xlsx(
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_admin_user),
+    token: str = "",
+    current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Download the monthly report as an Excel workbook.
@@ -153,6 +182,8 @@ async def admin_report_xlsx(
     (rotation positions 1-10) then gets its own sheet, formatted exactly like the
     per-person month export.
     """
+    if not _has_report_access(current_user, token):
+        raise HTTPException(status_code=403, detail="Åtkomst nekad")
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
 

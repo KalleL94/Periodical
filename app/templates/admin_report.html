@@ -5,23 +5,26 @@
 
 {% block page_content %}
 
+{% set token_qs = '&token=' ~ token if token else '' %}
+
+{% if not token %}
 <div class="page-header">
     <div class="page-header-left">
         <a href="/admin/users" class="btn secondary">&larr; Tillbaka</a>
     </div>
 </div>
+{% endif %}
 
 <h2 class="page-title">Månadsrapport</h2>
 
 <div class="page-header" style="margin-bottom: 1rem;">
     <div class="page-header-left">
-        <a href="/admin/report?year={{ prev_year }}&month={{ prev_month }}" class="btn secondary">&larr;</a>
+        <a href="/admin/report?year={{ prev_year }}&month={{ prev_month }}{{ token_qs }}" class="btn secondary">&larr;</a>
         <strong style="margin: 0 0.75rem;">{{ month_name }} {{ year }}</strong>
-        <a href="/admin/report?year={{ next_year }}&month={{ next_month }}" class="btn secondary">&rarr;</a>
+        <a href="/admin/report?year={{ next_year }}&month={{ next_month }}{{ token_qs }}" class="btn secondary">&rarr;</a>
     </div>
     <div class="page-header-right">
-        <a href="/admin/report.csv?year={{ year }}&month={{ month }}" class="btn secondary">Exportera CSV</a>
-        <a href="/admin/report.xlsx?year={{ year }}&month={{ month }}" class="btn">Exportera Excel</a>
+        <a href="/admin/report.xlsx?year={{ year }}&month={{ month }}{{ token_qs }}" class="btn">Exportera Excel</a>
     </div>
 </div>
 

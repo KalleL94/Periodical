@@ -194,3 +194,31 @@ def test_report_requires_admin(test_client, test_db, test_user):
     test_client.cookies.set("access_token", token)
     r = test_client.get("/admin/report?year=2026&month=7", follow_redirects=False)
     assert r.status_code in (302, 303, 401, 403)
+
+
+def test_report_shared_token_access(test_client, test_db, monkeypatch):
+    """A correct shared token grants access to the report and Excel without an account."""
+    from app.routes import reports
+
+    monkeypatch.setattr(reports, "REPORT_TOKEN", "s3cret-report-link")
+    test_client.cookies.clear()
+
+    # No login and no token -> redirected to login
+    r = test_client.get("/admin/report?year=2026&month=7", follow_redirects=False)
+    assert r.status_code == 302
+
+    # Correct token -> report renders without login
+    r = test_client.get("/admin/report?year=2026&month=7&token=s3cret-report-link")
+    assert r.status_code == 200
+    assert "Månadsrapport" in r.text
+
+    # Correct token -> Excel downloads without login
+    r = test_client.get("/admin/report.xlsx?year=2026&month=7&token=s3cret-report-link")
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers["content-type"]
+
+    # Wrong token -> rejected
+    r = test_client.get("/admin/report?year=2026&month=7&token=nope", follow_redirects=False)
+    assert r.status_code == 302
+    r = test_client.get("/admin/report.xlsx?year=2026&month=7&token=nope")
+    assert r.status_code == 403
