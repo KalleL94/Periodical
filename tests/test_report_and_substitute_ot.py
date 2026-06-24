@@ -141,11 +141,12 @@ def test_report_xlsx_export(test_client, test_db, admin_user):
     # One sheet per agent (rotation positions 1-10) plus one per active substitute
     assert len(wb.sheetnames) == 12
     assert "Excelvik" in wb.sheetnames
-    # Agent/substitute tabs use the payroll-code (15x) OB headers, not /month multiplier labels
-    agent_headers = [c.value for c in wb[wb.sheetnames[1]][1]]
-    assert "Kväll 150" in agent_headers
-    assert "Natt 151" in agent_headers
-    assert all("x1," not in (h or "") for h in agent_headers)
+    # The substitute tab has a worked N1 shift (which yields night OB), so it uses the
+    # payroll-code (15x) OB headers, not the /month multiplier labels. Checked on this
+    # sheet because empty agents drop their (data-less) numeric columns.
+    sub_headers = [c.value for c in wb["Excelvik"][1]]
+    assert "Natt 151" in sub_headers
+    assert all("x1," not in (h or "") for h in sub_headers)
 
 
 def test_substitute_overtime_on_oncall_day(test_client, test_db, admin_user):
