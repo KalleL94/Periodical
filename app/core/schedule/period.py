@@ -712,6 +712,7 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
     absence_counts = _fetch_substitute_absence_counts(session, sub_ids, start_date, end_date)
     absence_by_date = _fetch_substitute_absences_by_date(session, sub_ids, start_date, end_date)
     shift_types = get_shift_types()
+    settings = get_settings()
 
     # OB rules for the month (same rules agents use); covers any year in range.
     combined_ob_rules: list = []
@@ -735,21 +736,36 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
             absence = absence_by_date.get((sub.id, current))
             entry = shift_map.get((sub.id, current))
             code = entry.shift_code if entry else None
-            day_ot_hours = sum(o.hours or 0.0 for o in ot_by_date.get((sub.id, current), []))
+            ot_entries_today = ot_by_date.get((sub.id, current), [])
+            day_ot_hours = sum(o.hours or 0.0 for o in ot_entries_today)
+
+            # Overtime counts as a worked pass too (in addition to any scheduled shift).
+            num_shifts += len(ot_entries_today)
+
+            # Per-day detail so the day renders like an agent day in the Excel export.
+            day["ob_hours"] = {}
+            day["ot_hours"] = day_ot_hours
 
             if absence is not None:
                 # Absence days are counted via absence_counts below, not as worked shifts.
                 pass
             elif code == "OC":
                 # On-call standby is reduced by overtime worked during the on-call period.
-                oc_hours, _, _ = calculate_shift_hours(current, "OC")
-                oncall_hours += max(oc_hours - day_ot_hours, 0.0)
+                # Reuse the agent on-call calc for the per-code breakdown (hours only; no pay).
+                if ot_entries_today:
+                    _, oc_details = _recalculate_oncall_before_ot(current, ot_entries_today[0], {}, 0, settings, None)
+                else:
+                    oc_shift = next((s for s in shift_types if s.code == "OC"), None)
+                    _, oc_details = _compute_oncall_pay(oc_shift, current, 0, {}, settings, None)
+                day["oncall_details"] = oc_details
+                oncall_hours += oc_details.get("total_hours", 0.0)
             elif code in ("N1", "N2", "N3"):
                 hours, start, end = calculate_shift_hours(current, code)
                 worked_hours += hours
                 num_shifts += 1
                 # OB hours for the worked shift, accumulated per OB code
                 day_ob = calculate_ob_hours(start, end, combined_ob_rules)
+                day["ob_hours"] = day_ob
                 for ob_code, ob_h in day_ob.items():
                     if ob_h:
                         ob_hours[ob_code] = ob_hours.get(ob_code, 0.0) + ob_h

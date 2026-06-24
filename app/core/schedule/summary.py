@@ -318,6 +318,9 @@ def summarize_month_for_person(
             totals,
             ob_rate_overrides=user_rates.get("ob") if user_rates else None,
         )
+        # Carry the parental-leave marker through so exports can label the day correctly.
+        if day.get("parental_leave"):
+            day_data["parental_leave"] = True
         days_out.append(day_data)
 
     # Aggregate OB/OT hours per calendar day for the per-day breakdown toggle.
@@ -578,7 +581,9 @@ def _process_day_for_summary(
     if shift and shift.code != "OC":
         totals["total_hours"] += hours
 
-    if shift and shift.code not in ("OFF", "OC"):
+    # "Antal pass" counts actual worked shifts only: day/evening/night and overtime.
+    # On-call standby (OC) and all leave/absence days (OFF, SEM, SICK, VAB, LEAVE) are excluded.
+    if shift and shift.code in ("N1", "N2", "N3", "OT"):
         totals["num_shifts"] += 1
 
     for code, h in ob_hours.items():
@@ -895,14 +900,23 @@ def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
     def _ob_sum(*codes: str) -> float:
         return round(sum(float(ob_hours_map.get(c, 0.0) or 0.0) for c in codes), 1)
 
+    # Hours = worked shift hours (day/evening/night) plus overtime, each counted once.
+    # summary["total_hours"] cannot be used directly: it double-counts non-extension OT.
+    ot_hours = float(summary.get("ot_hours", 0.0) or 0.0)
+    worked_pass_hours = sum(
+        float(d.get("hours", 0.0) or 0.0)
+        for d in (summary.get("days") or [])
+        if d.get("shift") is not None and getattr(d["shift"], "code", None) in ("N1", "N2", "N3")
+    )
+
     return {
         "person_name": summary.get("person_name", ""),
         "person_id": summary.get("person_id"),
         "substitute_id": summary.get("substitute_id"),
         "is_substitute": is_substitute,
         "num_shifts": summary.get("num_shifts", 0) or 0,
-        "total_hours": round(summary.get("total_hours", 0.0) or 0.0, 1),
-        "ot_hours": round(summary.get("ot_hours", 0.0) or 0.0, 1),
+        "total_hours": round(worked_pass_hours + ot_hours, 1),
+        "ot_hours": round(ot_hours, 1),
         "oncall_hours": round(summary.get("oncall_hours", 0.0) or 0.0, 1),
         # OB split into pay-code groups: evening, night, weekend, major holiday
         "ob_kvall": _ob_sum("OB1"),

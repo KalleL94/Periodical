@@ -1,23 +1,42 @@
 # app/routes/reports.py
 """Admin monthly report: one row per agent and substitute with hours, overtime,
-on-call and absence figures, viewable in the browser and exportable as CSV."""
+on-call and absence figures, viewable in the browser and exportable as Excel.
+
+Access is granted to logged-in admins, or via a shared secret link: appending
+?token=<REPORT_TOKEN> lets someone without an account (e.g. a manager) open the report
+and download the Excel. The token is configured via the REPORT_TOKEN environment variable;
+when unset, only admins have access."""
 
 import csv
 import io
+import os
+import secrets
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.auth.auth import get_admin_user
+from app.auth.auth import get_current_user_optional
 from app.core.helpers import render_template
 from app.core.schedule import build_month_report, rotation_start_date
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
-from app.database.database import User, get_db
+from app.database.database import User, UserRole, get_db
 from app.routes.shared import templates
 
 router = APIRouter(tags=["reports"])
+
+REPORT_TOKEN = os.getenv("REPORT_TOKEN", "")
+
+
+def _has_report_access(current_user: User | None, token: str) -> bool:
+    """Allow logged-in admins, or anyone presenting the configured shared report token."""
+    if current_user is not None and current_user.role == UserRole.ADMIN:
+        return True
+    if REPORT_TOKEN and token and secrets.compare_digest(token, REPORT_TOKEN):
+        return True
+    return False
+
 
 MONTH_NAMES_SV = [
     "Januari",
@@ -54,6 +73,22 @@ CSV_COLUMNS = [
 ]
 
 
+# Excel sheet titles cannot contain []:*?/\ and are limited to 31 characters.
+_SHEET_TRANS = str.maketrans({c: " " for c in "[]:*?/\\"})
+
+
+def _safe_sheet_title(name: str, used: set[str]) -> str:
+    """Return a valid, unique Excel sheet title derived from a person's name."""
+    base = (name or "").translate(_SHEET_TRANS).strip()[:31] or "Agent"
+    title = base
+    i = 2
+    while title in used:
+        suffix = f" ({i})"
+        title = f"{base[: 31 - len(suffix)]}{suffix}"
+        i += 1
+    return title
+
+
 def _resolve_year_month(year: int | None, month: int | None) -> tuple[int, int]:
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
@@ -67,10 +102,14 @@ async def admin_report(
     request: Request,
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_admin_user),
+    token: str = "",
+    current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Monthly report table for all agents and substitutes."""
+    if not _has_report_access(current_user, token):
+        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
     year, month = _resolve_year_month(year, month)
     rows = build_month_report(year, month, db)
 
@@ -78,6 +117,11 @@ async def admin_report(
     prev_year = year - 1 if month == 1 else year
     next_month = month + 1 if month < 12 else 1
     next_year = year + 1 if month == 12 else year
+
+    # Admins see a copyable share link (built from the configured token); token-only
+    # visitors already have the link, so it is not re-exposed to them.
+    is_admin = current_user is not None and current_user.role == UserRole.ADMIN
+    share_token = REPORT_TOKEN if is_admin else ""
 
     return render_template(
         templates,
@@ -92,6 +136,11 @@ async def admin_report(
             "prev_month": prev_month,
             "next_year": next_year,
             "next_month": next_month,
+            # Propagated through page links so shared-token users keep access while navigating.
+            "token": token,
+            # The shared report token, shown to admins as a copyable link (empty if unset).
+            "share_token": share_token,
+            "is_admin": is_admin,
         },
         user=current_user,
     )
@@ -101,10 +150,13 @@ async def admin_report(
 async def admin_report_csv(
     year: int = None,
     month: int = None,
-    current_user: User = Depends(get_admin_user),
+    token: str = "",
+    current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """Download the monthly report as a CSV file (UTF-8 with BOM for Excel)."""
+    if not _has_report_access(current_user, token):
+        raise HTTPException(status_code=403, detail="Åtkomst nekad")
     year, month = _resolve_year_month(year, month)
     rows = build_month_report(year, month, db)
 
@@ -120,5 +172,74 @@ async def admin_report_csv(
     return StreamingResponse(
         iter([buffer.getvalue()]),
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/admin/report.xlsx", name="admin_report_xlsx")
+async def admin_report_xlsx(
+    year: int = None,
+    month: int = None,
+    token: str = "",
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Download the monthly report as an Excel workbook.
+
+    The first sheet is the consolidated report (same columns as the CSV). Each agent
+    (rotation positions 1-10) then gets its own sheet, formatted exactly like the
+    per-person month export.
+    """
+    if not _has_report_access(current_user, token):
+        raise HTTPException(status_code=403, detail="Åtkomst nekad")
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    from app.core.schedule import build_substitute_month_summaries
+    from app.core.schedule.summary import summarize_month_for_person
+    from app.routes.excel_shared import REPORT_COL_HEADERS, autofit_columns, populate_month_sheet
+
+    year, month = _resolve_year_month(year, month)
+    rows = build_month_report(year, month, db)
+
+    wb = openpyxl.Workbook()
+
+    # Sheet 1: consolidated summary, same layout as the CSV.
+    ws = wb.active
+    ws.title = "Sammanställning"
+    ws.append([label for _, label in CSV_COLUMNS])
+    header_fill = PatternFill("solid", fgColor="2D3748")
+    header_font = Font(bold=True, color="FFFFFF")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+    for row in rows:
+        ws.append([row.get(key, "") for key, _ in CSV_COLUMNS])
+    autofit_columns(ws)
+
+    # One sheet per agent (rotation positions 1-10), identical to the /month/{id} export.
+    used_titles = {ws.title}
+    for pid in range(1, 11):
+        summary = summarize_month_for_person(year, month, pid, session=db, payment_year=year)
+        title = _safe_sheet_title(summary.get("person_name") or f"Agent {pid}", used_titles)
+        used_titles.add(title)
+        agent_ws = wb.create_sheet(title=title)
+        populate_month_sheet(agent_ws, summary, year, month, headers=REPORT_COL_HEADERS, split_oncall_overtime=False)
+
+    # One sheet per substitute with activity in the month, same layout as the agent tabs.
+    for sub_summary in build_substitute_month_summaries(year, month, db, include_overtime=True):
+        title = _safe_sheet_title(sub_summary.get("person_name") or "Vikarie", used_titles)
+        used_titles.add(title)
+        sub_ws = wb.create_sheet(title=title)
+        populate_month_sheet(sub_ws, sub_summary, year, month, headers=REPORT_COL_HEADERS, split_oncall_overtime=False)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"rapport-{year}-{month:02d}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

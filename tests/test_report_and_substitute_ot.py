@@ -112,6 +112,43 @@ def test_report_page_and_csv(test_client, test_db, admin_user):
     assert "Rapportvik" in body
 
 
+def test_report_xlsx_export(test_client, test_db, admin_user):
+    """The Excel export has a summary sheet plus one sheet per agent with 15x headers."""
+    import io
+
+    import openpyxl
+
+    _login_admin(test_client, admin_user)
+
+    # A substitute with a worked shift so it gets its own tab
+    test_client.post("/admin/substitutes/create", data={"name": "Excelvik"})
+    sub = test_db.query(Substitute).filter(Substitute.name == "Excelvik").first()
+    test_client.post(
+        f"/admin/substitutes/{sub.id}/save",
+        data={"year": "2026", "month": "7", "shift_2026-07-06": "N1"},
+    )
+
+    r = test_client.get("/admin/report.xlsx?year=2026&month=7")
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert "rapport-2026-07.xlsx" in r.headers["content-disposition"]
+
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    # First sheet is the consolidated summary, same headers as the CSV
+    assert wb.sheetnames[0] == "Sammanställning"
+    summary_headers = [c.value for c in wb["Sammanställning"][1]]
+    assert summary_headers[:3] == ["Namn", "Antal pass", "Timmar"]
+    # One sheet per agent (rotation positions 1-10) plus one per active substitute
+    assert len(wb.sheetnames) == 12
+    assert "Excelvik" in wb.sheetnames
+    # The substitute tab has a worked N1 shift (which yields night OB), so it uses the
+    # payroll-code (15x) OB headers, not the /month multiplier labels. Checked on this
+    # sheet because empty agents drop their (data-less) numeric columns.
+    sub_headers = [c.value for c in wb["Excelvik"][1]]
+    assert "Natt 151" in sub_headers
+    assert all("x1," not in (h or "") for h in sub_headers)
+
+
 def test_substitute_overtime_on_oncall_day(test_client, test_db, admin_user):
     """Overtime on an on-call day shows as OT in the month view and reduces standby hours."""
     from datetime import date
@@ -158,3 +195,31 @@ def test_report_requires_admin(test_client, test_db, test_user):
     test_client.cookies.set("access_token", token)
     r = test_client.get("/admin/report?year=2026&month=7", follow_redirects=False)
     assert r.status_code in (302, 303, 401, 403)
+
+
+def test_report_shared_token_access(test_client, test_db, monkeypatch):
+    """A correct shared token grants access to the report and Excel without an account."""
+    from app.routes import reports
+
+    monkeypatch.setattr(reports, "REPORT_TOKEN", "s3cret-report-link")
+    test_client.cookies.clear()
+
+    # No login and no token -> redirected to login
+    r = test_client.get("/admin/report?year=2026&month=7", follow_redirects=False)
+    assert r.status_code == 302
+
+    # Correct token -> report renders without login
+    r = test_client.get("/admin/report?year=2026&month=7&token=s3cret-report-link")
+    assert r.status_code == 200
+    assert "Månadsrapport" in r.text
+
+    # Correct token -> Excel downloads without login
+    r = test_client.get("/admin/report.xlsx?year=2026&month=7&token=s3cret-report-link")
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers["content-type"]
+
+    # Wrong token -> rejected
+    r = test_client.get("/admin/report?year=2026&month=7&token=nope", follow_redirects=False)
+    assert r.status_code == 302
+    r = test_client.get("/admin/report.xlsx?year=2026&month=7&token=nope")
+    assert r.status_code == 403

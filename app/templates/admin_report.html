@@ -5,24 +5,62 @@
 
 {% block page_content %}
 
+{% set token_qs = '&token=' ~ token if token else '' %}
+
+{% if not token %}
 <div class="page-header">
     <div class="page-header-left">
         <a href="/admin/users" class="btn secondary">&larr; Tillbaka</a>
     </div>
 </div>
+{% endif %}
 
 <h2 class="page-title">Månadsrapport</h2>
 
 <div class="page-header" style="margin-bottom: 1rem;">
     <div class="page-header-left">
-        <a href="/admin/report?year={{ prev_year }}&month={{ prev_month }}" class="btn secondary">&larr;</a>
+        <a href="/admin/report?year={{ prev_year }}&month={{ prev_month }}{{ token_qs }}" class="btn secondary">&larr;</a>
         <strong style="margin: 0 0.75rem;">{{ month_name }} {{ year }}</strong>
-        <a href="/admin/report?year={{ next_year }}&month={{ next_month }}" class="btn secondary">&rarr;</a>
+        <a href="/admin/report?year={{ next_year }}&month={{ next_month }}{{ token_qs }}" class="btn secondary">&rarr;</a>
     </div>
     <div class="page-header-right">
-        <a href="/admin/report.csv?year={{ year }}&month={{ month }}" class="btn">Exportera CSV</a>
+        <a href="/admin/report.xlsx?year={{ year }}&month={{ month }}{{ token_qs }}" class="btn">Exportera Excel</a>
     </div>
 </div>
+
+{% if is_admin %}
+    {% if share_token %}
+    <div style="margin-bottom: 1rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--muted-bg, #1c1c24);">
+        <div style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem;">
+            Delningslänk (öppnar rapporten utan inloggning, t.ex. för chef):
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <input id="share-link" type="text" readonly
+                   style="flex: 1; min-width: 280px; padding: 6px; font-size: 0.85rem;">
+            <button type="button" class="btn secondary" onclick="copyShareLink()">Kopiera</button>
+        </div>
+    </div>
+    <script>
+    // Build the link from the browser's actual origin so it is correct on dev and prod.
+    var SHARE_TOKEN = {{ share_token | tojson }};
+    document.getElementById('share-link').value = window.location.origin + '/admin/report?token=' + SHARE_TOKEN;
+    function copyShareLink() {
+        var el = document.getElementById('share-link');
+        el.select();
+        navigator.clipboard.writeText(el.value).then(function () {
+            var btn = event.target;
+            var orig = btn.textContent;
+            btn.textContent = 'Kopierad!';
+            setTimeout(function () { btn.textContent = orig; }, 1500);
+        });
+    }
+    </script>
+    {% else %}
+    <p class="info-text" style="margin-bottom: 1rem;">
+        Delningslänk är inte konfigurerad. Sätt miljövariabeln <code>REPORT_TOKEN</code> för att aktivera en länk som öppnar rapporten utan inloggning.
+    </p>
+    {% endif %}
+{% endif %}
 
 <div style="overflow-x: auto;">
 <table class="report-table">
