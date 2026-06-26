@@ -137,8 +137,10 @@
 {% if show_salary %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
-    Chart.defaults.color = '#9aa5b1';
-    const gridColor = 'rgba(154, 165, 177, 0.15)';
+    const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const accentRgb = css('--accent-rgb');
+    Chart.defaults.color = css('--muted');
+    const gridColor = css('--line-strong');
     const labels = {{ chart_labels | tojson }};
 
     // 1. Pay trend (line)
@@ -147,8 +149,8 @@
         data: {
             labels: labels,
             datasets: [
-                { label: '{{ t.stats_gross }}', data: {{ chart_brutto | tojson }}, borderColor: '#40a9ff', backgroundColor: 'rgba(64,169,255,0.1)', fill: true, tension: 0.3 },
-                { label: '{{ t.stats_net }}', data: {{ chart_netto | tojson }}, borderColor: '#7bd389', backgroundColor: 'rgba(123,211,137,0.1)', fill: true, tension: 0.3 }
+                { label: '{{ t.stats_gross }}', data: {{ chart_brutto | tojson }}, borderColor: css('--accent'), backgroundColor: `rgb(${accentRgb} / 0.1)`, fill: true, tension: 0.3 },
+                { label: '{{ t.stats_net }}', data: {{ chart_netto | tojson }}, borderColor: css('--success'), backgroundColor: 'rgba(123,211,137,0.1)', fill: true, tension: 0.3 }
             ]
         },
         options: { responsive: true, scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor }, ticks: { callback: v => v.toLocaleString('sv-SE') + ' kr' } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('sv-SE') + ' kr' } } } }
@@ -156,7 +158,7 @@
 
     // 2. OB stacked bar
     const obData = {{ chart_ob | tojson }};
-    const obColors = { OB1: '#40a9ff', OB2: '#7bd389', OB3: '#ffa500', OB4: '#ef4444', OB5: '#a855f7' };
+    const obColors = { OB1: css('--accent'), OB2: css('--success'), OB3: css('--warning'), OB4: css('--danger'), OB5: css('--ob5') };
     const obLabels = {{ ob_labels | tojson }};
     new Chart(document.getElementById('obChart'), {
         type: 'bar',
@@ -165,7 +167,7 @@
             datasets: Object.keys(obData).map(code => ({
                 label: obLabels[code] || code,
                 data: obData[code],
-                backgroundColor: obColors[code] || '#9aa5b1',
+                backgroundColor: obColors[code] || css('--muted'),
                 borderRadius: 2
             }))
         },
@@ -179,7 +181,7 @@
             type: 'doughnut',
             data: {
                 labels: ['{{ t.stats_absence_sick }}', 'VAB', '{{ t.stats_absence_leave }}', '{{ t.stats_absence_off }}', '{{ t.day_absence_parental }}'],
-                datasets: [{ data: [absenceData.sick, absenceData.vab, absenceData.leave, absenceData.off, absenceData.parental || 0], backgroundColor: ['#ef4444', '#ffa500', '#a855f7', '#9aa5b1', '#3b82f6'], borderWidth: 0 }]
+                datasets: [{ data: [absenceData.sick, absenceData.vab, absenceData.leave, absenceData.off, absenceData.parental || 0], backgroundColor: [css('--danger'), css('--warning'), css('--ob5'), css('--muted'), css('--blue')], borderWidth: 0 }]
             },
             options: { responsive: true, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + ' {{ t.stats_days_suffix }}' } } } }
         });
@@ -190,7 +192,7 @@
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{ label: '{{ t.stats_hours }}', data: {{ chart_hours | tojson }}, backgroundColor: 'rgba(64,169,255,0.6)', borderRadius: 3 }]
+            datasets: [{ label: '{{ t.stats_hours }}', data: {{ chart_hours | tojson }}, backgroundColor: `rgb(${accentRgb} / 0.6)`, borderRadius: 3 }]
         },
         options: { responsive: true, scales: { x: { grid: { color: gridColor } }, y: { grid: { color: gridColor } } }, plugins: { tooltip: { callbacks: { label: ctx => ctx.parsed.y + 'h' } } } }
     });

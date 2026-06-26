@@ -10,15 +10,15 @@
 
   /* Chrome: surfaces, lines, text. --bg derives from --ink so step 3 is a
      one-line change. */
-  --ink: #0b0f13;
+  --ink: #0e1216;            /* neutral graphite so the rainbow pills read true */
   --bg: var(--ink);
-  --panel: #0f1720;
+  --panel: #141b22;
   --panel-2: #19222b;
   --table-border: rgba(255,255,255,0.06);
   --line: var(--table-border);
   --line-strong: rgba(255,255,255,0.14);
   --text: #e6eef6;
-  --muted: #9aa5b1;
+  --muted: #8b98a6;
   --faint: #5d6873;
   --muted-bg: #4b5563;
   --muted-text: #9ca3af;
