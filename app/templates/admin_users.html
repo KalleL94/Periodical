@@ -42,7 +42,7 @@
                 <td data-label="{{ t.admin_col_name }}">{{ u.name }}</td>
                 <td data-label="{{ t.admin_col_role }}">
                     {% if u.role.value == 'admin' %}
-                        <span class="badge" style="background: var(--danger);">Admin</span>
+                        <span class="badge" style="background: var(--role);">Admin</span>
                     {% else %}
                         <span class="badge badge-off">User</span>
                     {% endif %}

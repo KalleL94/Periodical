@@ -33,7 +33,7 @@
   --danger-hover: #dc2626;
   --success: #7bd389;        /* money in / positive */
   --warning: #ffa500;
-  --role: #a855f7;           /* admin role (step 2 separates it from --danger) */
+  --role: #a78bfa;           /* admin role, its own violet (not --danger, not --ob5) */
 
   /* Schedule / absence categories (data colours referenced by templates) */
   --sem: #c7c700;            /* vacation (SEM) */
