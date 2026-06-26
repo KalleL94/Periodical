@@ -105,13 +105,9 @@ out, not by accidentally resembling it.
      of /week, /month, /year and /login).
 
 ### Follow-ups not yet done
-- Consolidate neutral greys and near-duplicate colours (#f44336, #4f9cf9,
-  #4caf50, #f59e0b, #1976d2) into tokens.
-- vacation.html / admin_vacation_user.html week-picker JS still hardcodes
-  #3b82f6 for the selected state.
-- Fonts load from Google Fonts; consider self-hosting for an internal app.
 - Remove the temporary preview files in app/static/ (_design-preview.html,
-  _accent_compare.html, _type_compare.html, _display_compare.html, _cmp_*.png).
+  _accent_compare.html, _type_compare.html, _display_compare.html, _cmp_*.png,
+  _step5_*).
 
 ### Done along the way
 - The Ant-blue focus glow leaking on .date-picker-input:focus
@@ -127,6 +123,20 @@ out, not by accidentally resembling it.
   a floor of main's content width, so it keeps its compact natural width and
   narrow months still fill main as before. No overflow container, so the sticky
   header is preserved. (layout.css)
+
+### Follow-ups now done
+- Near-duplicate colours routed to tokens: #f44336 -> --danger (year_all,
+  admin_rotation_eras), #4caf50 -> --success (admin_users,
+  admin_vacation_user), #f59e0b -> --warning (day), and the dead --accent /
+  --muted-bg fallbacks (#4f9cf9, #2a2a35) dropped (changelog). #1976d2 was
+  unused.
+- The week-picker's hardcoded #3b82f6 (parental selection in vacation.html and
+  admin_vacation_user.html) now resolves from --blue, the sanctioned secondary
+  colour. It is the parental-leave category colour by design (distinct from
+  vacation's teal accent), so it is tokenised, not retinted.
+- Fonts self-hosted: Bricolage Grotesque + Inter (variable) and IBM Plex Mono
+  (400/500/600), latin subset, under app/static/fonts/ with @font-face in
+  fonts.css. base.html no longer loads from Google Fonts (no third-party CDN).
 
 A standalone preview of the target direction was built and reviewed before
 implementation.

@@ -141,7 +141,7 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><span class="badge" style="background:#f59e0b;color:#000;">{{ t.day_extension_type }}</span></td>
+                                    <td><span class="badge" style="background:var(--warning);color:#000;">{{ t.day_extension_type }}</span></td>
                                     <td>{{ ot_shift.start_time }}</td>
                                     <td>{{ ot_shift.end_time }}</td>
                                     <td>{{ "%.2f"|format(ot_shift.hours) }} h</td>
@@ -867,7 +867,7 @@
 
                 <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-top:0.75rem;">
                     {% if day_pay_override %}
-                        <span class="badge pay-view" style="background:#f59e0b; color:white;">{{ t.day_pay_override_active_ob if not is_effective_oc else t.day_pay_override_active_oncall }}</span>
+                        <span class="badge pay-view" style="background:var(--warning); color:white;">{{ t.day_pay_override_active_ob if not is_effective_oc else t.day_pay_override_active_oncall }}</span>
                         {% if day_pay_override.reason %}
                             <span class="pay-view" style="color:var(--text-muted); font-size:0.875rem;">{{ day_pay_override.reason }}</span>
                         {% endif %}
