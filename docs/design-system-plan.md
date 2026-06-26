@@ -1,6 +1,6 @@
 # Design System Plan: "Operations board, not SaaS dashboard"
 
-Status: in progress. Owner: design pass on `feat/design-system`.
+Status: steps 1-4 done and committed on `feat/design-system`; step 5 remaining.
 
 ## Thesis
 
@@ -80,14 +80,26 @@ out, not by accidentally resembling it.
 
 ## Implementation order
 
-1. **Tokenise colour** (this step): pull inline hex into semantic CSS variables.
-   Pure refactor, no visual change. Foundation for everything.
-2. **Fix semantic collisions**: give admin role its own `--role`; reserve red.
-3. **Replace accent + desaturate chrome** to the values above.
-4. **Typography**: add Space Grotesk + IBM Plex Mono webfonts, apply mono to all
-   data, set the scale.
-5. **Board treatment** of the matrix (sticky, hairlines, now-line) + login grid
-   DNA.
+1. [DONE] **Tokenise colour**: inline hex pulled into semantic CSS variables.
+   No visual change. (commits e938f80, 1987fe3)
+2. [DONE] **Fix semantic collisions**: admin role uses --role (#a78bfa violet),
+   red reserved for danger. (2230591)
+3. [DONE] **Replace accent + desaturate chrome**: Ant blue -> teal #4d8a9a via
+   the --accent-rgb channel token, --ink #0e1216, statistics.html charts read
+   CSS vars. (8b6e699, cb8cf40)
+4. [DONE] **Typography**: Bricolage Grotesque (headings) + Inter (body) + IBM
+   Plex Mono (numbers and short codes only). (6e95ba2)
+5. [TODO] **Board treatment** of the matrix (sticky header + name column,
+   hairlines, "now" line for today) + login grid DNA.
+
+### Follow-ups not yet done
+- Consolidate neutral greys and near-duplicate colours (#f44336, #4f9cf9,
+  #4caf50, #f59e0b, #1976d2) into tokens.
+- vacation.html / admin_vacation_user.html week-picker JS still hardcodes
+  #3b82f6 for the selected state.
+- Fonts load from Google Fonts; consider self-hosting for an internal app.
+- Remove the temporary preview files in app/static/ (_design-preview.html,
+  _accent_compare.html, _type_compare.html, _display_compare.html, _cmp_*.png).
 
 A standalone preview of the target direction was built and reviewed before
 implementation.
