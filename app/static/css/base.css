@@ -37,9 +37,9 @@
 
   /* Schedule / absence categories (data colours referenced by templates) */
   --sem: #c7c700;            /* vacation (SEM) */
-  --leave-parental: #3b82f6; /* parental leave */
+  --blue: #3b82f6;           /* secondary blue: substitutes, parental, overrides */
   --ob-sick: #f97316;        /* OB lost on sick days */
-  --ob5: #a855f7;            /* highest OB level */
+  --ob5: #a855f7;            /* highest OB level / absence purple */
 
   --radius: 0.5rem;
 

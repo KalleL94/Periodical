@@ -13,7 +13,7 @@
 
 <h2 class="page-title">
     {{ substitute.name }}
-    <span class="badge" style="background: #3b82f6; color: white;">{{ t.substitute_tag }}</span>
+    <span class="badge" style="background: var(--blue); color: white;">{{ t.substitute_tag }}</span>
     {% if not substitute.is_active %}
         <span class="badge" style="background: var(--muted); color: var(--bg);">{{ t.admin_substitutes_archived }}</span>
     {% endif %}

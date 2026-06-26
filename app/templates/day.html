@@ -50,7 +50,7 @@
     </div>
 
     {% if is_vacation_day %}
-    <div style="background:rgba(199,199,0,0.12);border-left:4px solid #c7c700;border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;color:#c7c700;font-weight:500;">
+    <div style="background:rgba(199,199,0,0.12);border-left:4px solid var(--sem);border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;color:var(--sem);font-weight:500;">
         {{ t.day_sem_notice }}
     </div>
     {% endif %}
@@ -76,7 +76,7 @@
                         <td>
                             {% if is_vacation_day %}
                                 <span style="white-space:nowrap;">
-                                    <span class="badge" style="background:#c7c700;color:#000;">SEM</span>{% if shift %}&nbsp;<span class="badge" style="background:{{ shift.color }};color:{{ shift.color | contrast }};">{{ shift.code }}</span>{% endif %}
+                                    <span class="badge" style="background:var(--sem);color:#000;">SEM</span>{% if shift %}&nbsp;<span class="badge" style="background:{{ shift.color }};color:{{ shift.color | contrast }};">{{ shift.code }}</span>{% endif %}
                                 </span>
                             {% elif shift %}
                                 <span class="badge"
@@ -312,17 +312,17 @@
                                 </td>
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
-                                        <span class="badge" style="background: #ef4444; color: white;">{{ t.day_absence_sick }}</span>
+                                        <span class="badge" style="background: var(--danger); color: white;">{{ t.day_absence_sick }}</span>
                                     {% elif absence.absence_type.value == 'VAB' %}
-                                        <span class="badge" style="background: #f97316; color: white;">VAB</span>
+                                        <span class="badge" style="background: var(--ob-sick); color: white;">VAB</span>
                                     {% elif absence.absence_type.value == 'LEAVE' %}
-                                        <span class="badge" style="background: #a855f7; color: white;">{{ t.day_absence_leave }}</span>
+                                        <span class="badge" style="background: var(--ob5); color: white;">{{ t.day_absence_leave }}</span>
                                     {% elif absence.absence_type.value == 'OFF' %}
                                         <span class="badge" style="background: #888888; color: white;">{{ t.day_absence_off }}</span>
                                     {% elif absence.absence_type.value == 'VACATION' %}
-                                        <span class="badge" style="background: #c7c700; color: #000;">{{ t.day_absence_vacation }}</span>
+                                        <span class="badge" style="background: var(--sem); color: #000;">{{ t.day_absence_vacation }}</span>
                                     {% elif absence.absence_type.value == 'PARENTAL' %}
-                                        <span class="badge" style="background: #3b82f6; color: white;">{{ t.day_absence_parental }}</span>
+                                        <span class="badge" style="background: var(--blue); color: white;">{{ t.day_absence_parental }}</span>
                                     {% endif %}
                                     {% if absence.left_at is not none or absence.arrived_at is not none %}
                                         <span class="badge" style="background: #0ea5e9; color: white;">Deldag</span>
@@ -377,10 +377,10 @@
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
                                         {% if karens_hours_today > 0 and sjuklon_hours_today > 0 %}
-                                            <span class="badge" style="background: #dc2626; color: white;">{{ t.day_karens }}</span>
+                                            <span class="badge" style="background: var(--danger-hover); color: white;">{{ t.day_karens }}</span>
                                             + {{ t.day_sick_deduction }}
                                         {% elif karens_hours_today > 0 %}
-                                            <span class="badge" style="background: #dc2626; color: white;">{{ t.day_karens }}</span>
+                                            <span class="badge" style="background: var(--danger-hover); color: white;">{{ t.day_karens }}</span>
                                         {% else %}
                                             {{ t.day_sick_deduction }}
                                         {% endif %}
@@ -476,7 +476,7 @@
                                     {% if oncall_override.override_type.value == 'ADD' %}
                                         <span class="badge" style="background: #22c55e; color: white;">{{ t.day_oncall_added }}</span>
                                     {% else %}
-                                        <span class="badge" style="background: #ef4444; color: white;">{{ t.day_oncall_removed }}</span>
+                                        <span class="badge" style="background: var(--danger); color: white;">{{ t.day_oncall_removed }}</span>
                                     {% endif %}
                                 </td>
                                 <td>{{ oncall_override.reason or '-' }}</td>
@@ -560,7 +560,7 @@
                             <tbody>
                                 <tr>
                                     <td>
-                                        <span class="badge" style="background: #3b82f6; color: white;">{{ shift_override.shift_code }}</span>
+                                        <span class="badge" style="background: var(--blue); color: white;">{{ shift_override.shift_code }}</span>
                                     </td>
                                 </tr>
                             </tbody>

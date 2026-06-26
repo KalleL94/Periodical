@@ -103,10 +103,10 @@
         <strong>{{ t.month_sick_label }}:</strong>
         {{ days.sick_days }} {{ t.month_sick_days_unit }}, {{ "%.1f"|format(days.sick_hours or 0) }} h
         &nbsp;&mdash;&nbsp;
-        <span style="color: #ef4444;">{{ t.month_sick_deduction_label }}: -{{ "%.0f"|format(days.absence_deduction or 0) }} kr</span>
+        <span style="color: var(--danger);">{{ t.month_sick_deduction_label }}: -{{ "%.0f"|format(days.absence_deduction or 0) }} kr</span>
         {% if sick_total_ob > 0 %}
         &nbsp;|&nbsp;
-        <span style="color: #f97316;" title="Total OB på sjukdagarna, ingår ej i brutto">{{ t.month_sick_ob_lost_label }}: -{{ "%.0f"|format(sick_total_ob) }} kr</span>
+        <span style="color: var(--ob-sick);" title="Total OB på sjukdagarna, ingår ej i brutto">{{ t.month_sick_ob_lost_label }}: -{{ "%.0f"|format(sick_total_ob) }} kr</span>
         {% endif %}
         {% if days.sick_ob_pay and days.sick_ob_pay > 0 %}
         &nbsp;|&nbsp;
@@ -179,7 +179,7 @@
                                         <span class="badge badge-off calendar-badge">OFF</span>
                                     {% endif %}
                                     {% if day_data.partial_absence %}
-                                        <span class="badge" style="background:#ef4444;color:white;font-size:0.6rem;padding:1px 4px;" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
+                                        <span class="badge" style="background:var(--danger);color:white;font-size:0.6rem;padding:1px 4px;" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
                                     {% endif %}
 
                                     {% if day_data.shift and day_data.shift.code != 'OC' %}
