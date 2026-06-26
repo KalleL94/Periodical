@@ -40,8 +40,8 @@ td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .table-sticky thead th { position: sticky; top: 0; z-index: 5; background: var(--panel); }
 .table-sticky .sticky-col { position: sticky; left: 0; z-index: 4; background: var(--panel); }
 
-.today-row { background: rgba(64, 169, 255, 0.08); }
-.today-row:hover { background: rgba(64, 169, 255, 0.14); }
+.today-row { background: rgb(var(--accent-rgb) / 0.08); }
+.today-row:hover { background: rgb(var(--accent-rgb) / 0.14); }
 
 .coworkers-row {
   background: rgba(255,255,255,0.02);

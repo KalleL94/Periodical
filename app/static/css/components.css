@@ -370,7 +370,7 @@ input, select {
 .alert--danger  { background: rgba(239,68,68,0.12);  border-color: var(--danger); }
 .alert--success { background: rgba(123,211,137,0.09); border-color: var(--accent-2); }
 .alert--warning { background: rgba(255,165,0,0.09);  border-color: var(--warning); }
-.alert--info    { background: rgba(64,169,255,0.08); border-color: var(--accent); }
+.alert--info    { background: rgb(var(--accent-rgb) / 0.08); border-color: var(--accent); }
 
 /* ===== Anställningsövergång ===== */
 .transition-employer {

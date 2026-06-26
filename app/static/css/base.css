@@ -23,10 +23,13 @@
   --muted-bg: #4b5563;
   --muted-text: #9ca3af;
 
-  /* Interaction accent (chrome only). Currently Ant blue; step 3 -> #4d8a9a. */
-  --accent: #40a9ff;
-  --accent-strong: #1890ff;
-  --accent-soft: rgba(64,169,255,0.08);
+  /* Interaction accent (chrome only): a muted instrument teal, not Ant blue.
+     Driven by --accent-rgb so the solid accent and every translucent wash
+     (today highlights, focus rings) flip together from one place. */
+  --accent-rgb: 77 138 154;          /* #4d8a9a */
+  --accent: rgb(var(--accent-rgb));
+  --accent-strong: #3d7180;          /* darker teal for hover */
+  --accent-soft: rgb(var(--accent-rgb) / 0.08);
 
   /* Semantic status */
   --danger: #ef4444;
