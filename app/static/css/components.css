@@ -273,6 +273,14 @@ input, select {
 .schedule-weekday { font-size: 9px; font-weight: 600; margin-bottom: 2px; text-transform: uppercase; }
 .schedule-shift { font-size: 11px; font-weight: 700; padding: 2px 4px; border-radius: 3px; }
 
+/* Hard data in mono so numbers and short shift codes read as instrument
+   output. Word-length badges (.shift-badge like "Nattpass") stay in the body
+   font; mono only earns its keep on numbers and short codes. */
+.summary-value, .badge, .shift-countdown,
+.trend-up, .trend-down, .trend-same {
+  font-family: var(--font-mono);
+}
+
 /* Trend Indicators */
 .trend-up { color: var(--success); font-weight: 600; }
 .trend-down { color: var(--danger); font-weight: 600; }

@@ -44,6 +44,11 @@
   --ob-sick: #f97316;        /* OB lost on sick days */
   --ob5: #a855f7;            /* highest OB level / absence purple */
 
+  /* Typography: display for headings, body for prose, mono for all hard data */
+  --font-display: 'Bricolage Grotesque', Inter, system-ui, sans-serif;
+  --font-body: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
   --radius: 0.5rem;
 
   /* Back-compat aliases (existing names kept, same resolved values) */
@@ -62,7 +67,7 @@
 html, body {
   height: 100%;
   margin: 0;
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  font-family: var(--font-body);
   background: linear-gradient(180deg, var(--bg), #071018 120%);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -74,7 +79,12 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-h1, h2, h3 { color: var(--text); margin: 0 0 0.75rem 0; }
+h1, h2, h3, .page-title {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0 0 0.75rem 0;
+}
 h1 { font-size: 1.5rem; }
 h2 { font-size: 1.25rem; }
 h3 { font-size: 1rem; }

@@ -32,7 +32,7 @@ tbody td {
 tr.shift-row:hover { background: rgba(255,255,255,0.12); }
 tr.shift-row:hover td { background: transparent; }
 tr:hover td { background: rgba(255,255,255,0.01); }
-td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+td.num, th.num { font-family: var(--font-mono); }
 
 
 /* Sticky tables */
@@ -88,6 +88,7 @@ td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .breakdown-table {
   border: 1px solid rgba(255,255,255,0.12);
   border-collapse: collapse;
+  font-family: var(--font-mono);
 }
 
 .breakdown-table th,
