@@ -275,8 +275,20 @@ input, select {
 
 /* Trend Indicators */
 .trend-up { color: var(--success); font-weight: 600; }
-.trend-down { color: #ef4444; font-weight: 600; }
+.trend-down { color: var(--danger); font-weight: 600; }
 .trend-same { color: var(--muted); font-weight: 600; }
+
+/* The comparison/delta value carries an amount plus a trend arrow, so it is
+   wider than the absolute stats. Keep the amount and arrow on one line and
+   size it slightly smaller than the hero values it sits next to, so it fits
+   the narrow 3-column summary cell instead of wrapping the arrow below. */
+.summary-value .trend-up,
+.summary-value .trend-down,
+.summary-value .trend-same {
+  display: inline-block;
+  font-size: 18px;
+  white-space: nowrap;
+}
 
 /* Dashboard Buttons */
 .button-grid {
