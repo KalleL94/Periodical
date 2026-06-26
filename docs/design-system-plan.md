@@ -89,8 +89,20 @@ out, not by accidentally resembling it.
    CSS vars. (8b6e699, cb8cf40)
 4. [DONE] **Typography**: Bricolage Grotesque (headings) + Inter (body) + IBM
    Plex Mono (numbers and short codes only). (6e95ba2)
-5. [TODO] **Board treatment** of the matrix (sticky header + name column,
-   hairlines, "now" line for today) + login grid DNA.
+5. [DONE] **Board treatment** of the matrix + login grid DNA:
+   - week_all (person x day): today's column carries a vertical teal "now"
+     rail on its trailing edge plus an accent flag under the header; date
+     numbers and person IDs are monospace; hairlines unified to --line, header
+     and sticky name-column dividers to --line-strong. (calendar.css)
+   - month_all / year_all (day x row): today's row reads as a horizontal teal
+     "now" rule across the board, date column monospace; sticky header and
+     left column anchored with --line-strong. (tables.css)
+   - login: the empty void becomes a faint slice of the schedule board
+     (day-column-dominant grid, radial-masked calm pocket) with a single teal
+     "now" line behind the card. login.html rewritten onto .login-* classes;
+     inline styles removed. (components.css)
+   - Verified on the :8001 dev container via browse (computed CSS + screenshots
+     of /week, /month, /year and /login).
 
 ### Follow-ups not yet done
 - Consolidate neutral greys and near-duplicate colours (#f44336, #4f9cf9,
@@ -100,6 +112,21 @@ out, not by accidentally resembling it.
 - Fonts load from Google Fonts; consider self-hosting for an internal app.
 - Remove the temporary preview files in app/static/ (_design-preview.html,
   _accent_compare.html, _type_compare.html, _display_compare.html, _cmp_*.png).
+
+### Done along the way
+- The Ant-blue focus glow leaking on .date-picker-input:focus
+  (rgba(0,123,255,.1)) now resolves from --accent-soft. (components.css)
+- Monospace date column wrapped onto two lines (mono is wider than Inter and
+  the ISO date's hyphens are break points). Fixed with white-space: nowrap +
+  a trimmed font-size on .month-schedule .date-cell. (tables.css)
+- The month/year matrix overflowed to the right (off-centre) when substitute
+  columns pushed it past the 1175px main column. Fixed without widening it:
+  .month-grid breaks out to the full viewport and uses justify-content: safe
+  center, so the table is centred when it fits the viewport and left-aligned
+  (page scrolls) once it is wider; .month-schedule uses width: min-content with
+  a floor of main's content width, so it keeps its compact natural width and
+  narrow months still fill main as before. No overflow container, so the sticky
+  header is preserved. (layout.css)
 
 A standalone preview of the target direction was built and reviewed before
 implementation.
