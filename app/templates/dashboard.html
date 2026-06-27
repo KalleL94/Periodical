@@ -20,6 +20,52 @@
             </div>
             {% endif %}
 
+            <!-- Svars-rad: nästa pass (när jobbar jag) + nettolön (vad tjänar jag) -->
+            {% if next_shift or next_oncall_shift or month_summary %}
+            <div class="dash-hero">
+                {% set hero_shift = next_shift or next_oncall_shift %}
+                {% if hero_shift %}
+                <div class="dash-hero-cell">
+                    <span class="dash-hero-eyebrow">{% if next_shift %}{{ t.dashboard_next_shift }}{% else %}{{ t.dashboard_next_oncall }}{% endif %}</span>
+                    <div class="dash-hero-row">
+                        <div class="dash-hero-rail" style="background: {{ hero_shift.color }};"></div>
+                        <div>
+                            <div class="dash-hero-when">
+                                {% if hero_shift.days_until == 0 %}<span style="color: var(--success);">{{ t.dashboard_today }}</span>
+                                {% elif hero_shift.days_until == 1 %}<span style="color: var(--success);">{{ t.dashboard_tomorrow }}</span>
+                                {% else %}{{ _wdn_full[hero_shift.date.weekday()] }} {{ hero_shift.date.day }} {{ _month_names[hero_shift.date.month - 1] }}{% endif %}
+                            </div>
+                            <div class="dash-hero-sub">{{ t.shift_labels.get(hero_shift.shift_code, hero_shift.shift_type) }} &middot; <span class="dash-hero-mono">{{ hero_shift.time_range }}</span>{% if hero_shift.days_until <= 1 %} &middot; {{ _wdn_short[hero_shift.date.weekday()] }} {{ hero_shift.date.day }} {{ _month_names[hero_shift.date.month - 1] }}{% endif %}</div>
+                            <span class="dash-hero-badge" style="background: {{ hero_shift.color }}; color: {{ hero_shift.color|contrast }};">{{ hero_shift.shift_code }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if month_summary %}
+                <div class="dash-hero-cell">
+                    {% if can_see_salary %}
+                    <span class="dash-hero-eyebrow">{{ t.dashboard_net }}</span>
+                    <div class="dash-hero-pay">{{ "{:,.0f}".format(month_summary.net_pay) }}kr</div>
+                    {% if month_summary.trend %}
+                    <div class="dash-hero-trend">
+                        {% if month_summary.trend.direction == 'up' %}<span class="trend-up">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr &uarr;</span>
+                        {% elif month_summary.trend.direction == 'down' %}<span class="trend-down">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr &darr;</span>
+                        {% else %}<span class="trend-same">{{ t.dashboard_same_as_last }}</span>{% endif %}
+                        <span class="dash-hero-trendlabel">{{ t.dashboard_compared_to.replace('{month}', _month_names[month_summary.trend.last_month_number - 1]) }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="dash-hero-foot">{{ t.dashboard_gross }} {{ "{:,.0f}".format(month_summary.gross_pay) }}kr{% if month_summary.total_hours > 0 %} &middot; {{ "%.1f"|format(month_summary.total_hours) }}h &middot; {{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr/h{% endif %}</div>
+                    {% else %}
+                    <span class="dash-hero-eyebrow">{{ t.dashboard_total_hours }}</span>
+                    <div class="dash-hero-pay" style="color: var(--text);">{{ "%.1f"|format(month_summary.total_hours) }}h</div>
+                    <div class="dash-hero-foot">{{ t.dashboard_ob_hours }} {{ "%.1f"|format(month_summary.ob_hours) }}h</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <!-- Kommande pass -->
             {% if next_shift or next_oncall_shift %}
             <div class="card">
@@ -198,11 +244,8 @@
                     <div class="summary-item">
                         <div class="summary-label">{{ t.dashboard_net }}</div>
                         <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.net_pay) }}kr</div>
-                    </div>
-                    {% if month_summary.trend %}
-                    <div class="summary-item trend-item">
-                        <div class="summary-label">{{ t.dashboard_compared_to.replace('{month}', _month_names[month_summary.trend.last_month_number - 1]) }}</div>
-                        <div class="summary-value">
+                        {% if month_summary.trend %}
+                        <div class="summary-subtrend">
                             {% if month_summary.trend.direction == 'up' %}
                             <span class="trend-up">{{ "{:,.0f}".format(month_summary.trend.diff) }}kr ↑</span>
                             {% elif month_summary.trend.direction == 'down' %}
@@ -210,9 +253,10 @@
                             {% else %}
                             <span class="trend-same">{{ t.dashboard_same_as_last }}</span>
                             {% endif %}
+                            <span class="summary-subtrend-label">{{ t.dashboard_compared_to.replace('{month}', _month_names[month_summary.trend.last_month_number - 1]) }}</span>
                         </div>
+                        {% endif %}
                     </div>
-                    {% endif %}
                     {% endif %}
                 </div>
             </div>

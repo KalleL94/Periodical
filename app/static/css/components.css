@@ -343,6 +343,62 @@ input, select {
 .schedule-weekday { font-size: 9px; font-weight: 600; margin-bottom: 2px; text-transform: uppercase; }
 .schedule-shift { font-size: 11px; font-weight: 700; padding: 2px 4px; border-radius: 3px; }
 
+/* Answer band: leads the dashboard with the two questions a user actually has,
+   when do I work (next shift) and what will I earn (net pay this month), as
+   large instrument readouts above the detail cards. */
+.dash-hero {
+  grid-column: 1 / -1;
+  display: flex;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dash-hero-cell { flex: 1; padding: 20px 24px; min-width: 0; }
+.dash-hero-cell + .dash-hero-cell { border-left: 1px solid var(--line-strong); }
+.dash-hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.dash-hero-row { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; }
+.dash-hero-rail { width: 4px; align-self: stretch; min-height: 46px; border-radius: 2px; flex-shrink: 0; }
+.dash-hero-when {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.dash-hero-sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.dash-hero-sub .dash-hero-mono { font-family: var(--font-mono); }
+.dash-hero-badge {
+  display: inline-block;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.dash-hero-pay {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  color: var(--success);
+  margin-top: 10px;
+  line-height: 1;
+}
+.dash-hero-trend { margin-top: 10px; font-size: 13px; }
+.dash-hero-trendlabel { color: var(--muted); font-family: var(--font-mono); font-size: 12px; margin-left: 4px; }
+.dash-hero-foot { color: var(--faint); font-family: var(--font-mono); font-size: 12px; margin-top: 8px; }
+@media (max-width: 768px) {
+  .dash-hero { flex-direction: column; }
+  .dash-hero-cell + .dash-hero-cell { border-left: 0; border-top: 1px solid var(--line-strong); }
+}
+
 /* Hard data in mono so numbers and short shift codes read as instrument
    output. Word-length badges (.shift-badge like "Nattpass") stay in the body
    font; mono only earns its keep on numbers and short codes. */
@@ -356,16 +412,27 @@ input, select {
 .trend-down { color: var(--danger); font-weight: 600; }
 .trend-same { color: var(--muted); font-weight: 600; }
 
-/* The comparison/delta value carries an amount plus a trend arrow, so it is
-   wider than the absolute stats. Keep the amount and arrow on one line and
-   size it slightly smaller than the hero values it sits next to, so it fits
-   the narrow 3-column summary cell instead of wrapping the arrow below. */
-.summary-value .trend-up,
-.summary-value .trend-down,
-.summary-value .trend-same {
-  display: inline-block;
-  font-size: 18px;
+/* The month-over-month delta is a property of the net pay, not a stat of its
+   own, so it rides as a small line under the net value (mirrors the hero band)
+   instead of claiming a grid cell. Keeping amount and arrow on one line. */
+.summary-subtrend {
+  margin-top: 6px;
+  font-size: 13px;
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.summary-subtrend .trend-up,
+.summary-subtrend .trend-down,
+.summary-subtrend .trend-same {
+  font-family: var(--font-mono);
+}
+.summary-subtrend-label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 /* Dashboard Buttons */
