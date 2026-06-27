@@ -49,9 +49,9 @@
     </div>
     <div class="page-header-right" style="position:relative;">
         <select onchange="window.location='/range/{{ person_id }}?weeks='+this.value+'&from={{ start_date.isoformat() }}'"
-                style="background:#0f1720;color:#e6eef6;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 8px;font-size:0.9rem;cursor:pointer;color-scheme:dark;">
+                style="background:var(--panel);color:var(--text);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 8px;font-size:0.9rem;cursor:pointer;color-scheme:dark;">
             {% for w in range(1, 11) %}
-                <option value="{{ w }}" {% if active_weeks == w %}selected{% endif %} style="background:#0f1720;color:#e6eef6;">{{ w }}v</option>
+                <option value="{{ w }}" {% if active_weeks == w %}selected{% endif %} style="background:var(--panel);color:var(--text);">{{ w }}v</option>
             {% endfor %}
         </select>
         <button class="btn secondary" onclick="var f=this.nextElementSibling;f.style.display=f.style.display==='flex'?'none':'flex';">{{ t.range_from }}/{{ t.range_to }} ▾</button>

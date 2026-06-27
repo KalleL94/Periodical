@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error(`[Year View] Error loading total for person ${personId}:`, error);
                 const totalCell = document.getElementById(`total-${personId}`);
                 if (totalCell) {
-                    totalCell.innerHTML = '<span style="color: #f44336;">✗</span>';
+                    totalCell.innerHTML = '<span style="color: var(--danger);">✗</span>';
                 }
             });
     });

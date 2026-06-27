@@ -9,6 +9,76 @@
   box-shadow: 0 6px 18px rgba(2,8,23,0.5);
 }
 
+/* Login: the empty void becomes a faint slice of the schedule board, so the
+   first screen already carries the product's grid DNA. */
+.login-shell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  padding: 3.5rem 1rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ink);
+}
+.login-grid-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Day columns are the dominant axis (stronger, wider); person rows recede. */
+  background-image:
+    repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 76px),
+    repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 48px);
+  /* A calm pocket at the centre where the card sits; grid reads at the edges. */
+  -webkit-mask-image: radial-gradient(120% 80% at 50% 50%, transparent 24%, #000 72%);
+          mask-image: radial-gradient(120% 80% at 50% 50%, transparent 24%, #000 72%);
+}
+.login-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 62%;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0.45;
+  pointer-events: none;
+}
+.login-now::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 380px;
+  background: var(--panel);
+}
+.login-card h2 { margin-top: 0; }
+.login-field { margin-bottom: 1rem; }
+.login-field:last-of-type { margin-bottom: 1.5rem; }
+.login-field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.85rem; }
+.login-field input { width: 100%; box-sizing: border-box; }
+.login-error {
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.login-submit { width: 100%; }
+
+@media (max-width: 800px) {
+  .login-shell { min-height: 50vh; padding: 2rem 0.75rem; }
+}
+
 /* Badges */
 .badge {
   display: inline-block;
@@ -71,7 +141,7 @@ button:hover, .btn:hover {
 .date-picker-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 button.secondary, .btn.secondary, .btn-secondary {
@@ -273,10 +343,97 @@ input, select {
 .schedule-weekday { font-size: 9px; font-weight: 600; margin-bottom: 2px; text-transform: uppercase; }
 .schedule-shift { font-size: 11px; font-weight: 700; padding: 2px 4px; border-radius: 3px; }
 
+/* Answer band: leads the dashboard with the two questions a user actually has,
+   when do I work (next shift) and what will I earn (net pay this month), as
+   large instrument readouts above the detail cards. */
+.dash-hero {
+  grid-column: 1 / -1;
+  display: flex;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dash-hero-cell { flex: 1; padding: 20px 24px; min-width: 0; }
+.dash-hero-cell + .dash-hero-cell { border-left: 1px solid var(--line-strong); }
+.dash-hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.dash-hero-row { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; }
+.dash-hero-rail { width: 4px; align-self: stretch; min-height: 46px; border-radius: 2px; flex-shrink: 0; }
+.dash-hero-when {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.dash-hero-sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.dash-hero-sub .dash-hero-mono { font-family: var(--font-mono); }
+.dash-hero-badge {
+  display: inline-block;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.dash-hero-pay {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  color: var(--success);
+  margin-top: 10px;
+  line-height: 1;
+}
+.dash-hero-trend { margin-top: 10px; font-size: 13px; }
+.dash-hero-trendlabel { color: var(--muted); font-family: var(--font-mono); font-size: 12px; margin-left: 4px; }
+.dash-hero-foot { color: var(--faint); font-family: var(--font-mono); font-size: 12px; margin-top: 8px; }
+@media (max-width: 768px) {
+  .dash-hero { flex-direction: column; }
+  .dash-hero-cell + .dash-hero-cell { border-left: 0; border-top: 1px solid var(--line-strong); }
+}
+
+/* Hard data in mono so numbers and short shift codes read as instrument
+   output. Word-length badges (.shift-badge like "Nattpass") stay in the body
+   font; mono only earns its keep on numbers and short codes. */
+.summary-value, .badge, .shift-countdown,
+.trend-up, .trend-down, .trend-same {
+  font-family: var(--font-mono);
+}
+
 /* Trend Indicators */
 .trend-up { color: var(--success); font-weight: 600; }
-.trend-down { color: #ef4444; font-weight: 600; }
+.trend-down { color: var(--danger); font-weight: 600; }
 .trend-same { color: var(--muted); font-weight: 600; }
+
+/* The month-over-month delta is a property of the net pay, not a stat of its
+   own, so it rides as a small line under the net value (mirrors the hero band)
+   instead of claiming a grid cell. Keeping amount and arrow on one line. */
+.summary-subtrend {
+  margin-top: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.summary-subtrend .trend-up,
+.summary-subtrend .trend-down,
+.summary-subtrend .trend-same {
+  font-family: var(--font-mono);
+}
+.summary-subtrend-label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
 
 /* Dashboard Buttons */
 .button-grid {
@@ -358,7 +515,7 @@ input, select {
 .alert--danger  { background: rgba(239,68,68,0.12);  border-color: var(--danger); }
 .alert--success { background: rgba(123,211,137,0.09); border-color: var(--accent-2); }
 .alert--warning { background: rgba(255,165,0,0.09);  border-color: var(--warning); }
-.alert--info    { background: rgba(64,169,255,0.08); border-color: var(--accent); }
+.alert--info    { background: rgb(var(--accent-rgb) / 0.08); border-color: var(--accent); }
 
 /* ===== Anställningsövergång ===== */
 .transition-employer {

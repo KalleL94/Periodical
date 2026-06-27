@@ -1,0 +1,47 @@
+/* ===== fonts.css - self-hosted webfonts =====
+   Replaces the Google Fonts <link> in base.html so an internal app does not
+   depend on a third-party CDN. Latin subset only: Swedish characters (a-ring,
+   a-umlaut, o-umlaut) live in U+0000-00FF, which the latin subset covers.
+   Bricolage Grotesque and Inter are variable fonts (one file each, weight axis);
+   IBM Plex Mono ships as three static weights. font-display: swap keeps text
+   visible while the font loads. */
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/static/fonts/bricolage-grotesque-var-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/static/fonts/inter-var-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-400-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-500-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-600-latin.woff2') format('woff2');
+}

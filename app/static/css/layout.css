@@ -12,6 +12,31 @@ main {
   padding: 1.25rem;
 }
 
+/* Wide schedule matrices (month/year): substitute columns can push the table
+   past the centred main column, which used to overflow to the right and look
+   off-centre. Fix it without widening the table:
+   - .month-grid breaks out to the full viewport width so centring is measured
+     against the viewport, not the 1175px main column.
+   - safe center: the table is centred when it fits the viewport, but aligns to
+     the start (left-aligned, page scrolls right) once it is wider than the
+     viewport, so the left edge stays reachable.
+   - the table keeps its compact natural width (min-content) with a floor equal
+     to main's current content width, so narrow months still fill main exactly
+     as before and never force a scrollbar on smaller screens.
+   No overflow container is used, so the sticky header stays pinned. The floor's
+   1175px / 2.5rem track main's max-width and padding above. */
+.month-grid {
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  display: flex;
+  justify-content: safe center;
+  box-sizing: border-box;
+}
+.month-schedule {
+  width: min-content;
+  min-width: calc(min(100vw, 1175px) - 2.5rem);
+}
+
 footer {
   margin-top: 1.75rem;
   color: var(--muted);

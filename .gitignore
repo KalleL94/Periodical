@@ -57,3 +57,7 @@ tree.txt
 venv.bat
 ICA schedule.xlsx
 logs/*.log*
+.gstack/
+
+# Local design preview artifacts (comparison pages and screenshots)
+app/static/_*

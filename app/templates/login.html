@@ -5,14 +5,15 @@
 
 {% block page_content %}
 
-<div style="max-width: 400px; margin: 60px auto;">
-    <div class="card">
-        <h2 style="margin-top: 0;">{{ t.login_title }}</h2>
+<div class="login-shell">
+    <div class="login-grid-bg" aria-hidden="true"></div>
+    <div class="login-now" aria-hidden="true"></div>
+
+    <div class="card login-card">
+        <h2>{{ t.login_title }}</h2>
 
         {% if error %}
-            <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
-                {{ error }}
-            </div>
+            <div class="login-error">{{ error }}</div>
         {% endif %}
 
         <form method="POST" action="/login">
@@ -20,31 +21,17 @@
                 <input type="hidden" name="next" value="{{ next }}">
             {% endif %}
 
-            <div style="margin-bottom: 16px;">
-                <label for="username" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.login_username }}</label>
-                <input
-                    type="text"
-                    id="username"
-                    name="username"
-                    required
-                    autocomplete="username"
-                    style="width: 100%; box-sizing: border-box;"
-                >
+            <div class="login-field">
+                <label for="username">{{ t.login_username }}</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
             </div>
 
-            <div style="margin-bottom: 24px;">
-                <label for="password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.login_password }}</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    required
-                    autocomplete="current-password"
-                    style="width: 100%; box-sizing: border-box;"
-                >
+            <div class="login-field">
+                <label for="password">{{ t.login_password }}</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
             </div>
 
-            <button type="submit" class="btn" style="width: 100%;">{{ t.login_button }}</button>
+            <button type="submit" class="btn login-submit">{{ t.login_button }}</button>
         </form>
     </div>
 </div>

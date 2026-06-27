@@ -59,7 +59,7 @@
 
             <hr style="border: none; border-top: 1px solid var(--table-border); margin: 20px 0;">
 
-            <h4 style="margin: 0 0 8px 0; color: #3b82f6;">{{ t.vacation_parental_weeks }}</h4>
+            <h4 style="margin: 0 0 8px 0; color: var(--blue);">{{ t.vacation_parental_weeks }}</h4>
             <p style="color: var(--muted); margin-bottom: 16px; font-size: 0.875rem;">{{ t.vacation_parental_weeks_hint }}</p>
 
             <form method="POST" action="/profile/vacation/parental/weeks" id="parental-form">
@@ -76,7 +76,7 @@
                                 padding: 12px 8px;
                                 border-radius: var(--radius);
                                 border: 1px solid var(--table-border);
-                                background: {% if week in parental_weeks %}#3b82f6{% else %}var(--panel){% endif %};
+                                background: {% if week in parental_weeks %}var(--blue){% else %}var(--panel){% endif %};
                                 color: {% if week in parental_weeks %}white{% else %}var(--text){% endif %};
                                 cursor: pointer;
                                 font-weight: {% if week in parental_weeks %}600{% else %}400{% endif %};
@@ -88,7 +88,7 @@
                     {% endfor %}
                 </div>
 
-                <button type="submit" class="btn" style="background: #3b82f6; color: white;">{{ t.vacation_save }}</button>
+                <button type="submit" class="btn" style="background: var(--blue); color: white;">{{ t.vacation_save }}</button>
             </form>
         </div>
 
@@ -348,7 +348,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 selectedParentalWeeks.add(week);
                 this.classList.add('selected');
-                this.style.background = '#3b82f6';
+                this.style.background = 'var(--blue)';
                 this.style.color = 'white';
                 this.style.fontWeight = '600';
             }
@@ -389,7 +389,7 @@ document.addEventListener('DOMContentLoaded', function() {
             btnPar.style.color = '';
             btnPar.classList.add('secondary');
         } else {
-            btnPar.style.background = '#3b82f6';
+            btnPar.style.background = 'var(--blue)';
             btnPar.style.color = 'white';
             btnPar.classList.remove('secondary');
             btnVac.style.background = '';
@@ -484,7 +484,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (selectedDates.has(date)) {
                         el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
                     } else if (parentalDates.has(date)) {
-                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: #3b82f6; color: white; font-weight: 600;';
+                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--blue); color: white; font-weight: 600;';
                     } else {
                         el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
                             + (wd >= 5 ? ' opacity: 0.5;' : '');

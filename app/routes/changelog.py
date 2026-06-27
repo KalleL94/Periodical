@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.27.0",
+        "date": "2026-06-27",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Översikten inleds nu med en svars-rad högst upp: ditt nästa pass och månadens nettolön som stora avläsningar, så du ser direkt när du jobbar och vad du tjänar. Lönejämförelsen mot förra månaden ligger nu ihop med nettolönen",
+                "en": "The dashboard now opens with an answer band at the top: your next shift and this month's net pay as large readouts, so you can see at a glance when you work and what you earn. The pay comparison against last month now sits together with the net pay",
+            },
+            {
+                "type": "förbättring",
+                "sv": "Ny visuell design i hela appen: en lugnare, mörkare palett med dämpad teal-accent och egna färger per roll, nya typsnitt (rubriker i Bricolage, brödtext i Inter, siffror i IBM Plex Mono) och scheman som behandlas som en driftstavla med fasta rubriker och en markering för dagens datum. Typsnitten laddas nu lokalt i stället för från Google Fonts",
+                "en": "New visual design across the app: a calmer, darker palette with a muted teal accent and dedicated colours per role, new typefaces (Bricolage for headings, Inter for body text, IBM Plex Mono for numbers) and schedules treated as an operations board with sticky headers and a marker for today's date. Fonts are now loaded locally instead of from Google Fonts",
+            },
+        ],
+    },
+    {
         "version": "0.26.2",
         "date": "2026-06-24",
         "entries": [

@@ -32,16 +32,26 @@ tbody td {
 tr.shift-row:hover { background: rgba(255,255,255,0.12); }
 tr.shift-row:hover td { background: transparent; }
 tr:hover td { background: rgba(255,255,255,0.01); }
-td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+td.num, th.num { font-family: var(--font-mono); }
 
 
 /* Sticky tables */
 .table-sticky { border-collapse: separate; border-spacing: 0; }
-.table-sticky thead th { position: sticky; top: 0; z-index: 5; background: var(--panel); }
-.table-sticky .sticky-col { position: sticky; left: 0; z-index: 4; background: var(--panel); }
+/* The header row is a structural rail: a stronger hairline anchors it. */
+.table-sticky thead th { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 2px solid var(--line-strong); }
+.table-sticky .sticky-col { position: sticky; left: 0; z-index: 4; background: var(--panel); border-right: 2px solid var(--line-strong); }
 
-.today-row { background: rgba(64, 169, 255, 0.08); }
-.today-row:hover { background: rgba(64, 169, 255, 0.14); }
+/* "Now" line: in the day-per-row matrices (month/year), today reads as a
+   horizontal teal rule running across the whole board. */
+.today-row { background: rgb(var(--accent-rgb) / 0.08); }
+.today-row td, .today-row th { border-top: 1px solid var(--accent); border-bottom: 1px solid var(--accent); }
+.today-row .date-cell, .today-row .day-cell { color: var(--accent); }
+.today-row:hover { background: rgb(var(--accent-rgb) / 0.14); }
+
+/* Date column reads as an instrument readout. Mono is wider than Inter, so the
+   ISO date must not wrap (its hyphens are break points) and the size is trimmed
+   so the column does not grow taller/wider than it did before. */
+.month-schedule .date-cell { font-family: var(--font-mono); white-space: nowrap; font-size: 0.82rem; }
 
 .coworkers-row {
   background: rgba(255,255,255,0.02);
@@ -88,6 +98,7 @@ td.num, th.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .breakdown-table {
   border: 1px solid rgba(255,255,255,0.12);
   border-collapse: collapse;
+  font-family: var(--font-mono);
 }
 
 .breakdown-table th,
