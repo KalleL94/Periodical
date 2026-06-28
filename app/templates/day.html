@@ -50,7 +50,7 @@
     </div>
 
     {% if is_vacation_day %}
-    <div style="background:rgba(199,199,0,0.12);border-left:4px solid var(--sem);border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;color:var(--sem);font-weight:500;">
+    <div class="day-sem-notice">
         {{ t.day_sem_notice }}
     </div>
     {% endif %}
@@ -70,17 +70,15 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="shift-row"
-                        style="border-left:6px solid {% if shift %}{{ shift.color }}{% else %}transparent{% endif %};">
+                    <tr class="shift-row day-shift-row"{% if shift %} data-shift-color="{{ shift.color }}"{% endif %}>
                         <td>{% if rotation_week and rotation_length %}{{ rotation_week }}/{{ rotation_length }}{% else %}-{% endif %}</td>
                         <td>
                             {% if is_vacation_day %}
-                                <span style="white-space:nowrap;">
-                                    <span class="badge" style="background:var(--sem);color:#000;">SEM</span>{% if shift %}&nbsp;<span class="badge" style="background:{{ shift.color }};color:{{ shift.color | contrast }};">{{ shift.code }}</span>{% endif %}
+                                <span class="day-nowrap">
+                                    <span class="badge badge-vacation">SEM</span>{% if shift %}&nbsp;<span class="badge" data-shift-color="{{ shift.color }}" data-shift-contrast="{{ shift.color | contrast }}">{{ shift.code }}</span>{% endif %}
                                 </span>
                             {% elif shift %}
-                                <span class="badge"
-                                      style="background: {{ shift.color }}; color: {{ shift.color | contrast }};">
+                                <span class="badge" data-shift-color="{{ shift.color }}" data-shift-contrast="{{ shift.color | contrast }}">
                                     {{ shift.code }}
                                 </span>
                             {% else %}
@@ -116,10 +114,10 @@
             </table>
 
             {% set has_active = ot_shift or absence or oncall_override or shift_override %}
-            <button id="day-edit-btn" class="btn secondary" style="margin-top:1rem;"
+            <button id="day-edit-btn" class="btn secondary day-edit-toggle-btn"
                     onclick="toggleDayEdit()">{{ t.day_edit_toggle }} ▾</button>
 
-            <div id="day-edit-panel" style="display:{% if has_active %}block{% else %}none{% endif %};">
+            <div id="day-edit-panel"{% if not has_active %} hidden{% endif %}>
 
             <h3>{{ t.day_overtime }}</h3>
 
@@ -141,14 +139,14 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><span class="badge" style="background:var(--warning);color:#000;">{{ t.day_extension_type }}</span></td>
+                                    <td><span class="badge badge-warning">{{ t.day_extension_type }}</span></td>
                                     <td>{{ ot_shift.start_time }}</td>
                                     <td>{{ ot_shift.end_time }}</td>
                                     <td>{{ "%.2f"|format(ot_shift.hours) }} h</td>
                                     <td>{{ "%.2f"|format(ot_shift.hourly_rate) }} kr/h</td>
                                     <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                     <td>
-                                        <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
+                                        <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" class="inline-form">
                                             <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_extension_confirm }}')">{{ t.day_delete }}</button>
                                         </form>
                                     </td>
@@ -178,7 +176,7 @@
                                     <td>{{ "%.2f"|format(ot_shift.hourly_rate) }} kr/h</td>
                                     <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                     <td>
-                                        <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" style="display: inline;">
+                                        <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" class="inline-form">
                                             <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_ot_confirm }}')">{{ t.day_delete }}</button>
                                         </form>
                                     </td>
@@ -196,7 +194,7 @@
             {% else %}
                 {# Förlängningsformulär för ordinarie arbetspass #}
                 {% if shift and shift.code in ('N1', 'N2', 'N3') %}
-                    <p class="info-text" style="margin-bottom:0.5rem;">{{ t.day_ext_stayed.replace('{time}', shift.end_time) }}</p>
+                    <p class="info-text day-hint-tight">{{ t.day_ext_stayed.replace('{time}', shift.end_time) }}</p>
                     <form method="POST" action="/overtime/add" class="ot-form" id="ext-form">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         <input type="hidden" name="date" value="{{ date }}">
@@ -205,7 +203,7 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="ext_start_time">{{ t.day_ext_normal_end }}</label>
-                                <input type="time" id="ext_start_time" name="start_time" value="{{ shift.end_time }}" readonly style="opacity:0.6;">
+                                <input type="time" id="ext_start_time" name="start_time" value="{{ shift.end_time }}" readonly class="input-readonly">
                             </div>
                             <div class="form-group">
                                 <label for="ext_end_time">{{ t.day_ext_actual_end }}</label>
@@ -242,13 +240,13 @@
                 {% endif %}
 
                 {# Fullt övertidspass (inkallning) #}
-                <form method="POST" action="/overtime/add" class="ot-form" style="margin-top: {% if shift and shift.code in ('N1', 'N2', 'N3') %}1.5rem{% else %}0{% endif %};">
+                <form method="POST" action="/overtime/add" class="ot-form{% if shift and shift.code in ('N1', 'N2', 'N3') %} ot-form-spaced{% endif %}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
 
                     <details>
-                        <summary style="cursor:pointer; color: var(--text-muted); font-size:0.9rem;">{{ t.day_add_called_ot }}</summary>
-                        <div class="form-row" style="margin-top:0.75rem;">
+                        <summary class="day-summary-toggle">{{ t.day_add_called_ot }}</summary>
+                        <div class="form-row form-row--mt">
                             <div class="form-group">
                                 <label for="start_time">{{ t.day_start_time }}</label>
                                 <input type="time" id="start_time" name="start_time" value="14:00" required>
@@ -304,32 +302,32 @@
                                         {{ absence.absence_type.value }}
                                     {% endif %}
                                     {% if absence.arrived_at is not none %}
-                                        <span style="color: var(--text-muted); font-size: 0.9em;">(kom {{ absence.arrived_at }})</span>
+                                        <span class="day-inline-note">(kom {{ absence.arrived_at }})</span>
                                     {% endif %}
                                     {% if absence.left_at is not none %}
-                                        <span style="color: var(--text-muted); font-size: 0.9em;">(slutade {{ absence.left_at }})</span>
+                                        <span class="day-inline-note">(slutade {{ absence.left_at }})</span>
                                     {% endif %}
                                 </td>
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
-                                        <span class="badge" style="background: var(--danger); color: white;">{{ t.day_absence_sick }}</span>
+                                        <span class="badge badge-sick">{{ t.day_absence_sick }}</span>
                                     {% elif absence.absence_type.value == 'VAB' %}
-                                        <span class="badge" style="background: var(--ob-sick); color: white;">VAB</span>
+                                        <span class="badge badge-vab">VAB</span>
                                     {% elif absence.absence_type.value == 'LEAVE' %}
-                                        <span class="badge" style="background: var(--ob5); color: white;">{{ t.day_absence_leave }}</span>
+                                        <span class="badge badge-leave">{{ t.day_absence_leave }}</span>
                                     {% elif absence.absence_type.value == 'OFF' %}
-                                        <span class="badge" style="background: #888888; color: white;">{{ t.day_absence_off }}</span>
+                                        <span class="badge badge-off-gray">{{ t.day_absence_off }}</span>
                                     {% elif absence.absence_type.value == 'VACATION' %}
-                                        <span class="badge" style="background: var(--sem); color: #000;">{{ t.day_absence_vacation }}</span>
+                                        <span class="badge badge-vacation">{{ t.day_absence_vacation }}</span>
                                     {% elif absence.absence_type.value == 'PARENTAL' %}
-                                        <span class="badge" style="background: var(--blue); color: white;">{{ t.day_absence_parental }}</span>
+                                        <span class="badge badge-parental">{{ t.day_absence_parental }}</span>
                                     {% endif %}
                                     {% if absence.left_at is not none or absence.arrived_at is not none %}
-                                        <span class="badge" style="background: #0ea5e9; color: white;">Deldag</span>
+                                        <span class="badge badge-partial">Deldag</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <form method="POST" action="/absence/{{ absence.id }}/delete" style="display: inline;">
+                                    <form method="POST" action="/absence/{{ absence.id }}/delete" class="inline-form">
                                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_absence_confirm }}')">{{ t.day_delete }}</button>
                                     </form>
                                 </td>
@@ -377,10 +375,10 @@
                                 <td>
                                     {% if absence.absence_type.value == 'SICK' %}
                                         {% if karens_hours_today > 0 and sjuklon_hours_today > 0 %}
-                                            <span class="badge" style="background: var(--danger-hover); color: white;">{{ t.day_karens }}</span>
+                                            <span class="badge badge-karens">{{ t.day_karens }}</span>
                                             + {{ t.day_sick_deduction }}
                                         {% elif karens_hours_today > 0 %}
-                                            <span class="badge" style="background: var(--danger-hover); color: white;">{{ t.day_karens }}</span>
+                                            <span class="badge badge-karens">{{ t.day_karens }}</span>
                                         {% else %}
                                             {{ t.day_sick_deduction }}
                                         {% endif %}
@@ -396,12 +394,12 @@
                     {% endif %}
 
                     {% if show_salary and sick_ob_pay_today > 0 %}
-                    <table style="margin-top: 8px;">
+                    <table class="day-table-mt">
                         <tbody>
                             <tr>
                                 <td>{{ "%.1f"|format(sjuklon_hours_today) }} h</td>
-                                <td style="padding-left: 16px;">+{{ "%.2f"|format(sick_ob_pay_today) }} kr</td>
-                                <td style="padding-left: 16px; color: var(--muted); font-size: 0.85rem;">{{ t.day_sick_ob_pay }}</td>
+                                <td class="day-td-indent">+{{ "%.2f"|format(sick_ob_pay_today) }} kr</td>
+                                <td class="day-td-note">{{ t.day_sick_ob_pay }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -474,14 +472,14 @@
                             <tr>
                                 <td>
                                     {% if oncall_override.override_type.value == 'ADD' %}
-                                        <span class="badge" style="background: #22c55e; color: white;">{{ t.day_oncall_added }}</span>
+                                        <span class="badge badge-added">{{ t.day_oncall_added }}</span>
                                     {% else %}
-                                        <span class="badge" style="background: var(--danger); color: white;">{{ t.day_oncall_removed }}</span>
+                                        <span class="badge badge-danger">{{ t.day_oncall_removed }}</span>
                                     {% endif %}
                                 </td>
                                 <td>{{ oncall_override.reason or '-' }}</td>
                                 <td>
-                                    <form method="POST" action="/oncall/{{ oncall_override.id }}/delete" style="display: inline;">
+                                    <form method="POST" action="/oncall/{{ oncall_override.id }}/delete" class="inline-form">
                                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_oncall_undo_confirm }}')">{{ t.day_oncall_undo }}</button>
                                     </form>
                                 </td>
@@ -560,7 +558,7 @@
                             <tbody>
                                 <tr>
                                     <td>
-                                        <span class="badge" style="background: var(--blue); color: white;">{{ shift_override.shift_code }}</span>
+                                        <span class="badge badge-blue">{{ shift_override.shift_code }}</span>
                                     </td>
                                 </tr>
                             </tbody>
@@ -589,7 +587,7 @@
                 </form>
 
                 {% if shift_override %}
-                    <form method="POST" action="/shift-override/{{ shift_override.id }}/delete" style="margin-top: 0.75rem;">
+                    <form method="POST" action="/shift-override/{{ shift_override.id }}/delete" class="form-row--mt">
                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_shift_override_revert_confirm }}')">{{ t.day_shift_override_revert }}</button>
                     </form>
                 {% endif %}
@@ -622,7 +620,7 @@
 
         {% if swap_users and user and user.id == person_id %}
         {% set is_one_way = not shift or shift.code == 'OFF' %}
-        <h3 style="margin-top: 1.5rem;">{% if is_one_way %}{{ t.day_take_shift }}{% else %}{{ t.day_propose_swap }}{% endif %}</h3>
+        <h3 class="day-h-mt">{% if is_one_way %}{{ t.day_take_shift }}{% else %}{{ t.day_propose_swap }}{% endif %}</h3>
         <form method="POST" action="/swaps/propose" class="ot-form" id="swap-form">
             <input type="hidden" name="requester_date" value="{{ date }}">
             <div class="form-row">
@@ -706,7 +704,7 @@
         </section>
 
         {% if show_salary %}
-            <section class="day-section">
+            <section class="day-section" id="pay-section">
             {% if is_effective_oc %}
             {# On-call compensation section - for effective OC shifts (including ADD overrides) #}
                 <h3>{{ t.day_oncall_pay_title }}</h3>
@@ -725,14 +723,13 @@
                             {% for oc_type in all_oncall_types %}
                                 {% set h = oc_breakdown[oc_type.code].hours if oc_type.code in oc_breakdown else 0.0 %}
                                 {% set p = oc_breakdown[oc_type.code].pay if oc_type.code in oc_breakdown else 0.0 %}
-                                <tr{% if h == 0 %} class="pay-zero-row" style="display:none"{% endif %}>
+                                <tr{% if h == 0 %} class="pay-zero-row"{% endif %}>
                                     <td class="td_left">{{ oc_type.label }}</td>
                                     <td class="td_right num">
                                         <span class="pay-view">{{ "%.2f"|format(h) }}</span>
-                                        <input class="pay-edit" form="pay-override-form"
+                                        <input class="pay-edit pay-edit-num" form="pay-override-form"
                                                name="oc_hours_{{ oc_type.code }}" type="number"
-                                               step="0.01" min="0" value="{{ "%.2f"|format(h) }}"
-                                               style="display:none; width:5rem; text-align:right;">
+                                               step="0.01" min="0" value="{{ "%.2f"|format(h) }}">
                                     </td>
                                     <td class="td_right num pay-view">{{ "%.2f"|format(p) }} kr</td>
                                 </tr>
@@ -771,14 +768,13 @@
                         <tbody>
                             {% for code in ob_codes %}
                                 {% set h = ob_hours.get(code, 0.0) %}
-                                <tr{% if h == 0 %} class="pay-zero-row" style="display:none"{% endif %}>
+                                <tr{% if h == 0 %} class="pay-zero-row"{% endif %}>
                                     <td class="num">{{ ob_labels.get(code, code) }}</td>
                                     <td class="td_right num">
                                         <span class="pay-view">{{ "%.2f"|format(h) }}</span>
-                                        <input class="pay-edit" form="pay-override-form"
+                                        <input class="pay-edit pay-edit-num" form="pay-override-form"
                                                name="ob_hours_{{ code }}" type="number"
-                                               step="0.01" min="0" value="{{ "%.2f"|format(h) }}"
-                                               style="display:none; width:5rem; text-align:right;">
+                                               step="0.01" min="0" value="{{ "%.2f"|format(h) }}">
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -865,23 +861,22 @@
                     <input type="hidden" name="date" value="{{ date }}">
                 </form>
 
-                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-top:0.75rem;">
+                <div class="pay-actions">
                     {% if day_pay_override %}
-                        <span class="badge pay-view" style="background:var(--warning); color:white;">{{ t.day_pay_override_active_ob if not is_effective_oc else t.day_pay_override_active_oncall }}</span>
+                        <span class="badge badge-warning pay-view">{{ t.day_pay_override_active_ob if not is_effective_oc else t.day_pay_override_active_oncall }}</span>
                         {% if day_pay_override.reason %}
-                            <span class="pay-view" style="color:var(--text-muted); font-size:0.875rem;">{{ day_pay_override.reason }}</span>
+                            <span class="pay-view day-note-sm">{{ day_pay_override.reason }}</span>
                         {% endif %}
-                        <form method="POST" action="/day-pay-override/{{ day_pay_override.id }}/delete" style="display:inline;" class="pay-view">
+                        <form method="POST" action="/day-pay-override/{{ day_pay_override.id }}/delete" class="pay-view inline-form">
                             <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_pay_override_remove_confirm }}')">{{ t.day_pay_override_remove }}</button>
                         </form>
                     {% endif %}
                     <button type="button" class="btn btn-secondary pay-view" onclick="togglePayOverrideEdit()">{{ t.day_pay_override_edit }}</button>
-                    <input type="text" class="pay-edit" form="pay-override-form" name="reason"
+                    <input type="text" class="pay-edit pay-edit-reason" form="pay-override-form" name="reason"
                            placeholder="{{ t.day_pay_override_reason_label }}"
-                           value="{{ day_pay_override.reason or '' }}"
-                           style="display:none; max-width:14rem;">
-                    <button type="submit" form="pay-override-form" class="btn btn-primary pay-edit" style="display:none;">{{ t.day_pay_override_save }}</button>
-                    <button type="button" class="btn btn-secondary pay-edit" onclick="togglePayOverrideEdit()" style="display:none;">{{ t.day_oncall_undo }}</button>
+                           value="{{ day_pay_override.reason or '' }}">
+                    <button type="submit" form="pay-override-form" class="btn btn-primary pay-edit">{{ t.day_pay_override_save }}</button>
+                    <button type="button" class="btn btn-secondary pay-edit" onclick="togglePayOverrideEdit()">{{ t.day_oncall_undo }}</button>
                 </div>
             {% endif %}
         </section>
@@ -890,27 +885,57 @@
 
     </div>
 
+<style>
+.day-sem-notice { background: rgba(199,199,0,0.12); border-left: 4px solid var(--sem); border-radius: 6px; padding: 0.6rem 1rem; margin-bottom: 1rem; color: var(--sem); font-weight: 500; }
+.day-shift-row { border-left: 6px solid transparent; }
+.day-nowrap { white-space: nowrap; }
+.day-edit-toggle-btn { margin-top: 1rem; }
+.day-hint-tight { margin-bottom: 0.5rem; }
+.input-readonly { opacity: 0.6; }
+.ot-form-spaced { margin-top: 1.5rem; }
+.day-summary-toggle { cursor: pointer; color: var(--muted); font-size: 0.9rem; }
+.form-row--mt { margin-top: 0.75rem; }
+.day-inline-note { color: var(--muted); font-size: 0.9em; }
+.day-table-mt { margin-top: 0.5rem; }
+.day-td-indent { padding-left: 1rem; }
+.day-td-note { padding-left: 1rem; color: var(--muted); font-size: 0.85rem; }
+.day-h-mt { margin-top: 1.5rem; }
+.pay-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+.pay-edit-num { width: 5rem; text-align: right; }
+.pay-edit-reason { max-width: 14rem; }
+.day-note-sm { color: var(--muted); font-size: 0.875rem; }
+
+/* Pay override edit toggle: CSP-safe class switch instead of inline display. */
+.pay-edit { display: none; }
+#pay-section.is-editing .pay-view { display: none; }
+#pay-section.is-editing .pay-edit { display: revert; }
+tr.pay-zero-row { display: none; }
+#pay-section.is-editing tr.pay-zero-row { display: table-row; }
+</style>
+
 <script>
+// Apply data-driven shift colours without inline style attributes (colours are
+// admin-configured in the DB, so they cannot live in static CSS).
+document.querySelectorAll('[data-shift-color]').forEach(function (el) {
+    var color = el.getAttribute('data-shift-color');
+    if (!color) return;
+    if (el.classList.contains('day-shift-row')) {
+        el.style.borderLeftColor = color;
+    } else {
+        el.style.backgroundColor = color;
+        el.style.color = el.getAttribute('data-shift-contrast') || 'var(--bg)';
+    }
+});
+
 function toggleDayEdit() {
     var panel = document.getElementById('day-edit-panel');
     var btn = document.getElementById('day-edit-btn');
-    var open = panel.style.display !== 'none';
-    panel.style.display = open ? 'none' : 'block';
-    btn.textContent = open ? '{{ t.day_edit_toggle }} ▾' : '{{ t.day_edit_close }} ▲';
+    panel.hidden = !panel.hidden;
+    btn.textContent = panel.hidden ? '{{ t.day_edit_toggle }} ▾' : '{{ t.day_edit_close }} ▲';
 }
 
 function togglePayOverrideEdit() {
-    var firstEdit = document.querySelector('.pay-edit');
-    var editing = firstEdit && getComputedStyle(firstEdit).display !== 'none';
-    document.querySelectorAll('.pay-view').forEach(function(el) {
-        el.style.display = editing ? '' : 'none';
-    });
-    document.querySelectorAll('.pay-edit').forEach(function(el) {
-        el.style.display = editing ? 'none' : '';
-    });
-    document.querySelectorAll('tr.pay-zero-row').forEach(function(el) {
-        el.style.display = editing ? 'none' : 'table-row';
-    });
+    document.getElementById('pay-section').classList.toggle('is-editing');
 }
 </script>
 

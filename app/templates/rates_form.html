@@ -3,31 +3,31 @@
 
 <!-- Rate History -->
 {% if rate_history %}
-<div class="card" style="margin-top: 16px;">
-    <h3 style="margin-top: 0;">{{ t.rates_history_title }}</h3>
+<div class="card rates-block">
+    <h3 class="form-card-title">{{ t.rates_history_title }}</h3>
 
-    <table style="width: 100%; border-collapse: collapse;">
+    <table class="rates-history-table">
         <thead>
-            <tr style="border-bottom: 1px solid var(--border);">
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_from_date }}</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_to_date }}</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_overview }}</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_status }}</th>
-                <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.rates_action }}</th>
+            <tr>
+                <th>{{ t.rates_from_date }}</th>
+                <th>{{ t.rates_to_date }}</th>
+                <th>{{ t.rates_overview }}</th>
+                <th>{{ t.rates_status }}</th>
+                <th>{{ t.rates_action }}</th>
             </tr>
         </thead>
         <tbody>
             {% for record in rate_history %}
-            <tr style="border-bottom: 1px solid var(--border);">
-                <td style="padding: 8px;">{{ record.effective_from }}</td>
-                <td style="padding: 8px;">
+            <tr>
+                <td>{{ record.effective_from }}</td>
+                <td>
                     {% if record.effective_to %}
                         {{ record.effective_to }}
                     {% else %}
-                        <span style="color: var(--muted); font-style: italic;">{{ t.rates_ongoing }}</span>
+                        <span class="rates-ongoing">{{ t.rates_ongoing }}</span>
                     {% endif %}
                 </td>
-                <td style="padding: 8px; font-size: 0.8rem; line-height: 1.6;">
+                <td class="rates-overview-cell">
                     {% set r = record.rates %}
                     {% set parts = [] %}
 
@@ -75,25 +75,25 @@
                     {% if parts %}
                         {{ parts|join('<br>')|safe }}
                     {% else %}
-                        <span style="color: var(--muted);">{{ t.rates_default }}</span>
+                        <span class="text-muted">{{ t.rates_default }}</span>
                     {% endif %}
                 </td>
-                <td style="padding: 8px;">
+                <td>
                     {% if record.status == 'current' %}
-                        <span style="color: var(--success); font-weight: 500;">{{ t.rates_current }}</span>
+                        <span class="rate-status-current">{{ t.rates_current }}</span>
                     {% elif record.status == 'future' %}
-                        <span style="color: var(--warning); font-weight: 500;">{{ t.rates_upcoming }}</span>
+                        <span class="rate-status-future">{{ t.rates_upcoming }}</span>
                     {% else %}
-                        <span style="color: var(--muted);">{{ t.rates_historical }}</span>
+                        <span class="text-muted">{{ t.rates_historical }}</span>
                     {% endif %}
                 </td>
-                <td style="padding: 8px;">
+                <td>
                     {% if rate_history | length > 1 %}
-                        <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" style="display: inline;" onsubmit="return confirm('{{ t.rates_delete_confirm }}');">
-                            <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">{{ t.rates_delete }}</button>
+                        <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.rates_delete_confirm }}');">
+                            <button type="submit" class="btn danger">{{ t.rates_delete }}</button>
                         </form>
                     {% else %}
-                        <span style="color: var(--muted); font-size: 0.875rem;">&mdash;</span>
+                        <span class="text-muted rates-sm">&mdash;</span>
                     {% endif %}
                 </td>
             </tr>
@@ -104,52 +104,51 @@
 {% endif %}
 
 <!-- Add New Rates -->
-<div class="card" style="margin-top: 16px;">
-    <h3 style="margin-top: 0;">{% if rate_history %}{{ t.rates_add_title }}{% else %}{{ t.rates_only_title }}{% endif %}</h3>
-    <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
+<div class="card rates-block">
+    <h3 class="form-card-title">{% if rate_history %}{{ t.rates_add_title }}{% else %}{{ t.rates_only_title }}{% endif %}</h3>
+    <p class="rate-intro">
         {{ t.rates_add_desc }}{% if rate_history %} {{ t.rates_add_desc_history }}{% endif %}
     </p>
 
     <form method="POST" action="{{ rates_form_action }}" class="rates-form-instance">
 
         <!-- Från datum + timlön -->
-        <div style="display: flex; gap: 24px; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap;">
+        <div class="rates-row">
             <div>
-                <label for="effective_from_rates" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.rates_from_date_label }}</label>
+                <label for="effective_from_rates" class="form-label">{{ t.rates_from_date_label }}</label>
                 <input type="date" id="effective_from_rates" name="effective_from" required
-                       style="width: 200px; box-sizing: border-box;">
+                       class="rate-input rate-input--date">
             </div>
             <div>
-                <label for="rates_base_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">
-                    {{ t.rates_base_wage_label }} <span style="font-size: 0.8rem;">{{ t.rates_base_wage_hint }}</span>
+                <label for="rates_base_wage" class="form-label">
+                    {{ t.rates_base_wage_label }} <span class="rate-hint-sm">{{ t.rates_base_wage_hint }}</span>
                 </label>
                 <input type="number" id="rates_base_wage" step="0.01" min="0" placeholder="kr/tim"
-                       class="input" style="width: 160px; box-sizing: border-box;">
+                       class="input rate-input rate-input--wage">
             </div>
         </div>
 
         <!-- OB-tillägg (kr/tim) -->
-        <h4 style="margin-bottom: 8px; margin-top: 0;">{{ t.rates_ob_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_ob_unit }}</span></h4>
-        <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
+        <h4 class="rate-section-title rate-section-title--first">{{ t.rates_ob_title }} <span class="rate-unit">{{ t.rates_ob_unit }}</span></h4>
+        <p class="rate-section-hint">
             {{ t.rates_ob_hint }}
         </p>
-        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px;">
+        <div class="rate-grid rate-grid--5">
             {% for code, divisor in rate_defaults.ob_divisors.items() %}
             <div class="rate-field">
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px;">
-                    <label style="font-size: 0.75rem; color: var(--muted);">{{ code }} <span style="font-size: 0.7rem;">(std: l&ouml;n/{{ divisor }})</span></label>
+                <div class="rate-field-head">
+                    <label class="rate-field-label">{{ code }} <span class="rate-hint-xs">(std: l&ouml;n/{{ divisor }})</span></label>
                     <button type="button" class="rate-factor-toggle" title="Ange som timl&ouml;n &times; faktor">&times;f</button>
                 </div>
                 <input type="number" step="0.01" name="rate_ob_{{ code }}" min="0"
                        value="{{ custom_rates.get('ob', {}).get(code, '') }}"
                        placeholder="kr/tim"
-                       class="rate-value-input input" style="width: 100%; box-sizing: border-box;">
-                <div class="rate-factor-row" style="display: none; margin-top: 4px;">
-                    <div style="display: flex; align-items: center; gap: 4px;">
-                        <input type="number" class="input rate-factor" placeholder="&times; faktor" step="0.01" min="0"
-                               style="flex: 1; min-width: 0;">
-                        <span style="color: var(--muted); font-size: 0.8rem;">=</span>
-                        <span class="rate-computed" style="font-size: 0.75rem; font-weight: 600; color: var(--accent); white-space: nowrap; min-width: 28px;">-</span>
+                       class="rate-value-input input rate-input--full">
+                <div class="rate-factor-row">
+                    <div class="rate-factor-inner">
+                        <input type="number" class="input rate-factor" placeholder="&times; faktor" step="0.01" min="0">
+                        <span class="rate-eq">=</span>
+                        <span class="rate-computed">-</span>
                     </div>
                 </div>
             </div>
@@ -157,48 +156,47 @@
         </div>
 
         <!-- Övertid (kr/tim) -->
-        <h4 style="margin-bottom: 8px;">{{ t.rates_ot_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_ot_unit }}</span></h4>
-        <p style="color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px;">
+        <h4 class="rate-section-title">{{ t.rates_ot_title }} <span class="rate-unit">{{ t.rates_ot_unit }}</span></h4>
+        <p class="rate-section-hint">
             {{ t.rates_ob_hint }}
         </p>
-        <div class="rate-field" style="margin-bottom: 16px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="rate-field rate-field--ot">
+            <div class="rate-ot-input-row">
                 <input type="number" step="0.01" name="rate_ot" min="0"
                        value="{{ custom_rates.get('ot', '') }}"
                        placeholder="kr/tim"
-                       class="rate-value-input input" style="width: 200px;">
+                       class="rate-value-input input rate-input--date">
                 <button type="button" class="rate-factor-toggle" title="Ange som timl&ouml;n &times; faktor">&times;f</button>
             </div>
-            <div class="rate-factor-row" style="display: none; margin-top: 6px;">
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <input type="number" class="input rate-factor" placeholder="faktor" step="0.01" min="0" style="width: 100px;">
-                    <span style="color: var(--muted);">=</span>
-                    <span class="rate-computed" style="font-weight: 600; color: var(--accent);">-</span>
-                    <span style="color: var(--muted); font-size: 0.85rem;">kr/tim</span>
+            <div class="rate-factor-row rate-factor-row--lg">
+                <div class="rate-factor-inner rate-factor-inner--lg">
+                    <input type="number" class="input rate-factor rate-factor--fixed" placeholder="faktor" step="0.01" min="0">
+                    <span class="rate-eq rate-eq--lg">=</span>
+                    <span class="rate-computed rate-computed--lg">-</span>
+                    <span class="rate-eq-unit">kr/tim</span>
                 </div>
             </div>
         </div>
 
         <!-- Beredskap (kr/tim) -->
-        <h4 style="margin-bottom: 8px;">{{ t.rates_oncall_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_ob_unit }}</span></h4>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px;">
+        <h4 class="rate-section-title">{{ t.rates_oncall_title }} <span class="rate-unit">{{ t.rates_ob_unit }}</span></h4>
+        <div class="rate-grid rate-grid--2">
             {% set oc_groups = [("OC_WEEKDAY", "Vardag" if t.html_lang == "sv" else "Weekday", 75), ("OC_WEEKEND", "Helg" if t.html_lang == "sv" else "Weekend", 97), ("OC_HOLIDAY", "Röd dag" if t.html_lang == "sv" else "Public holiday", 112), ("OC_SPECIAL", "Storhelg" if t.html_lang == "sv" else "Major holiday", 192)] %}
             {% for code, label, default in oc_groups %}
             <div class="rate-field">
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px;">
-                    <label style="font-size: 0.75rem; color: var(--muted);">{{ label }} (std: {{ default }} kr)</label>
+                <div class="rate-field-head">
+                    <label class="rate-field-label">{{ label }} (std: {{ default }} kr)</label>
                     <button type="button" class="rate-factor-toggle" title="Ange som timl&ouml;n &times; faktor">&times;f</button>
                 </div>
                 <input type="number" step="0.01" name="rate_oc_{{ code }}" min="0"
                        value="{{ custom_rates.get('oncall', {}).get(code, '') }}"
                        placeholder="{{ default }}"
-                       class="rate-value-input input" style="width: 100%; box-sizing: border-box;">
-                <div class="rate-factor-row" style="display: none; margin-top: 4px;">
-                    <div style="display: flex; align-items: center; gap: 4px;">
-                        <input type="number" class="input rate-factor" placeholder="&times; faktor" step="0.01" min="0"
-                               style="flex: 1; min-width: 0;">
-                        <span style="color: var(--muted); font-size: 0.8rem;">=</span>
-                        <span class="rate-computed" style="font-size: 0.75rem; font-weight: 600; color: var(--accent); white-space: nowrap; min-width: 28px;">-</span>
+                       class="rate-value-input input rate-input--full">
+                <div class="rate-factor-row">
+                    <div class="rate-factor-inner">
+                        <input type="number" class="input rate-factor" placeholder="&times; faktor" step="0.01" min="0">
+                        <span class="rate-eq">=</span>
+                        <span class="rate-computed">-</span>
                     </div>
                 </div>
             </div>
@@ -206,36 +204,90 @@
         </div>
 
         <!-- Semester -->
-        <h4 style="margin-bottom: 8px;">{{ t.rates_vacation_title }} <span style="color: var(--muted); font-weight: 400; font-size: 0.8rem;">{{ t.rates_vacation_unit }}</span></h4>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;">
+        <h4 class="rate-section-title">{{ t.rates_vacation_title }} <span class="rate-unit">{{ t.rates_vacation_unit }}</span></h4>
+        <div class="rate-grid rate-grid--3">
             {% set vac_fields = [("fixed_pct", "Fast del" if t.html_lang == "sv" else "Fixed part", 0.008, "0.8%"), ("variable_pct", "Rörlig del" if t.html_lang == "sv" else "Variable part", 0.005, "0.5%"), ("payout_pct", "Utbetalning" if t.html_lang == "sv" else "Payout", 0.046, "4.6%")] %}
             {% for key, label, default, pct in vac_fields %}
             <div>
-                <label style="display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px;">{{ label }} (std: {{ pct }})</label>
+                <label class="rate-vac-label">{{ label }} (std: {{ pct }})</label>
                 <input type="number" step="0.001" name="rate_vac_{{ key }}" min="0" max="1"
                        value="{{ custom_rates.get('vacation', {}).get(key, '') }}"
                        placeholder="{{ default }}"
-                       class="input" style="width: 100%; box-sizing: border-box;">
+                       class="input rate-input--full">
             </div>
             {% endfor %}
         </div>
 
         <!-- Sjukfrånvaro -->
-        <h4 style="margin-bottom: 8px;">{{ t.rates_sick_title }}</h4>
-        <div style="margin-bottom: 16px;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+        <h4 class="rate-section-title">{{ t.rates_sick_title }}</h4>
+        <div class="rate-sick-block">
+            <label class="rate-check-label">
                 <input type="checkbox" name="sick_ob_compensation"
                        {% if custom_rates.get('sick', {}).get('ob_compensation') %}checked{% endif %}>
                 <span>{{ t.rates_sick_ob_label }}</span>
             </label>
-            <p style="color: var(--muted); font-size: 0.8rem; margin: 4px 0 0 22px;">{{ t.rates_sick_ob_hint }}</p>
+            <p class="rate-check-hint">{{ t.rates_sick_ob_hint }}</p>
         </div>
 
-        <button type="submit" class="btn">{{ t.rates_save }}</button>
+        <button type="submit" class="btn btn-primary">{{ t.rates_save }}</button>
     </form>
 </div>
 
 <style>
+.rates-block { margin-top: 1rem; }
+.rates-history-table { width: 100%; border-collapse: collapse; }
+.rates-history-table thead tr,
+.rates-history-table tbody tr { border-bottom: 1px solid var(--border); }
+.rates-history-table th { text-align: left; padding: 8px; color: var(--muted); font-weight: 500; }
+.rates-history-table td { padding: 8px; }
+.rates-overview-cell { font-size: 0.8rem; line-height: 1.6; }
+.rates-ongoing { color: var(--muted); font-style: italic; }
+.rate-status-current { color: var(--success); font-weight: 500; }
+.rate-status-future { color: var(--warning); font-weight: 500; }
+.rates-sm { font-size: 0.875rem; }
+
+.rate-intro { color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem; }
+.rates-row { display: flex; gap: 1.5rem; align-items: flex-end; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.rate-input { box-sizing: border-box; }
+.rate-input--full { width: 100%; box-sizing: border-box; }
+.rate-input--date { width: 200px; box-sizing: border-box; }
+.rate-input--wage { width: 160px; box-sizing: border-box; }
+
+.rate-section-title { margin: 1rem 0 8px; }
+.rate-section-title--first { margin-top: 0; }
+.rate-section-hint { color: var(--muted); font-size: 0.8rem; margin-top: -4px; margin-bottom: 8px; }
+.rate-unit { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+.rate-hint-sm { font-size: 0.8rem; }
+.rate-hint-xs { font-size: 0.7rem; }
+
+.rate-grid { display: grid; gap: 8px; margin-bottom: 1rem; }
+.rate-grid--5 { grid-template-columns: repeat(5, 1fr); }
+.rate-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.rate-grid--2 { grid-template-columns: repeat(2, 1fr); }
+
+.rate-field-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px; }
+.rate-field-label { font-size: 0.75rem; color: var(--muted); }
+.rate-vac-label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 2px; }
+
+.rate-field--ot { margin-bottom: 1rem; }
+.rate-ot-input-row { display: flex; align-items: center; gap: 8px; }
+
+.rate-factor-row { display: none; margin-top: 4px; }
+.rate-factor-row--lg { margin-top: 6px; }
+.rate-factor-inner { display: flex; align-items: center; gap: 4px; }
+.rate-factor-inner--lg { gap: 8px; flex-wrap: wrap; }
+.rate-factor { flex: 1; min-width: 0; }
+.rate-factor--fixed { flex: none; width: 100px; }
+.rate-eq { color: var(--muted); font-size: 0.8rem; }
+.rate-eq--lg { font-size: 1rem; }
+.rate-eq-unit { color: var(--muted); font-size: 0.85rem; }
+.rate-computed { font-size: 0.75rem; font-weight: 600; color: var(--accent); white-space: nowrap; min-width: 28px; }
+.rate-computed--lg { font-size: 1rem; }
+
+.rate-sick-block { margin-bottom: 1rem; }
+.rate-check-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.rate-check-hint { color: var(--muted); font-size: 0.8rem; margin: 4px 0 0 22px; }
+
 .rate-factor-toggle {
     background: none;
     border: 1px solid var(--border);
@@ -283,10 +335,13 @@
         }
     }
 
+    function isFactorMode(factorRow) {
+        return factorRow && getComputedStyle(factorRow).display !== 'none';
+    }
+
     function updateAllActiveFields() {
         form.querySelectorAll('.rate-field').forEach(function (field) {
-            var factorRow = field.querySelector('.rate-factor-row');
-            if (factorRow && factorRow.style.display !== 'none') {
+            if (isFactorMode(field.querySelector('.rate-factor-row'))) {
                 updateComputed(field);
             }
         });
@@ -299,14 +354,14 @@
             var field = btn.closest('.rate-field');
             var factorRow = field.querySelector('.rate-factor-row');
             var valueInput = field.querySelector('.rate-value-input');
-            var inFactorMode = factorRow.style.display !== 'none';
+            var inFactorMode = isFactorMode(factorRow);
 
             if (inFactorMode) {
                 factorRow.style.display = 'none';
                 valueInput.style.display = '';
                 btn.classList.remove('active');
             } else {
-                factorRow.style.display = '';
+                factorRow.style.display = 'block';
                 valueInput.style.display = 'none';
                 btn.classList.add('active');
                 updateComputed(field);
@@ -322,8 +377,7 @@
 
     form.addEventListener('submit', function () {
         form.querySelectorAll('.rate-field').forEach(function (field) {
-            var factorRow = field.querySelector('.rate-factor-row');
-            if (factorRow && factorRow.style.display !== 'none') {
+            if (isFactorMode(field.querySelector('.rate-factor-row'))) {
                 updateComputed(field);
             }
         });

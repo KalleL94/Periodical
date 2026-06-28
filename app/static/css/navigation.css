@@ -5,6 +5,17 @@
 .nav-personal { padding-left: 0.75rem; border-left: 2px solid var(--accent); font-size: 0.85rem; }
 .nav-divider { border-left: 1px solid var(--table-border); height: 20px; margin: 0 0.5rem; }
 
+.nav-inline-form { display: inline; }
+.nav-link-button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+}
+
+
 .nav-link {
   color: var(--muted);
   padding: 6px 0.625rem;
@@ -29,21 +40,21 @@
   display: none;
   flex-direction: column;
   justify-content: space-around;
-  width: 30px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
   background: transparent;
   border: none;
   cursor: pointer;
   padding: 0;
-  z-index: 100;
+  z-index: var(--z-tooltip);
 }
 
 .hamburger span {
-  width: 30px;
+  width: 24px;
   height: 3px;
   background: var(--text);
   border-radius: 3px;
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease, opacity 0.3s ease;
   transform-origin: center;
 }
 
@@ -67,7 +78,7 @@
     border-left: 1px solid var(--table-border);
     padding: 4px;
     transition: right 0.3s ease;
-    z-index: 99;
+    z-index: var(--z-modal);
     gap: 0;
     justify-content: flex-start;
     align-items: stretch;
@@ -79,12 +90,12 @@
     width: 100%;
     padding: 0.5rem 0.75rem;
     margin: 0;
-    display: block;
+    display: flex;
+    align-items: center;
     font-size: 0.95rem;
     line-height: 1.2;
     border: none;
-    outline: none;
-    min-height: auto;
+    min-height: 44px;
     height: auto;
     flex: 0 0 auto; /* Override for small screens */
   }

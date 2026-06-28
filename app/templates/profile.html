@@ -7,72 +7,72 @@
 
 <h2 class="page-title">{{ t.profile_title }}</h2>
 
-<div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+<div class="split-cols">
 
     <!-- Profil info -->
-    <div class="col" style="min-width: 300px; flex: 1;">
+    <div class="split-col">
         <div class="card">
-            <h3 style="margin-top: 0;">{{ t.profile_personal_info }}</h3>
+            <h3 class="form-card-title">{{ t.profile_personal_info }}</h3>
 
             {% if error %}
-                <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+                <div class="alert alert--danger">
                     {{ error }}
                 </div>
             {% endif %}
 
-            <form method="POST" action="/profile">
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_username }}</label>
-                    <input type="text" value="{{ user.username }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                    <small style="color: var(--muted);">{{ t.profile_username_hint }}</small>
+            <form method="POST" action="/profile" class="form-stack">
+                <div class="form-group">
+                    <label class="form-label">{{ t.profile_username }}</label>
+                    <input type="text" value="{{ user.username }}" disabled class="form-input">
+                    <small class="form-hint">{{ t.profile_username_hint }}</small>
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_name }}</label>
-                    <input type="text" id="name" name="name" value="{{ user.name }}" required style="width: 100%; box-sizing: border-box;">
+                <div class="form-group">
+                    <label for="name" class="form-label">{{ t.profile_name }}</label>
+                    <input type="text" id="name" name="name" value="{{ user.name }}" required class="form-input">
                 </div>
 
-                <div style="margin-bottom: 16px;">
+                <div class="form-group">
                     {% set wage_unit = t.admin_wage_unit_hourly if user.wage_type and user.wage_type.value == 'hourly' else t.admin_wage_unit_monthly %}
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_current_wage }}</label>
-                    <input type="text" value="{{ '{:,}'.format(user.wage).replace(',', ' ') }} {{ wage_unit }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                    <small style="color: var(--muted);">{{ t.profile_wage_hint }}</small>
+                    <label class="form-label">{{ t.profile_current_wage }}</label>
+                    <input type="text" value="{{ '{:,}'.format(user.wage).replace(',', ' ') }} {{ wage_unit }}" disabled class="form-input">
+                    <small class="form-hint">{{ t.profile_wage_hint }}</small>
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_tax_table }} ({{ user.tax_table }})</label>
-                    <select id="tax_table" name="tax_table" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);">
+                <div class="form-group">
+                    <label for="tax_table" class="form-label">{{ t.profile_tax_table }} ({{ user.tax_table }})</label>
+                    <select id="tax_table" name="tax_table" class="form-input">
                         {% for table in available_tax_tables %}
                         <option value="{{ table }}" {% if user.tax_table == table %}selected{% endif %}>Tabell {{ table }}</option>
                         {% endfor %}
                     </select>
-                    <small style="color: var(--muted);">{{ t.profile_tax_hint }}</small>
+                    <small class="form-hint">{{ t.profile_tax_hint }}</small>
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_role }}</label>
-                    <input type="text" value="{{ user.role.value }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
+                <div class="form-group">
+                    <label class="form-label">{{ t.profile_role }}</label>
+                    <input type="text" value="{{ user.role.value }}" disabled class="form-input">
                 </div>
 
-                <button type="submit" class="btn">{{ t.profile_save }}</button>
+                <button type="submit" class="btn btn-primary">{{ t.profile_save }}</button>
             </form>
         </div>
     </div>
 
     <!-- Byt lösenord -->
-    <div class="col" style="min-width: 300px; flex: 1;">
+    <div class="split-col">
         <div class="card">
-            <h3 style="margin-top: 0;">{{ t.profile_change_password }}</h3>
+            <h3 class="form-card-title">{{ t.profile_change_password }}</h3>
 
-            <form method="POST" action="/profile/password">
-                <div style="margin-bottom: 16px;">
-                    <label for="current_password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_current_pw }}</label>
-                    <input type="password" id="current_password" name="current_password" required style="width: 100%; box-sizing: border-box;">
+            <form method="POST" action="/profile/password" class="form-stack">
+                <div class="form-group">
+                    <label for="current_password" class="form-label">{{ t.profile_current_pw }}</label>
+                    <input type="password" id="current_password" name="current_password" required class="form-input">
                 </div>
 
-                <div style="margin-bottom: 24px;">
-                    <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_new_pw }}</label>
-                    <input type="password" id="new_password" name="new_password" required minlength="6" style="width: 100%; box-sizing: border-box;">
+                <div class="form-group">
+                    <label for="new_password" class="form-label">{{ t.profile_new_pw }}</label>
+                    <input type="password" id="new_password" name="new_password" required minlength="6" class="form-input">
                 </div>
 
                 <button type="submit" class="btn secondary">{{ t.profile_change_pw_button }}</button>
@@ -80,20 +80,20 @@
         </div>
 
         <!-- Semester länk -->
-        <div class="card" style="margin-top: 16px;">
-            <h3 style="margin-top: 0;">{{ t.profile_vacation_title }}</h3>
-            <p style="color: var(--muted);">{{ t.profile_vacation_desc }}</p>
-            <a href="/profile/vacation" class="btn">{{ t.profile_vacation_link }}</a>
+        <div class="card card-mt">
+            <h3 class="form-card-title">{{ t.profile_vacation_title }}</h3>
+            <p class="text-muted">{{ t.profile_vacation_desc }}</p>
+            <a href="/profile/vacation" class="btn btn-primary">{{ t.profile_vacation_link }}</a>
         </div>
 
         <!-- Övertag länk -->
-        <div class="card" style="margin-top: 16px;">
-            <h3 style="margin-top: 0;">{{ t.profile_transition_title }}</h3>
-            <p style="color: var(--muted);">{{ t.profile_transition_desc }}</p>
+        <div class="card card-mt">
+            <h3 class="form-card-title">{{ t.profile_transition_title }}</h3>
+            <p class="text-muted">{{ t.profile_transition_desc }}</p>
             {% if user.employment_transition %}
-            <span class="badge" style="margin-bottom: 0.75rem; display: inline-block;">{{ t.profile_transition_configured }}</span><br>
+            <span class="badge profile-transition-badge">{{ t.profile_transition_configured }}</span><br>
             {% endif %}
-            <a href="/profile/transition" class="btn">{{ t.profile_transition_edit if user.employment_transition else t.profile_transition_configure }}</a>
+            <a href="/profile/transition" class="btn btn-primary">{{ t.profile_transition_edit if user.employment_transition else t.profile_transition_configure }}</a>
         </div>
 
     </div>
@@ -101,47 +101,47 @@
 </div>
 
     <!-- Lönehistorik -->
-    <section style="margin-top: 32px;">
+    <section class="section-mt">
         <h2>{{ t.profile_wage_history }}</h2>
 
         {% if wage_history %}
             <div class="card">
-                <table style="width: 100%; border-collapse: collapse;">
+                <table class="history-table">
                     <thead>
-                        <tr style="border-bottom: 1px solid var(--border);">
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_wage_col }}</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_from_date }}</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_to_date }}</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_status }}</th>
-                            <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_action }}</th>
+                        <tr>
+                            <th>{{ t.profile_wage_col }}</th>
+                            <th>{{ t.profile_from_date }}</th>
+                            <th>{{ t.profile_to_date }}</th>
+                            <th>{{ t.profile_status }}</th>
+                            <th>{{ t.profile_action }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for record in wage_history %}
-                        <tr style="border-bottom: 1px solid var(--border);">
-                            <td style="padding: 8px; font-weight: 500;">{{ "{:,}".format(record.wage).replace(',', ' ') }} {{ wage_unit }}</td>
-                            <td style="padding: 8px;">{{ record.effective_from }}</td>
-                            <td style="padding: 8px;">
+                        <tr>
+                            <td class="cell-strong">{{ "{:,}".format(record.wage).replace(',', ' ') }} {{ wage_unit }}</td>
+                            <td>{{ record.effective_from }}</td>
+                            <td>
                                 {% if record.effective_to %}
                                     {{ record.effective_to }}
                                 {% else %}
-                                    <span style="color: var(--muted); font-style: italic;">{{ t.profile_ongoing }}</span>
+                                    <span class="text-italic-muted">{{ t.profile_ongoing }}</span>
                                 {% endif %}
                             </td>
-                            <td style="padding: 8px;">
+                            <td>
                                 {% if record.is_current %}
-                                    <span style="color: var(--success); font-weight: 500;">{{ t.profile_current }}</span>
+                                    <span class="status-pos">{{ t.profile_current }}</span>
                                 {% else %}
-                                    <span style="color: var(--muted);">{{ t.profile_historical }}</span>
+                                    <span class="text-muted">{{ t.profile_historical }}</span>
                                 {% endif %}
                             </td>
-                            <td style="padding: 8px;">
+                            <td>
                                 {% if wage_history | length > 1 %}
-                                    <form method="POST" action="/profile/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('{{ t.profile_delete_wage_confirm }}');">
-                                        <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">{{ t.profile_delete }}</button>
+                                    <form method="POST" action="/profile/delete-wage/{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.profile_delete_wage_confirm }}');">
+                                        <button type="submit" class="btn danger">{{ t.profile_delete }}</button>
                                     </form>
                                 {% else %}
-                                    <span style="color: var(--muted); font-size: 0.875rem;">-</span>
+                                    <span class="text-muted rates-sm">-</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -151,28 +151,28 @@
             </div>
         {% else %}
             <div class="card">
-                <p style="color: var(--muted);">{{ t.profile_no_wage_history }}</p>
+                <p class="text-muted">{{ t.profile_no_wage_history }}</p>
             </div>
         {% endif %}
 
         <!-- Add New Wage -->
-        <div class="card" style="margin-top: 16px;">
-            <h3 style="margin-top: 0;">{{ t.profile_add_wage_title }}</h3>
-            <p style="color: var(--muted); margin-bottom: 16px;">
+        <div class="card card-mt">
+            <h3 class="form-card-title">{{ t.profile_add_wage_title }}</h3>
+            <p class="text-muted profile-add-desc">
                 {{ t.profile_add_wage_desc }}
             </p>
 
             <form method="POST" action="/profile/add-wage" id="profile-add-wage-form">
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_wage_type_label }}</label>
-                    <div style="display: flex; gap: 1.5rem;">
-                        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                <div class="form-group profile-field-block">
+                    <label class="form-label">{{ t.admin_wage_type_label }}</label>
+                    <div class="form-options">
+                        <label class="form-option">
                             <input type="radio" name="wage_type" value="monthly"
                                 {% if not user.wage_type or user.wage_type.value == 'monthly' %}checked{% endif %}
                                 onchange="updateProfileWageUnit(this.value)">
                             {{ t.admin_wage_type_monthly }}
                         </label>
-                        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <label class="form-option">
                             <input type="radio" name="wage_type" value="hourly"
                                 {% if user.wage_type and user.wage_type.value == 'hourly' %}checked{% endif %}
                                 onchange="updateProfileWageUnit(this.value)">
@@ -181,9 +181,9 @@
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                <div class="profile-wage-grid">
                     <div>
-                        <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_new_wage }} (<span id="profile-wage-unit">{{ wage_unit }}</span>)</label>
+                        <label for="new_wage" class="form-label">{{ t.profile_new_wage }} (<span id="profile-wage-unit">{{ wage_unit }}</span>)</label>
                         <input
                             type="number"
                             id="new_wage"
@@ -192,23 +192,23 @@
                             min="0"
                             step="1"
                             placeholder="{{ '300' if user.wage_type and user.wage_type.value == 'hourly' else '35000' }}"
-                            style="width: 100%; box-sizing: border-box;"
+                            class="form-input"
                         >
                     </div>
 
                     <div>
-                        <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_from_date }}</label>
+                        <label for="effective_from" class="form-label">{{ t.profile_from_date }}</label>
                         <input
                             type="date"
                             id="effective_from"
                             name="effective_from"
                             required
-                            style="width: 100%; box-sizing: border-box;"
+                            class="form-input"
                         >
                     </div>
                 </div>
 
-                <button type="submit" class="btn">{{ t.profile_add_wage_button }}</button>
+                <button type="submit" class="btn btn-primary">{{ t.profile_add_wage_button }}</button>
             </form>
             <script>
             function updateProfileWageUnit(type) {
@@ -223,21 +223,20 @@
     </section>
 
     <!-- API-nyckel -->
-    <section style="margin-top: 32px;">
+    <section class="section-mt">
         <h2>{{ t.profile_api_key_title }}</h2>
         <div class="card">
-            <p style="color: var(--muted); margin-top: 0;">{{ t.profile_api_key_desc }}</p>
+            <p class="text-muted form-card-title">{{ t.profile_api_key_desc }}</p>
 
             {% if api_key_plain %}
-                <input type="text" value="{{ api_key_plain }}" readonly
-                       style="width: 100%; box-sizing: border-box; font-family: monospace; margin-bottom: 12px;">
+                <input type="text" value="{{ api_key_plain }}" readonly class="profile-api-input">
             {% elif user.api_key %}
-                <p style="color: var(--muted);">{{ t.profile_api_key_configured }}</p>
+                <p class="text-muted">{{ t.profile_api_key_configured }}</p>
             {% else %}
-                <p style="color: var(--muted);">{{ t.profile_api_key_none }}</p>
+                <p class="text-muted">{{ t.profile_api_key_none }}</p>
             {% endif %}
 
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center;">
+            <div class="profile-actions">
                 <form method="POST" action="/profile/api-key/generate">
                     <button type="submit" class="btn btn-primary">{{ t.profile_api_key_generate }}</button>
                 </form>
@@ -270,5 +269,17 @@
     {% set rates_form_action = "/profile/rates" %}
     {% set rates_delete_prefix = "/profile/delete-rate/" %}
     {% include "rates_form.html" with context %}
+
+<style>
+.profile-transition-badge { margin-bottom: 0.75rem; display: inline-block; }
+.profile-add-desc { margin-bottom: 1rem; }
+.profile-field-block { margin-bottom: 1rem; }
+.profile-wage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+.profile-api-input { width: 100%; box-sizing: border-box; font-family: var(--font-mono); margin-bottom: 0.75rem; }
+.profile-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; align-items: center; }
+@media (max-width: 520px) {
+    .profile-wage-grid { grid-template-columns: 1fr; }
+}
+</style>
 
 {% endblock %}

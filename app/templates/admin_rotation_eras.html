@@ -7,12 +7,12 @@
 
 <h2 class="page-title">{{ t.admin_eras_title }}</h2>
 
-<div class="card" style="margin-bottom: 24px; background-color: #e8f4fd; border-left: 4px solid #2196F3;">
-    <h3 style="margin-top: 0; color: #1976D2;">ℹ️ {{ t.admin_eras_about_title }}</h3>
-    <p style="color: #424242; line-height: 1.6;">
+<div class="alert alert--info">
+    <h3>{{ t.admin_eras_about_title }}</h3>
+    <p>
         <strong>{{ t.admin_eras_about_title }}</strong> {{ t.admin_eras_about_p }}
     </p>
-    <ul style="color: #424242; line-height: 1.6; margin-bottom: 0;">
+    <ul>
         <li>{{ t.admin_eras_about_li1 }}</li>
         <li>{{ t.admin_eras_about_li2 }}</li>
         <li>{{ t.admin_eras_about_li3 }}</li>
@@ -20,12 +20,12 @@
 </div>
 
 {% if error %}
-<div class="card" style="margin-bottom: 24px; background-color: #ffebee; border-left: 4px solid var(--danger);">
-    <p style="color: #c62828; margin: 0;"><strong>{{ t.admin_eras_error_label }}</strong> {{ error }}</p>
+<div class="alert alert--danger">
+    <p><strong>{{ t.admin_eras_error_label }}</strong> {{ error }}</p>
 </div>
 {% endif %}
 
-<div class="card" style="margin-bottom: 24px;">
+<div class="card admin-table-card">
     <h3>{{ t.admin_eras_current_historical }}</h3>
 
     {% if eras %}
@@ -48,21 +48,21 @@
                     {% if era.end_date %}
                         {{ era.end_date }}
                     {% else %}
-                        <span style="color: var(--success); font-weight: 600;">{{ t.admin_eras_ongoing }}</span>
+                        <span class="status-ongoing">{{ t.admin_eras_ongoing }}</span>
                     {% endif %}
                 </td>
                 <td class="num" data-label="{{ t.admin_eras_col_length }}">{{ era.rotation_length }} {{ t.admin_eras_weeks }}</td>
                 <td data-label="{{ t.admin_eras_col_status }}">
                     {% if era.start_date > now %}
-                        <span style="color: #1976D2; font-weight: 600;">⏵ {{ t.admin_eras_future }}</span>
+                        <span class="status-future">{{ t.admin_eras_future }}</span>
                     {% elif era.end_date and era.end_date <= now %}
-                        <span style="color: var(--muted);">{{ t.admin_eras_historical }}</span>
+                        <span class="status-historical">{{ t.admin_eras_historical }}</span>
                     {% else %}
-                        <span style="color: var(--success); font-weight: 600;">{{ t.admin_eras_current }}</span>
+                        <span class="status-current">{{ t.admin_eras_current }}</span>
                     {% endif %}
                 </td>
                 <td data-label="{{ t.admin_eras_col_created }}">
-                    <small style="color: var(--muted);">{{ era.created_at | date_format }} {{ era.created_at | time_format }}</small>
+                    <small class="text-muted">{{ era.created_at | date_format }} {{ era.created_at | time_format }}</small>
                 </td>
                 <td data-label="{{ t.admin_eras_col_actions }}">
                     {% set era_json = {
@@ -73,116 +73,113 @@
                         "weeks_pattern": era.weeks_pattern,
                         "created_at": era.created_at | string
                     } %}
-                    <button type="button"
-                            onclick="showEraJson(this)"
-                            data-era="{{ era_json | tojson | forceescape }}"
-                            style="background: none; border: none; color: var(--primary); cursor: pointer; padding: 4px 8px; font-size: 0.9rem; text-decoration: underline; margin-right: 8px;">
-                        { } JSON
-                    </button>
-                    <form method="POST" action="/admin/rotation-eras/delete/{{ era.id }}"
-                          style="display: inline;"
-                          onsubmit="return confirm('{{ t.admin_eras_delete_confirm }}');">
-                        <button type="submit"
-                                style="background: none; border: none; color: #d32f2f; cursor: pointer; padding: 4px 8px; font-size: 0.9rem; text-decoration: underline;">
-                            🗑️ {{ t.admin_eras_delete }}
+                    <div class="admin-inline-actions">
+                        <button type="button"
+                                class="link-button"
+                                onclick="showEraJson(this)"
+                                data-era="{{ era_json | tojson | forceescape }}">
+                            { } JSON
                         </button>
-                    </form>
-                    {% if era.start_date > now %}
-                    <button type="button"
-                            onclick="showEditEra(this)"
-                            data-era="{{ era_json | tojson | forceescape }}"
-                            style="background: none; border: none; color: var(--accent, #f0a500); cursor: pointer; padding: 4px 8px; font-size: 0.9rem; text-decoration: underline; margin-left: 8px;">
-                        ✏️ {{ t.admin_eras_edit }}
-                    </button>
-                    {% endif %}
+                        <form method="POST" action="/admin/rotation-eras/delete/{{ era.id }}"
+                              onsubmit="return confirm('{{ t.admin_eras_delete_confirm }}');">
+                            <button type="submit" class="link-button link-button--danger">
+                                {{ t.admin_eras_delete }}
+                            </button>
+                        </form>
+                        {% if era.start_date > now %}
+                        <button type="button"
+                                class="link-button"
+                                onclick="showEditEra(this)"
+                                data-era="{{ era_json | tojson | forceescape }}">
+                            {{ t.admin_eras_edit }}
+                        </button>
+                        {% endif %}
+                    </div>
                 </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     {% else %}
-    <p style="color: var(--muted); text-align: center; padding: 20px;">
+    <p class="empty-state-text">
         {{ t.admin_eras_no_eras }}
     </p>
     {% endif %}
 </div>
 
-<div class="card">
-    <h3>{{ t.admin_eras_create_title }}</h3>
-    <p style="color: var(--muted); margin-bottom: 16px;">
+<div class="card admin-era-form">
+    <h3 class="form-card-title">{{ t.admin_eras_create_title }}</h3>
+    <p class="vacation-copy">
         {{ t.admin_eras_create_desc }}
     </p>
 
-    <form method="POST" action="/admin/rotation-eras/create" id="create-era-form">
-        <table style="width: auto;">
-            <tbody>
-                <tr>
-                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">{{ t.admin_eras_field_start }}</td>
-                    <td>
-                        <input
-                            type="date"
-                            name="start_date"
-                            required
-                            style="width: 200px;"
-                        />
-                        <small style="color: var(--muted); display: block; margin-top: 4px;">
-                            {{ t.admin_eras_field_start_hint }}
-                        </small>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px;">{{ t.admin_eras_field_length }}</td>
-                    <td>
-                        <input
-                            type="number"
-                            name="rotation_length"
-                            id="rotation_length"
-                            min="1"
-                            max="52"
-                            value="11"
-                            required
-                            style="width: 100px;"
-                            onchange="updateWeeksPattern()"
-                        /> {{ t.admin_eras_weeks }}
-                        <small style="color: var(--muted); display: block; margin-top: 4px;">
-                            {{ t.admin_eras_field_length_hint }}
-                        </small>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="font-weight: 600; color: var(--muted); padding-right: 16px; vertical-align: top;">{{ t.admin_eras_field_pattern }}</td>
-                    <td>
-                        <div style="margin-bottom: 8px;">
-                            <label style="display: inline-flex; align-items: center; margin-right: 16px;">
-                                <input type="radio" name="pattern_option" value="copy_current" checked onchange="updateWeeksPattern()" style="margin-right: 6px;">
-                                {{ t.admin_eras_pattern_copy }}
-                            </label>
-                            <label style="display: inline-flex; align-items: center;">
-                                <input type="radio" name="pattern_option" value="custom" onchange="updateWeeksPattern()" style="margin-right: 6px;">
-                                {{ t.admin_eras_pattern_custom }}
-                            </label>
-                        </div>
-                        <textarea
-                            name="weeks_pattern"
-                            id="weeks_pattern"
-                            rows="8"
-                            required
-                            style="width: 100%; max-width: 600px; font-family: monospace; font-size: 0.9rem;"
-                            placeholder='{"1": ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"], ...}'
-                        ></textarea>
-                        <small style="color: var(--muted); display: block; margin-top: 4px;">
-                            {{ t.admin_eras_pattern_hint.replace('{n}', rotation_length | string) }}
-                        </small>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+    <form method="POST" action="/admin/rotation-eras/create" id="create-era-form" class="form-stack">
+        <div class="form-group">
+            <label for="era-start-date" class="form-label">{{ t.admin_eras_field_start }}</label>
+            <input
+                type="date"
+                id="era-start-date"
+                name="start_date"
+                required
+                class="form-input form-input--md"
+                aria-describedby="era-start-date-hint"
+            />
+            <small id="era-start-date-hint" class="form-hint">
+                {{ t.admin_eras_field_start_hint }}
+            </small>
+        </div>
 
-        <div style="margin-top: 24px;">
-            <button type="submit" class="btn" style="padding: 10px 24px;">
+        <div class="form-group">
+            <label for="rotation_length" class="form-label">{{ t.admin_eras_field_length }}</label>
+            <input
+                type="number"
+                name="rotation_length"
+                id="rotation_length"
+                min="1"
+                max="52"
+                value="11"
+                required
+                class="form-input form-input--sm"
+                onchange="updateWeeksPattern()"
+                aria-describedby="rotation-length-hint"
+            />
+            <span class="form-hint">{{ t.admin_eras_weeks }}</span>
+            <small id="rotation-length-hint" class="form-hint">
+                {{ t.admin_eras_field_length_hint }}
+            </small>
+        </div>
+
+        <fieldset class="form-group">
+            <legend class="form-label">{{ t.admin_eras_field_pattern }}</legend>
+            <div class="form-options">
+                <label class="form-option">
+                    <input type="radio" name="pattern_option" value="copy_current" checked onchange="updateWeeksPattern()">
+                    {{ t.admin_eras_pattern_copy }}
+                </label>
+                <label class="form-option">
+                    <input type="radio" name="pattern_option" value="custom" onchange="updateWeeksPattern()">
+                    {{ t.admin_eras_pattern_custom }}
+                </label>
+            </div>
+            <textarea
+                name="weeks_pattern"
+                id="weeks_pattern"
+                rows="8"
+                required
+                class="pattern-textarea"
+                aria-describedby="weeks-pattern-hint"
+                placeholder='{"1": ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"], ...}'
+            ></textarea>
+            <small id="weeks-pattern-hint" class="form-hint">
+                {{ t.admin_eras_pattern_hint.replace('{n}', rotation_length | string) }}
+            </small>
+        </fieldset>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
                 {{ t.admin_eras_create_button }}
             </button>
-            <a href="/admin/settings" class="btn secondary" style="margin-left: 12px;">
+            <a href="/admin/settings" class="btn secondary">
                 {{ t.admin_eras_back_settings }}
             </a>
         </div>
@@ -230,10 +227,10 @@ function updateWeeksPattern() {
 
         textarea.value = formatWeeksPattern(pattern);
         textarea.readOnly = true;
-        textarea.style.backgroundColor = '#f5f5f5';
+        textarea.classList.add('is-readonly-preview');
     } else {
         textarea.readOnly = false;
-        textarea.style.backgroundColor = 'white';
+        textarea.classList.remove('is-readonly-preview');
         if (textarea.value === '' || textarea.value === '{}') {
             // Provide a template
             const pattern = {};
@@ -250,90 +247,129 @@ document.addEventListener('DOMContentLoaded', function() {
     updateWeeksPattern();
 });
 
+let activeDialogTrigger = null;
+
+function getDialogControls(dialog) {
+    return Array.from(dialog.querySelectorAll('input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])'))
+        .filter(el => !el.disabled && el.offsetParent !== null);
+}
+
+function focusFirstDialogControl(dialog) {
+    const target = getDialogControls(dialog)[0];
+    (target || dialog).focus();
+}
+
+function openDialog(dialog, trigger) {
+    activeDialogTrigger = trigger || document.activeElement;
+    dialog.setAttribute('aria-hidden', 'false');
+    focusFirstDialogControl(dialog);
+}
+
+function closeDialog(dialog) {
+    if (!dialog || dialog.getAttribute('aria-hidden') === 'true') return;
+    dialog.setAttribute('aria-hidden', 'true');
+    if (activeDialogTrigger && typeof activeDialogTrigger.focus === 'function') {
+        activeDialogTrigger.focus();
+    }
+    activeDialogTrigger = null;
+}
+
 function showEraJson(btn) {
     const era = JSON.parse(btn.getAttribute('data-era'));
+    const dialog = document.getElementById('era-json-modal');
     document.getElementById('era-json-content').textContent = JSON.stringify(era, null, 2);
-    document.getElementById('era-json-modal').style.display = 'flex';
+    openDialog(dialog, btn);
 }
 
 function closeEraJson() {
-    document.getElementById('era-json-modal').style.display = 'none';
+    closeDialog(document.getElementById('era-json-modal'));
 }
 
 function showEditEra(btn) {
     const era = JSON.parse(btn.getAttribute('data-era'));
+    const dialog = document.getElementById('edit-era-modal');
     document.getElementById('edit-era-id').value = era.id;
     document.getElementById('edit-era-form').action = '/admin/rotation-eras/edit/' + era.id;
     document.getElementById('edit-era-start-date').value = era.start_date;
     document.getElementById('edit-era-rotation-length').textContent = era.rotation_length + ' veckor';
     document.getElementById('edit-era-pattern').value = formatWeeksPattern(era.weeks_pattern);
-    document.getElementById('edit-era-modal').style.display = 'flex';
+    openDialog(dialog, btn);
 }
 
 function closeEditEra() {
-    document.getElementById('edit-era-modal').style.display = 'none';
+    closeDialog(document.getElementById('edit-era-modal'));
 }
 
 document.addEventListener('keydown', function(e) {
+    const openDialogEl = document.querySelector('[role="dialog"][aria-hidden="false"]');
     if (e.key === 'Escape') { closeEraJson(); closeEditEra(); }
+    if (e.key !== 'Tab' || !openDialogEl) return;
+
+    const controls = getDialogControls(openDialogEl);
+    if (!controls.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+    }
 });
 </script>
 
 <div id="edit-era-modal"
-     style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; align-items: center; justify-content: center;"
+     class="dialog-backdrop"
+     role="dialog"
+     aria-modal="true"
+     aria-hidden="true"
+     aria-labelledby="edit-era-title"
+     tabindex="-1"
      onclick="if(event.target===this) closeEditEra()">
-    <div style="background: var(--card-bg, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; padding: 24px; max-width: 680px; width: 90%; max-height: 85vh; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <strong>{{ t.admin_eras_edit_title }}</strong>
-            <button type="button" onclick="closeEditEra()"
-                    style="background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; padding: 0 4px; line-height: 1;">&times;</button>
+    <div class="dialog-surface">
+        <div class="dialog-header">
+            <strong id="edit-era-title">{{ t.admin_eras_edit_title }}</strong>
+            <button type="button" class="dialog-close" onclick="closeEditEra()" aria-label="{{ t.admin_eras_edit_cancel }}">&times;</button>
         </div>
-        <form id="edit-era-form" method="POST" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+        <form id="edit-era-form" method="POST" class="dialog-form">
             <input type="hidden" id="edit-era-id" name="era_id">
-            <table style="width: auto; margin-bottom: 16px;">
-                <tbody>
-                    <tr>
-                        <td style="font-weight: 600; color: var(--muted); padding-right: 16px; white-space: nowrap;">{{ t.admin_eras_field_start }}</td>
-                        <td>
-                            <input type="date" id="edit-era-start-date" name="start_date" required style="width: 200px;">
-                            <small style="color: var(--muted); display: block; margin-top: 4px;">{{ t.admin_eras_edit_start_hint }}</small>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="font-weight: 600; color: var(--muted); padding-right: 16px; white-space: nowrap;">{{ t.admin_eras_col_length }}</td>
-                        <td>
-                            <span id="edit-era-rotation-length" style="color: var(--muted);"></span>
-                            <small style="color: var(--muted); display: block; margin-top: 4px;">{{ t.admin_eras_edit_length_hint }}</small>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="font-weight: 600; color: var(--muted); padding-right: 16px; vertical-align: top; padding-top: 8px; white-space: nowrap;">{{ t.admin_eras_field_pattern }}</td>
-                        <td>
-                            <textarea id="edit-era-pattern" name="weeks_pattern" rows="10" required
-                                      style="width: 100%; max-width: 520px; font-family: monospace; font-size: 0.85rem;"></textarea>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            <div style="margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border, #333); display: flex; gap: 12px;">
-                <button type="submit" class="btn" style="padding: 8px 20px;">{{ t.admin_eras_edit_save }}</button>
-                <button type="button" onclick="closeEditEra()" class="btn secondary" style="padding: 8px 20px;">{{ t.admin_eras_edit_cancel }}</button>
+            <div class="dialog-form-grid">
+                <label for="edit-era-start-date" class="form-label">{{ t.admin_eras_field_start }}</label>
+                <div>
+                    <input type="date" id="edit-era-start-date" name="start_date" required class="form-input form-input--md">
+                    <small class="form-hint">{{ t.admin_eras_edit_start_hint }}</small>
+                </div>
+                <span class="form-label">{{ t.admin_eras_col_length }}</span>
+                <div>
+                    <span id="edit-era-rotation-length" class="form-hint"></span>
+                    <small class="form-hint">{{ t.admin_eras_edit_length_hint }}</small>
+                </div>
+                <label for="edit-era-pattern" class="form-label">{{ t.admin_eras_field_pattern }}</label>
+                <textarea id="edit-era-pattern" name="weeks_pattern" rows="10" required class="pattern-textarea"></textarea>
+            </div>
+            <div class="dialog-actions">
+                <button type="submit" class="btn btn-primary">{{ t.admin_eras_edit_save }}</button>
+                <button type="button" onclick="closeEditEra()" class="btn secondary">{{ t.admin_eras_edit_cancel }}</button>
             </div>
         </form>
     </div>
 </div>
 
 <div id="era-json-modal"
-     style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; align-items: center; justify-content: center;"
+     class="dialog-backdrop"
+     role="dialog"
+     aria-modal="true"
+     aria-hidden="true"
+     aria-labelledby="era-json-title"
+     tabindex="-1"
      onclick="if(event.target===this) closeEraJson()">
-    <div style="background: var(--card-bg, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <strong>Era JSON</strong>
-            <button type="button" onclick="closeEraJson()"
-                    style="background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; padding: 0 4px; line-height: 1;">&times;</button>
+    <div class="dialog-surface">
+        <div class="dialog-header">
+            <strong id="era-json-title">Era JSON</strong>
+            <button type="button" class="dialog-close" onclick="closeEraJson()" aria-label="{{ t.admin_eras_edit_cancel }}">&times;</button>
         </div>
-        <pre id="era-json-content"
-             style="margin: 0; overflow: auto; font-family: monospace; font-size: 0.85rem; white-space: pre; background: var(--bg, #121212); padding: 16px; border-radius: 4px; flex: 1;"></pre>
+        <pre id="era-json-content" class="dialog-code"></pre>
     </div>
 </div>
 

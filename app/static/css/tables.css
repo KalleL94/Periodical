@@ -38,8 +38,8 @@ td.num, th.num { font-family: var(--font-mono); }
 /* Sticky tables */
 .table-sticky { border-collapse: separate; border-spacing: 0; }
 /* The header row is a structural rail: a stronger hairline anchors it. */
-.table-sticky thead th { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 2px solid var(--line-strong); }
-.table-sticky .sticky-col { position: sticky; left: 0; z-index: 4; background: var(--panel); border-right: 2px solid var(--line-strong); }
+.table-sticky thead th { position: sticky; top: 0; z-index: var(--z-sticky); background: var(--panel); border-bottom: 2px solid var(--line-strong); }
+.table-sticky .sticky-col { position: sticky; left: 0; z-index: var(--z-sticky); background: var(--panel); border-right: 2px solid var(--line-strong); }
 
 /* "Now" line: in the day-per-row matrices (month/year), today reads as a
    horizontal teal rule running across the whole board. */

@@ -8,7 +8,7 @@
 <div class="page-header">
     <div class="page-header-left">
         <a href="/profile/vacation?year={{ year - 1 }}" class="btn secondary">{{ year - 1 }}</a>
-        <span style="padding: 8px 16px; font-weight: 600;">{{ year }}</span>
+        <span class="vacation-year-label">{{ year }}</span>
         <a href="/profile/vacation?year={{ year + 1 }}" class="btn secondary">{{ year + 1 }}</a>
     </div>
     <div class="page-header-right">
@@ -18,88 +18,70 @@
 
 <h2 class="page-title">{{ t.profile_vacation_title }} {{ year }} - {{ user.name }}</h2>
 
-<div class="row" style="gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+<div class="vacation-layout">
 
     <!-- Left column: week grid + day-level -->
-    <div class="col" style="min-width: 400px; flex: 2;">
+    <div class="vacation-main">
 
         <!-- Week Selection -->
-        <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">{{ t.vacation_choose_weeks }}</h3>
-            <p style="color: var(--muted); margin-bottom: 16px;">{{ t.vacation_choose_weeks_hint }}</p>
+        <div class="card vacation-section">
+            <h3 class="vacation-section-title">{{ t.vacation_choose_weeks }}</h3>
+            <p class="vacation-copy">{{ t.vacation_choose_weeks_hint }}</p>
 
             <form method="POST" action="/profile/vacation" id="vacation-form">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="weeks-input" value="{{ vacation_weeks | join(',') }}">
 
-                <div class="week-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px; margin-bottom: 24px;">
+                <div class="vacation-week-grid">
                     {% for week in range(1, 53) %}
                         <button
                             type="button"
-                            class="week-btn {% if week in vacation_weeks %}selected{% endif %}"
+                            class="week-btn vacation-week-btn {% if week in vacation_weeks %}selected{% endif %}"
                             data-week="{{ week }}"
-                            style="
-                                padding: 12px 8px;
-                                border-radius: var(--radius);
-                                border: 1px solid var(--table-border);
-                                background: {% if week in vacation_weeks %}var(--accent){% else %}var(--panel){% endif %};
-                                color: {% if week in vacation_weeks %}var(--bg){% else %}var(--text){% endif %};
-                                cursor: pointer;
-                                font-weight: {% if week in vacation_weeks %}600{% else %}400{% endif %};
-                                transition: all 0.15s;
-                            "
+                            aria-pressed="{% if week in vacation_weeks %}true{% else %}false{% endif %}"
                         >
                             v{{ week }}
                         </button>
                     {% endfor %}
                 </div>
 
-                <button type="submit" class="btn">{{ t.vacation_save }}</button>
+                <button type="submit" class="btn btn-primary">{{ t.vacation_save }}</button>
             </form>
 
-            <hr style="border: none; border-top: 1px solid var(--table-border); margin: 20px 0;">
+            <hr class="vacation-divider">
 
-            <h4 style="margin: 0 0 8px 0; color: var(--blue);">{{ t.vacation_parental_weeks }}</h4>
-            <p style="color: var(--muted); margin-bottom: 16px; font-size: 0.875rem;">{{ t.vacation_parental_weeks_hint }}</p>
+            <h4 class="vacation-subtitle">{{ t.vacation_parental_weeks }}</h4>
+            <p class="vacation-copy">{{ t.vacation_parental_weeks_hint }}</p>
 
             <form method="POST" action="/profile/vacation/parental/weeks" id="parental-form">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="parental-weeks-input" value="{{ parental_weeks | join(',') }}">
 
-                <div class="week-grid" id="parental-week-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px; margin-bottom: 16px;">
+                <div class="vacation-week-grid vacation-week-grid--compact" id="parental-week-grid">
                     {% for week in range(1, 53) %}
                         <button
                             type="button"
-                            class="parental-week-btn {% if week in parental_weeks %}selected{% endif %}"
+                            class="parental-week-btn vacation-week-btn vacation-week-btn--parental {% if week in parental_weeks %}selected{% endif %}"
                             data-week="{{ week }}"
-                            style="
-                                padding: 12px 8px;
-                                border-radius: var(--radius);
-                                border: 1px solid var(--table-border);
-                                background: {% if week in parental_weeks %}var(--blue){% else %}var(--panel){% endif %};
-                                color: {% if week in parental_weeks %}white{% else %}var(--text){% endif %};
-                                cursor: pointer;
-                                font-weight: {% if week in parental_weeks %}600{% else %}400{% endif %};
-                                transition: all 0.15s;
-                            "
+                            aria-pressed="{% if week in parental_weeks %}true{% else %}false{% endif %}"
                         >
                             v{{ week }}
                         </button>
                     {% endfor %}
                 </div>
 
-                <button type="submit" class="btn" style="background: var(--blue); color: white;">{{ t.vacation_save }}</button>
+                <button type="submit" class="btn btn-blue">{{ t.vacation_save }}</button>
             </form>
         </div>
 
         <!-- Day-Level Vacation Calendar -->
         <div class="card">
-            <h3 style="margin-top: 0;">{{ t.vacation_day_level }}</h3>
-            <p style="color: var(--muted); margin-bottom: 16px;">{{ t.vacation_day_level_hint }}</p>
+            <h3 class="vacation-section-title">{{ t.vacation_day_level }}</h3>
+            <p class="vacation-copy">{{ t.vacation_day_level_hint }}</p>
 
-            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-                <button type="button" id="mode-vacation" class="btn" style="flex: 1; background: var(--accent); color: var(--bg);" onclick="setMode('vacation')">{{ t.vacation_mode_vacation }}</button>
-                <button type="button" id="mode-parental" class="btn secondary" style="flex: 1;" onclick="setMode('parental')">{{ t.vacation_mode_parental }}</button>
+            <div class="vacation-mode-group" role="group" aria-label="{{ t.vacation_day_level }}">
+                <button type="button" id="mode-vacation" class="btn vacation-mode-btn is-active" data-mode="vacation" aria-pressed="true" onclick="setMode('vacation')">{{ t.vacation_mode_vacation }}</button>
+                <button type="button" id="mode-parental" class="btn secondary vacation-mode-btn" data-mode="parental" aria-pressed="false" onclick="setMode('parental')">{{ t.vacation_mode_parental }}</button>
             </div>
 
             <form method="POST" action="/profile/vacation/days/sync" id="days-form">
@@ -109,76 +91,76 @@
                 <input type="hidden" name="parental_dates" id="parental-dates-input"
                     value="{% for a in parental_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
 
-                <div id="day-calendar" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+                <div id="day-calendar" class="vacation-day-calendar"></div>
 
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span id="day-count" style="color: var(--muted); font-size: 0.85rem;"></span>
-                    <button type="submit" class="btn">{{ t.vacation_save_days }}</button>
+                <div class="vacation-form-footer">
+                    <span id="day-count" class="vacation-day-count"></span>
+                    <button type="submit" class="btn btn-primary">{{ t.vacation_save_days }}</button>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- Right column: balance + summary -->
-    <div class="col" style="min-width: 250px; flex: 1;">
+    <div class="vacation-side">
 
         <!-- Balance Card -->
         {% if balance %}
-        <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">{{ t.vacation_balance_title }}</h3>
-            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_entitled }}</div>
-                    <div style="font-size: 1.2rem; font-weight: 700;">{{ balance.entitled_days }}</div>
+        <div class="card vacation-section">
+            <h3 class="vacation-section-title">{{ t.vacation_balance_title }}</h3>
+            <div class="vacation-metric-grid">
+                <div class="vacation-metric">
+                    <div class="vacation-metric-label">{{ t.vacation_entitled }}</div>
+                    <div class="vacation-metric-value">{{ balance.entitled_days }}</div>
                 </div>
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_saved }}</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: {% if balance.saved_from_previous > 0 %}var(--accent){% else %}var(--muted){% endif %};">{{ balance.saved_from_previous }}</div>
+                <div class="vacation-metric">
+                    <div class="vacation-metric-label">{{ t.vacation_saved }}</div>
+                    <div class="vacation-metric-value {% if balance.saved_from_previous > 0 %}vacation-value-positive{% else %}vacation-value-muted{% endif %}">{{ balance.saved_from_previous }}</div>
                 </div>
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_total }}</div>
-                    <div style="font-size: 1.2rem; font-weight: 700;">{{ balance.total_available }}</div>
+                <div class="vacation-metric">
+                    <div class="vacation-metric-label">{{ t.vacation_total }}</div>
+                    <div class="vacation-metric-value">{{ balance.total_available }}</div>
                 </div>
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_used }}</div>
-                    <div style="font-size: 1.2rem; font-weight: 700;">{{ balance.used_days }}</div>
+                <div class="vacation-metric">
+                    <div class="vacation-metric-label">{{ t.vacation_used }}</div>
+                    <div class="vacation-metric-value">{{ balance.used_days }}</div>
                 </div>
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_remaining }}</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: {% if balance.remaining_days > 5 %}var(--accent-2){% elif balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+                <div class="vacation-metric">
+                    <div class="vacation-metric-label">{{ t.vacation_remaining }}</div>
+                    <div class="vacation-metric-value {% if balance.remaining_days > 5 %}vacation-value-success{% elif balance.remaining_days > 0 %}vacation-value-warning{% else %}vacation-value-danger{% endif %}">
                         {{ balance.remaining_days }}
                     </div>
                 </div>
             </div>
             {% if balance.saved_breakdown %}
-            <div style="margin-top: 8px; font-size: 0.7rem; color: var(--muted); text-align: center;">
+            <div class="vacation-small-note">
                 {{ t.vacation_saved_from }} {% for s in balance.saved_breakdown %}{{ s.year }} ({{ s.days }}d){% if not loop.last %}, {% endif %}{% endfor %}
             </div>
             {% endif %}
-            <div style="margin-top: 6px; font-size: 0.75rem; color: var(--muted); text-align: center;">
+            <div class="vacation-small-note">
                 {{ balance.year_start | date_format }} &mdash; {{ balance.year_end | date_format }}
-                {% if balance.is_first_year %}<br><span style="color: var(--warning);">{{ t.vacation_first_year }}</span>{% endif %}
+                {% if balance.is_first_year %}<br><span class="vacation-value-warning">{{ t.vacation_first_year }}</span>{% endif %}
             </div>
         </div>
 
         <!-- Projection Card (open years) -->
         {% if balance.projection %}
-        <div class="card" style="margin-bottom: 16px; border: 1px solid var(--accent); border-left: 4px solid var(--accent);">
-            <h3 style="margin-top: 0; font-size: 0.95rem;">{{ t.vacation_at_break.replace('{date}', balance.year_end | date_format) }}</h3>
-            <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
-                <span style="color: var(--muted);">{{ t.vacation_remaining_at_break }}</span>
-                <span style="font-weight: 600;">{{ balance.remaining_days }} {{ t.vacation_days_projection }}</span>
-                <span style="color: var(--muted);">{{ t.vacation_saved_next }}</span>
-                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_save }} {{ t.vacation_days_next_year }}</span>
+        <div class="card vacation-callout">
+            <h3 class="vacation-section-title vacation-card-title-sm">{{ t.vacation_at_break.replace('{date}', balance.year_end | date_format) }}</h3>
+            <div class="vacation-detail-grid">
+                <span class="vacation-detail-label">{{ t.vacation_remaining_at_break }}</span>
+                <span class="vacation-detail-value">{{ balance.remaining_days }} {{ t.vacation_days_projection }}</span>
+                <span class="vacation-detail-label">{{ t.vacation_saved_next }}</span>
+                <span class="vacation-detail-value vacation-detail-value--success">{{ balance.projection.days_to_save }} {{ t.vacation_days_next_year }}</span>
                 {% if balance.projection.days_to_pay_out > 0 %}
-                <span style="color: var(--muted);">{{ t.vacation_paid_out }}</span>
-                <span style="font-weight: 600;">{{ balance.projection.days_to_pay_out }} {{ t.vacation_days_payout }}</span>
-                <span style="color: var(--muted);">{{ t.vacation_payout_amount }}</span>
-                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.projection.days_to_pay_out }} &times; {{ "%.0f"|format(balance.projection.payout_per_day) }} kr = {{ "{:,.0f}".format(balance.projection.payout_total).replace(",", " ") }} kr</span>
+                <span class="vacation-detail-label">{{ t.vacation_paid_out }}</span>
+                <span class="vacation-detail-value">{{ balance.projection.days_to_pay_out }} {{ t.vacation_days_payout }}</span>
+                <span class="vacation-detail-label">{{ t.vacation_payout_amount }}</span>
+                <span class="vacation-detail-value vacation-detail-value--success">{{ balance.projection.days_to_pay_out }} &times; {{ "%.0f"|format(balance.projection.payout_per_day) }} kr = {{ "{:,.0f}".format(balance.projection.payout_total).replace(",", " ") }} kr</span>
                 {% endif %}
             </div>
             {% if balance.projection.days_to_pay_out > 0 %}
-            <div style="margin-top: 8px; font-size: 0.65rem; color: var(--muted);">
+            <div class="vacation-formula-note">
                 {{ t.vacation_payout_formula }}
             </div>
             {% endif %}
@@ -187,19 +169,19 @@
 
         <!-- Closed Year Card (past years) -->
         {% if balance.closed %}
-        <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent-2);">
-            <h3 style="margin-top: 0; font-size: 0.95rem;">{{ t.vacation_year_closed }}</h3>
-            <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem;">
+        <div class="card vacation-section">
+            <h3 class="vacation-section-title vacation-card-title-sm">{{ t.vacation_year_closed }}</h3>
+            <div class="vacation-detail-grid">
                 {% if balance.closed.saved > 0 %}
-                <span style="color: var(--muted);">{{ t.vacation_saved_label }}</span>
-                <span style="font-weight: 600; color: var(--accent-2);">{{ balance.closed.saved }} {{ t.vacation_days_transferred }}</span>
+                <span class="vacation-detail-label">{{ t.vacation_saved_label }}</span>
+                <span class="vacation-detail-value vacation-detail-value--success">{{ balance.closed.saved }} {{ t.vacation_days_transferred }}</span>
                 {% endif %}
                 {% if balance.closed.paid_out > 0 %}
-                <span style="color: var(--muted);">{{ t.vacation_paid_out_label }}</span>
-                <span style="font-weight: 600;">{{ balance.closed.paid_out }} {{ t.vacation_days_payout }} &rarr; {{ "{:,.0f}".format(balance.closed.payout_amount).replace(",", " ") }} kr</span>
+                <span class="vacation-detail-label">{{ t.vacation_paid_out_label }}</span>
+                <span class="vacation-detail-value">{{ balance.closed.paid_out }} {{ t.vacation_days_payout }} &rarr; {{ "{:,.0f}".format(balance.closed.payout_amount).replace(",", " ") }} kr</span>
                 {% endif %}
                 {% if balance.closed.saved == 0 and balance.closed.paid_out == 0 %}
-                <span style="color: var(--muted);" colspan="2">{{ t.vacation_all_used }}</span>
+                <span class="vacation-detail-label" colspan="2">{{ t.vacation_all_used }}</span>
                 {% endif %}
             </div>
         </div>
@@ -207,38 +189,38 @@
 
         <!-- Vacation Supplement Card -->
         {% if balance.pay %}
-        <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">{{ t.vacation_supplement_title }}</h3>
-            <div style="font-size: 0.7rem; color: var(--muted); margin-bottom: 10px;">{{ t.vacation_supplement_agreement }}</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_fixed_per_day }}</div>
-                    <div style="font-size: 1rem; font-weight: 700;">{{ "%.0f"|format(balance.pay.fixed_per_day) }} kr</div>
-                    <div style="color: var(--muted); font-size: 0.65rem;">0,8%</div>
+        <div class="card vacation-section">
+            <h3 class="vacation-section-title">{{ t.vacation_supplement_title }}</h3>
+            <div class="vacation-copy">{{ t.vacation_supplement_agreement }}</div>
+            <div class="vacation-supplement-grid">
+                <div class="vacation-metric">
+                    <div class="vacation-supplement-label">{{ t.vacation_fixed_per_day }}</div>
+                    <div class="vacation-supplement-value">{{ "%.0f"|format(balance.pay.fixed_per_day) }} kr</div>
+                    <div class="vacation-supplement-note">0,8%</div>
                 </div>
-                <div style="text-align: center;">
-                    <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">{{ t.vacation_variable_per_day }}</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: var(--accent);">{{ "%.0f"|format(balance.pay.variable_per_day) }} kr</div>
-                    <div style="color: var(--muted); font-size: 0.65rem;">0,5%</div>
+                <div class="vacation-metric">
+                    <div class="vacation-supplement-label">{{ t.vacation_variable_per_day }}</div>
+                    <div class="vacation-supplement-value vacation-value-positive">{{ "%.0f"|format(balance.pay.variable_per_day) }} kr</div>
+                    <div class="vacation-supplement-note">0,5%</div>
                 </div>
             </div>
-            <div style="text-align: center; padding: 6px; background: rgba(255,255,255,0.03); border-radius: var(--radius); margin-bottom: 10px;">
-                <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 2px;">{{ t.vacation_supplement_per_day }}</div>
-                <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent-2);">{{ "%.0f"|format(balance.pay.supplement_per_day) }} kr</div>
-                <div style="color: var(--muted); font-size: 0.65rem; margin-top: 2px;">
+            <div class="vacation-supplement-total">
+                <div class="vacation-supplement-total-label">{{ t.vacation_supplement_per_day }}</div>
+                <div class="vacation-supplement-total-value">{{ "%.0f"|format(balance.pay.supplement_per_day) }} kr</div>
+                <div class="vacation-supplement-note">
                     {{ t.vacation_supplement_total.replace('{n}', balance.entitled_days|string) }}: {{ "{:,.0f}".format(balance.pay.supplement_total).replace(",", " ") }} kr
                 </div>
             </div>
-            <div style="font-size: 0.7rem; color: var(--muted);">
-                <div style="display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;">
+            <div class="vacation-supplement-breakdown">
+                <div class="vacation-supplement-breakdown-grid">
                     <span>{{ t.vacation_ob_shifts }}</span>
-                    <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
                     <span>{{ t.vacation_overtime }}</span>
-                    <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.ot_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ot_total).replace(",", " ") }} kr</span>
                     <span>{{ t.vacation_standby }}</span>
-                    <span style="text-align: right;">{{ "{:,.0f}".format(balance.pay.oncall_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.oncall_total).replace(",", " ") }} kr</span>
                 </div>
-                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--table-border);">
+                <div class="vacation-supplement-sum">
                     {{ t.vacation_variable_sum }} {{ "{:,.0f}".format(balance.pay.variable_total).replace(",", " ") }} kr
                 </div>
             </div>
@@ -247,29 +229,29 @@
         {% endif %}
 
         <!-- Week Summary -->
-        <div class="card" style="margin-bottom: 16px;">
-            <h3 style="margin-top: 0;">{{ t.vacation_selected_weeks }}</h3>
+        <div class="card vacation-section">
+            <h3 class="vacation-section-title">{{ t.vacation_selected_weeks }}</h3>
             <div id="selected-summary">
                 {% if vacation_weeks %}
                     <p><strong>{{ vacation_weeks | length }}</strong> {{ t.vacation_weeks_selected_js }}</p>
-                    <p style="color: var(--muted);">{{ vacation_weeks | join(', ') }}</p>
+                    <p class="vacation-summary-text">{{ vacation_weeks | join(', ') }}</p>
                 {% else %}
-                    <p style="color: var(--muted);">{{ t.vacation_none_selected.replace('{year}', year|string) }}</p>
+                    <p class="vacation-summary-text">{{ t.vacation_none_selected.replace('{year}', year|string) }}</p>
                 {% endif %}
             </div>
         </div>
 
         <!-- Employment start date -->
         <div class="card">
-            <h3 style="margin-top: 0;">{{ t.vacation_employment_start }}</h3>
+            <h3 class="vacation-section-title">{{ t.vacation_employment_start }}</h3>
             <form method="POST" action="/profile/vacation/settings">
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.85rem;">{{ t.vacation_start_date }}</label>
+                <div class="form-group">
+                    <label class="form-label">{{ t.vacation_start_date }}</label>
                     <input type="date" name="employment_start_date"
                         value="{{ user.employment_start_date | date_format }}"
-                        style="width: 100%; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--table-border); background: var(--panel); color: var(--text); box-sizing: border-box;">
+                        class="form-input">
                 </div>
-                <button type="submit" class="btn" style="width: 100%;">{{ t.vacation_save_button }}</button>
+                <button type="submit" class="btn btn-primary login-submit">{{ t.vacation_save_button }}</button>
             </form>
         </div>
     </div>
@@ -293,10 +275,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedWeeks.length > 0) {
             summary.innerHTML = `
                 <p><strong>${selectedWeeks.length}</strong> {{ t.vacation_weeks_selected_js }}</p>
-                <p style="color: var(--muted);">${selectedWeeks.join(', ')}</p>
+                <p class="vacation-summary-text">${selectedWeeks.join(', ')}</p>
             `;
         } else {
-            summary.innerHTML = '<p style="color: var(--muted);">{{ t.vacation_none_selected_js }}</p>';
+            summary.innerHTML = '<p class="vacation-summary-text">{{ t.vacation_none_selected_js }}</p>';
         }
     }
 
@@ -308,15 +290,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (index > -1) {
                 selectedWeeks.splice(index, 1);
                 this.classList.remove('selected');
-                this.style.background = 'var(--panel)';
-                this.style.color = 'var(--text)';
-                this.style.fontWeight = '400';
+                this.setAttribute('aria-pressed', 'false');
             } else {
                 selectedWeeks.push(week);
                 this.classList.add('selected');
-                this.style.background = 'var(--accent)';
-                this.style.color = 'var(--bg)';
-                this.style.fontWeight = '600';
+                this.setAttribute('aria-pressed', 'true');
             }
 
             updateSummary();
@@ -342,15 +320,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (selectedParentalWeeks.has(week)) {
                 selectedParentalWeeks.delete(week);
                 this.classList.remove('selected');
-                this.style.background = 'var(--panel)';
-                this.style.color = 'var(--text)';
-                this.style.fontWeight = '400';
+                this.setAttribute('aria-pressed', 'false');
             } else {
                 selectedParentalWeeks.add(week);
                 this.classList.add('selected');
-                this.style.background = 'var(--blue)';
-                this.style.color = 'white';
-                this.style.fontWeight = '600';
+                this.setAttribute('aria-pressed', 'true');
             }
             updateParentalWeeksInput();
         });
@@ -381,21 +355,13 @@ document.addEventListener('DOMContentLoaded', function() {
         currentMode = mode;
         const btnVac = document.getElementById('mode-vacation');
         const btnPar = document.getElementById('mode-parental');
-        if (mode === 'vacation') {
-            btnVac.style.background = 'var(--accent)';
-            btnVac.style.color = 'var(--bg)';
-            btnVac.classList.remove('secondary');
-            btnPar.style.background = '';
-            btnPar.style.color = '';
-            btnPar.classList.add('secondary');
-        } else {
-            btnPar.style.background = 'var(--blue)';
-            btnPar.style.color = 'white';
-            btnPar.classList.remove('secondary');
-            btnVac.style.background = '';
-            btnVac.style.color = '';
-            btnVac.classList.add('secondary');
-        }
+        const vacationActive = mode === 'vacation';
+        btnVac.classList.toggle('is-active', vacationActive);
+        btnVac.classList.toggle('secondary', !vacationActive);
+        btnVac.setAttribute('aria-pressed', vacationActive ? 'true' : 'false');
+        btnPar.classList.toggle('is-active', !vacationActive);
+        btnPar.classList.toggle('secondary', vacationActive);
+        btnPar.setAttribute('aria-pressed', vacationActive ? 'false' : 'true');
         updateDayCount();
     };
 
@@ -411,15 +377,15 @@ document.addEventListener('DOMContentLoaded', function() {
         calendarEl.innerHTML = '';
         for (let m = 0; m < 12; m++) {
             const monthDiv = document.createElement('div');
-            monthDiv.style.cssText = 'background: var(--panel); border-radius: var(--radius); padding: 8px; border: 1px solid var(--table-border);';
+            monthDiv.className = 'vacation-day-month';
 
             const title = document.createElement('div');
-            title.style.cssText = 'text-align: center; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px;';
+            title.className = 'vacation-day-month-title';
             title.textContent = monthNames[m];
             monthDiv.appendChild(title);
 
             const grid = document.createElement('div');
-            grid.style.cssText = 'display: grid; grid-template-columns: auto repeat(7, 1fr); gap: 2px; font-size: 0.75rem;';
+            grid.className = 'vacation-day-grid';
 
             function isoWeek(dt) {
                 const d = new Date(dt.getTime());
@@ -432,18 +398,18 @@ document.addEventListener('DOMContentLoaded', function() {
             function addWkCell(dt) {
                 const wk = document.createElement('div');
                 wk.textContent = isoWeek(dt);
-                wk.style.cssText = 'text-align: right; color: var(--muted); font-size: 0.6rem; padding: 3px 4px 0 0; opacity: 0.6;';
+                wk.className = 'vacation-week-number';
                 grid.appendChild(wk);
             }
 
             // Week header + day headers
             const wkHdr = document.createElement('div');
             wkHdr.textContent = '{{ "wk" if t.html_lang == "en" else "v" }}';
-            wkHdr.style.cssText = 'text-align: right; color: var(--muted); font-size: 0.65rem; padding: 2px 4px 2px 0; opacity: 0.5;';
+            wkHdr.className = 'vacation-week-number';
             grid.appendChild(wkHdr);
             dayHeaders.forEach(dh => {
                 const hdr = document.createElement('div');
-                hdr.style.cssText = 'text-align: center; color: var(--muted); font-size: 0.65rem; padding: 2px 0;';
+                hdr.className = 'vacation-day-grid-header';
                 hdr.textContent = dh;
                 grid.appendChild(hdr);
             });
@@ -467,9 +433,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (dayOfWeek === 0 && d > 1) addWkCell(dt);
                 const isWeekend = dayOfWeek >= 5;
 
-                const cell = document.createElement('div');
+                const cell = document.createElement('button');
+                cell.type = 'button';
                 cell.textContent = d;
                 cell.dataset.date = iso;
+                cell.setAttribute('aria-label', iso);
 
                 const isSelected = selectedDates.has(iso);
                 const isOffDay = offDays.has(iso);
@@ -481,19 +449,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 function applyCellStyle(el, date) {
                     const wd = (new Date(date).getDay() + 6) % 7;
                     const color = dayColors[date] || null;
-                    if (selectedDates.has(date)) {
-                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--accent); color: var(--bg); font-weight: 600;';
-                    } else if (parentalDates.has(date)) {
-                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none; background: var(--blue); color: white; font-weight: 600;';
-                    } else {
-                        el.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; transition: all 0.1s; user-select: none;'
-                            + (wd >= 5 ? ' opacity: 0.5;' : '');
-                        el.style.color = color || (wd >= 5 ? 'var(--muted)' : 'var(--text)');
-                    }
+                    el.setAttribute('aria-pressed', selectedDates.has(date) || parentalDates.has(date) ? 'true' : 'false');
+                    el.className = 'vacation-day-cell';
+                    el.classList.toggle('is-weekend', wd >= 5);
+                    el.classList.toggle('is-vacation', selectedDates.has(date));
+                    el.classList.toggle('is-parental', parentalDates.has(date));
+                    el.style.color = (!selectedDates.has(date) && !parentalDates.has(date) && color) ? color : '';
                 }
 
                 if (isOffDay) {
-                    cell.style.cssText = 'text-align: center; padding: 3px 1px; border-radius: 3px; cursor: not-allowed; user-select: none; opacity: 0.35; text-decoration: line-through;';
+                    cell.disabled = true;
+                    cell.setAttribute('aria-disabled', 'true');
+                    cell.setAttribute('aria-pressed', 'false');
+                    cell.className = 'vacation-day-cell';
                     if (shiftColor) cell.style.color = shiftColor;
                 } else {
                     applyCellStyle(cell, iso);

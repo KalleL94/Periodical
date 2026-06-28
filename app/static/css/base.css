@@ -13,8 +13,12 @@
   --ink: #0e1216;            /* neutral graphite so the rainbow pills read true */
   --bg: var(--ink);
   --panel: #141b22;
+  --bg-depth: #071018;
   --panel-2: #19222b;
+  --surface: var(--panel-2);
+  --card-bg: var(--panel);
   --table-border: rgba(255,255,255,0.06);
+  --border: var(--table-border);
   --line: var(--table-border);
   --line-strong: rgba(255,255,255,0.14);
   --text: #e6eef6;
@@ -35,12 +39,14 @@
   --danger: #ef4444;
   --danger-hover: #dc2626;
   --success: #7bd389;        /* money in / positive */
+  --up: var(--success);
   --warning: #ffa500;
   --role: #a78bfa;           /* admin role, its own violet (not --danger, not --ob5) */
 
   /* Schedule / absence categories (data colours referenced by templates) */
   --sem: #c7c700;            /* vacation (SEM) */
-  --blue: #3b82f6;           /* secondary blue: substitutes, parental, overrides */
+  --blue: #2563eb;           /* secondary blue: substitutes, parental, overrides */
+  --blue-hover: #1d4ed8;
   --ob-sick: #f97316;        /* OB lost on sick days */
   --ob5: #a855f7;            /* highest OB level / absence purple */
 
@@ -50,6 +56,13 @@
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --radius: 0.5rem;
+
+  /* Layering */
+  --z-local: 1;
+  --z-dropdown: 30;
+  --z-sticky: 40;
+  --z-modal: 100;
+  --z-tooltip: 120;
 
   /* Back-compat aliases (existing names kept, same resolved values) */
   --background: var(--bg);
@@ -68,7 +81,7 @@ html, body {
   height: 100%;
   margin: 0;
   font-family: var(--font-body);
-  background: linear-gradient(180deg, var(--bg), #071018 120%);
+  background: linear-gradient(180deg, var(--bg), var(--bg-depth) 120%);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -104,4 +117,15 @@ a:hover { text-decoration: underline; }
   h1 { font-size: 1.25rem; }
   h2, .page-title { font-size: 1.125rem; }
   h3 { font-size: 0.9375rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
