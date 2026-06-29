@@ -15,7 +15,7 @@
     </div>
 
     <div class="page-header-right">
-        <button id="orig-toggle-btn" onclick="toggleOriginalMode()" class="btn secondary" style="font-size:0.85rem;">
+        <button id="orig-toggle-btn" onclick="toggleOriginalMode()" class="btn secondary btn-sm">
             {% if t.html_lang == 'en' %}Show rotation{% else %}Visa rotation{% endif %}
         </button>
         {# Visa bara länk till egen week-sida, eller alla om admin #}
@@ -46,9 +46,9 @@
                         <div>
                             {{ weekday_names_short[day.date.weekday()] }}
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
-                                <span class="badge badge-ob5" style="font-size:0.55rem;padding:1px 3px;">S</span>
+                                <span class="badge badge-ob5 badge-marker-xs">S</span>
                             {% elif holiday_dates is defined and day.date in holiday_dates %}
-                                <span class="badge badge-ob4" style="font-size:0.55rem;padding:1px 3px;">H</span>
+                                <span class="badge badge-ob4 badge-marker-xs">H</span>
                             {% endif %}
                         </div>
                         <div class="date-small">{{ day.date.day }}/{{ day.date.month }}</div>
@@ -117,25 +117,24 @@
                             data-orig-color="{{ w_orig_color }}"
                             data-orig-code="{{ w_orig_code }}"
                             data-changed="{{ '1' if w_is_changed else '0' }}"
-                            style="border-left: 4px solid {% if wp and wp.shift %}{{ wp.shift.color }}{% else %}#ddd{% endif %};">
+                            data-border-left="{% if wp and wp.shift %}{{ wp.shift.color }}{% else %}#ddd{% endif %}">
 
                             {% if wp and wp.shift %}
                                 {# Länka till day-sida bara om admin eller egen (ej vikarier, de saknar dagsida) #}
                                 {% if not person_entry.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
                                     <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
-                                       class="shift-link"
-                                       style="color: var(--text); text-decoration: none;">
+                                       class="shift-link">
                                 {% endif %}
 
                                 <div class="js-sb shift-name"
                                      data-act-label="{{ w_act_label }}"
-                                     style="color: {{ wp.shift.color }}; font-weight: 500; font-size: 0.85rem;">
-                                    {{ w_act_label }}{% if w_is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
+                                     data-fg="{{ wp.shift.color }}">
+                                    {{ w_act_label }}{% if w_is_changed %}<sup class="orig-asterisk">*</sup>{% endif %}
                                 </div>
 
                                 {# Show times for OT shifts #}
                                 {% if wp.shift.code == 'OT' and wp.start and wp.end %}
-                                    <div class="shift-time" style="color: var(--muted); font-size: 0.7rem; margin-top: 2px;">
+                                    <div class="shift-time week-shift-time">
                                         {{ wp.start | time_format }}-{{ wp.end | time_format }}
                                     </div>
                                 {% endif %}
@@ -144,9 +143,8 @@
                                     </a>
                                 {% endif %}
                             {% else %}
-                                <div class="js-sb shift-name"
-                                     data-act-label="{{ t.week_shift_off }}"
-                                     style="color: var(--muted); font-size: 0.85rem;">{{ t.week_shift_off }}</div>
+                                <div class="js-sb shift-name shift-name--off"
+                                     data-act-label="{{ t.week_shift_off }}">{{ t.week_shift_off }}</div>
                             {% endif %}
                         </td>
                     {% endfor %}
@@ -190,7 +188,7 @@ function applyShiftMode() {
             // Replace text node only (preserve the <sup> child if present)
             var textNode = badge.childNodes[0];
             if (textNode && textNode.nodeType === 3) textNode.nodeValue = origCode;
-            if (asterisk) asterisk.style.display = changed ? '' : 'none';
+            if (asterisk) asterisk.style.display = changed ? 'inline' : 'none';
         } else {
             var actColor = td.dataset.actColor || '#ddd';
             td.style.borderLeftColor = actColor;

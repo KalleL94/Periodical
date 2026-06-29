@@ -6,14 +6,14 @@
 {% block page_content %}
 
 {% if success %}
-<div style="background: rgba(100,255,100,0.2); border: 1px solid var(--success); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+<div class="alert alert--success">
     {{ success }}
 </div>
 {% endif %}
 
 <div class="page-header">
     <div class="page-header-left">
-        <h2 class="page-title" style="margin: 0;">{{ t.admin_users_title }}</h2>
+        <h2 class="page-title title-inline">{{ t.admin_users_title }}</h2>
     </div>
     <div class="page-header-right">
         <a href="/admin/report" class="btn secondary">Månadsrapport</a>
@@ -42,16 +42,16 @@
                 <td data-label="{{ t.admin_col_name }}">{{ u.name }}</td>
                 <td data-label="{{ t.admin_col_role }}">
                     {% if u.role.value == 'admin' %}
-                        <span class="badge" style="background: var(--role);">Admin</span>
+                        <span class="badge badge-role">Admin</span>
                     {% else %}
                         <span class="badge badge-off">User</span>
                     {% endif %}
                 </td>
                 <td data-label="{{ t.admin_col_wage }}" class="td_right num">{{ "{:,}".format(u.wage) }} SEK</td>
                 <td>
-                    <a href="/admin/users/{{ u.id }}" class="btn secondary" style="padding: 4px 12px; font-size: 0.85rem;">{{ t.admin_edit }}</a>
-                    <form method="POST" action="/admin/users/{{ u.id }}/reset-password" style="display: inline-block; margin-left: 8px;" onsubmit="return confirm('{{ t.admin_reset_password_confirm.replace('{name}', u.name) }}');">
-                        <button type="submit" class="btn" style="padding: 4px 12px; font-size: 0.85rem; background: var(--warning); border-color: var(--warning);">{{ t.admin_reset_password }}</button>
+                    <a href="/admin/users/{{ u.id }}" class="btn secondary btn-compact">{{ t.admin_edit }}</a>
+                    <form method="POST" action="/admin/users/{{ u.id }}/reset-password" class="inline-form-mr" onsubmit="return confirm('{{ t.admin_reset_password_confirm.replace('{name}', u.name) }}');">
+                        <button type="submit" class="btn btn-warning btn-compact">{{ t.admin_reset_password }}</button>
                     </form>
                 </td>
             </tr>

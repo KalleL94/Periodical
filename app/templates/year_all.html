@@ -31,18 +31,18 @@
 
 <h2 class="page-title">{{ t.year_all_title.replace('{year}', year|string) }}</h2>
 
-    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--panel);border-radius:var(--radius);border:1px solid var(--border);align-items:center;">
-        <button onclick="setAllPersonCols(true)" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">Markera alla</button>
-        <button onclick="setAllPersonCols(false)" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">Avmarkera alla</button>
-        <span style="color:var(--border);margin:0 0.25rem;">|</span>
+    <div class="col-toggle-bar">
+        <button onclick="setAllPersonCols(true)" class="btn secondary btn-xs">Markera alla</button>
+        <button onclick="setAllPersonCols(false)" class="btn secondary btn-xs">Avmarkera alla</button>
+        <span class="col-sep">|</span>
         {% for p in person_headers %}
-        <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;font-size:0.85rem;user-select:none;">
-            <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" style="cursor:pointer;">
+        <label class="col-toggle-label">
+            <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" class="cursor-pointer">
             {{ p.person_name }}
         </label>
         {% endfor %}
-        <span style="color:var(--border);margin:0 0.25rem;">|</span>
-        <button id="orig-toggle-btn" onclick="toggleOriginalMode()" class="btn secondary" style="font-size:0.8rem;padding:2px 8px;">
+        <span class="col-sep">|</span>
+        <button id="orig-toggle-btn" onclick="toggleOriginalMode()" class="btn secondary btn-xs">
             {% if t.html_lang == 'en' %}Show rotation{% else %}Visa rotation{% endif %}
         </button>
     </div>
@@ -57,7 +57,7 @@
                         <th></th>
                         {% for p in person_headers %}
                             <th class="num" id="total-{{ p.person_id }}" data-person="{{ p.person_id }}">
-                                <span class="loading-spinner" style="color: #999; font-size: 0.9em;">...</span>
+                                <span class="loading-spinner">...</span>
                             </th>
                         {% endfor %}
                     </tr>
@@ -91,9 +91,9 @@
                                 <a href="/week?year={{ day.date.isocalendar()[0] }}&week={{ day.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</a>
                             {% endif %}
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
-                                <span class="badge badge-ob5" style="font-size:0.55rem;padding:1px 3px;">S</span>
+                                <span class="badge badge-ob5 badge-marker-xs">S</span>
                             {% elif holiday_dates is defined and day.date in holiday_dates %}
-                                <span class="badge badge-ob4" style="font-size:0.55rem;padding:1px 3px;">H</span>
+                                <span class="badge badge-ob4 badge-marker-xs">H</span>
                             {% endif %}
                         </td>
                         {% for person in day.persons %}
@@ -105,28 +105,28 @@
                                 data-orig-color="{{ orig_color }}"
                                 data-orig-code="{{ orig_code }}"
                                 data-changed="{{ '1' if is_changed else '0' }}"
-                                style="border-left:6px solid {% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}; padding-left:8px;">
+                                data-border-left="{% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}">
                                 {% if person.shift %}
                                     {# Länka till day-sida bara om admin eller egen #}
                                     {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
                                         {% set link_id = user.id if user.rotation_person_id == person.person_id else person.person_id %}
                                         <a href="/day/{{ link_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
-                                           style="text-decoration:none;">
+                                           class="plain-link">
                                     {% endif %}
                                         {% if person.shift.code == 'SEM' %}
                                             <span class="badge badge-sem js-sb"
                                                   title="{{ t.month_shift_sem_title }}"
                                                   data-act-label="SEM"
-                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">SEM</span>{% if is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
+                                                  data-bg="{{ person.shift.color }}" data-fg="{{ person.shift.color | contrast }}">SEM</span>{% if is_changed %}<sup class="orig-asterisk">*</sup>{% endif %}
                                         {% elif person.shift.code == 'OT' %}
                                             <span class="badge js-sb"
                                                   {% if person.start and person.end %}title="{{ t.month_shift_ot_title.replace('{start}', person.start | time_format).replace('{end}', person.end | time_format) }}"{% endif %}
                                                   data-act-label="OT"
-                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">OT</span>{% if is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
+                                                  data-bg="{{ person.shift.color }}" data-fg="{{ person.shift.color | contrast }}">OT</span>{% if is_changed %}<sup class="orig-asterisk">*</sup>{% endif %}
                                         {% else %}
                                             <span class="badge js-sb"
                                                   data-act-label="{{ person.shift.code }}"
-                                                  style="background: {{ person.shift.color }}; color: {{ person.shift.color | contrast }};">{{ person.shift.code }}</span>{% if is_changed %}<sup class="orig-asterisk" style="display:none;">*</sup>{% endif %}
+                                                  data-bg="{{ person.shift.color }}" data-fg="{{ person.shift.color | contrast }}">{{ person.shift.code }}</span>{% if is_changed %}<sup class="orig-asterisk">*</sup>{% endif %}
                                         {% endif %}
                                     {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
                                         </a>
@@ -233,7 +233,7 @@ function applyShiftMode() {
             badge.style.background = origColor;
             badge.style.color = _contrast(origColor);
             badge.textContent = origCode;
-            if (asterisk) asterisk.style.display = changed ? '' : 'none';
+            if (asterisk) asterisk.style.display = changed ? 'inline' : 'none';
         } else {
             var actColor = td.dataset.actColor || 'transparent';
             td.style.borderLeftColor = actColor;
@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error(`[Year View] Error loading total for person ${personId}:`, error);
                 const totalCell = document.getElementById(`total-${personId}`);
                 if (totalCell) {
-                    totalCell.innerHTML = '<span style="color: var(--danger);">✗</span>';
+                    totalCell.innerHTML = '<span class="text-danger">✗</span>';
                 }
             });
     });
