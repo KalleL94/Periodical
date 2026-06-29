@@ -5,31 +5,31 @@
 
 {% block page_content %}
 <section>
-    <div style="max-width: 720px;">
-        <h2 style="margin-bottom: 0.25rem;">{{ t.changelog_title }}</h2>
-        <p style="color: var(--muted); margin-top: 0; margin-bottom: 2rem;">{{ t.changelog_current_version }}: <strong>v{{ current_version }}</strong></p>
+    <div class="cl-shell">
+        <h2 class="cl-title">{{ t.changelog_title }}</h2>
+        <p class="cl-sub">{{ t.changelog_current_version }}: <strong>v{{ current_version }}</strong></p>
 
         {% for v in versions %}
-        <div class="card" style="margin-bottom: 1.5rem;">
-            <div style="display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
-                <span style="font-size: 1.1rem; font-weight: 600; color: var(--text);">v{{ v.version }}</span>
-                <span style="color: var(--muted); font-size: 0.85rem;">{{ v.date }}</span>
+        <div class="card mb-3">
+            <div class="cl-head">
+                <span class="cl-version">v{{ v.version }}</span>
+                <span class="text-sm-muted">{{ v.date }}</span>
                 {% if loop.first %}
-                <span style="background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 99px; letter-spacing: 0.04em;">{{ t.changelog_latest }}</span>
+                <span class="cl-relbadge">{{ t.changelog_latest }}</span>
                 {% endif %}
             </div>
 
-            <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.45rem;">
+            <ul class="cl-list">
                 {% for entry in v.entries %}
-                <li style="display: flex; gap: 0.6rem; align-items: baseline;">
+                <li class="cl-item">
                     {% if entry.type == "nyhet" %}
-                    <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg); color: var(--accent); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_nyhet }}</span>
+                    <span class="cl-tag cl-tag--accent">{{ t.changelog_type_nyhet }}</span>
                     {% elif entry.type == "förbättring" %}
-                    <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg); color: var(--success, var(--success)); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_forbattring }}</span>
+                    <span class="cl-tag cl-tag--success">{{ t.changelog_type_forbattring }}</span>
                     {% else %}
-                    <span style="flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg); color: var(--warning, #e0a84e); padding: 0.1rem 0.45rem; border-radius: 4px; text-transform: uppercase;">{{ t.changelog_type_fix }}</span>
+                    <span class="cl-tag cl-tag--warning">{{ t.changelog_type_fix }}</span>
                     {% endif %}
-                    <span style="color: var(--text); line-height: 1.5;">{{ entry.en if t.html_lang == 'en' else entry.sv }}</span>
+                    <span class="cl-text">{{ entry.en if t.html_lang == 'en' else entry.sv }}</span>
                 </li>
                 {% endfor %}
             </ul>
@@ -37,4 +37,21 @@
         {% endfor %}
     </div>
 </section>
+
+<style>
+.cl-shell { max-width: 720px; }
+.cl-title { margin-bottom: 0.25rem; }
+.cl-sub { color: var(--muted); margin-top: 0; margin-bottom: 2rem; }
+.cl-head { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.cl-version { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+.cl-relbadge { background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 99px; letter-spacing: 0.03em; }
+.cl-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.45rem; }
+.cl-item { display: flex; gap: 0.6rem; align-items: baseline; }
+.cl-tag { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; background: var(--muted-bg); padding: 0.1rem 0.4rem; border-radius: 4px; }
+.cl-tag--accent { color: var(--accent); }
+.cl-tag--success { color: var(--success); }
+.cl-tag--warning { color: var(--warning); }
+.cl-text { color: var(--text); line-height: 1.5; }
+</style>
+
 {% endblock %}

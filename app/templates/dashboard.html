@@ -13,10 +13,10 @@
         <div class="dashboard-container">
             <!-- Väntande bytesförfrågningar -->
             {% if pending_swap_count and pending_swap_count > 0 %}
-            <div class="card" style="border-color: var(--warning); grid-column: 1 / -1;">
-                <h3 style="color: var(--warning); margin-bottom: 0.5rem;">{{ t.dashboard_shift_swaps }}</h3>
+            <div class="card dash-alert-card">
+                <h3 class="dash-alert-title">{{ t.dashboard_shift_swaps }}</h3>
                 <p>{% if t.html_lang == 'en' %}You have{% else %}Du har{% endif %} <strong>{{ pending_swap_count }}</strong> {% if t.html_lang == 'en' %}pending swap request{{ 's' if pending_swap_count > 1 }}{% else %}väntande bytesförfrågan{{ 'gar' if pending_swap_count > 1 }}{% endif %}.</p>
-                <a href="/swaps" class="btn" style="margin-top: 0.5rem;">{{ t.dashboard_show_swaps }}</a>
+                <a href="/swaps" class="btn dash-alert-btn">{{ t.dashboard_show_swaps }}</a>
             </div>
             {% endif %}
 
@@ -28,15 +28,15 @@
                 <div class="dash-hero-cell">
                     <span class="dash-hero-eyebrow">{% if next_shift %}{{ t.dashboard_next_shift }}{% else %}{{ t.dashboard_next_oncall }}{% endif %}</span>
                     <div class="dash-hero-row">
-                        <div class="dash-hero-rail" style="background: {{ hero_shift.color }};"></div>
+                        <div class="dash-hero-rail" data-bg="{{ hero_shift.color }}"></div>
                         <div>
                             <div class="dash-hero-when">
-                                {% if hero_shift.days_until == 0 %}<span style="color: var(--success);">{{ t.dashboard_today }}</span>
-                                {% elif hero_shift.days_until == 1 %}<span style="color: var(--success);">{{ t.dashboard_tomorrow }}</span>
+                                {% if hero_shift.days_until == 0 %}<span class="text-success">{{ t.dashboard_today }}</span>
+                                {% elif hero_shift.days_until == 1 %}<span class="text-success">{{ t.dashboard_tomorrow }}</span>
                                 {% else %}{{ _wdn_full[hero_shift.date.weekday()] }} {{ hero_shift.date.day }} {{ _month_names[hero_shift.date.month - 1] }}{% endif %}
                             </div>
                             <div class="dash-hero-sub">{{ t.shift_labels.get(hero_shift.shift_code, hero_shift.shift_type) }} &middot; <span class="dash-hero-mono">{{ hero_shift.time_range }}</span>{% if hero_shift.days_until <= 1 %} &middot; {{ _wdn_short[hero_shift.date.weekday()] }} {{ hero_shift.date.day }} {{ _month_names[hero_shift.date.month - 1] }}{% endif %}</div>
-                            <span class="dash-hero-badge" style="background: {{ hero_shift.color }}; color: {{ hero_shift.color|contrast }};">{{ hero_shift.shift_code }}</span>
+                            <span class="dash-hero-badge" data-bg="{{ hero_shift.color }}" data-fg="{{ hero_shift.color|contrast }}">{{ hero_shift.shift_code }}</span>
                         </div>
                     </div>
                 </div>
@@ -58,7 +58,7 @@
                     <div class="dash-hero-foot">{{ t.dashboard_gross }} {{ "{:,.0f}".format(month_summary.gross_pay) }}kr{% if month_summary.total_hours > 0 %} &middot; {{ "%.1f"|format(month_summary.total_hours) }}h &middot; {{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr/h{% endif %}</div>
                     {% else %}
                     <span class="dash-hero-eyebrow">{{ t.dashboard_total_hours }}</span>
-                    <div class="dash-hero-pay" style="color: var(--text);">{{ "%.1f"|format(month_summary.total_hours) }}h</div>
+                    <div class="dash-hero-pay">{{ "%.1f"|format(month_summary.total_hours) }}h</div>
                     <div class="dash-hero-foot">{{ t.dashboard_ob_hours }} {{ "%.1f"|format(month_summary.ob_hours) }}h</div>
                     {% endif %}
                 </div>
@@ -74,16 +74,16 @@
                 {% if next_shift %}
                 <h4>{{ t.dashboard_next_shift }}</h4>
                 <div class="shift-info">
-                    <div class="shift-badge" style="background-color: {{ next_shift.color }}; color: {{ next_shift.color|contrast }};">
+                    <div class="shift-badge" data-bg="{{ next_shift.color }}" data-fg="{{ next_shift.color|contrast }}">
                         {{ t.shift_labels.get(next_shift.shift_code, next_shift.shift_type) }}
                     </div>
                     <div class="shift-details">
                         <strong>{{ _wdn_full[next_shift.date.weekday()] }} {{ next_shift.date.day }} {{ _month_names[next_shift.date.month - 1] }} {{ next_shift.date.year }}</strong>
                         <div>{{ next_shift.time_range }}</div>
                         {% if next_shift.days_until == 0 %}
-                            <div class="shift-countdown" style="color: var(--success);">{{ t.dashboard_today }}</div>
+                            <div class="shift-countdown text-success">{{ t.dashboard_today }}</div>
                         {% elif next_shift.days_until == 1 %}
-                            <div class="shift-countdown" style="color: var(--success);">{{ t.dashboard_tomorrow }}</div>
+                            <div class="shift-countdown text-success">{{ t.dashboard_tomorrow }}</div>
                         {% else %}
                             <div class="shift-countdown">{{ t.dashboard_in_days.replace('{n}', next_shift.days_until|string) }}</div>
                         {% endif %}
@@ -92,18 +92,18 @@
                 {% endif %}
 
                 {% if next_oncall_shift %}
-                <h4 style="margin-top: 1.5rem;">{{ t.dashboard_next_oncall }}</h4>
+                <h4 class="dash-h4">{{ t.dashboard_next_oncall }}</h4>
                 <div class="shift-info">
-                    <div class="shift-badge" style="background-color: {{ next_oncall_shift.color }}; color: {{ next_oncall_shift.color|contrast }};">
+                    <div class="shift-badge" data-bg="{{ next_oncall_shift.color }}" data-fg="{{ next_oncall_shift.color|contrast }}">
                         {{ t.shift_labels.get(next_oncall_shift.shift_code, next_oncall_shift.shift_type) }}
                     </div>
                     <div class="shift-details">
                         <strong>{{ _wdn_full[next_oncall_shift.date.weekday()] }} {{ next_oncall_shift.date.day }} {{ _month_names[next_oncall_shift.date.month - 1] }} {{ next_oncall_shift.date.year }}</strong>
                         <div>{{ next_oncall_shift.time_range }}</div>
                         {% if next_oncall_shift.days_until == 0 %}
-                            <div class="shift-countdown" style="color: var(--success);">{{ t.dashboard_today }}</div>
+                            <div class="shift-countdown text-success">{{ t.dashboard_today }}</div>
                         {% elif next_oncall_shift.days_until == 1 %}
-                            <div class="shift-countdown" style="color: var(--success);">{{ t.dashboard_tomorrow }}</div>
+                            <div class="shift-countdown text-success">{{ t.dashboard_tomorrow }}</div>
                         {% else %}
                             <div class="shift-countdown">{{ t.dashboard_in_days.replace('{n}', next_oncall_shift.days_until|string) }}</div>
                         {% endif %}
@@ -132,7 +132,7 @@
                     {% for day in week_schedule %}
                     <div class="schedule-day {% if day.is_today %}today{% endif %}{% if day.is_past %} past{% endif %}">
                         <div class="schedule-weekday">{{ _wdn_short[day.date.weekday()] }}</div>
-                        <div class="schedule-shift" {% if day.color %}style="background-color: {{ day.color }}; color: {{ day.color|contrast }};"{% endif %}>
+                        <div class="schedule-shift" {% if day.color %}data-bg="{{ day.color }}" data-fg="{{ day.color|contrast }}"{% endif %}>
                             {{ day.code }}
                         </div>
                     </div>
@@ -166,7 +166,7 @@
                     {% if week_summary.absence_deduction and week_summary.absence_deduction > 0 %}
                     <div class="summary-item">
                         <div class="summary-label">{{ t.dashboard_absence_deduction }}</div>
-                        <div class="summary-value" style="color: var(--danger);">-{{ "{:,.0f}".format(week_summary.absence_deduction) }}kr</div>
+                        <div class="summary-value summary-value--neg">-{{ "{:,.0f}".format(week_summary.absence_deduction) }}kr</div>
                     </div>
                     {% endif %}
                     {% endif %}
@@ -215,7 +215,7 @@
                     {% if month_summary.absence_deduction and month_summary.absence_deduction > 0 %}
                     <div class="summary-item">
                         <div class="summary-label">{{ t.dashboard_absence_deduction }}</div>
-                        <div class="summary-value" style="color: var(--danger);">-{{ "{:,.0f}".format(month_summary.absence_deduction) }}kr</div>
+                        <div class="summary-value summary-value--neg">-{{ "{:,.0f}".format(month_summary.absence_deduction) }}kr</div>
                     </div>
                     {% endif %}
                     {% if month_summary.total_hours > 0 %}
@@ -224,16 +224,16 @@
                         {% if not has_ot and not has_absence %}
                         <div class="summary-item">
                             <div class="summary-label">{{ t.dashboard_wage_per_hour }}</div>
-                            <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
+                            <div class="summary-value summary-value--pos">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
                         </div>
                         <div class="summary-item">
                             <div class="summary-label">{{ t.dashboard_wage_per_day }}</div>
-                            <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / (month_summary.total_hours / 8.5)) }}kr</div>
+                            <div class="summary-value summary-value--pos">{{ "{:,.0f}".format(month_summary.gross_pay / (month_summary.total_hours / 8.5)) }}kr</div>
                         </div>
                         {% elif not (has_ot and has_absence) %}
                         <div class="summary-item">
                             <div class="summary-label">{{ t.dashboard_wage_per_hour }}</div>
-                            <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
+                            <div class="summary-value summary-value--pos">{{ "{:,.0f}".format(month_summary.gross_pay / month_summary.total_hours) }}kr</div>
                         </div>
                         {% endif %}
                     {% endif %}
@@ -243,7 +243,7 @@
                     </div>
                     <div class="summary-item">
                         <div class="summary-label">{{ t.dashboard_net }}</div>
-                        <div class="summary-value" style="color: var(--success); font-weight: bold;">{{ "{:,.0f}".format(month_summary.net_pay) }}kr</div>
+                        <div class="summary-value summary-value--pos">{{ "{:,.0f}".format(month_summary.net_pay) }}kr</div>
                         {% if month_summary.trend %}
                         <div class="summary-subtrend">
                             {% if month_summary.trend.direction == 'up' %}
@@ -273,4 +273,13 @@
 
         </div>
     </section>
+<style>
+.dash-alert-card { border-color: var(--warning); grid-column: 1 / -1; }
+.dash-alert-title { color: var(--warning); margin-bottom: 0.5rem; }
+.dash-alert-btn { margin-top: 0.5rem; }
+.dash-h4 { margin-top: 1.5rem; }
+.summary-value--pos { color: var(--success); font-weight: bold; }
+.summary-value--neg { color: var(--danger); }
+</style>
+
 {% endblock %}

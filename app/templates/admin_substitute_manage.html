@@ -13,9 +13,9 @@
 
 <h2 class="page-title">
     {{ substitute.name }}
-    <span class="badge" style="background: var(--blue); color: white;">{{ t.substitute_tag }}</span>
+    <span class="badge badge-blue">{{ t.substitute_tag }}</span>
     {% if not substitute.is_active %}
-        <span class="badge" style="background: var(--muted); color: var(--bg);">{{ t.admin_substitutes_archived }}</span>
+        <span class="badge badge-muted">{{ t.admin_substitutes_archived }}</span>
     {% endif %}
 </h2>
 
@@ -23,11 +23,11 @@
 
 {% set weekday_names_short = t.week_day_names | from_json %}
 
-<div style="max-width: 760px;">
-    <div class="page-header" style="margin-bottom: 0.75rem;">
+<div class="shell-760">
+    <div class="page-header mb-sm">
         <div class="page-header-left">
             <a href="/admin/substitutes/{{ substitute.id }}?year={{ prev_year }}&month={{ prev_month }}" class="btn secondary">&larr;</a>
-            <strong style="margin: 0 0.75rem;">{{ year }}-{{ '%02d'|format(month) }}</strong>
+            <strong class="mx-2">{{ year }}-{{ '%02d'|format(month) }}</strong>
             <a href="/admin/substitutes/{{ substitute.id }}?year={{ next_year }}&month={{ next_month }}" class="btn secondary">&rarr;</a>
         </div>
     </div>
@@ -36,11 +36,11 @@
         <input type="hidden" name="year" value="{{ year }}">
         <input type="hidden" name="month" value="{{ month }}">
 
-        <table class="sub-calendar" style="width: 100%; border-collapse: collapse;">
+        <table class="sub-calendar">
             <thead>
                 <tr>
                     {% for d in range(7) %}
-                        <th style="padding: 4px; text-align: center; color: var(--muted); font-size: 0.8rem;">{{ weekday_names_short[d] }}</th>
+                        <th class="sub-th">{{ weekday_names_short[d] }}</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -51,11 +51,9 @@
                             {% if day.month == month %}
                                 {% set iso = day.isoformat() %}
                                 {% set current_code = shift_by_date.get(iso, '') %}
-                                <td class="sub-cal-cell {% if current_code %}has-shift{% endif %}"
-                                    style="border: 1px solid var(--border); padding: 4px; vertical-align: top; height: 56px;">
-                                    <div style="font-size: 0.75rem; color: var(--muted);">{{ day.day }}</div>
-                                    <select name="shift_{{ iso }}" onchange="markCell(this)"
-                                            style="width: 100%; font-size: 0.8rem; box-sizing: border-box;">
+                                <td class="sub-cal-cell {% if current_code %}has-shift{% endif %}">
+                                    <div class="text-xs-muted">{{ day.day }}</div>
+                                    <select name="shift_{{ iso }}" onchange="markCell(this)" class="sub-select">
                                         <option value="">&ndash;</option>
                                         {% for code in allowed_codes %}
                                             <option value="{{ code }}" {% if current_code == code %}selected{% endif %}>{{ code }}</option>
@@ -63,7 +61,7 @@
                                     </select>
                                 </td>
                             {% else %}
-                                <td style="border: 1px solid var(--border); padding: 4px; background: var(--muted-bg, #1c1c24);"></td>
+                                <td class="sub-cell-filled"></td>
                             {% endif %}
                         {% endfor %}
                     </tr>
@@ -71,38 +69,38 @@
             </tbody>
         </table>
 
-        <button type="submit" class="btn" style="margin-top: 1rem;">{{ t.admin_substitute_save }}</button>
+        <button type="submit" class="btn mt-1">{{ t.admin_substitute_save }}</button>
     </form>
 
     {# Overtime entries (hours only, no pay for substitutes) #}
-    <h3 style="margin-top: 2rem;">Övertid</h3>
+    <h3 class="section-mt">Övertid</h3>
     <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/add"
-          style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-bottom: 0.75rem;">
-        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Datum
+          class="sub-form-row">
+        <label class="sub-field">Datum
             <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
         </label>
-        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Från
+        <label class="sub-field">Från
             <input type="time" name="start_time" required>
         </label>
-        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Till
+        <label class="sub-field">Till
             <input type="time" name="end_time" required>
         </label>
-        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Timmar
-            <input type="number" name="hours" step="0.25" min="0" style="width: 6rem;" required>
+        <label class="sub-field">Timmar
+            <input type="number" name="hours" step="0.25" min="0" class="w-6" required>
         </label>
         <button type="submit" class="btn">Lägg till</button>
     </form>
     {% if overtime_shifts %}
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 1rem;">
+        <table class="sub-list-table">
             <tbody>
                 {% for ot in overtime_shifts %}
-                    <tr style="border-bottom: 1px solid var(--border);">
-                        <td style="padding: 4px;">{{ ot.date }}</td>
-                        <td style="padding: 4px;">{{ '%02d:%02d'|format(ot.start_time.hour, ot.start_time.minute) }}&ndash;{{ '%02d:%02d'|format(ot.end_time.hour, ot.end_time.minute) }}</td>
-                        <td style="padding: 4px;">{{ ot.hours }} h</td>
-                        <td style="padding: 4px; text-align: right;">
-                            <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/{{ ot.id }}/delete" style="display: inline;">
-                                <button type="submit" class="btn secondary" style="padding: 2px 8px;">Ta bort</button>
+                    <tr class="sub-tr">
+                        <td class="sub-td">{{ ot.date }}</td>
+                        <td class="sub-td">{{ '%02d:%02d'|format(ot.start_time.hour, ot.start_time.minute) }}&ndash;{{ '%02d:%02d'|format(ot.end_time.hour, ot.end_time.minute) }}</td>
+                        <td class="sub-td">{{ ot.hours }} h</td>
+                        <td class="sub-td sub-td-right">
+                            <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/{{ ot.id }}/delete" class="inline-form">
+                                <button type="submit" class="btn secondary btn-xs">Ta bort</button>
                             </form>
                         </td>
                     </tr>
@@ -112,13 +110,13 @@
     {% endif %}
 
     {# Absence entries (day tracking only, no deduction for substitutes) #}
-    <h3 style="margin-top: 1.5rem;">Frånvaro</h3>
+    <h3 class="mt-3">Frånvaro</h3>
     <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/add"
-          style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-bottom: 0.75rem;">
-        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Datum
+          class="sub-form-row">
+        <label class="sub-field">Datum
             <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
         </label>
-        <label style="display: flex; flex-direction: column; font-size: 0.8rem;">Typ
+        <label class="sub-field">Typ
             <select name="absence_type" required>
                 {% for at in absence_types %}
                     <option value="{{ at }}">{{ at }}</option>
@@ -128,15 +126,15 @@
         <button type="submit" class="btn">Lägg till</button>
     </form>
     {% if absences %}
-        <table style="width: 100%; border-collapse: collapse;">
+        <table class="sub-list-table sub-list-table--flush">
             <tbody>
                 {% for a in absences %}
-                    <tr style="border-bottom: 1px solid var(--border);">
-                        <td style="padding: 4px;">{{ a.date }}</td>
-                        <td style="padding: 4px;">{{ a.absence_type }}</td>
-                        <td style="padding: 4px; text-align: right;">
-                            <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/{{ a.id }}/delete" style="display: inline;">
-                                <button type="submit" class="btn secondary" style="padding: 2px 8px;">Ta bort</button>
+                    <tr class="sub-tr">
+                        <td class="sub-td">{{ a.date }}</td>
+                        <td class="sub-td">{{ a.absence_type }}</td>
+                        <td class="sub-td sub-td-right">
+                            <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/{{ a.id }}/delete" class="inline-form">
+                                <button type="submit" class="btn secondary btn-xs">Ta bort</button>
                             </form>
                         </td>
                     </tr>
@@ -159,5 +157,22 @@ function markCell(sel) {
     }
 }
 </script>
+
+
+<style>
+.shell-760 { max-width: 760px; }
+.sub-calendar { width: 100%; border-collapse: collapse; }
+.sub-th { padding: 4px; text-align: center; color: var(--muted); font-size: 0.8rem; }
+.sub-cal-cell { border: 1px solid var(--border); padding: 4px; vertical-align: top; height: 56px; }
+.sub-cell-filled { border: 1px solid var(--border); padding: 4px; background: var(--panel); }
+.sub-select { width: 100%; font-size: 0.8rem; box-sizing: border-box; }
+.sub-form-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-bottom: 0.75rem; }
+.sub-field { display: flex; flex-direction: column; font-size: 0.8rem; }
+.sub-list-table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+.sub-list-table--flush { margin-bottom: 0; }
+.sub-tr { border-bottom: 1px solid var(--border); }
+.sub-td { padding: 4px; }
+.sub-td-right { text-align: right; }
+</style>
 
 {% endblock %}

@@ -5,13 +5,13 @@
 
 {% block page_content %}
 <section>
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+    <div class="stat-header">
         <h2>{{ t.stats_title.replace('{year}', year|string).replace('{name}', person_name) }}</h2>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <div class="stat-header-controls">
             <a href="/statistics/{{ person_id }}?year={{ year - 1 }}" class="btn btn-primary">&larr; {{ year - 1 }}</a>
             <a href="/statistics/{{ person_id }}?year={{ year + 1 }}" class="btn btn-primary">{{ year + 1 }} &rarr;</a>
             {% if all_persons %}
-            <select onchange="window.location.href='/statistics/' + this.value + '?year={{ year }}'" style="padding: 0.4rem; border-radius: 4px; background: var(--bg-card); color: var(--text); border: 1px solid var(--muted-bg);">
+            <select onchange="window.location.href='/statistics/' + this.value + '?year={{ year }}'" class="stat-select">
                 {% for p in all_persons %}
                 <option value="{{ p.id }}" {% if p.id == person_id %}selected{% endif %}>{{ p.name }}</option>
                 {% endfor %}
@@ -21,27 +21,27 @@
     </div>
 
     {% if show_salary %}
-    <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1.5rem;">
+    <div class="stat-grid-1">
 
         {# Pay trend chart - full width #}
         <div class="card">
             <h3>{{ t.stats_pay_trend }}</h3>
-            <canvas id="payChart" style="min-height: 300px;"></canvas>
+            <canvas id="payChart" class="chart-tall"></canvas>
         </div>
 
         {# OB breakdown chart - full width #}
         <div class="card">
             <h3>{{ t.stats_ob_per_month }}</h3>
-            <canvas id="obChart" style="min-height: 300px;"></canvas>
+            <canvas id="obChart" class="chart-tall"></canvas>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+        <div class="stat-grid-auto">
             {# Absence doughnut #}
             <div class="card">
                 <h3>{{ t.stats_absence }}</h3>
                 {% set total_absence = absence_data.sick + absence_data.vab + absence_data.leave + absence_data.off %}
                 {% if total_absence > 0 %}
-                <canvas id="absenceChart" style="min-height: 280px;"></canvas>
+                <canvas id="absenceChart" class="chart-med"></canvas>
                 {% else %}
                 <p class="info-text">{{ t.stats_no_absence.replace('{year}', year|string) }}</p>
                 {% endif %}
@@ -50,41 +50,41 @@
             {# Hours chart #}
             <div class="card">
                 <h3>{{ t.stats_hours_per_month }}</h3>
-                <canvas id="hoursChart" style="min-height: 280px;"></canvas>
+                <canvas id="hoursChart" class="chart-med"></canvas>
             </div>
         </div>
     </div>
 
     {# Summary cards #}
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
-        <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_gross }}</div>
-            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_brutto or 0).replace(",", " ") }} kr</div>
+    <div class="stat-grid-cards">
+        <div class="card stat-card">
+            <div class="stat-label">{{ t.stats_total_gross }}</div>
+            <div class="stat-value">{{ "{:,.0f}".format(year_summary.total_brutto or 0).replace(",", " ") }} kr</div>
         </div>
-        <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_net }}</div>
-            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_netto or 0).replace(",", " ") }} kr</div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ t.stats_total_net }}</div>
+            <div class="stat-value">{{ "{:,.0f}".format(year_summary.total_netto or 0).replace(",", " ") }} kr</div>
         </div>
-        <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_ob }}</div>
-            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_ob or 0).replace(",", " ") }} kr</div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ t.stats_total_ob }}</div>
+            <div class="stat-value">{{ "{:,.0f}".format(year_summary.total_ob or 0).replace(",", " ") }} kr</div>
         </div>
-        <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_oncall }}</div>
-            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_oncall or 0).replace(",", " ") }} kr</div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ t.stats_total_oncall }}</div>
+            <div class="stat-value">{{ "{:,.0f}".format(year_summary.total_oncall or 0).replace(",", " ") }} kr</div>
         </div>
-        <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_hours }}</div>
-            <div style="font-size: 1.4rem; font-weight: bold;">{{ "{:,.0f}".format(year_summary.total_hours or 0).replace(",", " ") }}h</div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ t.stats_total_hours }}</div>
+            <div class="stat-value">{{ "{:,.0f}".format(year_summary.total_hours or 0).replace(",", " ") }}h</div>
         </div>
-        <div class="card" style="text-align: center;">
-            <div style="color: var(--muted); font-size: 0.85rem;">{{ t.stats_total_shifts }}</div>
-            <div style="font-size: 1.4rem; font-weight: bold;">{{ year_summary.total_shifts or 0 }}</div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ t.stats_total_shifts }}</div>
+            <div class="stat-value">{{ year_summary.total_shifts or 0 }}</div>
         </div>
     </div>
 
     {# Monthly detail table #}
-    <h3 style="margin-top: 2rem;">{{ t.stats_monthly_overview }}</h3>
+    <h3 class="section-mt">{{ t.stats_monthly_overview }}</h3>
     <table class="summary">
         <thead>
             <tr>
@@ -130,7 +130,7 @@
     </table>
 
     {% else %}
-    <p class="info-text" style="margin-top: 2rem;">{{ t.stats_salary_hidden }}</p>
+    <p class="info-text section-mt">{{ t.stats_salary_hidden }}</p>
     {% endif %}
 </section>
 

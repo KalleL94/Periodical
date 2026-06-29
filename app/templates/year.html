@@ -34,7 +34,7 @@
     <!-- 1. Monthly summary (2 wide) -->
     <div class="year-monthly">
         <h2 class="page-title">{{ t.year_monthly_summary.replace('{year}', year|string).replace('{name}', person_name) }}</h2>
-        <p style="font-style: italic; color: #666; margin-bottom: 16px;">
+        <p class="year-intro">
             {{ t.year_table_note.replace('{y1}', (year - 1)|string).replace('{y2}', year|string) }}
         </p>
 
@@ -55,7 +55,7 @@
                 <th class="th_right" rowspan="2">{{ t.year_oncall }}</th>
                 <th class="th_right" rowspan="2">{{ t.year_ot_pay }}</th>
                 {% if has_sick_ob %}
-                <th class="th_center" colspan="3" style="border-bottom: 1px solid var(--border); font-size: 0.8rem; color: var(--muted);">{{ t.year_absence }}</th>
+                <th class="th_center year-th-group" colspan="3">{{ t.year_absence }}</th>
                 {% else %}
                 <th class="th_right" rowspan="2">{{ t.year_absence }}</th>
                 {% endif %}
@@ -64,9 +64,9 @@
             </tr>
             <tr>
                 {% if show_salary and has_sick_ob %}
-                <th class="th_right" style="font-size: 0.7rem; color: var(--muted); padding: 2px 4px;">{{ t.year_absence_salary }}</th>
-                <th class="th_right" style="font-size: 0.7rem; color: var(--ob-sick); padding: 2px 4px;">{{ t.year_absence_ob_lost }}</th>
-                <th class="th_right" style="font-size: 0.7rem; color: var(--success); padding: 2px 4px;">{{ t.year_absence_ob_comp }}</th>
+                <th class="th_right year-th-sm text-muted">{{ t.year_absence_salary }}</th>
+                <th class="th_right year-th-sm text-ob-sick">{{ t.year_absence_ob_lost }}</th>
+                <th class="th_right year-th-sm text-success">{{ t.year_absence_ob_comp }}</th>
                 {% endif %}
             </tr>
             </thead>
@@ -101,22 +101,22 @@
                     {% if has_sick_ob %}
                     {% set _ob_sick = m.sick_total_ob and m.sick_total_ob > 0 %}
                     {% set _ob_pay = m.sick_ob_pay and m.sick_ob_pay > 0 %}
-                    <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _aded %}right{% else %}center{% endif %}; color: var(--danger);" data-label="{{ t.year_absence_salary }}">
-                        {% if _aded %}-{{ "%.0f"|format(m.absence_deduction) }}{% else %}<span style="color: var(--muted);">0</span>{% endif %}
+                    <td class="year-cell {% if _aded %}text-right{% else %}text-center{% endif %} text-danger" data-label="{{ t.year_absence_salary }}">
+                        {% if _aded %}-{{ "%.0f"|format(m.absence_deduction) }}{% else %}<span class="text-muted">0</span>{% endif %}
                     </td>
-                    <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _ob_sick %}right{% else %}center{% endif %}; color: var(--ob-sick);" data-label="{{ t.year_absence_ob_lost }}">
-                        {% if _ob_sick %}-{{ "%.0f"|format(m.sick_total_ob) }}{% else %}<span style="color: var(--muted);">–</span>{% endif %}
+                    <td class="year-cell {% if _ob_sick %}text-right{% else %}text-center{% endif %} text-ob-sick" data-label="{{ t.year_absence_ob_lost }}">
+                        {% if _ob_sick %}-{{ "%.0f"|format(m.sick_total_ob) }}{% else %}<span class="text-muted">–</span>{% endif %}
                     </td>
-                    <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _ob_pay %}right{% else %}center{% endif %}; color: var(--success);" data-label="{{ t.year_absence_ob_comp }}">
-                        {% if _ob_pay %}+{{ "%.0f"|format(m.sick_ob_pay) }}{% else %}<span style="color: var(--muted);">–</span>{% endif %}
+                    <td class="year-cell {% if _ob_pay %}text-right{% else %}text-center{% endif %} text-success" data-label="{{ t.year_absence_ob_comp }}">
+                        {% if _ob_pay %}+{{ "%.0f"|format(m.sick_ob_pay) }}{% else %}<span class="text-muted">–</span>{% endif %}
                     </td>
                     {% else %}
-                    <td class="td_right num" style="color: {% if _aded %}var(--danger){% endif %};" data-label="{{ t.year_absence }}">
+                    <td class="td_right num {% if _aded %}text-danger{% endif %}" data-label="{{ t.year_absence }}">
                         {% if _aded %}-{{ "%.0f"|format(m.absence_deduction) }}{% else %}0{% endif %}
                     </td>
                     {% endif %}
                     {% if vacation_pay %}
-                    <td class="td_right num" data-label="{{ t.year_sem_vacation_col }}" style="{% if m.vacation_supplement %}color: var(--accent-2);{% endif %}">
+                    <td class="td_right num {% if m.vacation_supplement %}text-accent2{% endif %}" data-label="{{ t.year_sem_vacation_col }}">
                         {% if m.vacation_supplement %}{{ "%.0f"|format(m.vacation_supplement) }}{% else %}0{% endif %}
                     </td>
                     {% endif %}
@@ -142,22 +142,22 @@
                 {% if has_sick_ob %}
                 {% set _ttob = year_summary.total_sick_total_ob and year_summary.total_sick_total_ob > 0 %}
                 {% set _top = year_summary.total_sick_ob_pay and year_summary.total_sick_ob_pay > 0 %}
-                <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _tded %}right{% else %}center{% endif %}; color: var(--danger);" data-label="{{ t.year_absence_salary }}">
-                    <strong>{% if _tded %}-{{ "%.0f"|format(year_summary.total_absence_deduction) }}{% else %}<span style="color: var(--muted);">0</span>{% endif %}</strong>
+                <td class="year-cell {% if _tded %}text-right{% else %}text-center{% endif %} text-danger" data-label="{{ t.year_absence_salary }}">
+                    <strong>{% if _tded %}-{{ "%.0f"|format(year_summary.total_absence_deduction) }}{% else %}<span class="text-muted">0</span>{% endif %}</strong>
                 </td>
-                <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _ttob %}right{% else %}center{% endif %}; color: var(--ob-sick);" data-label="{{ t.year_absence_ob_lost }}">
-                    <strong>{% if _ttob %}-{{ "%.0f"|format(year_summary.total_sick_total_ob) }}{% else %}<span style="color: var(--muted);">–</span>{% endif %}</strong>
+                <td class="year-cell {% if _ttob %}text-right{% else %}text-center{% endif %} text-ob-sick" data-label="{{ t.year_absence_ob_lost }}">
+                    <strong>{% if _ttob %}-{{ "%.0f"|format(year_summary.total_sick_total_ob) }}{% else %}<span class="text-muted">–</span>{% endif %}</strong>
                 </td>
-                <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _top %}right{% else %}center{% endif %}; color: var(--success);" data-label="{{ t.year_absence_ob_comp }}">
-                    <strong>{% if _top %}+{{ "%.0f"|format(year_summary.total_sick_ob_pay) }}{% else %}<span style="color: var(--muted);">–</span>{% endif %}</strong>
+                <td class="year-cell {% if _top %}text-right{% else %}text-center{% endif %} text-success" data-label="{{ t.year_absence_ob_comp }}">
+                    <strong>{% if _top %}+{{ "%.0f"|format(year_summary.total_sick_ob_pay) }}{% else %}<span class="text-muted">–</span>{% endif %}</strong>
                 </td>
                 {% else %}
-                <td class="td_right foot_right num" style="color: {% if _tded %}var(--danger){% endif %};" data-label="{{ t.year_absence }}">
+                <td class="td_right foot_right num {% if _tded %}text-danger{% endif %}" data-label="{{ t.year_absence }}">
                     <strong>{% if _tded %}-{{ "%.0f"|format(year_summary.total_absence_deduction) }}{% else %}0{% endif %}</strong>
                 </td>
                 {% endif %}
                 {% if vacation_pay %}
-                <td class="td_right foot_right num" data-label="{{ t.year_sem_vacation_col }}" style="color: var(--accent-2);">{{ "%.0f"|format(year_summary.total_vacation_supplement or 0) }}</td>
+                <td class="td_right foot_right num text-accent2" data-label="{{ t.year_sem_vacation_col }}">{{ "%.0f"|format(year_summary.total_vacation_supplement or 0) }}</td>
                 {% endif %}
                 {% endif %}
             </tr>
@@ -178,29 +178,29 @@
                 {% if has_sick_ob %}
                 {% set _asto = year_summary.avg_sick_total_ob and year_summary.avg_sick_total_ob > 0 %}
                 {% set _asop = year_summary.avg_sick_ob_pay and year_summary.avg_sick_ob_pay > 0 %}
-                <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _aed %}right{% else %}center{% endif %}; color: var(--danger);" data-label="{{ t.year_absence_salary }}">
-                    {% if _aed %}-{{ "%.0f"|format(year_summary.avg_absence_deduction) }}{% else %}<span style="color: var(--muted);">0</span>{% endif %}
+                <td class="year-cell {% if _aed %}text-right{% else %}text-center{% endif %} text-danger" data-label="{{ t.year_absence_salary }}">
+                    {% if _aed %}-{{ "%.0f"|format(year_summary.avg_absence_deduction) }}{% else %}<span class="text-muted">0</span>{% endif %}
                 </td>
-                <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _asto %}right{% else %}center{% endif %}; color: var(--ob-sick);" data-label="{{ t.year_absence_ob_lost }}">
-                    {% if _asto %}-{{ "%.0f"|format(year_summary.avg_sick_total_ob) }}{% else %}<span style="color: var(--muted);">–</span>{% endif %}
+                <td class="year-cell {% if _asto %}text-right{% else %}text-center{% endif %} text-ob-sick" data-label="{{ t.year_absence_ob_lost }}">
+                    {% if _asto %}-{{ "%.0f"|format(year_summary.avg_sick_total_ob) }}{% else %}<span class="text-muted">–</span>{% endif %}
                 </td>
-                <td style="font-size: 0.8rem; padding: 4px 4px; text-align: {% if _asop %}right{% else %}center{% endif %}; color: var(--success);" data-label="{{ t.year_absence_ob_comp }}">
-                    {% if _asop %}+{{ "%.0f"|format(year_summary.avg_sick_ob_pay) }}{% else %}<span style="color: var(--muted);">–</span>{% endif %}
+                <td class="year-cell {% if _asop %}text-right{% else %}text-center{% endif %} text-success" data-label="{{ t.year_absence_ob_comp }}">
+                    {% if _asop %}+{{ "%.0f"|format(year_summary.avg_sick_ob_pay) }}{% else %}<span class="text-muted">–</span>{% endif %}
                 </td>
                 {% else %}
-                <td class="td_right foot_right num" style="color: {% if _aed %}var(--danger){% endif %};" data-label="{{ t.year_absence }}">
+                <td class="td_right foot_right num {% if _aed %}text-danger{% endif %}" data-label="{{ t.year_absence }}">
                     {% if _aed %}-{{ "%.0f"|format(year_summary.avg_absence_deduction) }}{% else %}0{% endif %}
                 </td>
                 {% endif %}
                 {% if vacation_pay %}
-                <td class="td_right foot_right num" data-label="{{ t.year_sem_vacation_col }}" style="color: var(--accent-2);">{{ "%.0f"|format(year_summary.avg_vacation_supplement or 0) }}</td>
+                <td class="td_right foot_right num text-accent2" data-label="{{ t.year_sem_vacation_col }}">{{ "%.0f"|format(year_summary.avg_vacation_supplement or 0) }}</td>
                 {% endif %}
                 {% endif %}
             </tr>
             </tfoot>
         </table>
         {% if show_salary and has_sick_ob %}
-        <p style="font-size: 0.75rem; color: var(--muted); margin-top: 6px;">{{ t.year_absence_ob_sick_note }}</p>
+        <p class="year-note">{{ t.year_absence_ob_sick_note }}</p>
         {% endif %}
     </div>
 
@@ -310,48 +310,48 @@
                     <td class="td_left" data-label="{{ t.year_type_col }}">{{ t.year_sick_leave }}</td>
                     <td class="td_right num" data-label="{{ t.year_days_col }}">{{ year_summary.total_sick_days or 0 }}</td>
                     <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_sick_hours or 0) }}</td>
-                    <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: var(--danger);">-{{ "%.0f"|format(year_summary.sick_deduction or 0) }} kr</td>
+                    <td class="td_right num text-danger" data-label="{{ t.year_deduction_col }}">-{{ "%.0f"|format(year_summary.sick_deduction or 0) }} kr</td>
                 </tr>
                 {% if year_summary.total_sick_ob_lost and year_summary.total_sick_ob_lost > 0 %}
                 <tr class="shift-row">
-                    <td class="td_left" data-label="{{ t.year_type_col }}" style="color: var(--ob-sick); padding-left: 1.5rem; font-size: 0.85rem;">&#x21B3; {{ t.year_sick_ob_lost_label }}</td>
+                    <td class="td_left year-type-cell text-ob-sick" data-label="{{ t.year_type_col }}">&#x21B3; {{ t.year_sick_ob_lost_label }}</td>
                     <td class="td_right num"></td>
                     <td class="td_right num"></td>
-                    <td class="td_right num" style="color: var(--ob-sick);">-{{ "%.0f"|format(year_summary.total_sick_ob_lost) }} kr</td>
+                    <td class="td_right num text-ob-sick">-{{ "%.0f"|format(year_summary.total_sick_ob_lost) }} kr</td>
                 </tr>
                 {% endif %}
                 {% if year_summary.total_sick_ob_pay and year_summary.total_sick_ob_pay > 0 %}
                 <tr class="shift-row">
-                    <td class="td_left" data-label="{{ t.year_type_col }}" style="color: var(--success); padding-left: 1.5rem; font-size: 0.85rem;">&#x21B3; {{ t.year_sick_ob_label }}</td>
+                    <td class="td_left year-type-cell text-success" data-label="{{ t.year_type_col }}">&#x21B3; {{ t.year_sick_ob_label }}</td>
                     <td class="td_right num"></td>
                     <td class="td_right num"></td>
-                    <td class="td_right num" style="color: var(--success);">+{{ "%.0f"|format(year_summary.total_sick_ob_pay) }} kr</td>
+                    <td class="td_right num text-success">+{{ "%.0f"|format(year_summary.total_sick_ob_pay) }} kr</td>
                 </tr>
                 {% endif %}
                 <tr class="shift-row">
                     <td class="td_left" data-label="{{ t.year_type_col }}">{{ t.year_vab_label }}</td>
                     <td class="td_right num" data-label="{{ t.year_days_col }}">{{ year_summary.total_vab_days or 0 }}</td>
                     <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_vab_hours or 0) }}</td>
-                    <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: var(--ob-sick);">-{{ "%.0f"|format(year_summary.vab_deduction or 0) }} kr</td>
+                    <td class="td_right num text-ob-sick" data-label="{{ t.year_deduction_col }}">-{{ "%.0f"|format(year_summary.vab_deduction or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
                     <td class="td_left" data-label="{{ t.year_type_col }}">{{ t.year_leave_label }}</td>
                     <td class="td_right num" data-label="{{ t.year_days_col }}">{{ year_summary.total_leave_days or 0 }}</td>
                     <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_leave_hours or 0) }}</td>
-                    <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: var(--ob5);">-{{ "%.0f"|format(year_summary.leave_deduction or 0) }} kr</td>
+                    <td class="td_right num text-ob5" data-label="{{ t.year_deduction_col }}">-{{ "%.0f"|format(year_summary.leave_deduction or 0) }} kr</td>
                 </tr>
                 <tr class="shift-row">
                     <td class="td_left" data-label="{{ t.year_type_col }}">{{ t.year_off_label }}</td>
                     <td class="td_right num" data-label="{{ t.year_days_col }}">{{ year_summary.total_off_days or 0 }}</td>
                     <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_off_hours or 0) }}</td>
-                    <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: #888888;">{{ "%.0f"|format(year_summary.off_deduction or 0) }} kr</td>
+                    <td class="td_right num text-gray" data-label="{{ t.year_deduction_col }}">{{ "%.0f"|format(year_summary.off_deduction or 0) }} kr</td>
                 </tr>
                 {% if year_summary.total_parental_days %}
                 <tr class="shift-row">
                     <td class="td_left" data-label="{{ t.year_type_col }}">{{ t.year_parental_label }}</td>
                     <td class="td_right num" data-label="{{ t.year_days_col }}">{{ year_summary.total_parental_days or 0 }}</td>
                     <td class="td_right num" data-label="{{ t.year_hours_col }}">{{ "%.1f"|format(year_summary.total_parental_hours or 0) }}</td>
-                    <td class="td_right num" data-label="{{ t.year_deduction_col }}" style="color: var(--blue);">{{ "%.0f"|format(0) }} kr</td>
+                    <td class="td_right num text-blue" data-label="{{ t.year_deduction_col }}">{{ "%.0f"|format(0) }} kr</td>
                 </tr>
                 {% endif %}
             </tbody>
@@ -360,7 +360,7 @@
                     <td class="td_left foot_left" data-label="{{ t.year_type_col }}"><strong>{{ t.year_total }}</strong></td>
                     <td class="td_right foot_right num" data-label="{{ t.year_days_col }}"><strong>{{ (year_summary.total_sick_days or 0) + (year_summary.total_vab_days or 0) + (year_summary.total_leave_days or 0) + (year_summary.total_off_days or 0) + (year_summary.total_parental_days or 0) }}</strong></td>
                     <td class="td_right foot_right num" data-label="{{ t.year_hours_col }}"><strong>{{ "%.1f"|format((year_summary.total_sick_hours or 0) + (year_summary.total_vab_hours or 0) + (year_summary.total_leave_hours or 0) + (year_summary.total_off_hours or 0) + (year_summary.total_parental_hours or 0)) }}</strong></td>
-                    <td class="td_right foot_right num" data-label="{{ t.year_deduction_col }}" style="color: var(--danger);">
+                    <td class="td_right foot_right num text-danger" data-label="{{ t.year_deduction_col }}">
                         <strong>-{{ "%.0f"|format(year_summary.total_absence_deduction or 0) }} kr</strong>
                     </td>
                 </tr>
@@ -396,11 +396,11 @@
                 <tr>
                     <td class="td_left foot_left" data-label="{{ t.year_type_col }}"><strong>{{ t.year_supplement_row }}</strong></td>
                     <td class="td_right foot_right num" data-label="{{ t.year_per_day_col }}"><strong>{{ "%.0f"|format(vacation_pay.pay.supplement_per_day) }} kr</strong></td>
-                    <td class="td_right foot_right num" data-label="{{ t.year_amount_col }}" style="color: var(--accent-2);"><strong>{{ "%.0f"|format(vacation_pay.pay.supplement_per_day * vacation_pay.used_days) }} kr</strong></td>
+                    <td class="td_right foot_right num text-accent2" data-label="{{ t.year_amount_col }}"><strong>{{ "%.0f"|format(vacation_pay.pay.supplement_per_day * vacation_pay.used_days) }} kr</strong></td>
                 </tr>
             </tfoot>
         </table>
-        <div style="margin-top: 8px; font-size: 0.8rem; color: var(--muted);">
+        <div class="year-foot-note">
             {{ t.year_vacation_balance_note.replace('{entitled}', vacation_pay.entitled_days|string).replace('{used}', vacation_pay.used_days|string).replace('{remaining}', vacation_pay.remaining_days|string).replace('{start}', vacation_pay.year_start | date_format).replace('{end}', vacation_pay.year_end | date_format) }}
         </div>
     </div>
@@ -410,7 +410,7 @@
     <div class="year-cowork">
         <h2 class="page-title">
             {{ t.year_cowork_title.replace('{year}', year|string).replace('{name}', person_name) }}
-            <a href="/cowork/{{ person_id }}?year={{ year }}" class="btn secondary" style="font-size: 0.8em; margin-left: 0.75rem;">{{ t.year_cowork_detailed }}</a>
+            <a href="/cowork/{{ person_id }}?year={{ year }}" class="btn secondary year-cowork-link">{{ t.year_cowork_detailed }}</a>
         </h2>
 
         <table class="summary">

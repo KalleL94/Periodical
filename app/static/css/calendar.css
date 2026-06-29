@@ -121,3 +121,5 @@ a.rotation-week-small:hover { color: var(--text); }
 .week-grid-all .shift-link { color: var(--text); }
 .shift-name { font-size: 0.85rem; font-weight: 500; }
 .shift-name--off { font-weight: 400; color: var(--muted); }
+
+.calendar-grid .calendar-day { border-top: 4px solid #333; }
