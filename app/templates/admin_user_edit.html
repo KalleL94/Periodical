@@ -13,117 +13,117 @@
 
 <h2 class="page-title">{{ t.admin_edit_title.replace('{name}', edit_user.name) }}</h2>
 
-<div style="max-width: 500px;">
+<div class="form-shell">
     <div class="card">
         {% if error %}
-            <div style="background: rgba(255,100,100,0.2); border: 1px solid var(--danger); padding: 12px; border-radius: var(--radius); margin-bottom: 16px;">
+            <div class="alert alert--danger">
                 {{ error }}
             </div>
         {% endif %}
 
-        <form method="POST" action="/admin/users/{{ edit_user.id }}">
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_id }}</label>
-                <input type="text" value="{{ edit_user.id }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
+        <form method="POST" action="/admin/users/{{ edit_user.id }}" class="form-stack">
+            <div class="form-group">
+                <label class="form-label">{{ t.admin_field_id }}</label>
+                <input type="text" value="{{ edit_user.id }}" disabled class="form-input">
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_username }}</label>
-                <input type="text" value="{{ edit_user.username }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                <small style="color: var(--muted);">{{ t.admin_field_username_hint }}</small>
+            <div class="form-group">
+                <label class="form-label">{{ t.admin_field_username }}</label>
+                <input type="text" value="{{ edit_user.username }}" disabled class="form-input">
+                <small class="form-hint">{{ t.admin_field_username_hint }}</small>
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label for="name" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_name }}</label>
-                <input type="text" id="name" name="name" value="{{ edit_user.name }}" required style="width: 100%; box-sizing: border-box;">
+            <div class="form-group">
+                <label for="name" class="form-label">{{ t.admin_field_name }}</label>
+                <input type="text" id="name" name="name" value="{{ edit_user.name }}" required class="form-input">
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_wage }}</label>
+            <div class="form-group">
+                <label class="form-label">{{ t.admin_field_wage }}</label>
                 {% set wage_unit = t.admin_wage_unit_hourly if edit_user.wage_type and edit_user.wage_type.value == 'hourly' else t.admin_wage_unit_monthly %}
-                <input type="text" value="{{ '{:,}'.format(edit_user.wage).replace(',', ' ') }} {{ wage_unit }}" disabled style="width: 100%; box-sizing: border-box; opacity: 0.6;">
-                <small style="color: var(--muted);">{{ t.admin_field_wage_hint }}</small>
+                <input type="text" value="{{ '{:,}'.format(edit_user.wage).replace(',', ' ') }} {{ wage_unit }}" disabled class="form-input">
+                <small class="form-hint">{{ t.admin_field_wage_hint }}</small>
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label for="tax_table" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_tax }}</label>
-                <select id="tax_table" name="tax_table" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);">
+            <div class="form-group">
+                <label for="tax_table" class="form-label">{{ t.admin_field_tax }}</label>
+                <select id="tax_table" name="tax_table" class="form-input">
                     {% for table in available_tax_tables %}
                     <option value="{{ table }}" {% if edit_user.tax_table == table %}selected{% endif %}>Tabell {{ table }}</option>
                     {% endfor %}
                 </select>
-                <small style="color: var(--muted);">{{ t.admin_field_tax_hint }}</small>
+                <small class="form-hint">{{ t.admin_field_tax_hint }}</small>
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label for="role" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_role }}</label>
-                <select id="role" name="role" style="width: 100%; box-sizing: border-box;">
+            <div class="form-group">
+                <label for="role" class="form-label">{{ t.admin_field_role }}</label>
+                <select id="role" name="role" class="form-input">
                     <option value="user" {% if edit_user.role.value == 'user' %}selected{% endif %}>User</option>
                     <option value="admin" {% if edit_user.role.value == 'admin' %}selected{% endif %}>Admin</option>
                 </select>
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_person_id }}</label>
+            <div class="form-group">
+                <label for="person_id" class="form-label">{{ t.admin_field_person_id }}</label>
                 <input type="number" id="person_id" name="person_id"
                        value="{{ edit_user.person_id if edit_user.person_id is not none else '' }}"
                        min="1" max="10"
                        placeholder="1-10 eller tomt"
-                       style="width: 100%; box-sizing: border-box;">
-                <small style="color: var(--muted);">{{ t.admin_field_person_id_hint }}</small>
+                       class="form-input">
+                <small class="form-hint">{{ t.admin_field_person_id_hint }}</small>
             </div>
 
-            <div style="margin-bottom: 24px;">
-                <label for="new_password" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_field_new_password }}</label>
-                <input type="password" id="new_password" name="new_password" minlength="6" style="width: 100%; box-sizing: border-box;">
-                <small style="color: var(--muted);">{{ t.admin_field_new_password_hint }}</small>
+            <div class="form-group">
+                <label for="new_password" class="form-label">{{ t.admin_field_new_password }}</label>
+                <input type="password" id="new_password" name="new_password" minlength="6" class="form-input">
+                <small class="form-hint">{{ t.admin_field_new_password_hint }}</small>
             </div>
 
-            <button type="submit" class="btn">{{ t.admin_save }}</button>
+            <button type="submit" class="btn btn-primary">{{ t.admin_save }}</button>
         </form>
     </div>
 
     <!-- Wage History -->
-    <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">{{ t.admin_wage_history }}</h3>
+    <div class="card card-mt">
+        <h3 class="form-card-title">{{ t.admin_wage_history }}</h3>
 
         {% if wage_history %}
-            <table style="width: 100%; border-collapse: collapse;">
+            <table class="history-table">
                 <thead>
-                    <tr style="border-bottom: 1px solid var(--border);">
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_wage_col }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_from_date }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_to_date }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_status }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.profile_action }}</th>
+                    <tr>
+                        <th>{{ t.profile_wage_col }}</th>
+                        <th>{{ t.profile_from_date }}</th>
+                        <th>{{ t.profile_to_date }}</th>
+                        <th>{{ t.profile_status }}</th>
+                        <th>{{ t.profile_action }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for record in wage_history %}
-                    <tr style="border-bottom: 1px solid var(--border);">
-                        <td style="padding: 8px; font-weight: 500;">{{ "{:,}".format(record.wage).replace(',', ' ') }} {{ wage_unit }}</td>
-                        <td style="padding: 8px;">{{ record.effective_from }}</td>
-                        <td style="padding: 8px;">
+                    <tr>
+                        <td class="cell-strong">{{ "{:,}".format(record.wage).replace(',', ' ') }} {{ wage_unit }}</td>
+                        <td>{{ record.effective_from }}</td>
+                        <td>
                             {% if record.effective_to %}
                                 {{ record.effective_to }}
                             {% else %}
-                                <span style="color: var(--muted); font-style: italic;">{{ t.profile_ongoing }}</span>
+                                <span class="text-italic-muted">{{ t.profile_ongoing }}</span>
                             {% endif %}
                         </td>
-                        <td style="padding: 8px;">
+                        <td>
                             {% if record.is_current %}
-                                <span style="color: var(--success); font-weight: 500;">{{ t.profile_current }}</span>
+                                <span class="status-pos">{{ t.profile_current }}</span>
                             {% else %}
-                                <span style="color: var(--muted);">{{ t.profile_historical }}</span>
+                                <span class="text-muted">{{ t.profile_historical }}</span>
                             {% endif %}
                         </td>
-                        <td style="padding: 8px;">
+                        <td>
                             {% if wage_history | length > 1 %}
-                                <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-wage/{{ record.id }}" style="display: inline;" onsubmit="return confirm('{{ t.admin_delete_wage_confirm }}');">
-                                    <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 0.875rem;">{{ t.profile_delete }}</button>
+                                <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-wage/{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.admin_delete_wage_confirm }}');">
+                                    <button type="submit" class="btn danger">{{ t.profile_delete }}</button>
                                 </form>
                             {% else %}
-                                <span style="color: var(--muted); font-size: 0.875rem;">-</span>
+                                <span class="text-muted rates-sm">-</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -131,28 +131,28 @@
                 </tbody>
             </table>
         {% else %}
-            <p style="color: var(--muted);">{{ t.admin_no_wage_history }}</p>
+            <p class="text-muted">{{ t.admin_no_wage_history }}</p>
         {% endif %}
     </div>
 
     <!-- Add New Wage -->
-    <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">{{ t.admin_add_wage }}</h3>
-        <p style="color: var(--muted); margin-bottom: 16px;">
+    <div class="card card-mt">
+        <h3 class="form-card-title">{{ t.admin_add_wage }}</h3>
+        <p class="text-muted ue-desc">
             {{ t.admin_add_wage_desc }}
         </p>
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/add-wage" id="admin-add-wage-form">
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_wage_type_label }}</label>
-                <div style="display: flex; gap: 1.5rem;">
-                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+            <div class="form-group ue-field-block">
+                <label class="form-label">{{ t.admin_wage_type_label }}</label>
+                <div class="form-options">
+                    <label class="form-option">
                         <input type="radio" name="wage_type" value="monthly"
                             {% if not edit_user.wage_type or edit_user.wage_type.value == 'monthly' %}checked{% endif %}
                             onchange="updateAdminWageUnit(this.value)">
                         {{ t.admin_wage_type_monthly }}
                     </label>
-                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                    <label class="form-option">
                         <input type="radio" name="wage_type" value="hourly"
                             {% if edit_user.wage_type and edit_user.wage_type.value == 'hourly' %}checked{% endif %}
                             onchange="updateAdminWageUnit(this.value)">
@@ -161,9 +161,9 @@
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div class="form-grid-2">
                 <div>
-                    <label for="new_wage" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_new_wage }} (<span id="admin-wage-unit">{{ wage_unit }}</span>)</label>
+                    <label for="new_wage" class="form-label">{{ t.admin_new_wage }} (<span id="admin-wage-unit">{{ wage_unit }}</span>)</label>
                     <input
                         type="number"
                         id="new_wage"
@@ -172,23 +172,23 @@
                         min="0"
                         step="1"
                         placeholder="{{ '300' if edit_user.wage_type and edit_user.wage_type.value == 'hourly' else '35000' }}"
-                        style="width: 100%; box-sizing: border-box;"
+                        class="form-input"
                     >
                 </div>
 
                 <div>
-                    <label for="effective_from" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.profile_from_date }}</label>
+                    <label for="effective_from" class="form-label">{{ t.profile_from_date }}</label>
                     <input
                         type="date"
                         id="effective_from"
                         name="effective_from"
                         required
-                        style="width: 100%; box-sizing: border-box;"
+                        class="form-input"
                     >
                 </div>
             </div>
 
-            <button type="submit" class="btn">{{ t.admin_add_wage_button }}</button>
+            <button type="submit" class="btn btn-primary">{{ t.admin_add_wage_button }}</button>
         </form>
         <script>
         function updateAdminWageUnit(type) {
@@ -202,47 +202,47 @@
     </div>
 
     <!-- Person History (Employment Periods) -->
-    <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">{{ t.admin_employment_history }}</h3>
-        <p style="color: var(--muted); margin-bottom: 16px;">
+    <div class="card card-mt">
+        <h3 class="form-card-title">{{ t.admin_employment_history }}</h3>
+        <p class="text-muted ue-desc">
             {{ t.admin_employment_history_desc }}
         </p>
 
         {% if person_history %}
-            <table style="width: 100%; border-collapse: collapse;">
+            <table class="history-table">
                 <thead>
-                    <tr style="border-bottom: 1px solid var(--border);">
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_position }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_name }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_from }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_to }}</th>
-                        <th style="text-align: left; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_status }}</th>
-                        <th style="text-align: center; padding: 8px; color: var(--muted); font-weight: 500;">{{ t.admin_col_delete }}</th>
+                    <tr>
+                        <th>{{ t.admin_col_position }}</th>
+                        <th>{{ t.admin_col_name }}</th>
+                        <th>{{ t.admin_col_from }}</th>
+                        <th>{{ t.admin_col_to }}</th>
+                        <th>{{ t.admin_col_status }}</th>
+                        <th class="table-action">{{ t.admin_col_delete }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for record in person_history %}
-                    <tr style="border-bottom: 1px solid var(--border);">
-                        <td style="padding: 8px; font-weight: 500;">{{ record.person_id }}</td>
-                        <td style="padding: 8px;">{{ record.name }}</td>
-                        <td style="padding: 8px;">{{ record.effective_from }}</td>
-                        <td style="padding: 8px;">
+                    <tr>
+                        <td class="cell-strong">{{ record.person_id }}</td>
+                        <td>{{ record.name }}</td>
+                        <td>{{ record.effective_from }}</td>
+                        <td>
                             {% if record.effective_to %}
                                 {{ record.effective_to }}
                             {% else %}
-                                <span style="color: var(--muted); font-style: italic;">{{ t.profile_ongoing }}</span>
+                                <span class="text-italic-muted">{{ t.profile_ongoing }}</span>
                             {% endif %}
                         </td>
-                        <td style="padding: 8px;">
+                        <td>
                             {% if record.is_current %}
-                                <span style="color: var(--success); font-weight: 500;">{{ t.admin_col_active }}</span>
+                                <span class="status-pos">{{ t.admin_col_active }}</span>
                             {% else %}
-                                <span style="color: var(--muted);">{{ t.profile_historical }}</span>
+                                <span class="text-muted">{{ t.profile_historical }}</span>
                             {% endif %}
                         </td>
-                        <td style="padding: 8px; text-align: center;">
-                            <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-employment/{{ record.id }}" style="display: inline;" onsubmit="return confirm('Ta bort anställningsrecord för position {{ record.person_id }} ({{ record.effective_from }})?');">
-                                <button type="submit" class="btn danger" style="padding: 4px 8px; font-size: 12px;">🗑️</button>
+                        <td class="table-action">
+                            <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-employment/{{ record.id }}" class="inline-form" onsubmit="return confirm('Ta bort anställningsrecord för position {{ record.person_id }} ({{ record.effective_from }})?');">
+                                <button type="submit" class="btn danger ue-icon-btn">🗑️</button>
                             </form>
                         </td>
                     </tr>
@@ -250,15 +250,15 @@
                 </tbody>
             </table>
         {% else %}
-            <p style="color: var(--muted);">{{ t.admin_no_employment }}</p>
+            <p class="text-muted">{{ t.admin_no_employment }}</p>
         {% endif %}
     </div>
 
     <!-- End Employment -->
     {% if person_history and person_history | selectattr('is_current') | list %}
-    <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0; color: var(--danger);">{{ t.admin_end_employment }}</h3>
-        <p style="color: var(--muted); margin-bottom: 16px;">
+    <div class="card card-mt">
+        <h3 class="form-card-title heading-danger">{{ t.admin_end_employment }}</h3>
+        <p class="text-muted ue-desc">
             {{ t.admin_end_employment_desc }}
         </p>
 
@@ -266,14 +266,14 @@
             {% if record.is_current %}
                 <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" onsubmit="return confirm('{% if t.html_lang == "en" %}Are you sure you want to end {{ edit_user.name }}\'s employment at position {{ record.person_id }}?{% else %}Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?{% endif %}');">
                     <input type="hidden" name="person_id" value="{{ record.person_id }}">
-                    <div style="margin-bottom: 16px;">
-                        <label for="end_date" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_last_day }}</label>
+                    <div class="form-group">
+                        <label for="end_date" class="form-label">{{ t.admin_last_day }}</label>
                         <input
                             type="date"
                             id="end_date"
                             name="end_date"
                             required
-                            style="width: 100%; box-sizing: border-box;"
+                            class="form-input"
                         >
                     </div>
                     <button type="submit" class="btn danger">{{ t.admin_end_employment_button.replace('{n}', record.person_id|string) }}</button>
@@ -286,16 +286,16 @@
     <!-- Start Employment (if inactive or no current employment) -->
     {% set has_current_employment = person_history and (person_history | selectattr('is_current') | list | length > 0) %}
     {% if edit_user.is_active == 0 or not has_current_employment %}
-    <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0; color: var(--success);">{{ t.admin_start_employment }}</h3>
-        <p style="color: var(--muted); margin-bottom: 16px;">
+    <div class="card card-mt">
+        <h3 class="form-card-title heading-success">{{ t.admin_start_employment }}</h3>
+        <p class="text-muted ue-desc">
             {{ t.admin_start_employment_desc }}
         </p>
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/start-employment">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div class="form-grid-2">
                 <div>
-                    <label for="person_id" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_position }}</label>
+                    <label for="person_id" class="form-label">{{ t.admin_position }}</label>
                     <input
                         type="number"
                         id="person_id"
@@ -304,51 +304,51 @@
                         min="1"
                         max="10"
                         placeholder="t.ex. 6"
-                        style="width: 100%; box-sizing: border-box;"
+                        class="form-input"
                     >
                 </div>
 
                 <div>
-                    <label for="start_date" style="display: block; margin-bottom: 6px; color: var(--muted);">{{ t.admin_first_day }}</label>
+                    <label for="start_date" class="form-label">{{ t.admin_first_day }}</label>
                     <input
                         type="date"
                         id="start_date"
                         name="start_date"
                         required
-                        style="width: 100%; box-sizing: border-box;"
+                        class="form-input"
                     >
                 </div>
             </div>
 
-            <button type="submit" class="btn">{{ t.admin_start_employment_button }}</button>
+            <button type="submit" class="btn btn-primary">{{ t.admin_start_employment_button }}</button>
         </form>
     </div>
     {% endif %}
 
     <!-- Semester -->
-    <div class="card" style="margin-top: 16px;">
-        <h3 style="margin-top: 0;">{{ t.admin_vacation_section }}</h3>
+    <div class="card card-mt">
+        <h3 class="form-card-title">{{ t.admin_vacation_section }}</h3>
 
         {% if vacation_balance %}
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
-            <div style="text-align: center;">
-                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">{{ t.admin_vacation_entitled }}</div>
-                <div style="font-size: 1.3rem; font-weight: 700;">{{ vacation_balance.entitled_days }}</div>
+        <div class="ue-vac-grid">
+            <div class="ue-vac-metric">
+                <div class="ue-vac-label">{{ t.admin_vacation_entitled }}</div>
+                <div class="ue-vac-value">{{ vacation_balance.entitled_days }}</div>
             </div>
-            <div style="text-align: center;">
-                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">{{ t.admin_vacation_used }}</div>
-                <div style="font-size: 1.3rem; font-weight: 700;">{{ vacation_balance.used_days }}</div>
+            <div class="ue-vac-metric">
+                <div class="ue-vac-label">{{ t.admin_vacation_used }}</div>
+                <div class="ue-vac-value">{{ vacation_balance.used_days }}</div>
             </div>
-            <div style="text-align: center;">
-                <div style="color: var(--muted); font-size: 0.8rem; margin-bottom: 4px;">{{ t.admin_vacation_remaining }}</div>
-                <div style="font-size: 1.3rem; font-weight: 700; color: {% if vacation_balance.remaining_days > 5 %}var(--accent-2){% elif vacation_balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+            <div class="ue-vac-metric">
+                <div class="ue-vac-label">{{ t.admin_vacation_remaining }}</div>
+                <div class="ue-vac-value {% if vacation_balance.remaining_days > 5 %}ue-vac-value--good{% elif vacation_balance.remaining_days > 0 %}ue-vac-value--warn{% else %}ue-vac-value--danger{% endif %}">
                     {{ vacation_balance.remaining_days }}
                 </div>
             </div>
         </div>
-        <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 12px;">
+        <div class="ue-vac-period">
             Semester&aring;r: {{ vacation_balance.year_start | date_format }} &mdash; {{ vacation_balance.year_end | date_format }}
-            {% if vacation_balance.is_first_year %}<span style="color: var(--warning);"> (proportionellt)</span>{% endif %}
+            {% if vacation_balance.is_first_year %}<span class="status-warn">(proportionellt)</span>{% endif %}
         </div>
         {% endif %}
 
@@ -356,12 +356,12 @@
         {% if vacation %}
             {% for year, weeks in vacation.items() %}
                 {% if weeks %}
-                    <p style="font-size: 0.85rem;"><strong>{{ year }}:</strong> v{{ weeks | join(', v') }}</p>
+                    <p class="ue-vac-weeks"><strong>{{ year }}:</strong> v{{ weeks | join(', v') }}</p>
                 {% endif %}
             {% endfor %}
         {% endif %}
 
-        <a href="/admin/vacation/{{ edit_user.id }}" class="btn secondary" style="margin-top: 8px;">
+        <a href="/admin/vacation/{{ edit_user.id }}" class="btn secondary card-mt">
             {{ t.admin_manage_vacation }}
         </a>
     </div>
@@ -372,7 +372,7 @@
     {% include "rates_form.html" with context %}
 
     <!-- Övertag -->
-    <div class="card" style="margin-top: 16px;">
+    <div class="card card-mt">
         <h3>{{ t.adm_transition_title }}</h3>
 
         {% if edit_transition %}
@@ -421,7 +421,7 @@
                     {{ t.adm_transition_cannot_calculate }} {{ edit_transition.consultant_vacation_days }} {{ t.adm_transition_days }}.
                 </div>
                 {% endif %}
-                <label class="form-label" style="margin-top: 0.4rem;">
+                <label class="form-label form-label--mt">
                     {{ t.adm_transition_manual_override }}
                 </label>
                 <input type="number" id="adm_vacation_days" name="consultant_vacation_days" class="form-input"
@@ -459,8 +459,7 @@
 
             <div class="form-group">
                 <label for="adm_notes" class="form-label">{{ t.adm_transition_notes_label }}</label>
-                <textarea id="adm_notes" name="notes" rows="2" class="form-input"
-                          style="padding: 0.5rem; resize: vertical;">{{ edit_transition.notes if edit_transition and edit_transition.notes else '' }}</textarea>
+                <textarea id="adm_notes" name="notes" rows="2" class="form-input form-textarea">{{ edit_transition.notes if edit_transition and edit_transition.notes else '' }}</textarea>
             </div>
 
             <hr class="form-section-divider">
@@ -502,5 +501,21 @@
         {% endif %}
     </div>
 </div>
+
+<style>
+.ue-desc { margin-bottom: 1rem; }
+.ue-field-block { margin-bottom: 1rem; }
+.ue-vac-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+.ue-vac-metric { text-align: center; }
+.ue-vac-label { color: var(--muted); font-size: 0.8rem; margin-bottom: 4px; }
+.ue-vac-value { font-size: 1.3rem; font-weight: 700; }
+.ue-vac-value--good { color: var(--accent-2); }
+.ue-vac-value--warn { color: var(--warning); }
+.ue-vac-value--danger { color: var(--danger); }
+.ue-vac-period { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.75rem; }
+.ue-vac-period .status-warn { margin-left: 0.25rem; }
+.ue-vac-weeks { font-size: 0.85rem; }
+.ue-icon-btn { padding: 0.25rem 0.5rem; font-size: 12px; }
+</style>
 
 {% endblock %}

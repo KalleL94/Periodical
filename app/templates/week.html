@@ -48,7 +48,7 @@
                 {% set is_today = today is defined and day.date == today %}
 
                 <td class="calendar-day {% if is_today %}today-cell{% endif %}"
-                    style="border-top: 4px solid {% if day.shift %}{{ day.shift.color }}{% else %}#333{% endif %};">
+                    data-border-top="{% if day.shift %}{{ day.shift.color }}{% else %}#333{% endif %}">
 
                     <div class="calendar-day-content">
                         <div class="calendar-day-header">
@@ -57,9 +57,9 @@
                                 {{ day.date.day }}/{{ day.date.month }}
                             </a>
                             {% if storhelg_dates is defined and day.date in storhelg_dates %}
-                                <span class="badge badge-ob5" style="font-size:0.6rem;padding:1px 4px;">S</span>
+                                <span class="badge badge-ob5 badge-calendar-marker">S</span>
                             {% elif holiday_dates is defined and day.date in holiday_dates %}
-                                <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
+                                <span class="badge badge-ob4 badge-calendar-marker">H</span>
                             {% endif %}
                             {# Show rotation week on each day for easy reference #}
                             {% if day.date.weekday() == 6 %}
@@ -75,7 +75,7 @@
                         <div class="calendar-day-body">
                             {% if day.shift %}
                                 <span class="badge calendar-badge"
-                                      style="background: {{ day.shift.color }}; color: {{ day.shift.color | contrast }};">
+                                      data-bg="{{ day.shift.color }}" data-fg="{{ day.shift.color | contrast }}">
                                     {{ day.shift.code }}
                                 </span>
                             {% else %}

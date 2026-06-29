@@ -8,8 +8,8 @@
     <h2>{{ t.swaps_title }}</h2>
 
     {% if pending_count > 0 %}
-    <div class="card" style="border-color: var(--warning); margin-bottom: 1.5rem;">
-        <strong style="color: var(--warning);">{% if t.html_lang == 'en' %}{{ pending_count }} pending request{{ 's' if pending_count > 1 }}{% else %}{{ pending_count }} väntande förfrågan{{ 'gar' if pending_count > 1 }}{% endif %}</strong>
+    <div class="card border-warning mb-3">
+        <strong class="text-warning">{% if t.html_lang == 'en' %}{{ pending_count }} pending request{{ 's' if pending_count > 1 }}{% else %}{{ pending_count }} väntande förfrågan{{ 'gar' if pending_count > 1 }}{% endif %}</strong>
     </div>
     {% endif %}
 
@@ -37,26 +37,26 @@
                 <td data-label="{{ t.swaps_message }}">{{ swap.message or '-' }}</td>
                 <td data-label="{{ t.swaps_status }}">
                     {% if swap.status.value == 'PENDING' %}
-                        <span class="badge" style="background: var(--warning); color: #000;">{{ t.swaps_pending_badge }}</span>
+                        <span class="badge badge-warning">{{ t.swaps_pending_badge }}</span>
                     {% elif swap.status.value == 'ACCEPTED' %}
-                        <span class="badge" style="background: var(--accent-2); color: #000;">{{ t.swaps_accepted_badge }}</span>
+                        <span class="badge badge-accent2">{{ t.swaps_accepted_badge }}</span>
                     {% elif swap.status.value == 'REJECTED' %}
-                        <span class="badge" style="background: var(--danger); color: #fff;">{{ t.swaps_rejected_badge }}</span>
+                        <span class="badge badge-danger">{{ t.swaps_rejected_badge }}</span>
                     {% else %}
                         <span class="badge badge-off">{{ t.swaps_cancelled_badge }}</span>
                     {% endif %}
                 </td>
                 <td>
                     {% if swap.status.value == 'PENDING' %}
-                        <form method="POST" action="/swaps/{{ swap.id }}/accept" style="display:inline;">
-                            <button type="submit" class="btn" style="font-size:0.8rem; padding:0.3rem 0.6rem;">{{ t.swaps_accept }}</button>
+                        <form method="POST" action="/swaps/{{ swap.id }}/accept" class="inline-form">
+                            <button type="submit" class="btn btn-swap">{{ t.swaps_accept }}</button>
                         </form>
-                        <form method="POST" action="/swaps/{{ swap.id }}/reject" style="display:inline; margin-left:0.25rem;">
-                            <button type="submit" class="btn btn-danger" style="font-size:0.8rem;">{{ t.swaps_reject }}</button>
+                        <form method="POST" action="/swaps/{{ swap.id }}/reject" class="inline-form ml-1">
+                            <button type="submit" class="btn btn-danger btn-fs-sm">{{ t.swaps_reject }}</button>
                         </form>
                     {% elif swap.status.value == 'ACCEPTED' %}
-                        <form method="POST" action="/swaps/{{ swap.id }}/cancel" style="display:inline;">
-                            <button type="submit" class="btn btn-danger" style="font-size:0.8rem;"
+                        <form method="POST" action="/swaps/{{ swap.id }}/cancel" class="inline-form">
+                            <button type="submit" class="btn btn-danger btn-fs-sm"
                                     onclick="return confirm('{{ t.swaps_undo_confirm }}')">{{ t.swaps_undo }}</button>
                         </form>
                     {% endif %}
@@ -69,7 +69,7 @@
         <p class="info-text">{{ t.swaps_no_received }}</p>
     {% endif %}
 
-    <h3 style="margin-top: 2rem;">{{ t.swaps_sent }}</h3>
+    <h3 class="section-mt">{{ t.swaps_sent }}</h3>
     {% if sent_swaps %}
     <table class="summary">
         <thead>
@@ -91,19 +91,19 @@
                 <td data-label="{{ t.swaps_you_get }}">{% if is_one_way_tgt_free %}&ndash;{% else %}{{ swap.target_shift_code or '?' }} ({{ swap.target_date }}){% endif %}</td>
                 <td data-label="{{ t.swaps_status }}">
                     {% if swap.status.value == 'PENDING' %}
-                        <span class="badge" style="background: var(--warning); color: #000;">{{ t.swaps_pending_badge }}</span>
+                        <span class="badge badge-warning">{{ t.swaps_pending_badge }}</span>
                     {% elif swap.status.value == 'ACCEPTED' %}
-                        <span class="badge" style="background: var(--accent-2); color: #000;">{{ t.swaps_accepted_badge }}</span>
+                        <span class="badge badge-accent2">{{ t.swaps_accepted_badge }}</span>
                     {% elif swap.status.value == 'REJECTED' %}
-                        <span class="badge" style="background: var(--danger); color: #fff;">{{ t.swaps_rejected_badge }}</span>
+                        <span class="badge badge-danger">{{ t.swaps_rejected_badge }}</span>
                     {% else %}
                         <span class="badge badge-off">{{ t.swaps_cancelled_badge }}</span>
                     {% endif %}
                 </td>
                 <td>
                     {% if swap.status.value in ('PENDING', 'ACCEPTED') %}
-                        <form method="POST" action="/swaps/{{ swap.id }}/cancel" style="display:inline;">
-                            <button type="submit" class="btn btn-danger" style="font-size:0.8rem;"
+                        <form method="POST" action="/swaps/{{ swap.id }}/cancel" class="inline-form">
+                            <button type="submit" class="btn btn-danger btn-fs-sm"
                                     onclick="return confirm('{{ t.swaps_undo_confirm if swap.status.value == 'ACCEPTED' else t.swaps_cancel_confirm }}')">
                                 {{ t.swaps_undo if swap.status.value == 'ACCEPTED' else t.swaps_cancel }}
                             </button>

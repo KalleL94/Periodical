@@ -47,22 +47,18 @@
             <a href="/range/{{ person_id }}" class="btn btn-primary">{{ t.week_today }}</a>
         {% endif %}
     </div>
-    <div class="page-header-right" style="position:relative;">
-        <select onchange="window.location='/range/{{ person_id }}?weeks='+this.value+'&from={{ start_date.isoformat() }}'"
-                style="background:var(--panel);color:var(--text);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 8px;font-size:0.9rem;cursor:pointer;color-scheme:dark;">
+    <div class="page-header-right range-controls">
+        <select class="range-select" onchange="window.location='/range/{{ person_id }}?weeks='+this.value+'&from={{ start_date.isoformat() }}'" aria-label="{{ t.range_title }}">
             {% for w in range(1, 11) %}
-                <option value="{{ w }}" {% if active_weeks == w %}selected{% endif %} style="background:var(--panel);color:var(--text);">{{ w }}v</option>
+                <option value="{{ w }}" {% if active_weeks == w %}selected{% endif %}>{{ w }}v</option>
             {% endfor %}
         </select>
-        <button class="btn secondary" onclick="var f=this.nextElementSibling;f.style.display=f.style.display==='flex'?'none':'flex';">{{ t.range_from }}/{{ t.range_to }} ▾</button>
-        <form method="get" action="/range/{{ person_id }}"
-              style="display:none;gap:0.5rem;align-items:center;flex-wrap:wrap;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:0.5rem;z-index:10;margin-top:4px;">
-            <label style="color:var(--muted);font-size:0.85rem;">{{ t.range_from }}</label>
-            <input type="date" name="from" value="{{ start_date.isoformat() }}"
-                   style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.9rem;">
-            <label style="color:var(--muted);font-size:0.85rem;">{{ t.range_to }}</label>
-            <input type="date" name="to" value="{{ end_date.isoformat() }}"
-                   style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.9rem;">
+        <button type="button" class="btn secondary range-filter-toggle" aria-expanded="false" aria-controls="range-date-panel" onclick="toggleRangeDatePanel(this)">{{ t.range_from }}/{{ t.range_to }} ▾</button>
+        <form method="get" action="/range/{{ person_id }}" id="range-date-panel" class="range-date-panel" hidden>
+            <label for="range-from">{{ t.range_from }}</label>
+            <input type="date" id="range-from" name="from" value="{{ start_date.isoformat() }}">
+            <label for="range-to">{{ t.range_to }}</label>
+            <input type="date" id="range-to" name="to" value="{{ end_date.isoformat() }}">
             <button type="submit" class="btn btn-primary">{{ t.range_apply }}</button>
         </form>
     </div>
@@ -87,28 +83,27 @@
             {% if ns.current_week is not none %}
                 {% set prev_day = days[loop.index0 - 1] %}
                 {% for pad in range(6 - prev_day.date.weekday()) %}
-                    <td class="calendar-day" style="background:transparent;border:none;"></td>
+                    <td class="calendar-day calendar-day--empty"></td>
                 {% endfor %}
                 </tr>
             {% endif %}
             {% set ns.current_week = week_key %}
             <tr>
             {% for pad in range(day.date.weekday()) %}
-                <td class="calendar-day" style="background:transparent;border:none;"></td>
+                <td class="calendar-day calendar-day--empty"></td>
             {% endfor %}
         {% endif %}
 
         {% set is_today = today is defined and day.date == today %}
-        <td class="calendar-day {% if is_today %}today-cell{% endif %}"
-            style="border-top: 4px solid {% if day.shift %}{{ day.shift.color }}{% else %}#333{% endif %};">
+        <td class="calendar-day range-day-cell {% if is_today %}today-cell{% endif %}"{% if day.shift %} data-shift-color="{{ day.shift.color }}"{% endif %}>
             <div class="calendar-day-content">
                 <div class="calendar-day-header">
                     <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                        class="day-number">{{ day.date.day }}/{{ day.date.month }}</a>
                     {% if storhelg_dates is defined and day.date in storhelg_dates %}
-                        <span class="badge badge-ob5" style="font-size:0.6rem;padding:1px 4px;">S</span>
+                        <span class="badge badge-ob5 badge-calendar-marker">S</span>
                     {% elif holiday_dates is defined and day.date in holiday_dates %}
-                        <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
+                        <span class="badge badge-ob4 badge-calendar-marker">H</span>
                     {% endif %}
                     {% if day.date.weekday() == 0 %}
                         <a href="/week/{{ person_id }}?year={{ day.date.isocalendar()[0] }}&week={{ day.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</a>
@@ -122,8 +117,7 @@
                 </div>
                 <div class="calendar-day-body">
                     {% if day.shift %}
-                        <span class="badge calendar-badge"
-                              style="background:{{ day.shift.color }};color:{{ day.shift.color | contrast }};">
+                        <span class="badge calendar-badge" data-shift-color="{{ day.shift.color }}" data-shift-contrast="{{ day.shift.color | contrast }}">
                             {{ day.shift.code }}
                         </span>
                     {% else %}
@@ -148,11 +142,46 @@
 
     {% set last_day = days[-1] %}
     {% for pad in range(6 - last_day.date.weekday()) %}
-        <td class="calendar-day" style="background:transparent;border:none;"></td>
+        <td class="calendar-day calendar-day--empty"></td>
     {% endfor %}
     </tr>
     </tbody>
 </table>
 {% endif %}
+
+<script>
+function toggleRangeDatePanel(button) {
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    const isOpening = panel.hidden;
+    panel.hidden = !isOpening;
+    button.setAttribute('aria-expanded', isOpening ? 'true' : 'false');
+    if (isOpening) {
+        const firstControl = panel.querySelector('input, button');
+        if (firstControl) firstControl.focus();
+    }
+}
+
+document.querySelectorAll('[data-shift-color]').forEach(function(el) {
+    const color = el.getAttribute('data-shift-color');
+    if (!color) return;
+    if (el.classList.contains('range-day-cell')) {
+        el.style.borderTopColor = color;
+    } else {
+        el.style.backgroundColor = color;
+        el.style.color = el.getAttribute('data-shift-contrast') || 'var(--bg)';
+    }
+});
+
+document.addEventListener('keydown', function(event) {
+    if (event.key !== 'Escape') return;
+    const button = document.querySelector('.range-filter-toggle[aria-expanded="true"]');
+    if (!button) return;
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    if (!panel || panel.hidden) return;
+    panel.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    button.focus();
+});
+</script>
 
 {% endblock %}

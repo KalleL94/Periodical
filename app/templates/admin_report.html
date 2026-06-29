@@ -17,10 +17,10 @@
 
 <h2 class="page-title">Månadsrapport</h2>
 
-<div class="page-header" style="margin-bottom: 1rem;">
+<div class="page-header mb-1">
     <div class="page-header-left">
         <a href="/admin/report?year={{ prev_year }}&month={{ prev_month }}{{ token_qs }}" class="btn secondary">&larr;</a>
-        <strong style="margin: 0 0.75rem;">{{ month_name }} {{ year }}</strong>
+        <strong class="mx-2">{{ month_name }} {{ year }}</strong>
         <a href="/admin/report?year={{ next_year }}&month={{ next_month }}{{ token_qs }}" class="btn secondary">&rarr;</a>
     </div>
     <div class="page-header-right">
@@ -30,13 +30,12 @@
 
 {% if is_admin %}
     {% if share_token %}
-    <div style="margin-bottom: 1rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--muted-bg, #1c1c24);">
-        <div style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem;">
+    <div class="share-box">
+        <div class="share-label">
             Delningslänk (öppnar rapporten utan inloggning, t.ex. för chef):
         </div>
-        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-            <input id="share-link" type="text" readonly
-                   style="flex: 1; min-width: 280px; padding: 6px; font-size: 0.85rem;">
+        <div class="flex-row-wrap">
+            <input id="share-link" type="text" readonly class="share-input">
             <button type="button" class="btn secondary" onclick="copyShareLink()">Kopiera</button>
         </div>
     </div>
@@ -56,13 +55,13 @@
     }
     </script>
     {% else %}
-    <p class="info-text" style="margin-bottom: 1rem;">
+    <p class="info-text mb-1">
         Delningslänk är inte konfigurerad. Sätt miljövariabeln <code>REPORT_TOKEN</code> för att aktivera en länk som öppnar rapporten utan inloggning.
     </p>
     {% endif %}
 {% endif %}
 
-<div style="overflow-x: auto;">
+<div class="scroll-x">
 <table class="report-table">
     <thead>
         <tr>
@@ -89,7 +88,7 @@
                 <td class="name-col">
                     {{ r.person_name }}
                     {% if r.is_substitute %}
-                        <span class="badge" style="background: var(--blue); color: white;">Vikarie</span>
+                        <span class="badge badge-blue">Vikarie</span>
                     {% endif %}
                 </td>
                 <td>{{ r.num_shifts }}</td>
@@ -118,6 +117,13 @@
     .report-table td { padding: 6px; border: 1px solid var(--border); text-align: right; }
     .report-table th { border-bottom-width: 2px; }
     .report-table .name-col { text-align: left; }
+</style>
+
+
+<style>
+.share-box { margin-bottom: 1rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+.share-label { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem; }
+.share-input { flex: 1; min-width: 280px; padding: 6px; font-size: 0.85rem; }
 </style>
 
 {% endblock %}
