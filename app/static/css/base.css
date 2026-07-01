@@ -51,6 +51,14 @@
 
   --radius: 0.5rem;
 
+  /* Stacking order. These names are referenced across tables.css and
+     navigation.css; without a definition they resolved to z-index:auto, leaving
+     sticky headers/columns and the mobile nav to fall back on paint order.
+     sticky (table chrome) < modal (nav panel) < tooltip (toggle above panel). */
+  --z-sticky: 5;
+  --z-modal: 50;
+  --z-tooltip: 60;
+
   /* Back-compat aliases (existing names kept, same resolved values) */
   --background: var(--bg);
   --accent-2: var(--success);

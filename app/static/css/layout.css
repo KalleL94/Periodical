@@ -37,6 +37,31 @@ main {
   min-width: calc(min(100vw, 1175px) - 2.5rem);
 }
 
+/* Mobile: the desktop model above scrolls the whole DOCUMENT horizontally. That
+   breaks on real phones (and Firefox responsive mode): when content is wider
+   than the viewport with width=device-width, the browser expands the LAYOUT
+   viewport to the content width and lets you pan the visual viewport instead of
+   scrolling the document. position:sticky then pins to the (offscreen) layout
+   viewport edge, so the frozen Day/Date columns drift away when you swipe.
+   Fix: make the matrix its own scroll container so the overflow is contained and
+   sticky pins to the container, which stays put. A max-height turns it into a
+   pane so the sticky header (top) pins here too, not just the columns (left). */
+@media (max-width: 800px) {
+  .month-grid {
+    margin-left: 0;
+    margin-right: 0;
+    display: block;
+    overflow: auto;
+    max-height: 80vh;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .month-schedule {
+    width: max-content;
+    min-width: 0;
+  }
+}
+
 footer {
   margin-top: 1.75rem;
   color: var(--muted);
