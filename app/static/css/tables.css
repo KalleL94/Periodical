@@ -143,15 +143,28 @@ td.num, th.num { font-family: var(--font-mono); }
   }
 }
 
-/* Opt a simple label/value table out of the mobile card layout so it stays a
-   tight two-column table instead of a stack of tall bordered cards. Used on the
-   day view (who is working, OB hours, OB pay) where the card treatment wasted a
-   lot of vertical space. */
+/* Opt a table out of the mobile card layout so it stays a real table instead of
+   a stack of tall bordered cards. .keep-table is the opt-in class (day view: who
+   is working, OB hours, OB pay). The team week grid (.week-grid-all) and the year
+   summary tables (.year-layout .summary) are opted out too: the week grid already
+   has its own sticky/scroll wrapper, and the year tables read as tiny unlabelled
+   cards otherwise. Wide ones scroll inside their existing overflow containers. */
 @media (max-width: 800px) {
-  table.keep-table thead { display: table-header-group; }
-  table.keep-table tbody td { display: table-cell; width: auto; }
-  table.keep-table tbody td::before { display: none; }
-  table.keep-table tbody tr {
+  table.keep-table thead,
+  .week-grid-all thead,
+  .year-layout .summary thead { display: table-header-group; }
+
+  table.keep-table tbody td,
+  .week-grid-all tbody td,
+  .year-layout .summary tbody td { display: table-cell; width: auto; }
+
+  table.keep-table tbody td::before,
+  .week-grid-all tbody td::before,
+  .year-layout .summary tbody td::before { display: none; }
+
+  table.keep-table tbody tr,
+  .week-grid-all tbody tr,
+  .year-layout .summary tbody tr {
     display: table-row;
     margin: 0;
     background: none;
