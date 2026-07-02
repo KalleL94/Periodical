@@ -143,6 +143,24 @@ td.num, th.num { font-family: var(--font-mono); }
   }
 }
 
+/* Opt a simple label/value table out of the mobile card layout so it stays a
+   tight two-column table instead of a stack of tall bordered cards. Used on the
+   day view (who is working, OB hours, OB pay) where the card treatment wasted a
+   lot of vertical space. */
+@media (max-width: 800px) {
+  table.keep-table thead { display: table-header-group; }
+  table.keep-table tbody td { display: table-cell; width: auto; }
+  table.keep-table tbody td::before { display: none; }
+  table.keep-table tbody tr {
+    display: table-row;
+    margin: 0;
+    background: none;
+    border-radius: 0;
+    padding: 0;
+  }
+  table.keep-table td, table.keep-table th { padding: 0.35rem 0.5rem; }
+}
+
 /* ===== Schedule matrix on mobile (month_all / year_all) =====
    The matrix is days x people; it is always wider than a phone and is built to
    scroll horizontally. The generic card rule above would collapse it into

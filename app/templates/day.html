@@ -602,7 +602,7 @@
 
         <h3>{{ t.day_all_working }}</h3>
         {% if all_working_persons and all_working_persons|length > 0 %}
-            <table>
+            <table class="keep-table">
                 <thead>
                     <tr>
                         <th>{{ t.day_col_name }}</th>
@@ -761,7 +761,7 @@
                             {% set _ = ob_labels.update({rule.code: rule.label}) %}
                         {% endif %}
                     {% endfor %}
-                    <table>
+                    <table class="keep-table">
                         <thead>
                             <tr>
                                 <th>{{ t.day_ob_type }}</th>
@@ -804,7 +804,7 @@
                         {% set _ = ob_labels.update({rule.code: rule.label}) %}
                     {% endif %}
                 {% endfor %}
-                <table>
+                <table class="keep-table">
                     <thead>
                         <tr>
                             <th class="th_left">{{ t.day_ob_type }}</th>
