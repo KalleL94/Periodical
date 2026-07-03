@@ -125,6 +125,22 @@ from app.routes.shared import templates as _templates  # noqa: E402
 
 _templates.env.globals["app_version"] = _VERSIONS[0]["version"]
 
+
+def _compute_static_version() -> str:
+    """Hash the CSS files' contents so the cache-busting query string changes
+    whenever a stylesheet actually changes, independent of the changelog version
+    (which is bumped manually and not always updated for CSS-only releases)."""
+    import hashlib
+
+    css_dir = Path("app/static/css")
+    digest = hashlib.sha256()
+    for css_file in sorted(css_dir.glob("*.css")):
+        digest.update(css_file.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+_templates.env.globals["static_version"] = _compute_static_version()
+
 app = FastAPI(
     title="Periodical",
     description="Employee shift scheduling and OB pay calculation system",

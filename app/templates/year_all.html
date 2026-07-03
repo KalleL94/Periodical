@@ -100,7 +100,7 @@
                             {% set orig_code = person.original_shift.code if person.original_shift else (person.shift.code if person.shift else 'OFF') %}
                             {% set orig_color = person.original_shift.color if person.original_shift else (person.shift.color if person.shift else 'transparent') %}
                             {% set is_changed = person.shift and person.original_shift and person.shift.code != person.original_shift.code %}
-                            <td data-person="{{ person.person_id }}"
+                            <td class="day-cell" data-person="{{ person.person_id }}"
                                 data-act-color="{{ person.shift.color if person.shift else 'transparent' }}"
                                 data-orig-color="{{ orig_color }}"
                                 data-orig-code="{{ orig_code }}"
