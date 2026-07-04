@@ -15,6 +15,27 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.27.1",
+        "date": "2026-07-04",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Månads- och årsvyn (alla): schemat går nu att läsa på mobilen. Veckodag- och datumkolumnerna fryses medan personernas kolumner rullar under, och raderna är kompaktare så fler personer syns innan du behöver scrolla i sidled",
+                "en": "Month and year view (all): the schedule is now readable on mobile. The weekday and date columns freeze while the people columns scroll underneath, and rows are more compact so more people fit before you need to scroll sideways",
+            },
+            {
+                "type": "fix",
+                "sv": "Veckovyn (alla) behåller sin scrollbara tabell med fryst namnkolumn på mobilen i stället för att kollapsa till en oläslig stapel. Din egen vecka, månad och årssammanställning visas nu som riktiga listor och tabeller i stället för smala kort med tomt utrymme",
+                "en": "Team week view keeps its scrollable table with a frozen name column on mobile instead of collapsing into an unreadable stack. Your own week, month and year summary now render as proper lists and tables instead of narrow cards with empty space",
+            },
+            {
+                "type": "fix",
+                "sv": "Dagvyn på mobilen: skiftbytes- och övertidsformulären, tabellerna (vem jobbar, OB-timmar, OB-lön) och dagnavigeringen är nu ryddiga i stället för att klippas eller radbrytas fult. Startsidans avläsning för nästa pass och nettolön får också mer plats på smala skärmar",
+                "en": "Day view on mobile: the shift-swap and overtime forms, the tables (who is working, OB hours, OB pay) and the day navigation are now tidy instead of clipping or wrapping raggedly. The dashboard's next-shift and net-pay readout also gets more room on narrow screens",
+            },
+        ],
+    },
+    {
         "version": "0.27.0",
         "date": "2026-06-27",
         "entries": [
