@@ -99,29 +99,29 @@
     {% set sick_total_ob = days.sick_total_ob or 0 %}
     {% set sick_ob_lost = days.sick_ob_lost or 0 %}
     {% set sick_total_loss = (days.absence_deduction or 0) + sick_ob_lost %}
-    <div style="background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.35); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 12px; font-size: 0.9rem;">
+    <div class="alert alert--danger">
         <strong>{{ t.month_sick_label }}:</strong>
         {{ days.sick_days }} {{ t.month_sick_days_unit }}, {{ "%.1f"|format(days.sick_hours or 0) }} h
         &nbsp;&mdash;&nbsp;
-        <span style="color: var(--danger);">{{ t.month_sick_deduction_label }}: -{{ "%.0f"|format(days.absence_deduction or 0) }} kr</span>
+        <span class="text-danger">{{ t.month_sick_deduction_label }}: -{{ "%.0f"|format(days.absence_deduction or 0) }} kr</span>
         {% if sick_total_ob > 0 %}
         &nbsp;|&nbsp;
-        <span style="color: var(--ob-sick);" title="Total OB på sjukdagarna, ingår ej i brutto">{{ t.month_sick_ob_lost_label }}: -{{ "%.0f"|format(sick_total_ob) }} kr</span>
+        <span class="text-ob-sick" title="Total OB på sjukdagarna, ingår ej i brutto">{{ t.month_sick_ob_lost_label }}: -{{ "%.0f"|format(sick_total_ob) }} kr</span>
         {% endif %}
         {% if days.sick_ob_pay and days.sick_ob_pay > 0 %}
         &nbsp;|&nbsp;
-        <span style="color: var(--success);">{{ t.month_sick_ob_label }}: +{{ "%.0f"|format(days.sick_ob_pay) }} kr</span>
+        <span class="text-success">{{ t.month_sick_ob_label }}: +{{ "%.0f"|format(days.sick_ob_pay) }} kr</span>
         {% endif %}
         &nbsp;|&nbsp;
-        <span style="color: var(--muted);">{{ t.month_sick_net_label }}: -{{ "%.0f"|format(sick_total_loss) }} kr</span>
+        <span class="text-muted">{{ t.month_sick_net_label }}: -{{ "%.0f"|format(sick_total_loss) }} kr</span>
     </div>
     {% endif %}
 
     {% if vacation_month %}
-    <div style="background: rgba(100,200,255,0.08); border: 1px solid var(--accent); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 0.9rem;">
+    <div class="alert alert--info">
         <strong>{{ t.month_vacation_days.replace('{n}', vacation_month.days|string).replace('{suffix}', 'ar' if vacation_month.days != 1 else '') }}</strong>
-        &rarr; {{ t.month_vacation_supplement }} <strong style="color: var(--accent-2);">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
-        <span style="color: var(--muted);">({{ "%.0f"|format(vacation_month.supplement_per_day) }} kr/dag)</span>
+        &rarr; {{ t.month_vacation_supplement }} <strong class="text-accent2">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
+        <span class="text-muted">({{ "%.0f"|format(vacation_month.supplement_per_day) }} kr/dag)</span>
     </div>
     {% endif %}
     {% endif %}{# /before_employment_month #}
@@ -145,7 +145,7 @@
                         {% set is_current = day_data.is_current_month %}
 
                         <td class="calendar-day {% if not is_current %}adjacent-month{% endif %} {% if is_today %}today-cell{% endif %}"
-                            style="border-top: 4px solid {% if day_data.shift %}{{ day_data.shift.color }}{% else %}#333{% endif %};">
+                            data-border-top="{% if day_data.shift %}{{ day_data.shift.color }}{% else %}#333{% endif %}">
 
                             <div class="calendar-day-content">
                                 <div class="calendar-day-header">
@@ -154,9 +154,9 @@
                                         {{ day_data.date.day }}
                                     </a>
                                     {% if storhelg_dates is defined and day_data.date in storhelg_dates %}
-                                        <span class="badge badge-ob5" style="font-size:0.6rem;padding:1px 4px;">S</span>
+                                        <span class="badge badge-ob5 badge-calendar-marker">S</span>
                                     {% elif holiday_dates is defined and day_data.date in holiday_dates %}
-                                        <span class="badge badge-ob4" style="font-size:0.6rem;padding:1px 4px;">H</span>
+                                        <span class="badge badge-ob4 badge-calendar-marker">H</span>
                                     {% endif %}
                                     {% if day_data.date.weekday() == 0 %}
                                         <a href="/week/{{ person_id }}?year={{ day_data.date.isocalendar()[0] }}&week={{ day_data.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day_data.date.isocalendar()[1] }}</a>
@@ -172,14 +172,14 @@
                                 <div class="calendar-day-body">
                                     {% if day_data.shift %}
                                         <span class="badge calendar-badge"
-                                              style="background: {{ day_data.shift.color }}; color: {{ day_data.shift.color | contrast }};">
+                                              data-bg="{{ day_data.shift.color }}" data-fg="{{ day_data.shift.color | contrast }}">
                                             {{ day_data.shift.code }}
                                         </span>
                                     {% else %}
                                         <span class="badge badge-off calendar-badge">OFF</span>
                                     {% endif %}
                                     {% if day_data.partial_absence %}
-                                        <span class="badge" style="background:var(--danger);color:white;font-size:0.6rem;padding:1px 4px;" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
+                                        <span class="badge badge-danger badge-calendar-marker" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
                                     {% endif %}
 
                                     {% if day_data.shift and day_data.shift.code != 'OC' %}
@@ -206,7 +206,7 @@
 
     {# ── Detailed OB / Beredskap / OT breakdown ── #}
     {% if show_salary %}
-    <div style="margin-top: 1.5rem; text-align: center; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+    <div class="month-actions">
         <button class="btn secondary" id="breakdown-toggle" onclick="toggleBreakdown()">
             {{ t.month_show_breakdown }}
         </button>
@@ -219,16 +219,16 @@
         {% endif %}
     </div>
 
-    <div id="breakdown-section" style="display: none; margin-top: 1rem;" class="ob-by-shift">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-            <h3 style="margin: 0;">{{ t.month_breakdown_title }}</h3>
-            <button class="btn secondary" id="ob-day-toggle" onclick="toggleObDayMode()" style="font-size: 0.85rem;"
+    <div id="breakdown-section" class="ob-by-shift" hidden>
+        <div class="flex-between">
+            <h3 class="title-inline">{{ t.month_breakdown_title }}</h3>
+            <button class="btn secondary btn-sm" id="ob-day-toggle" onclick="toggleObDayMode()"
                 data-label-shift="{{ t.month_ob_per_shift }}"
                 data-label-calendar="{{ t.month_ob_per_calendar_day }}">
                 {{ t.month_ob_per_calendar_day }}
             </button>
         </div>
-        <div style="overflow-x: auto;">
+        <div class="scroll-x">
             <table class="breakdown-table">
                 <thead>
                     <tr>
@@ -424,7 +424,7 @@
 
                     {% if not ns.has_rows %}
                         <tr>
-                            <td colspan="16" style="text-align: center; color: var(--muted); padding: 1rem;">
+                            <td colspan="16" class="table-empty">
                                 {{ t.month_no_ob }}
                             </td>
                         </tr>
@@ -457,9 +457,9 @@
     </div>
 
     {% if hourly_breakdown %}
-    <div style="margin-top: 2rem;">
-        <h3 style="margin-bottom: 0.75rem;">{{ t.month_payslip_title }}</h3>
-        <div style="overflow-x: auto;">
+    <div class="section-mt">
+        <h3 class="h-mb">{{ t.month_payslip_title }}</h3>
+        <div class="scroll-x">
             <table class="breakdown-table">
                 <thead>
                     <tr>
@@ -649,6 +649,7 @@
 
     <style>
     /* Per-shift mode (default): show shift rows, hide day rows */
+    #breakdown-section { margin-top: 1rem; }
     #breakdown-section.ob-by-shift .ob-row-day  { display: none; }
     /* Per-calendar-day mode: show day rows, hide shift rows */
     #breakdown-section.ob-by-day   .ob-row-shift { display: none; }
@@ -658,13 +659,13 @@
     function toggleBreakdown() {
         var section = document.getElementById('breakdown-section');
         var btn = document.getElementById('breakdown-toggle');
-        if (section.style.display === 'none') {
-            section.style.display = 'block';
+        if (section.hidden) {
+            section.hidden = false;
             btn.textContent = '{{ t.month_hide_breakdown }}';
             history.replaceState(null, '', window.location.pathname + window.location.search + '#breakdown');
             section.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } else {
-            section.style.display = 'none';
+            section.hidden = true;
             btn.textContent = '{{ t.month_show_breakdown }}';
             history.replaceState(null, '', window.location.pathname + window.location.search);
         }
@@ -687,7 +688,7 @@
     if (window.location.hash === '#breakdown') {
         var section = document.getElementById('breakdown-section');
         var btn = document.getElementById('breakdown-toggle');
-        section.style.display = 'block';
+        section.hidden = false;
         btn.textContent = '{{ t.month_hide_breakdown }}';
         section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }

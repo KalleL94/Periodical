@@ -8,7 +8,7 @@
 <div class="page-header">
     <div class="page-header-left">
         <a href="/admin/vacation?year={{ year - 1 }}" class="btn secondary">{{ year - 1 }}</a>
-        <span style="padding: 8px 16px; font-weight: 600;">{{ year }}</span>
+        <span class="vacation-year-label">{{ year }}</span>
         <a href="/admin/vacation?year={{ year + 1 }}" class="btn secondary">{{ year + 1 }}</a>
     </div>
     <div class="page-header-right">
@@ -19,49 +19,49 @@
 <h2 class="page-title">{{ t.admin_vacation_title.replace('{year}', year|string) }}</h2>
 
 <!-- Heatmap Grid -->
-<div class="card" style="overflow-x: auto; margin-bottom: 24px;">
-    <h3 style="margin-top: 0;">{{ t.admin_vacation_weeks_title }}</h3>
-    <table style="min-width: 900px;">
+<div class="card scroll-x mb-3">
+    <h3 class="form-card-title">{{ t.admin_vacation_weeks_title }}</h3>
+    <table class="vac-matrix-table">
         <thead>
             <tr>
-                <th style="position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 120px;">{{ t.admin_vacation_col_name }}</th>
+                <th class="vac-sticky-col">{{ t.admin_vacation_col_name }}</th>
                 {% for w in weeks_range %}
-                    <th style="text-align: center; padding: 4px 2px; font-size: 0.7rem; min-width: 22px;">{{ w }}</th>
+                    <th class="vac-week-head">{{ w }}</th>
                 {% endfor %}
             </tr>
         </thead>
         <tbody>
             {% for entry in team_data %}
             <tr>
-                <td style="position: sticky; left: 0; background: var(--panel); z-index: 1;">
-                    <a href="/admin/vacation/{{ entry.user.id }}?year={{ year }}" style="color: var(--accent); text-decoration: none;">
+                <td class="vac-sticky-cell">
+                    <a href="/admin/vacation/{{ entry.user.id }}?year={{ year }}" class="accent-link">
                         {{ entry.user.name }}
                     </a>
                 </td>
                 {% for w in weeks_range %}
                     {% if w in entry.vacation_weeks and w in entry.day_vacation_weeks %}
-                        <td style="background: linear-gradient(135deg, var(--accent) 50%, var(--accent-2) 50%); padding: 2px;" title="v{{ w }}: vecka + dag"></td>
+                        <td class="vac-cell-both" title="v{{ w }}: vecka + dag"></td>
                     {% elif w in entry.vacation_weeks %}
-                        <td style="background: var(--accent); padding: 2px;" title="v{{ w }}: semestervecka"></td>
+                        <td class="vac-cell-week" title="v{{ w }}: semestervecka"></td>
                     {% elif w in entry.day_vacation_weeks %}
-                        <td style="background: var(--accent-2); padding: 2px;" title="v{{ w }}: enskild dag"></td>
+                        <td class="vac-cell-day" title="v{{ w }}: enskild dag"></td>
                     {% else %}
-                        <td style="padding: 2px;"></td>
+                        <td class="vac-cell-empty"></td>
                     {% endif %}
                 {% endfor %}
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    <div style="margin-top: 12px; display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted);">
-        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent); border-radius: 2px; vertical-align: middle;"></span> {{ t.admin_vacation_week_label }}</span>
-        <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent-2); border-radius: 2px; vertical-align: middle;"></span> {{ t.admin_vacation_day_label }}</span>
+    <div class="vac-legend">
+        <span><span class="vac-swatch vac-swatch-week"></span> {{ t.admin_vacation_week_label }}</span>
+        <span><span class="vac-swatch vac-swatch-day"></span> {{ t.admin_vacation_day_label }}</span>
     </div>
 </div>
 
 <!-- Balance Table -->
 <div class="card">
-    <h3 style="margin-top: 0;">{{ t.admin_vacation_balance }}</h3>
+    <h3 class="form-card-title">{{ t.admin_vacation_balance }}</h3>
     <table>
         <thead>
             <tr>
@@ -79,25 +79,25 @@
             {% for entry in team_data %}
             <tr>
                 <td>
-                    <a href="/admin/vacation/{{ entry.user.id }}?year={{ year }}" style="color: var(--accent); text-decoration: none;">
+                    <a href="/admin/vacation/{{ entry.user.id }}?year={{ year }}" class="accent-link">
                         {{ entry.user.name }}
                     </a>
                 </td>
                 <td class="num">{{ entry.balance.entitled_days }}</td>
-                <td class="num" style="color: {% if entry.balance.saved_from_previous > 0 %}var(--accent){% else %}var(--muted){% endif %};">{{ entry.balance.saved_from_previous }}</td>
-                <td class="num" style="font-weight: 600;">{{ entry.balance.total_available }}</td>
+                <td class="num {% if entry.balance.saved_from_previous > 0 %}text-accent{% else %}text-muted{% endif %}">{{ entry.balance.saved_from_previous }}</td>
+                <td class="num num-bold">{{ entry.balance.total_available }}</td>
                 <td class="num">{{ entry.balance.used_days }}</td>
-                <td class="num" style="font-weight: 600; color: {% if entry.balance.remaining_days > 5 %}var(--accent-2){% elif entry.balance.remaining_days > 0 %}var(--warning){% else %}var(--danger){% endif %};">
+                <td class="num num-bold {% if entry.balance.remaining_days > 5 %}text-accent2{% elif entry.balance.remaining_days > 0 %}text-warning{% else %}text-danger{% endif %}">
                     {{ entry.balance.remaining_days }}
                 </td>
-                <td style="font-size: 0.85rem; color: var(--muted);">
+                <td class="text-sm-muted">
                     {{ entry.balance.year_start | date_format }} &mdash; {{ entry.balance.year_end | date_format }}
                 </td>
-                <td style="font-size: 0.85rem; color: var(--muted);">
+                <td class="text-sm-muted">
                     {% if entry.user.employment_start_date %}
                         {{ entry.user.employment_start_date | date_format }}
                     {% else %}
-                        <span style="color: var(--warning);">{{ t.admin_vacation_not_set }}</span>
+                        <span class="text-warning">{{ t.admin_vacation_not_set }}</span>
                     {% endif %}
                 </td>
             </tr>
@@ -105,5 +105,21 @@
         </tbody>
     </table>
 </div>
+
+
+<style>
+.vac-matrix-table { min-width: 900px; }
+.vac-sticky-col { position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 120px; }
+.vac-sticky-cell { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+.vac-week-head { text-align: center; padding: 4px 2px; font-size: 0.7rem; min-width: 22px; }
+.vac-cell-both { background: linear-gradient(135deg, var(--accent) 50%, var(--accent-2) 50%); padding: 2px; }
+.vac-cell-week { background: var(--accent); padding: 2px; }
+.vac-cell-day { background: var(--accent-2); padding: 2px; }
+.vac-cell-empty { padding: 2px; }
+.vac-legend { margin-top: 12px; display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted); }
+.vac-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
+.vac-swatch-week { background: var(--accent); }
+.vac-swatch-day { background: var(--accent-2); }
+</style>
 
 {% endblock %}

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch: {}
 
 jobs:
   deploy:
@@ -25,7 +26,7 @@ jobs:
           port: 2222
           script_stop: true
           script: |
-            GITEA_TOKEN=${{ secrets.GITEA_TOKEN }} bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }} ${{ github.ref_name }}
+            GITEA_TOKEN=${{ secrets.GITEA_TOKEN }} bash ${{ secrets.PROD_APP_PATH }}/scripts/deploy.sh ${{ secrets.PROD_APP_PATH }} ${{ github.ref_type == 'tag' && github.ref_name || '' }}
 
       - name: Notify Success
         if: success()

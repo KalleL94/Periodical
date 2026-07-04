@@ -68,14 +68,14 @@ a.rotation-week-small:hover { color: var(--text); }
 .week-grid-wrapper { overflow-x: auto; margin-top: 1.25rem; }
 .week-grid-all { width: 100%; border-collapse: collapse; min-width: 800px; }
 /* Header is the board's destination rail: a stronger hairline underlines it. */
-.week-grid-all thead th { background: var(--panel); padding: 0.75rem 0.5rem; border: 1px solid var(--line); border-bottom: 2px solid var(--line-strong); position: sticky; top: 0; z-index: 10; }
-.week-grid-all .person-header-column { position: sticky; left: 0; z-index: 20; min-width: 120px; background: var(--panel); border-right: 2px solid var(--line-strong); }
+.week-grid-all thead th { background: var(--panel); padding: 0.75rem 0.5rem; border: 1px solid var(--line); border-bottom: 2px solid var(--line-strong); position: sticky; top: 0; z-index: var(--z-sticky); }
+.week-grid-all .person-header-column { position: sticky; left: 0; z-index: var(--z-sticky); min-width: 120px; background: var(--panel); border-right: 2px solid var(--line-strong); }
 .week-grid-all .day-column { min-width: 100px; }
 /* "Now" flag: today's column header carries an accent underline and label colour. */
 .week-grid-all .day-column.today-column { background: rgb(var(--accent-rgb) / 0.18); color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
 .week-grid-all .date-small { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); font-weight: normal; margin-top: 2px; }
 .week-grid-all .person-row { border-bottom: 1px solid var(--line); }
-.week-grid-all .person-name-cell { position: sticky; left: 0; background: var(--panel); padding: 6px 0.75rem; text-align: left; font-weight: 500; border-right: 2px solid var(--line-strong); z-index: 10; }
+.week-grid-all .person-name-cell { position: sticky; left: 0; background: var(--panel); padding: 6px 0.75rem; text-align: left; font-weight: 500; border-right: 2px solid var(--line-strong); z-index: var(--z-sticky); }
 .week-grid-all .person-name-cell a { color: var(--text); }
 .week-grid-all .person-name-cell a:hover { color: var(--accent); }
 .week-grid-all .person-name-cell small { color: var(--muted); font-size: 0.75rem; font-family: var(--font-mono); }
@@ -83,7 +83,7 @@ a.rotation-week-small:hover { color: var(--text); }
 /* "Now" line: today's column runs a teal rail down its trailing edge. */
 .week-grid-all .shift-cell.today-cell { background: rgb(var(--accent-rgb) / 0.08); box-shadow: inset -2px 0 0 var(--accent); }
 .week-grid-all .shift-link { text-decoration: none; display: inline-block; }
-.week-grid-all .shift-link:hover .badge { opacity: 0.9; transform: scale(1.05); transition: all 0.15s ease; }
+.week-grid-all .shift-link:hover .badge { opacity: 0.9; transform: scale(1.05); transition: opacity 0.15s ease, transform 0.15s ease; }
 
 /* Calendar Export */
 .calendar-export { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--table-border); }
@@ -114,6 +114,16 @@ a.rotation-week-small:hover { color: var(--text); }
   .week-grid-all .person-name-cell { min-width: 80px; font-size: 0.8rem; padding: 8px; }
   .week-grid-all .shift-cell { padding: 6px 4px; }
 }
+
+/* Hardening: data-driven shift colours applied via static/js/shift-colors.js.
+   These provide stable fallbacks before the script runs (and for OFF cells). */
+.week-grid-single .calendar-day { border-top: 4px solid #333; }
+.week-grid-all .shift-cell { border-left: 4px solid transparent; }
+.week-grid-all .shift-link { color: var(--text); }
+.shift-name { font-size: 0.85rem; font-weight: 500; }
+.shift-name--off { font-weight: 400; color: var(--muted); }
+
+.calendar-grid .calendar-day { border-top: 4px solid #333; }
 
 /* Personal week/month calendars: on mobile the generic card rule stacks each day
    into a block. Make those blocks full width and content-height so they read as a

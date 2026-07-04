@@ -71,12 +71,12 @@ empty void). Stat cards become an instrument cluster of monospace readouts.
 
 ## Critique vs templated defaults
 
-The three current AI-default looks are: cream + serif + terracotta; near-black +
-one loud accent; broadsheet hairlines. This plan sits near #2 but **inverts** it:
-it removes the single loud accent and makes the chrome near-colourless so the
-data is the only chromatic event. The monospace instrument numerals and the
-board framing are subject-specific. It avoids the default by turning it inside
-out, not by accidentally resembling it.
+Common templated product looks lean on cream + serif + terracotta, near-black +
+one loud accent, or broadsheet hairlines. This plan sits near the dark product
+category but **inverts** it: it removes the single loud accent and makes the
+chrome near-colourless so the data is the only chromatic event. The monospace
+instrument numerals and the board framing are subject-specific. It avoids the
+default by turning it inside out, not by accidentally resembling it.
 
 ## Implementation order
 

@@ -19,19 +19,20 @@
         <link rel="stylesheet" href="/static/css/tables.css?v={{ static_version }}">
         <link rel="stylesheet" href="/static/css/navigation.css?v={{ static_version }}">
         <link rel="stylesheet" href="/static/css/calendar.css?v={{ static_version }}">
+        <script src="/static/js/shift-colors.js" defer></script>
     </head>
     <body>
         {% set path = request.url.path %}
         <header>
-            <div class="row" style="justify-content: space-between;">
-                <div class="col" style="flex: none;">
-                    <h1 style="margin:0; font-size: 22px;">Periodical</h1>
-                    <div style="color: var(--muted); font-size: 13px; margin-top:2px;">
+            <div class="row app-header-row">
+                <div class="col app-brand">
+                    <h1 class="app-title">Periodical</h1>
+                    <div class="app-subtitle">
                         {{ t.app_subtitle }}
                     </div>
                 </div>
 
-                <button class="hamburger" id="hamburger" aria-label="{{ t.nav_menu }}">
+                <button class="hamburger" id="hamburger" aria-label="{{ t.nav_menu }}" aria-controls="main-nav" aria-expanded="false">
                     <span></span>
                     <span></span>
                     <span></span>
@@ -68,12 +69,12 @@
                                 <a href="/profile" class="nav-link {% if path == '/profile' or path.startswith('/profile/') and not path.startswith('/profile/vacation') %}nav-link--active{% endif %}" {% if path == '/profile' %}aria-current="page"{% endif %}>{{ user.name }}</a>
                                 <a href="/profile/vacation" class="nav-link {% if path.startswith('/profile/vacation') %}nav-link--active{% endif %}" {% if path.startswith('/profile/vacation') %}aria-current="page"{% endif %}>{{ t.nav_vacation }}</a>
                             {% endif %}
-                            <form method="POST" action="/profile/language" style="display:inline;">
+                            <form method="POST" action="/profile/language" class="nav-inline-form">
                                 <input type="hidden" name="lang" value="{{ 'en' if user.language == 'sv' else 'sv' }}">
                                 <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
-                                <button type="submit" class="nav-link" style="background:none;border:none;cursor:pointer;padding:0;font:inherit;color:var(--muted);">{{ 'EN' if user.language == 'sv' else 'SV' }}</button>
+                                <button type="submit" class="nav-link nav-link-button">{{ 'EN' if user.language == 'sv' else 'SV' }}</button>
                             </form>
-                            <a href="/logout" class="nav-link" style="color: var(--muted);">{{ t.nav_logout }}</a>
+                            <a href="/logout" class="nav-link">{{ t.nav_logout }}</a>
                         </div>
                     {% else %}
                         <!-- Inloggning -->
@@ -89,19 +90,44 @@
         <script>
             const hamburger = document.getElementById('hamburger');
             const nav = document.getElementById('main-nav');
+            const mobileNavQuery = window.matchMedia('(max-width: 800px)');
+
+            function syncNavAccessibility(isOpen) {
+                const mobileClosed = mobileNavQuery.matches && !isOpen;
+                nav.inert = mobileClosed;
+                if (mobileClosed) {
+                    nav.setAttribute('aria-hidden', 'true');
+                } else {
+                    nav.removeAttribute('aria-hidden');
+                }
+            }
+
+            function setMenuOpen(isOpen) {
+                hamburger.classList.toggle('active', isOpen);
+                nav.classList.toggle('active', isOpen);
+                hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                syncNavAccessibility(isOpen);
+            }
 
             hamburger.addEventListener('click', () => {
-                hamburger.classList.toggle('active');
-                nav.classList.toggle('active');
+                setMenuOpen(!nav.classList.contains('active'));
             });
 
             // Stäng menyn när en länk klickas
             document.querySelectorAll('.nav-link').forEach(link => {
                 link.addEventListener('click', () => {
-                    hamburger.classList.remove('active');
-                    nav.classList.remove('active');
+                    setMenuOpen(false);
                 });
             });
+
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape') setMenuOpen(false);
+            });
+
+            mobileNavQuery.addEventListener('change', () => {
+                syncNavAccessibility(nav.classList.contains('active'));
+            });
+            syncNavAccessibility(false);
         </script>
 
         <main>
@@ -109,8 +135,8 @@
             {% endblock %}
         </main>
 
-        <footer style="text-align: center; padding: 1.5rem 1rem 1rem; color: var(--muted); font-size: 0.78rem;">
-            <a href="/changelog" style="color: var(--muted); text-decoration: none;" title="Nyheter &amp; versioner">Periodical v{{ app_version }}</a>
+        <footer class="app-footer">
+            <a href="/changelog" class="app-footer-link" title="Nyheter &amp; versioner">Periodical v{{ app_version }}</a>
         </footer>
     </body>
 </html>

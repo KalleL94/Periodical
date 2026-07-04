@@ -19,10 +19,10 @@
 <div class="alert alert--danger">{{ error }}</div>
 {% endif %}
 
-<div class="row" style="gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
+<div class="split-cols">
 
     {# === Inställningskort === #}
-    <div class="col" style="min-width: 320px; flex: 1;">
+    <div class="split-col">
         <div class="card">
             <h3>{{ t.transition_settings_card }}</h3>
 
@@ -59,7 +59,7 @@
                         {{ t.transition_vacation_missing.replace('{days}', transition.consultant_vacation_days|string) }}
                     </div>
                     {% endif %}
-                    <label class="form-label" style="margin-top: 0.4rem;">
+                    <label class="form-label form-label--mt">
                         {{ t.transition_vacation_manual_label }}
                     </label>
                     <input type="number" id="consultant_vacation_days" name="consultant_vacation_days" class="form-input"
@@ -114,8 +114,7 @@
 
                 <div class="form-group">
                     <label for="notes" class="form-label">{{ t.transition_notes_label }}</label>
-                    <textarea id="notes" name="notes" rows="2" class="form-input"
-                              style="padding: 0.5rem; resize: vertical;">{{ transition.notes if transition and transition.notes else '' }}</textarea>
+                    <textarea id="notes" name="notes" rows="2" class="form-input form-textarea">{{ transition.notes if transition and transition.notes else '' }}</textarea>
                 </div>
 
                 <hr class="form-section-divider">
@@ -162,7 +161,7 @@
 
     {# === Beräkningskort === #}
     {% if preview %}
-    <div class="col" style="min-width: 320px; flex: 1;">
+    <div class="split-col">
         <div class="card">
             <h3>{{ t.transition_preview_title.replace('{month}', preview.transition_month|string).replace('{year}', preview.transition_year|string) }}</h3>
 

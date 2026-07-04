@@ -69,6 +69,23 @@ footer {
   padding: 1rem;
 }
 
+
+.app-header-row { justify-content: space-between; }
+.app-brand { flex: none; }
+.app-title { margin: 0; font-size: 1.375rem; }
+.app-subtitle { color: var(--muted); font-size: 0.8125rem; margin-top: 2px; }
+.app-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding: 1.5rem 1rem 1rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+.app-footer-link { color: var(--muted); text-decoration: none; }
+
 /* Page Headers */
 .page-header {
   display: flex;
