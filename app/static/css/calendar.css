@@ -114,6 +114,7 @@ a.rotation-week-small:hover { color: var(--text); }
   .week-grid-all .person-name-cell { min-width: 80px; font-size: 0.8rem; padding: 8px; }
   .week-grid-all .shift-cell { padding: 6px 4px; }
 }
+
 /* Hardening: data-driven shift colours applied via static/js/shift-colors.js.
    These provide stable fallbacks before the script runs (and for OFF cells). */
 .week-grid-single .calendar-day { border-top: 4px solid #333; }
@@ -123,3 +124,17 @@ a.rotation-week-small:hover { color: var(--text); }
 .shift-name--off { font-weight: 400; color: var(--muted); }
 
 .calendar-grid .calendar-day { border-top: 4px solid #333; }
+
+/* Personal week/month calendars: on mobile the generic card rule stacks each day
+   into a block. Make those blocks full width and content-height so they read as a
+   tidy day list instead of narrow, fixed-height cards with empty space to the
+   right. (The team week grid .week-grid-all is excluded from the card rule in
+   tables.css and keeps its horizontal-scroll table layout instead.) */
+@media (max-width: 800px) {
+  .week-grid-single .calendar-day,
+  .calendar-grid tbody td {
+    width: 100%;
+    height: auto;
+  }
+  .calendar-day-content { height: auto; }
+}

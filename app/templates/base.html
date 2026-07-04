@@ -5,13 +5,20 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{% block title %}Periodical{% endblock %}</title>
-        <link rel="stylesheet" href="/static/css/fonts.css">
-        <link rel="stylesheet" href="/static/css/base.css">
-        <link rel="stylesheet" href="/static/css/layout.css">
-        <link rel="stylesheet" href="/static/css/components.css">
-        <link rel="stylesheet" href="/static/css/tables.css">
-        <link rel="stylesheet" href="/static/css/navigation.css">
-        <link rel="stylesheet" href="/static/css/calendar.css">
+        {# static_version is a hash of the CSS files' contents (computed at startup,
+           see app/main.py), not the changelog version, so the cache-busting query
+           string changes on every CSS edit even when a release has no changelog
+           entry. Without it, files with different Last-Modified times (no
+           Cache-Control is set) can skew in cache: e.g. a stale base.css without
+           a token that a fresh tables.css depends on, which silently breaks the
+           frozen-column sticky layering on mobile. #}
+        <link rel="stylesheet" href="/static/css/fonts.css?v={{ static_version }}">
+        <link rel="stylesheet" href="/static/css/base.css?v={{ static_version }}">
+        <link rel="stylesheet" href="/static/css/layout.css?v={{ static_version }}">
+        <link rel="stylesheet" href="/static/css/components.css?v={{ static_version }}">
+        <link rel="stylesheet" href="/static/css/tables.css?v={{ static_version }}">
+        <link rel="stylesheet" href="/static/css/navigation.css?v={{ static_version }}">
+        <link rel="stylesheet" href="/static/css/calendar.css?v={{ static_version }}">
         <script src="/static/js/shift-colors.js" defer></script>
     </head>
     <body>

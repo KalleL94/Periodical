@@ -86,7 +86,7 @@
                     <tr class="shift-row {% if today is defined and day.date == today %}today-row{% elif today is defined and day.date < today %}past-row{% endif %}">
                         <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
-                            {{ day.date }}
+                            <span class="date-full">{{ day.date }}</span><span class="date-short">{{ day.date.strftime('%m-%d') }}</span>
                             {% if day.date.weekday() == 0 %}
                                 <a href="/week?year={{ day.date.isocalendar()[0] }}&week={{ day.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</a>
                             {% endif %}
@@ -100,7 +100,7 @@
                             {% set orig_code = person.original_shift.code if person.original_shift else (person.shift.code if person.shift else 'OFF') %}
                             {% set orig_color = person.original_shift.color if person.original_shift else (person.shift.color if person.shift else 'transparent') %}
                             {% set is_changed = person.shift and person.original_shift and person.shift.code != person.original_shift.code %}
-                            <td data-person="{{ person.person_id }}"
+                            <td class="day-cell month-shift-cell" data-person="{{ person.person_id }}"
                                 data-act-color="{{ person.shift.color if person.shift else 'transparent' }}"
                                 data-orig-color="{{ orig_color }}"
                                 data-orig-code="{{ orig_code }}"

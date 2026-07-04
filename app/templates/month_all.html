@@ -113,7 +113,7 @@
                     <tr class="shift-row {% if today is defined and day.date == today %}today-row{% endif %}">
                         <td class="day-cell">{{ weekday_names_full[day.date.weekday()] }}</td>
                         <td class="date-cell">
-                            {{ day.date }}
+                            <span class="date-full">{{ day.date }}</span><span class="date-short">{{ day.date.strftime('%m-%d') }}</span>
                             {% if day.date.weekday() == 0 %}
                                 <a href="/week?year={{ day.date.isocalendar()[0] }}&week={{ day.date.isocalendar()[1] }}" class="rotation-week-small">v{{ day.date.isocalendar()[1] }}</a>
                             {% endif %}

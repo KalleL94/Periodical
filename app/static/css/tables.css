@@ -52,6 +52,10 @@ td.num, th.num { font-family: var(--font-mono); }
    ISO date must not wrap (its hyphens are break points) and the size is trimmed
    so the column does not grow taller/wider than it did before. */
 .month-schedule .date-cell { font-family: var(--font-mono); white-space: nowrap; font-size: 0.82rem; }
+/* The date column carries a full ISO date on desktop and a short MM-DD on mobile
+   (toggled in the max-width:800px block) so the frozen area stays narrow and more
+   people fit before scrolling. */
+.date-short { display: none; }
 
 .coworkers-row {
   background: rgba(255,255,255,0.02);
@@ -137,4 +141,136 @@ td.num, th.num { font-family: var(--font-mono); }
     border-radius: 0;
     padding: 0;
   }
+}
+
+/* Opt a table out of the mobile card layout so it stays a real table instead of
+   a stack of tall bordered cards. .keep-table is the opt-in class (day view: who
+   is working, OB hours, OB pay). The team week grid (.week-grid-all) and the year
+   summary tables (.year-layout .summary) are opted out too: the week grid already
+   has its own sticky/scroll wrapper, and the year tables read as tiny unlabelled
+   cards otherwise. Wide ones scroll inside their existing overflow containers. */
+@media (max-width: 800px) {
+  table.keep-table thead,
+  .week-grid-all thead,
+  .year-layout .summary thead { display: table-header-group; }
+
+  table.keep-table tbody td,
+  .week-grid-all tbody td,
+  .year-layout .summary tbody td { display: table-cell; width: auto; }
+
+  table.keep-table tbody td::before,
+  .week-grid-all tbody td::before,
+  .year-layout .summary tbody td::before { display: none; }
+
+  table.keep-table tbody tr,
+  .week-grid-all tbody tr,
+  .year-layout .summary tbody tr {
+    display: table-row;
+    margin: 0;
+    background: none;
+    border-radius: 0;
+    padding: 0;
+  }
+  table.keep-table td, table.keep-table th { padding: 0.35rem 0.5rem; }
+}
+
+/* ===== Schedule matrix on mobile (month_all / year_all) =====
+   The matrix is days x people; it is always wider than a phone and is built to
+   scroll horizontally. The generic card rule above would collapse it into
+   unlabelled blocks, so we opt it out (like .breakdown-table) and instead freeze
+   the two leading columns (weekday + date) so the row stays identifiable while
+   the shift columns scroll under them. One rule covers both templates even though
+   they use different width utility classes, because column 1 gets an explicit
+   width here and column 2 offsets from it. */
+@media (max-width: 800px) {
+  .month-schedule { --frozen-col1: 3.75rem; }
+
+  /* Stay a real table, not cards */
+  .month-schedule thead { display: table-header-group; }
+  .month-schedule tbody td { display: table-cell; width: auto; }
+  .month-schedule tbody td::before { display: none; }
+  .month-schedule tbody tr {
+    display: table-row;
+    margin: 0;
+    border-bottom: none;
+    background: none;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  /* Both leading columns freeze. z-index values are LITERAL here, not
+     var(--z-sticky): the freeze layering must not depend on base.css being
+     cache-fresh. A stale base.css (heuristically cached, no Cache-Control)
+     without the token makes var(--z-sticky) resolve to `auto`, which lets the
+     sticky-top scrolling header cells paint over the frozen columns -> the
+     column looks like it does not freeze. Self-contained literals in this file
+     stay cache-coherent with the sticky rules. Layering, low to high:
+     scrolling body (auto) < frozen body (2) < scrolling header (3) < frozen corner (4). */
+  .month-schedule thead th { z-index: 3; }
+  .month-schedule thead th:nth-child(1),
+  .month-schedule thead th:nth-child(2),
+  .month-schedule tbody td:nth-child(1),
+  .month-schedule tbody td:nth-child(2) {
+    position: sticky;
+    background: var(--panel);
+  }
+  .month-schedule tbody td:nth-child(1),
+  .month-schedule tbody td:nth-child(2) { z-index: 2; }
+
+  /* Column 1 (weekday): pinned to the edge with a deterministic width so the
+     date column's offset is exact. Reduced font keeps the longest weekday on
+     one line inside the fixed width. */
+  .month-schedule thead th:nth-child(1),
+  .month-schedule tbody td:nth-child(1) {
+    left: 0;
+    width: var(--frozen-col1);
+    min-width: var(--frozen-col1);
+    max-width: var(--frozen-col1);
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    padding-left: 0.4rem;
+    padding-right: 0.25rem;
+  }
+
+  /* Column 2 (date): pinned just right of column 1; its right edge marks the
+     boundary of the frozen area and hints at scrollable content beyond. */
+  .month-schedule thead th:nth-child(2),
+  .month-schedule tbody td:nth-child(2) {
+    left: var(--frozen-col1);
+    border-right: 2px solid var(--line-strong);
+  }
+
+  /* Header corner cells win the top-left intersection (vertical + horizontal
+     sticky) over both the frozen body cells and the scrolling header cells. */
+  .month-schedule thead th:nth-child(1),
+  .month-schedule thead th:nth-child(2) {
+    z-index: 4;
+  }
+
+  /* The today row keeps its teal top/bottom rule across the board; the frozen
+     cells override the row tint with a solid panel fill so scrolling shift pills
+     do not bleed through behind them. */
+  .month-schedule tr.today-row td:nth-child(1),
+  .month-schedule tr.today-row td:nth-child(2) {
+    background: var(--panel);
+  }
+
+  /* Compact the matrix on mobile: tighter rows, smaller pills and thinner shift
+     colour rails so more people fit before you have to scroll sideways. */
+  .month-schedule tbody td { padding-top: 0.28rem; padding-bottom: 0.28rem; padding-right: 0.4rem; }
+  .month-schedule tbody td.day-cell[data-person] {
+    padding-left: 5px !important;
+    border-left-width: 4px !important;
+  }
+  .month-schedule .badge { font-size: 0.66rem; padding: 1px 5px; }
+  .month-schedule thead th { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+  .month-schedule .person-header { font-size: 0.72rem; }
+  .month-schedule .date-cell { font-size: 0.74rem; }
+
+  /* Short date (MM-DD) on mobile, and let the date column shrink to it: the
+     header carries a w-md/w-lg min-width that would otherwise keep it wide. */
+  .month-schedule .date-full { display: none; }
+  .month-schedule .date-short { display: inline; }
+  .month-schedule thead th:nth-child(2) { min-width: 0; }
 }
