@@ -167,6 +167,42 @@ def get_rate_history(session, user_id: int) -> list[dict]:
     ]
 
 
+def update_rate_history_value(session, rate_id: int, user_id: int, rates: dict):
+    """Update the rate values on an existing rate history record without touching dates.
+
+    Only the rates JSON changes; effective_from/effective_to stay untouched so the
+    timeline's integrity cannot break. Mirrors add_new_rates() for the active-record
+    User.custom_rates sync.
+
+    Raises:
+        LookupError: if the record does not exist
+        PermissionError: if the record belongs to another user
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.core.utils import get_today
+    from app.database.database import RateHistory, User
+
+    record = session.query(RateHistory).filter(RateHistory.id == rate_id).first()
+    if not record:
+        raise LookupError("Rate record not found")
+    if record.user_id != user_id:
+        raise PermissionError("Rate record does not belong to this user")
+
+    record.rates = rates
+    flag_modified(record, "rates")
+
+    # Keep User.custom_rates in sync if this is the active rate record
+    if record.effective_to is None and record.effective_from <= get_today():
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            user.custom_rates = rates
+            flag_modified(user, "custom_rates")
+
+    session.commit()
+    return record
+
+
 def delete_rate_history(session, rate_id: int, user_id: int):
     """Delete a rate history record. Reopen previous if it was closed by this one."""
     from app.database.database import RateHistory

@@ -136,13 +136,17 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if wage_history | length > 1 %}
-                                    <form method="POST" action="/profile/delete-wage/{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.profile_delete_wage_confirm }}');">
-                                        <button type="submit" class="btn danger">{{ t.profile_delete }}</button>
-                                    </form>
-                                {% else %}
-                                    <span class="text-muted rates-sm">-</span>
-                                {% endif %}
+                                <div class="row-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            onclick="editProfileWage({{ record.id }}, {{ record.wage }})">
+                                        {{ t.profile_edit }}
+                                    </button>
+                                    {% if wage_history | length > 1 %}
+                                        <form method="POST" action="/profile/delete-wage/{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.profile_delete_wage_confirm }}');">
+                                            <button type="submit" class="btn danger">{{ t.profile_delete }}</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -157,13 +161,13 @@
 
         <!-- Add New Wage -->
         <div class="card card-mt">
-            <h3 class="form-card-title">{{ t.profile_add_wage_title }}</h3>
+            <h3 class="form-card-title" id="profile-wage-form-title">{{ t.profile_add_wage_title }}</h3>
             <p class="text-muted profile-add-desc">
                 {{ t.profile_add_wage_desc }}
             </p>
 
             <form method="POST" action="/profile/add-wage" id="profile-add-wage-form">
-                <div class="form-group profile-field-block">
+                <div class="form-group profile-field-block" id="profile-wage-type-block">
                     <label class="form-label">{{ t.admin_wage_type_label }}</label>
                     <div class="form-options">
                         <label class="form-option">
@@ -196,7 +200,7 @@
                         >
                     </div>
 
-                    <div>
+                    <div id="profile-wage-date-block">
                         <label for="effective_from" class="form-label">{{ t.profile_from_date }}</label>
                         <input
                             type="date"
@@ -208,7 +212,10 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary">{{ t.profile_add_wage_button }}</button>
+                <div class="profile-actions">
+                    <button type="submit" class="btn btn-primary" id="profile-wage-submit">{{ t.profile_add_wage_button }}</button>
+                    <button type="button" class="btn btn-secondary" id="profile-wage-cancel" style="display:none" onclick="cancelProfileWageEdit()">{{ t.profile_cancel_edit }}</button>
+                </div>
             </form>
             <script>
             function updateProfileWageUnit(type) {
@@ -217,6 +224,29 @@
                     : '{{ t.admin_wage_unit_monthly }}';
                 var inp = document.getElementById('new_wage');
                 inp.placeholder = type === 'hourly' ? '300' : '35000';
+            }
+            function editProfileWage(id, wage) {
+                var form = document.getElementById('profile-add-wage-form');
+                form.action = '/profile/edit-wage/' + id;
+                document.getElementById('new_wage').value = wage;
+                document.getElementById('profile-wage-type-block').style.display = 'none';
+                document.getElementById('profile-wage-date-block').style.display = 'none';
+                document.getElementById('effective_from').required = false;
+                document.getElementById('profile-wage-form-title').textContent = '{{ t.profile_edit_wage_title }}';
+                document.getElementById('profile-wage-submit').textContent = '{{ t.profile_save_edit }}';
+                document.getElementById('profile-wage-cancel').style.display = '';
+                form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            function cancelProfileWageEdit() {
+                var form = document.getElementById('profile-add-wage-form');
+                form.reset();
+                form.action = '/profile/add-wage';
+                document.getElementById('profile-wage-type-block').style.display = '';
+                document.getElementById('profile-wage-date-block').style.display = '';
+                document.getElementById('effective_from').required = true;
+                document.getElementById('profile-wage-form-title').textContent = '{{ t.profile_add_wage_title }}';
+                document.getElementById('profile-wage-submit').textContent = '{{ t.profile_add_wage_button }}';
+                document.getElementById('profile-wage-cancel').style.display = 'none';
             }
             </script>
         </div>
@@ -268,6 +298,7 @@
     <!-- Ersättningssatser -->
     {% set rates_form_action = "/profile/rates" %}
     {% set rates_delete_prefix = "/profile/delete-rate/" %}
+    {% set rates_edit_prefix = "/profile/edit-rate/" %}
     {% include "rates_form.html" with context %}
 
 <style>
@@ -277,6 +308,7 @@
 .profile-wage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
 .profile-api-input { width: 100%; box-sizing: border-box; font-family: var(--font-mono); margin-bottom: 0.75rem; }
 .profile-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; align-items: center; }
+.row-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 @media (max-width: 520px) {
     .profile-wage-grid { grid-template-columns: 1fr; }
 }
