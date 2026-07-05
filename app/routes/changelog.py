@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.28.0",
+        "date": "2026-07-05",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Du kan nu rätta en felskriven lön eller ersättningssats direkt i historiken på din profil, utan att ta bort perioden och lägga in den på nytt. Tryck Redigera på raden, ändra beloppet och spara, så behålls periodens datum. Administratörer kan göra samma sak för andra användare",
+                "en": "You can now correct a mistyped wage or compensation rate directly in the history on your profile, without deleting the period and re-entering it. Press Edit on the row, change the amount and save, and the period's dates are kept. Administrators can do the same for other users",
+            },
+        ],
+    },
+    {
         "version": "0.27.1",
         "date": "2026-07-04",
         "entries": [
