@@ -59,6 +59,7 @@ from .wages import (
     get_ot_hourly_rate_from_stored_wage,
     get_user_wage,
     get_wage_history,
+    update_wage_value,
 )
 
 # === Bakåtkompatibilitet (deprecated - använd funktionerna istället) ===
@@ -107,6 +108,7 @@ __all__ = [
     "get_all_user_wages",
     "add_new_wage",
     "get_wage_history",
+    "update_wage_value",
     "get_current_wage_record",
     # vacation
     "get_vacation_dates_for_year",

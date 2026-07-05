@@ -88,13 +88,18 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if rate_history | length > 1 %}
-                        <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.rates_delete_confirm }}');">
-                            <button type="submit" class="btn danger">{{ t.rates_delete }}</button>
-                        </form>
-                    {% else %}
-                        <span class="text-muted rates-sm">&mdash;</span>
-                    {% endif %}
+                    <div class="row-actions">
+                        <button type="button" class="btn btn-secondary btn-sm rate-edit-btn"
+                                data-rate-id="{{ record.id }}"
+                                data-rates='{{ record.rates | tojson }}'>
+                            {{ t.rates_edit }}
+                        </button>
+                        {% if rate_history | length > 1 %}
+                            <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.rates_delete_confirm }}');">
+                                <button type="submit" class="btn danger">{{ t.rates_delete }}</button>
+                            </form>
+                        {% endif %}
+                    </div>
                 </td>
             </tr>
             {% endfor %}
@@ -105,16 +110,16 @@
 
 <!-- Add New Rates -->
 <div class="card rates-block">
-    <h3 class="form-card-title">{% if rate_history %}{{ t.rates_add_title }}{% else %}{{ t.rates_only_title }}{% endif %}</h3>
+    <h3 class="form-card-title" id="rates-form-title">{% if rate_history %}{{ t.rates_add_title }}{% else %}{{ t.rates_only_title }}{% endif %}</h3>
     <p class="rate-intro">
         {{ t.rates_add_desc }}{% if rate_history %} {{ t.rates_add_desc_history }}{% endif %}
     </p>
 
-    <form method="POST" action="{{ rates_form_action }}" class="rates-form-instance">
+    <form method="POST" action="{{ rates_form_action }}" class="rates-form-instance" id="rates-add-form">
 
         <!-- Från datum + timlön -->
         <div class="rates-row">
-            <div>
+            <div id="rates-date-block">
                 <label for="effective_from_rates" class="form-label">{{ t.rates_from_date_label }}</label>
                 <input type="date" id="effective_from_rates" name="effective_from" required
                        class="rate-input rate-input--date">
@@ -229,7 +234,10 @@
             <p class="rate-check-hint">{{ t.rates_sick_ob_hint }}</p>
         </div>
 
-        <button type="submit" class="btn btn-primary">{{ t.rates_save }}</button>
+        <div class="row-actions">
+            <button type="submit" class="btn btn-primary" id="rates-submit">{{ t.rates_save }}</button>
+            <button type="button" class="btn btn-secondary" id="rates-cancel" style="display:none">{{ t.rates_cancel_edit }}</button>
+        </div>
     </form>
 </div>
 
@@ -382,5 +390,89 @@
             }
         });
     });
+})();
+
+// Edit an existing rate history row: prefill the form with that row's values.
+(function () {
+    var form = document.getElementById('rates-add-form');
+    if (!form) return;
+
+    var addAction = '{{ rates_form_action }}';
+    var editPrefix = '{{ rates_edit_prefix }}';
+    var addTitle = {% if rate_history %}'{{ t.rates_add_title }}'{% else %}'{{ t.rates_only_title }}'{% endif %};
+
+    function setVal(name, value) {
+        var el = form.querySelector('[name="' + name + '"]');
+        if (el) el.value = (value === undefined || value === null) ? '' : value;
+    }
+
+    function clearRateInputs() {
+        form.querySelectorAll('.rate-value-input, input[name^="rate_vac_"]').forEach(function (el) {
+            el.value = '';
+        });
+        var ot = form.querySelector('[name="rate_ot"]');
+        if (ot) ot.value = '';
+        var sick = form.querySelector('[name="sick_ob_compensation"]');
+        if (sick) sick.checked = false;
+        // Reset any open factor-mode toggles back to direct value inputs
+        form.querySelectorAll('.rate-factor-row').forEach(function (row) { row.style.display = 'none'; });
+        form.querySelectorAll('.rate-value-input').forEach(function (el) { el.style.display = ''; });
+        form.querySelectorAll('.rate-factor-toggle').forEach(function (b) { b.classList.remove('active'); });
+    }
+
+    function prefill(rates) {
+        clearRateInputs();
+        rates = rates || {};
+        if (rates.ob) {
+            Object.keys(rates.ob).forEach(function (code) { setVal('rate_ob_' + code, rates.ob[code]); });
+        }
+        if (rates.ot !== undefined && rates.ot !== null) setVal('rate_ot', rates.ot);
+        if (rates.oncall) {
+            ['OC_WEEKDAY', 'OC_WEEKEND', 'OC_HOLIDAY', 'OC_SPECIAL'].forEach(function (code) {
+                if (rates.oncall[code] !== undefined) setVal('rate_oc_' + code, rates.oncall[code]);
+            });
+        }
+        if (rates.vacation) {
+            Object.keys(rates.vacation).forEach(function (key) { setVal('rate_vac_' + key, rates.vacation[key]); });
+        }
+        var sick = form.querySelector('[name="sick_ob_compensation"]');
+        if (sick) sick.checked = !!(rates.sick && rates.sick.ob_compensation);
+    }
+
+    function toEditMode(id, rates) {
+        prefill(rates);
+        form.action = editPrefix + id;
+        var dateInput = document.getElementById('effective_from_rates');
+        if (dateInput) dateInput.required = false;
+        var dateBlock = document.getElementById('rates-date-block');
+        if (dateBlock) dateBlock.style.display = 'none';
+        document.getElementById('rates-form-title').textContent = '{{ t.rates_edit_title }}';
+        document.getElementById('rates-submit').textContent = '{{ t.rates_save_edit }}';
+        document.getElementById('rates-cancel').style.display = '';
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function toAddMode() {
+        clearRateInputs();
+        form.action = addAction;
+        var dateInput = document.getElementById('effective_from_rates');
+        if (dateInput) { dateInput.required = true; dateInput.value = ''; }
+        var dateBlock = document.getElementById('rates-date-block');
+        if (dateBlock) dateBlock.style.display = '';
+        document.getElementById('rates-form-title').textContent = addTitle;
+        document.getElementById('rates-submit').textContent = '{{ t.rates_save }}';
+        document.getElementById('rates-cancel').style.display = 'none';
+    }
+
+    document.querySelectorAll('.rate-edit-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var rates = {};
+            try { rates = JSON.parse(btn.getAttribute('data-rates')); } catch (e) { rates = {}; }
+            toEditMode(btn.getAttribute('data-rate-id'), rates);
+        });
+    });
+
+    var cancelBtn = document.getElementById('rates-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', toAddMode);
 })();
 </script>

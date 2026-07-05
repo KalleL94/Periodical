@@ -654,6 +654,47 @@ def add_new_wage(session: Session, user_id: int, new_wage: int, effective_from: 
     return new_wage_history
 
 
+def update_wage_value(session: Session, wage_id: int, user_id: int, new_wage: int):
+    """
+    Uppdaterar beloppet på en befintlig lönepost utan att röra datumen.
+
+    Endast lönebeloppet ändras; effective_from/effective_to lämnas orörda så
+    tidslinjens integritet inte kan gå sönder av redigeringen.
+
+    Args:
+        session: SQLAlchemy session
+        wage_id: ID på löneposten som ska uppdateras
+        user_id: Ägaren posten måste tillhöra (behörighetskontroll)
+        new_wage: Nytt lönebelopp i SEK
+
+    Returns:
+        Den uppdaterade WageHistory-posten
+
+    Raises:
+        LookupError: om posten inte finns
+        PermissionError: om posten tillhör en annan användare
+    """
+    from app.database.database import User, WageHistory
+
+    record = session.query(WageHistory).filter(WageHistory.id == wage_id).first()
+    if not record:
+        raise LookupError("Wage record not found")
+    if record.user_id != user_id:
+        raise PermissionError("Wage record does not belong to this user")
+
+    record.wage = new_wage
+
+    # Keep User.wage in sync if this is the active wage record
+    if record.effective_to is None and record.effective_from <= get_today():
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            user.wage = new_wage
+
+    session.commit()
+
+    return record
+
+
 def get_wage_history(session: Session, user_id: int) -> list[dict]:
     """
     Hämtar all lönehistorik för en användare, sorterad efter datum.

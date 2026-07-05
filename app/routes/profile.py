@@ -160,6 +160,31 @@ async def profile_update_rates(
     return RedirectResponse(url="/profile", status_code=302)
 
 
+@router.post("/profile/edit-rate/{rate_id}", name="profile_edit_rate")
+async def profile_edit_rate(
+    rate_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: update the rate values on an existing rate history entry (dates unchanged)."""
+    from app.core.rates import update_rate_history_value
+
+    form = await request.form()
+    rates = _parse_rates_form(form)
+
+    try:
+        update_rate_history_value(db, rate_id, current_user.id, rates)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+    clear_schedule_cache()
+
+    return RedirectResponse(url="/profile", status_code=302)
+
+
 @router.post("/profile/set-wage-type", name="profile_set_wage_type")
 async def profile_set_wage_type(
     wage_type: str = Form(...),
@@ -203,6 +228,28 @@ async def profile_add_wage(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Kunde inte lägga till lön: {e}") from e
+
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/edit-wage/{wage_id}", name="profile_edit_wage")
+async def profile_edit_wage(
+    wage_id: int,
+    new_wage: int = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """User: update the amount on an existing wage history entry (dates unchanged)."""
+    from app.core.schedule import update_wage_value
+
+    try:
+        update_wage_value(db, wage_id, current_user.id, new_wage)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+    clear_schedule_cache()
 
     return RedirectResponse(url="/profile", status_code=302)
 

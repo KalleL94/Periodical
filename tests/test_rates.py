@@ -18,6 +18,7 @@ from app.core.rates import (
     get_all_defaults,
     get_rate_history,
     get_user_rates,
+    update_rate_history_value,
 )
 from app.core.utils import get_today
 from app.database.database import RateHistory, User, UserRole
@@ -237,6 +238,77 @@ class TestDeleteRateHistory:
         user = _make_user(test_db)
         # Should not raise even when the id does not exist.
         delete_rate_history(test_db, 9999, user.id)
+
+
+class TestUpdateRateHistoryValue:
+    def test_updates_active_record_and_syncs_user_snapshot(self, test_db):
+        user = _make_user(test_db, custom_rates={"ot": 50})
+        rec = RateHistory(
+            user_id=user.id,
+            rates={"ot": 50},
+            effective_from=datetime.date(2024, 1, 1),
+            effective_to=None,
+        )
+        test_db.add(rec)
+        test_db.commit()
+
+        update_rate_history_value(test_db, rec.id, user.id, {"ot": 75})
+
+        test_db.refresh(rec)
+        test_db.refresh(user)
+        assert rec.rates == {"ot": 75}
+        # Dates untouched.
+        assert rec.effective_from == datetime.date(2024, 1, 1)
+        assert rec.effective_to is None
+        # Active record syncs the snapshot.
+        assert user.custom_rates == {"ot": 75}
+
+    def test_historical_record_edit_does_not_touch_user_snapshot(self, test_db):
+        user = _make_user(test_db, custom_rates={"ot": 20})
+        old = RateHistory(
+            user_id=user.id,
+            rates={"ot": 10},
+            effective_from=datetime.date(2025, 1, 1),
+            effective_to=datetime.date(2025, 12, 31),
+        )
+        test_db.add(old)
+        test_db.commit()
+
+        update_rate_history_value(test_db, old.id, user.id, {"ot": 11})
+        test_db.refresh(old)
+        test_db.refresh(user)
+        assert old.rates == {"ot": 11}
+        assert user.custom_rates == {"ot": 20}
+
+    def test_wrong_owner_raises_permission_error(self, test_db):
+        user = _make_user(test_db)
+        other = User(
+            username="otheruser",
+            password_hash="x",
+            name="Other",
+            role=UserRole.USER,
+            wage=30000,
+            vacation={},
+            must_change_password=0,
+        )
+        test_db.add(other)
+        test_db.commit()
+        test_db.refresh(other)
+        rec = RateHistory(
+            user_id=user.id,
+            rates={"ot": 10},
+            effective_from=datetime.date(2024, 1, 1),
+            effective_to=None,
+        )
+        test_db.add(rec)
+        test_db.commit()
+        with pytest.raises(PermissionError):
+            update_rate_history_value(test_db, rec.id, other.id, {"ot": 99})
+
+    def test_missing_record_raises_lookup_error(self, test_db):
+        user = _make_user(test_db)
+        with pytest.raises(LookupError):
+            update_rate_history_value(test_db, 999999, user.id, {"ot": 99})
 
 
 @pytest.mark.parametrize("invalid", [None, {}])

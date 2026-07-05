@@ -296,6 +296,29 @@ async def admin_add_wage(
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
+@router.post("/admin/users/{user_id}/edit-wage/{wage_id}", name="admin_edit_wage")
+async def admin_edit_wage(
+    user_id: int,
+    wage_id: int,
+    new_wage: int = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: update the amount on an existing wage history entry for a user (dates unchanged)."""
+    from app.core.schedule import update_wage_value
+
+    try:
+        update_wage_value(db, wage_id, user_id, new_wage)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
 @router.post("/admin/users/{user_id}/delete-wage/{wage_id}", name="admin_delete_wage")
 async def admin_delete_wage(
     request: Request,
@@ -378,6 +401,32 @@ async def admin_update_rates(
         effective_from=effective_date,
         created_by=current_user.id,
     )
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/edit-rate/{rate_id}", name="admin_edit_rate")
+async def admin_edit_rate(
+    request: Request,
+    user_id: int,
+    rate_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: update the rate values on an existing rate history entry (dates unchanged)."""
+    from app.core.rates import update_rate_history_value
+
+    form = await request.form()
+    rates = _parse_rates_form(form)
+
+    try:
+        update_rate_history_value(db, rate_id, user_id, rates)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     clear_schedule_cache()
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)

@@ -25,6 +25,7 @@ from app.core.schedule.wages import (
     get_ot_hourly_rate_from_stored_wage,
     get_user_wage,
     get_wage_history,
+    update_wage_value,
 )
 from app.core.utils import get_today
 from app.database.database import User, UserRole, WageHistory, WageType
@@ -240,3 +241,48 @@ class TestWageHistoryCrud:
         assert record is not None
         assert record.wage == 30000
         assert record.effective_to is None
+
+
+class TestUpdateWageValue:
+    def test_updates_active_record_and_syncs_user_snapshot(self, test_db):
+        user = _make_user(test_db, wage=30000)
+        rec = add_new_wage(test_db, user.id, 30000, datetime.date(2024, 1, 1))
+        from_before, to_before = rec.effective_from, rec.effective_to
+
+        update_wage_value(test_db, rec.id, user.id, 41000)
+
+        test_db.refresh(rec)
+        test_db.refresh(user)
+        assert rec.wage == 41000
+        # Dates are never touched by an edit.
+        assert rec.effective_from == from_before
+        assert rec.effective_to == to_before
+        # Active record keeps User.wage in sync.
+        assert user.wage == 41000
+
+    def test_historical_record_edit_does_not_touch_user_snapshot(self, test_db):
+        user = _make_user(test_db, wage=30000)
+        old = add_new_wage(test_db, user.id, 30000, datetime.date(2024, 1, 1))
+        add_new_wage(test_db, user.id, 35000, datetime.date(2025, 1, 1))
+        test_db.refresh(user)
+        assert user.wage == 35000
+
+        # Editing the now-closed historical record must not move the snapshot.
+        update_wage_value(test_db, old.id, user.id, 31000)
+        test_db.refresh(old)
+        test_db.refresh(user)
+        assert old.wage == 31000
+        assert old.effective_to is not None
+        assert user.wage == 35000
+
+    def test_wrong_owner_raises_permission_error(self, test_db):
+        user = _make_user(test_db, wage=30000)
+        other = _make_user(test_db, username="other", person_id=99)
+        rec = add_new_wage(test_db, user.id, 30000, datetime.date(2024, 1, 1))
+        with pytest.raises(PermissionError):
+            update_wage_value(test_db, rec.id, other.id, 50000)
+
+    def test_missing_record_raises_lookup_error(self, test_db):
+        user = _make_user(test_db, wage=30000)
+        with pytest.raises(LookupError):
+            update_wage_value(test_db, 999999, user.id, 50000)
