@@ -976,6 +976,9 @@ async def admin_person_change_submit(
             wage_int = int(new_wage.strip())
         except ValueError:
             return fail("Ogiltig månadslön.")
+        # Reject a zero or negative wage for the new successor
+        if wage_int <= 0:
+            return fail("Ogiltig månadslön.")
         if get_user_by_username(db, new_username.strip()):
             return fail("Användarnamnet finns redan.")
         successor = User(

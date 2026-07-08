@@ -227,6 +227,30 @@ class TestPersonChangePagePost:
         )
         assert open_rec.user_id == 11
 
+    def test_non_positive_wage_returns_400(self, test_client, test_db, admin_user):
+        self._holder(test_db, admin_user)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.post(
+            "/admin/person-change",
+            data={
+                "person_id": 3,
+                "last_working_day": "2026-03-31",
+                "start_date": "2026-04-01",
+                "successor_mode": "new",
+                "new_name": "Zero Wage",
+                "new_username": "zerowage1",
+                "new_password": "secret123",
+                "new_wage": "0",
+            },
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 400
+        # The new user must not have been created
+        test_db.expire_all()
+        assert test_db.query(User).filter(User.username == "zerowage1").first() is None
+
     def test_missing_dates_returns_400(self, test_client, test_db, admin_user):
         self._holder(test_db, admin_user)
         bert = _make_user(test_db, 12, "bert1", "Bert")
