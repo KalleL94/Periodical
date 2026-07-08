@@ -95,14 +95,13 @@ async def admin_create_user(
     return RedirectResponse(url="/admin/users", status_code=302)
 
 
-@router.get("/admin/users/{user_id}", response_class=HTMLResponse, name="admin_edit_user_page")
-async def admin_edit_user_page(
-    request: Request,
-    user_id: int,
-    current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db),
-):
-    """Admin: show edit user form."""
+def _build_user_edit_context(request, current_user, edit_user, db):
+    """Build the full template context for admin_user_edit.html.
+
+    Shared by the edit page GET route and by the POST routes that need to
+    re-render the page with a form error, so the template always has every
+    variable it (and its included partials) expect.
+    """
     from app.core.rates import get_all_defaults, get_rate_history
     from app.core.schedule import get_wage_history
     from app.core.schedule.person_history import get_user_history
@@ -116,13 +115,9 @@ async def admin_edit_user_page(
     from app.core.utils import get_today
     from app.database.database import EmploymentTransition
 
-    edit_user = db.query(User).filter(User.id == user_id).first()
-    if not edit_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
     available_tax_tables = get_available_tax_tables()
-    wage_history = get_wage_history(db, user_id)
-    person_history = get_user_history(db, user_id)
+    wage_history = get_wage_history(db, edit_user.id)
+    person_history = get_user_history(db, edit_user.id)
     vacation_balance = calculate_vacation_balance(edit_user, get_today().year, db)
 
     edit_transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == edit_user.id).first()
@@ -134,28 +129,40 @@ async def admin_edit_user_page(
             admin_auto_variable_avg = calculate_variable_avg_daily(edit_user, db, earning_start, earning_end)
         admin_auto_vacation_days = calculate_consultant_vacation_days(edit_user, edit_transition, session=db)
 
-    return render(
-        "admin_user_edit.html",
-        {
-            "request": request,
-            "user": current_user,
-            "edit_user": edit_user,
-            "available_tax_tables": available_tax_tables,
-            "wage_history": wage_history,
-            "person_history": person_history,
-            "vacation_balance": vacation_balance,
-            "rate_defaults": get_all_defaults(),
-            "custom_rates": edit_user.custom_rates or {},
-            "rate_history": get_rate_history(db, edit_user.id),
-            "edit_transition": edit_transition,
-            "admin_auto_variable_avg": admin_auto_variable_avg,
-            "admin_auto_vacation_days": admin_auto_vacation_days,
-            "salary_types": [
-                ("trailing", "Släpande (lön för föregående månad)"),
-                ("current", "Innestående (lön för aktuell månad)"),
-            ],
-        },
-    )
+    return {
+        "request": request,
+        "user": current_user,
+        "edit_user": edit_user,
+        "available_tax_tables": available_tax_tables,
+        "wage_history": wage_history,
+        "person_history": person_history,
+        "vacation_balance": vacation_balance,
+        "rate_defaults": get_all_defaults(),
+        "custom_rates": edit_user.custom_rates or {},
+        "rate_history": get_rate_history(db, edit_user.id),
+        "edit_transition": edit_transition,
+        "admin_auto_variable_avg": admin_auto_variable_avg,
+        "admin_auto_vacation_days": admin_auto_vacation_days,
+        "salary_types": [
+            ("trailing", "Släpande (lön för föregående månad)"),
+            ("current", "Innestående (lön för aktuell månad)"),
+        ],
+    }
+
+
+@router.get("/admin/users/{user_id}", response_class=HTMLResponse, name="admin_edit_user_page")
+async def admin_edit_user_page(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: show edit user form."""
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return render("admin_user_edit.html", _build_user_edit_context(request, current_user, edit_user, db))
 
 
 @router.post("/admin/users/{user_id}", name="admin_update_user")
@@ -468,6 +475,17 @@ async def admin_start_employment(
 
     try:
         start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        return render(
+            "admin_user_edit.html",
+            {
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": f"Ogiltigt datumformat: {e}",
+            },
+            status_code=400,
+        )
+
+    try:
         start_employment(
             session=db,
             user_id=user_id,
@@ -477,19 +495,18 @@ async def admin_start_employment(
             start_date=start_date_obj,
             created_by=current_user.id,
         )
-        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
-
     except ValueError as e:
         return render(
             "admin_user_edit.html",
             {
-                "request": request,
-                "user": current_user,
-                "edit_user": edit_user,
-                "error": f"Ogiltigt datumformat: {e}",
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": str(e),
             },
             status_code=400,
         )
+
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 @router.post("/admin/users/{user_id}/end-employment", name="admin_end_employment")
@@ -512,25 +529,35 @@ async def admin_end_employment(
 
     try:
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        return render(
+            "admin_user_edit.html",
+            {
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": f"Ogiltigt datumformat: {e}",
+            },
+            status_code=400,
+        )
+
+    try:
         end_employment(
             session=db,
             user_id=user_id,
             person_id=person_id,
             end_date=end_date_obj,
         )
-        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
-
     except ValueError as e:
         return render(
             "admin_user_edit.html",
             {
-                "request": request,
-                "user": current_user,
-                "edit_user": edit_user,
-                "error": f"Ogiltigt datumformat: {e}",
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": str(e),
             },
             status_code=400,
         )
+
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 @router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
