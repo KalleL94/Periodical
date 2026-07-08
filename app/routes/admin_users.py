@@ -814,3 +814,72 @@ async def admin_transition_delete(
             raise
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+def _person_change_context(
+    request: Request,
+    current_user: User,
+    db: Session,
+    error: str | None = None,
+    form: dict | None = None,
+) -> dict:
+    """Build template context for the person change page."""
+    from app.database.database import PersonHistory
+
+    open_records = {r.person_id: r for r in db.query(PersonHistory).filter(PersonHistory.effective_to.is_(None)).all()}
+
+    positions = []
+    for pid in range(1, 11):
+        record = open_records.get(pid)
+        holder_name = record.name if record else None
+        holder_user_id = record.user_id if record else None
+        since = record.effective_from if record else None
+        if record is None:
+            # Legacy fallback: an active user assigned to the position without history
+            legacy = (
+                db.query(User)
+                .filter(User.is_active == 1)
+                .filter((User.person_id == pid) | ((User.person_id.is_(None)) & (User.id == pid)))
+                .first()
+            )
+            if legacy:
+                holder_name = legacy.name
+                holder_user_id = legacy.id
+        positions.append(
+            {
+                "person_id": pid,
+                "holder_name": holder_name,
+                "holder_user_id": holder_user_id,
+                "since": since,
+            }
+        )
+
+    held_user_ids = [p["holder_user_id"] for p in positions if p["holder_user_id"] is not None]
+    available_users = (
+        db.query(User).filter(User.id.notin_(held_user_ids)).order_by(User.name).all()
+        if held_user_ids
+        else db.query(User).order_by(User.name).all()
+    )
+
+    return {
+        "request": request,
+        "user": current_user,
+        "positions": positions,
+        "available_users": available_users,
+        "error": error,
+        "form": form or {},
+        "success": False,
+    }
+
+
+@router.get("/admin/person-change", response_class=HTMLResponse, name="admin_person_change_page")
+async def admin_person_change_page(
+    request: Request,
+    success: int = Query(0),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: show the guided person change page."""
+    ctx = _person_change_context(request, current_user, db)
+    ctx["success"] = bool(success)
+    return render("admin_person_change.html", ctx)

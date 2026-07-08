@@ -97,3 +97,20 @@ class TestExistingEmploymentRoutes:
         )
 
         assert resp.status_code == 400
+
+
+class TestPersonChangePageGet:
+    def test_renders_positions_with_holder_and_vacant(self, test_client, test_db, admin_user):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=admin_user.id)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.get("/admin/person-change")
+
+        assert resp.status_code == 200
+        assert "Anna" in resp.text
+
+    def test_requires_admin(self, test_client, test_db, test_user):
+        _login(test_client, "testuser", "testpass123")
+        resp = test_client.get("/admin/person-change", follow_redirects=False)
+        assert resp.status_code in (302, 303, 401, 403)

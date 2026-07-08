@@ -1,0 +1,137 @@
+{# app/templates/admin_person_change.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – {{ t.admin_person_change_title }}{% endblock %}
+
+{% block page_content %}
+
+<div class="page-header">
+    <div class="page-header-left">
+        <h2 class="page-title title-inline">{{ t.admin_person_change_title }}</h2>
+    </div>
+    <div class="page-header-right">
+        <a href="/admin/users" class="btn secondary">{{ t.admin_users_title }}</a>
+    </div>
+</div>
+
+{% if success %}
+<div class="alert alert--success">{{ t.admin_person_change_success }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert--danger">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <p class="text-muted ue-desc">{{ t.admin_person_change_desc }}</p>
+
+    <form method="POST" action="/admin/person-change">
+        <div class="form-group">
+            <label for="person_id" class="form-label">{{ t.admin_person_change_position_label }}</label>
+            <select id="person_id" name="person_id" required class="form-input">
+                {% for p in positions %}
+                <option value="{{ p.person_id }}" {% if form.get('person_id')|string == p.person_id|string %}selected{% endif %}>
+                    {{ p.person_id }} –
+                    {% if p.holder_name %}
+                        {{ p.holder_name }}{% if p.since %} ({{ t.admin_person_change_holder_since }} {{ p.since }}){% endif %}
+                    {% else %}
+                        {{ t.admin_person_change_vacant }}
+                    {% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-grid-2">
+            <div>
+                <label for="last_working_day" class="form-label">{{ t.admin_person_change_last_day }}</label>
+                <input type="date" id="last_working_day" name="last_working_day"
+                       value="{{ form.get('last_working_day', '') }}" class="form-input">
+            </div>
+            <div>
+                <label for="start_date" class="form-label">{{ t.admin_person_change_first_day }}</label>
+                <input type="date" id="start_date" name="start_date"
+                       value="{{ form.get('start_date', '') }}" class="form-input">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <span class="form-label">{{ t.admin_person_change_successor }}</span>
+            <label><input type="radio" name="successor_mode" value="existing"
+                {% if form.get('successor_mode', 'existing') == 'existing' %}checked{% endif %}>
+                {{ t.admin_person_change_mode_existing }}</label>
+            <label><input type="radio" name="successor_mode" value="new"
+                {% if form.get('successor_mode') == 'new' %}checked{% endif %}>
+                {{ t.admin_person_change_mode_new }}</label>
+            <label><input type="radio" name="successor_mode" value="none"
+                {% if form.get('successor_mode') == 'none' %}checked{% endif %}>
+                {{ t.admin_person_change_mode_none }}</label>
+        </div>
+
+        <div class="form-group" id="successor-existing">
+            <label for="existing_user_id" class="form-label">{{ t.admin_person_change_existing_user }}</label>
+            <select id="existing_user_id" name="existing_user_id" class="form-input">
+                <option value=""></option>
+                {% for u in available_users %}
+                <option value="{{ u.id }}" {% if form.get('existing_user_id')|string == u.id|string %}selected{% endif %}>
+                    {{ u.name }} ({{ u.username }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div id="successor-new" class="hidden">
+            <div class="form-grid-2">
+                <div>
+                    <label for="new_name" class="form-label">{{ t.admin_person_change_new_name }}</label>
+                    <input type="text" id="new_name" name="new_name"
+                           value="{{ form.get('new_name', '') }}" class="form-input">
+                </div>
+                <div>
+                    <label for="new_username" class="form-label">{{ t.admin_person_change_new_username }}</label>
+                    <input type="text" id="new_username" name="new_username"
+                           value="{{ form.get('new_username', '') }}" class="form-input">
+                </div>
+                <div>
+                    <label for="new_password" class="form-label">{{ t.admin_person_change_new_password }}</label>
+                    <input type="password" id="new_password" name="new_password" class="form-input">
+                </div>
+                <div>
+                    <label for="new_wage" class="form-label">{{ t.admin_person_change_new_wage }}</label>
+                    <input type="number" id="new_wage" name="new_wage" min="1"
+                           value="{{ form.get('new_wage', '') }}" class="form-input">
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">{{ t.admin_person_change_submit }}</button>
+    </form>
+</div>
+
+<script>
+    (function () {
+        const radios = document.querySelectorAll('input[name="successor_mode"]');
+        const existing = document.getElementById('successor-existing');
+        const create = document.getElementById('successor-new');
+        const lastDay = document.getElementById('last_working_day');
+        const startDate = document.getElementById('start_date');
+
+        function update() {
+            const mode = document.querySelector('input[name="successor_mode"]:checked').value;
+            existing.classList.toggle('hidden', mode !== 'existing');
+            create.classList.toggle('hidden', mode !== 'new');
+        }
+        radios.forEach((r) => r.addEventListener('change', update));
+        update();
+
+        // Prefill successor start with the day after the last working day
+        lastDay.addEventListener('change', function () {
+            if (!lastDay.value || startDate.value) return;
+            const d = new Date(lastDay.value);
+            d.setDate(d.getDate() + 1);
+            startDate.value = d.toISOString().slice(0, 10);
+        });
+    })();
+</script>
+
+{% endblock %}
