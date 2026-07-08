@@ -224,6 +224,9 @@ def end_employment(
         .first()
     )
 
+    if record and end_date < record.effective_from:
+        raise ValueError(f"End date {end_date} is before the employment start {record.effective_from}.")
+
     if record:
         record.effective_to = end_date
         record.is_active = 0
@@ -275,6 +278,33 @@ def start_employment(
         ...     start_date=date(2026, 4, 1), created_by=1
         ... )
     """
+    # One open record per position: reject if someone already holds it
+    open_at_position = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.person_id == person_id,
+            PersonHistory.effective_to.is_(None),
+        )
+        .first()
+    )
+    if open_at_position:
+        raise ValueError(
+            f"Position {person_id} is already held by {open_at_position.name} "
+            f"(since {open_at_position.effective_from}). End that employment first."
+        )
+
+    # One open record per user: a person cannot hold two positions
+    open_for_user = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.user_id == user_id,
+            PersonHistory.effective_to.is_(None),
+        )
+        .first()
+    )
+    if open_for_user:
+        raise ValueError(f"This user already has an open employment at position {open_for_user.person_id}.")
+
     # Create new person's record
     new_record = PersonHistory(
         user_id=user_id,
@@ -295,6 +325,11 @@ def start_employment(
         user.name = name
         user.username = username
         user.person_id = person_id  # Set the rotation position
+        # Keep the vacation-balance start date in sync. An already populated
+        # value may deliberately predate the rotation (e.g. consultant history),
+        # so only fill it when empty.
+        if user.employment_start_date is None:
+            user.employment_start_date = start_date
 
     session.commit()
     return new_record
