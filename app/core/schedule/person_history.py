@@ -109,15 +109,20 @@ def add_person_change(
     new_username: str,
     effective_from: date,
     created_by: int,
+    old_end_date: date | None = None,
 ) -> PersonHistory:
     """
     Register a person change (someone leaving, someone else starting).
 
-    This function:
+    This function performs the whole swap in a single transaction:
     1. Closes old person's PersonHistory record (sets effective_to)
     2. Deactivates old user (sets is_active=0)
-    3. Creates new person's PersonHistory record
+    3. Creates new person's PersonHistory record via the validated
+       start_employment logic
     4. Activates new user (sets is_active=1)
+
+    The close and deactivate steps are uncommitted until start_employment
+    commits at the end, so any validation failure leaves nothing committed.
 
     Args:
         session: Database session
@@ -128,9 +133,18 @@ def add_person_change(
         new_username: New person's username
         effective_from: Date when new person starts
         created_by: Admin user ID creating this change
+        old_end_date: Last day of the old person's employment. Defaults to the
+            day before effective_from. Supply an earlier date to leave a gap
+            between the old person's last day and the new person's first day.
+            Must be before effective_from.
 
     Returns:
         The newly created PersonHistory record
+
+    Raises:
+        ValueError: If old_end_date is not before effective_from, if it
+            predates the old person's employment start, or if the position is
+            still held by someone other than old_user_id.
 
     Example:
         >>> # Person 6 (Kalle, user_id=6) leaves 2026-03-31
@@ -141,7 +155,12 @@ def add_person_change(
         ...     effective_from=date(2026, 4, 1), created_by=1
         ... )
     """
-    # Close old person's record (end date is day before new person starts)
+    if old_end_date is None:
+        old_end_date = effective_from - timedelta(days=1)
+    if old_end_date >= effective_from:
+        raise ValueError(f"The old person's end date {old_end_date} must be before the new start {effective_from}.")
+
+    # Close old person's record
     old_record = (
         session.query(PersonHistory)
         .filter(
@@ -153,7 +172,9 @@ def add_person_change(
     )
 
     if old_record:
-        old_record.effective_to = effective_from - timedelta(days=1)
+        if old_end_date < old_record.effective_from:
+            raise ValueError(f"End date {old_end_date} is before the employment start {old_record.effective_from}.")
+        old_record.effective_to = old_end_date
         old_record.is_active = 0
 
     # Deactivate old user and clear their rotation position
@@ -162,28 +183,20 @@ def add_person_change(
         old_user.is_active = 0
         old_user.person_id = None
 
-    # Create new person's record
-    new_record = PersonHistory(
+    # Make the closed record visible to the collision check below
+    session.flush()
+
+    # Reuse the validated start logic; it raises ValueError if the position
+    # is still held (e.g. old_user_id did not match the actual holder).
+    new_record = start_employment(
+        session=session,
         user_id=new_user_id,
         person_id=person_id,
         name=new_name,
         username=new_username,
-        is_active=1,
-        effective_from=effective_from,
-        effective_to=None,
+        start_date=effective_from,
         created_by=created_by,
     )
-    session.add(new_record)
-
-    # Activate new user and set their rotation position
-    new_user = session.query(User).filter(User.id == new_user_id).first()
-    if new_user:
-        new_user.is_active = 1
-        new_user.name = new_name
-        new_user.username = new_username
-        new_user.person_id = person_id
-
-    session.commit()
     return new_record
 
 

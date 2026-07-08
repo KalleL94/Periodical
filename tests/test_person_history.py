@@ -94,3 +94,95 @@ class TestEndEmployment:
         test_db.refresh(anna)
         assert anna.is_active == 0
         assert anna.person_id is None
+
+
+class TestAddPersonChange:
+    def _setup_holder(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        return anna
+
+    def test_swap_closes_old_and_opens_new(self, test_db):
+        anna = self._setup_holder(test_db)
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+
+        add_person_change(
+            test_db,
+            old_user_id=anna.id,
+            new_user_id=bert.id,
+            person_id=3,
+            new_name="Bert",
+            new_username="bert1",
+            effective_from=datetime.date(2026, 4, 1),
+            created_by=1,
+        )
+
+        old_rec = test_db.query(PersonHistory).filter(PersonHistory.user_id == anna.id).one()
+        assert old_rec.effective_to == datetime.date(2026, 3, 31)
+
+        new_rec = (
+            test_db.query(PersonHistory)
+            .filter(PersonHistory.person_id == 3, PersonHistory.effective_to.is_(None))
+            .one()
+        )
+        assert new_rec.user_id == bert.id
+
+        test_db.refresh(anna)
+        test_db.refresh(bert)
+        assert anna.is_active == 0 and anna.person_id is None
+        assert bert.is_active == 1 and bert.person_id == 3
+        assert bert.employment_start_date == datetime.date(2026, 4, 1)
+
+    def test_swap_with_gap_uses_old_end_date(self, test_db):
+        anna = self._setup_holder(test_db)
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+
+        add_person_change(
+            test_db,
+            old_user_id=anna.id,
+            new_user_id=bert.id,
+            person_id=3,
+            new_name="Bert",
+            new_username="bert1",
+            effective_from=datetime.date(2026, 4, 15),
+            created_by=1,
+            old_end_date=datetime.date(2026, 3, 31),
+        )
+
+        old_rec = test_db.query(PersonHistory).filter(PersonHistory.user_id == anna.id).one()
+        assert old_rec.effective_to == datetime.date(2026, 3, 31)
+
+    def test_rejects_end_date_not_before_start(self, test_db):
+        anna = self._setup_holder(test_db)
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+
+        with pytest.raises(ValueError, match="before"):
+            add_person_change(
+                test_db,
+                old_user_id=anna.id,
+                new_user_id=bert.id,
+                person_id=3,
+                new_name="Bert",
+                new_username="bert1",
+                effective_from=datetime.date(2026, 4, 1),
+                created_by=1,
+                old_end_date=datetime.date(2026, 4, 10),
+            )
+
+    def test_rejects_wrong_old_user(self, test_db):
+        self._setup_holder(test_db)  # Anna holds position 3
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        casey = _make_user(test_db, 13, "casey1", "Casey")
+
+        # Claiming Bert leaves position 3 must fail: Anna holds it
+        with pytest.raises(ValueError, match="Position 3"):
+            add_person_change(
+                test_db,
+                old_user_id=bert.id,
+                new_user_id=casey.id,
+                person_id=3,
+                new_name="Casey",
+                new_username="casey1",
+                effective_from=datetime.date(2026, 4, 1),
+                created_by=1,
+            )
