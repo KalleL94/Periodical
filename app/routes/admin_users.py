@@ -883,3 +883,141 @@ async def admin_person_change_page(
     ctx = _person_change_context(request, current_user, db)
     ctx["success"] = bool(success)
     return render("admin_person_change.html", ctx)
+
+
+@router.post("/admin/person-change", name="admin_person_change_submit")
+async def admin_person_change_submit(
+    request: Request,
+    person_id: int = Form(...),
+    last_working_day: str = Form(""),
+    start_date: str = Form(""),
+    successor_mode: str = Form(...),
+    existing_user_id: str = Form(""),
+    new_name: str = Form(""),
+    new_username: str = Form(""),
+    new_password: str = Form(""),
+    new_wage: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: perform a guided person change (swap, hire, or vacancy). PRG redirect."""
+    from app.core.schedule.person_history import add_person_change, end_employment, start_employment
+
+    form = {
+        "person_id": person_id,
+        "last_working_day": last_working_day,
+        "start_date": start_date,
+        "successor_mode": successor_mode,
+        "existing_user_id": existing_user_id,
+        "new_name": new_name,
+        "new_username": new_username,
+        "new_wage": new_wage,
+    }
+
+    def fail(message: str):
+        ctx = _person_change_context(request, current_user, db, error=message, form=form)
+        return render("admin_person_change.html", ctx, status_code=400)
+
+    if not (1 <= person_id <= 10) or successor_mode not in ("existing", "new", "none"):
+        return fail("Ogiltigt val.")
+
+    # Resolve the current holder the same way the GET page displays it
+    holder_user_id = next(
+        (
+            p["holder_user_id"]
+            for p in _person_change_context(request, current_user, db)["positions"]
+            if p["person_id"] == person_id
+        ),
+        None,
+    )
+
+    last_day_obj = None
+    if last_working_day.strip():
+        try:
+            last_day_obj = datetime.date.fromisoformat(last_working_day.strip())
+        except ValueError:
+            return fail("Ogiltigt datum för sista arbetsdag.")
+
+    if successor_mode == "none":
+        if holder_user_id is None:
+            return fail("Positionen är redan vakant.")
+        if last_day_obj is None:
+            return fail("Ange sista arbetsdag.")
+        try:
+            end_employment(db, holder_user_id, person_id, last_day_obj)
+        except ValueError as e:
+            return fail(str(e))
+        clear_schedule_cache()
+        return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
+
+    # Swap or plain start: a start date is required
+    try:
+        start_date_obj = datetime.date.fromisoformat(start_date.strip())
+    except ValueError:
+        return fail("Ogiltigt startdatum.")
+
+    if holder_user_id is not None and last_day_obj is None:
+        return fail("Ange sista arbetsdag för den avgående personen.")
+
+    # Resolve or create the successor
+    if successor_mode == "existing":
+        try:
+            successor = db.query(User).filter(User.id == int(existing_user_id)).first()
+        except ValueError:
+            successor = None
+        if successor is None:
+            return fail("Välj en efterträdare.")
+    else:
+        if not new_name.strip() or not new_username.strip():
+            return fail("Namn och användarnamn krävs.")
+        if len(new_password) < 8:
+            return fail("Lösenordet måste vara minst 8 tecken.")
+        try:
+            wage_int = int(new_wage.strip())
+        except ValueError:
+            return fail("Ogiltig månadslön.")
+        if get_user_by_username(db, new_username.strip()):
+            return fail("Användarnamnet finns redan.")
+        successor = User(
+            username=new_username.strip(),
+            password_hash=get_password_hash(new_password),
+            name=new_name.strip(),
+            role=UserRole.USER,
+            wage=wage_int,
+            wage_type=WageType.MONTHLY,
+            vacation={},
+            must_change_password=1,
+            is_active=0,
+        )
+        db.add(successor)
+        db.flush()  # assign id; committed together with the swap below
+
+    try:
+        if holder_user_id is not None:
+            add_person_change(
+                session=db,
+                old_user_id=holder_user_id,
+                new_user_id=successor.id,
+                person_id=person_id,
+                new_name=successor.name,
+                new_username=successor.username,
+                effective_from=start_date_obj,
+                created_by=current_user.id,
+                old_end_date=last_day_obj,
+            )
+        else:
+            start_employment(
+                session=db,
+                user_id=successor.id,
+                person_id=person_id,
+                name=successor.name,
+                username=successor.username,
+                start_date=start_date_obj,
+                created_by=current_user.id,
+            )
+    except ValueError as e:
+        db.rollback()
+        return fail(str(e))
+
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{successor.id}", status_code=302)
