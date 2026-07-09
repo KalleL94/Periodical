@@ -16,6 +16,7 @@ from app.core.schedule.person_history import (
     has_position_history,
     start_employment,
     swap_positions,
+    update_employment_dates,
 )
 from app.database.database import PersonHistory, User, UserRole
 
@@ -323,3 +324,58 @@ class TestSwapPositions:
         self._two_holders(test_db)  # Bert started 2026-02-01
         with pytest.raises(ValueError):
             swap_positions(test_db, 3, 5, datetime.date(2026, 1, 15), created_by=1)
+
+
+class TestUpdateEmploymentDates:
+    def _closed_and_open(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        add_person_change(
+            test_db,
+            old_user_id=anna.id,
+            new_user_id=bert.id,
+            person_id=3,
+            new_name="Bert",
+            new_username="bert1",
+            effective_from=datetime.date(2026, 8, 15),
+            created_by=1,
+        )
+        anna_rec = test_db.query(PersonHistory).filter(PersonHistory.user_id == anna.id).one()
+        bert_rec = test_db.query(PersonHistory).filter(PersonHistory.user_id == bert.id).one()
+        return anna, bert, anna_rec, bert_rec
+
+    def test_edit_dates_within_free_range(self, test_db):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db)
+
+        updated = update_employment_dates(test_db, anna_rec.id, datetime.date(2026, 2, 1), datetime.date(2026, 8, 1))
+
+        assert updated.effective_from == datetime.date(2026, 2, 1)
+        assert updated.effective_to == datetime.date(2026, 8, 1)
+
+    def test_rejects_overlap_with_sibling(self, test_db):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db)
+
+        with pytest.raises(ValueError):
+            update_employment_dates(test_db, anna_rec.id, datetime.date(2026, 1, 1), datetime.date(2026, 8, 20))
+
+    def test_rejects_reversed_dates(self, test_db):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db)
+
+        with pytest.raises(ValueError):
+            update_employment_dates(test_db, anna_rec.id, datetime.date(2026, 6, 1), datetime.date(2026, 5, 1))
+
+    def test_rejects_second_open_record(self, test_db):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db)
+
+        with pytest.raises(ValueError):
+            update_employment_dates(test_db, anna_rec.id, datetime.date(2026, 1, 1), None)
+
+    def test_closing_open_record_deactivates_user(self, test_db):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db)
+
+        update_employment_dates(test_db, bert_rec.id, datetime.date(2026, 8, 15), datetime.date(2026, 12, 31))
+
+        test_db.refresh(bert)
+        assert bert.is_active == 0
+        assert bert.person_id is None

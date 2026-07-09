@@ -314,3 +314,83 @@ class TestSwapPositionsRoute:
         assert resp.status_code == 400
         test_db.expire_all()
         assert test_db.get(User, anna.id).person_id == 3
+
+
+class TestPersonChangeHistoryRoutes:
+    def _closed_and_open(self, test_db, admin_user):
+        from app.core.schedule.person_history import add_person_change
+
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=admin_user.id)
+        add_person_change(
+            test_db,
+            old_user_id=anna.id,
+            new_user_id=bert.id,
+            person_id=3,
+            new_name="Bert",
+            new_username="bert1",
+            effective_from=datetime.date(2026, 8, 15),
+            created_by=admin_user.id,
+        )
+        anna_rec = test_db.query(PersonHistory).filter(PersonHistory.user_id == anna.id).one()
+        bert_rec = test_db.query(PersonHistory).filter(PersonHistory.user_id == bert.id).one()
+        return anna, bert, anna_rec, bert_rec
+
+    def test_edit_history_happy_path(self, test_client, test_db, admin_user):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db, admin_user)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.post(
+            f"/admin/person-change/history/{anna_rec.id}/edit",
+            data={"effective_from": "2026-02-01", "effective_to": "2026-08-01"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        assert "success=1" in resp.headers["location"]
+        test_db.expire_all()
+        updated = test_db.get(PersonHistory, anna_rec.id)
+        assert updated.effective_from == datetime.date(2026, 2, 1)
+        assert updated.effective_to == datetime.date(2026, 8, 1)
+
+    def test_edit_history_overlap_returns_400(self, test_client, test_db, admin_user):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db, admin_user)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.post(
+            f"/admin/person-change/history/{anna_rec.id}/edit",
+            data={"effective_from": "2026-01-01", "effective_to": "2026-08-20"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 400
+        test_db.expire_all()
+        unchanged = test_db.get(PersonHistory, anna_rec.id)
+        assert unchanged.effective_to == datetime.date(2026, 8, 14)
+
+    def test_delete_history_reopens_previous(self, test_client, test_db, admin_user):
+        anna, bert, anna_rec, bert_rec = self._closed_and_open(test_db, admin_user)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.post(
+            f"/admin/person-change/history/{bert_rec.id}/delete",
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        assert "success=1" in resp.headers["location"]
+        test_db.expire_all()
+        assert test_db.get(PersonHistory, bert_rec.id) is None
+        reopened = test_db.get(PersonHistory, anna_rec.id)
+        assert reopened.effective_to is None
+
+    def test_history_section_renders_on_get(self, test_client, test_db, admin_user):
+        self._closed_and_open(test_db, admin_user)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.get("/admin/person-change")
+
+        assert resp.status_code == 200
+        assert "Anna" in resp.text
+        assert "Bert" in resp.text

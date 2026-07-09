@@ -155,6 +155,67 @@
     </form>
 </div>
 
+<div class="card admin-table-card">
+    <h3 class="page-title">{{ t.admin_pc_history_title }}</h3>
+    <p class="text-muted ue-desc">{{ t.admin_pc_history_desc }}</p>
+
+    {% if history %}
+    <table>
+        <thead>
+            <tr>
+                <th class="num">{{ t.admin_person_change_position_label }}</th>
+                <th>{{ t.admin_person_change_existing_user }}</th>
+                <th>{{ t.admin_person_change_last_day }}</th>
+                <th>{{ t.admin_person_change_first_day }}</th>
+                <th>{{ t.admin_eras_col_actions }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in history %}
+            <tr>
+                <td class="num" data-label="{{ t.admin_person_change_position_label }}">{{ h.person_id }}</td>
+                <td data-label="{{ t.admin_person_change_existing_user }}">{{ h.name }} ({{ h.username }})</td>
+                <td data-label="{{ t.admin_person_change_first_day }}">{{ h.effective_from }}</td>
+                <td data-label="{{ t.admin_person_change_last_day }}">
+                    {% if h.effective_to %}
+                        {{ h.effective_to }}
+                    {% else %}
+                        <span class="status-ongoing">{{ t.admin_pc_history_open }}</span>
+                    {% endif %}
+                </td>
+                <td data-label="{{ t.admin_eras_col_actions }}">
+                    <div class="admin-inline-actions">
+                        <details>
+                            <summary class="link-button">{{ t.admin_pc_history_edit }}</summary>
+                            <form method="POST" action="/admin/person-change/history/{{ h.id }}/edit" class="form-grid-2">
+                                <div>
+                                    <label class="form-label" for="from-{{ h.id }}">{{ t.admin_person_change_first_day }}</label>
+                                    <input type="date" id="from-{{ h.id }}" name="effective_from"
+                                           value="{{ h.effective_from }}" required class="form-input">
+                                </div>
+                                <div>
+                                    <label class="form-label" for="to-{{ h.id }}">{{ t.admin_person_change_last_day }}</label>
+                                    <input type="date" id="to-{{ h.id }}" name="effective_to"
+                                           value="{{ h.effective_to or '' }}" class="form-input">
+                                </div>
+                                <button type="submit" class="btn btn-primary">{{ t.admin_pc_history_save }}</button>
+                            </form>
+                        </details>
+                        <form method="POST" action="/admin/person-change/history/{{ h.id }}/delete"
+                              onsubmit="return confirm('{{ t.admin_pc_history_delete_confirm }}');">
+                            <button type="submit" class="link-button link-button--danger">
+                                {{ t.admin_pc_history_delete }}
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
 <script>
     (function () {
         const radios = document.querySelectorAll('input[name="successor_mode"]');

@@ -420,6 +420,63 @@ def swap_positions(
     return new_b_at_a, new_a_at_b
 
 
+def update_employment_dates(
+    session: Session,
+    history_id: int,
+    effective_from: date,
+    effective_to: date | None,
+) -> PersonHistory:
+    """
+    Edit the date range of an employment record, rotation-era style.
+
+    Validates against sibling records on the same position (no overlaps, at
+    most one open record). Closing the currently open record deactivates the
+    user; reopening a record activates the user at the position. The user's
+    employment_start_date is not modified by edits.
+    """
+    record = session.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+    if record is None:
+        raise ValueError(f"Employment record {history_id} not found.")
+
+    if effective_to is not None and effective_to < effective_from:
+        raise ValueError(f"End date {effective_to} is before the start date {effective_from}.")
+
+    siblings = (
+        session.query(PersonHistory)
+        .filter(PersonHistory.person_id == record.person_id, PersonHistory.id != record.id)
+        .all()
+    )
+    for sib in siblings:
+        if effective_to is None and sib.effective_to is None:
+            raise ValueError(f"Position {record.person_id} already has an open employment ({sib.name}).")
+        sib_end = sib.effective_to or date.max
+        new_end = effective_to or date.max
+        if effective_from <= sib_end and sib.effective_from <= new_end:
+            raise ValueError(
+                f"The dates overlap {sib.name}'s employment "
+                f"({sib.effective_from} to {sib.effective_to or 'open'}) at position {record.person_id}."
+            )
+
+    was_open = record.effective_to is None
+    record.effective_from = effective_from
+    record.effective_to = effective_to
+
+    user = session.query(User).filter(User.id == record.user_id).first()
+    if effective_to is not None:
+        record.is_active = 0
+        if was_open and user:
+            user.is_active = 0
+            user.person_id = None
+    else:
+        record.is_active = 1
+        if user:
+            user.is_active = 1
+            user.person_id = record.person_id
+
+    session.commit()
+    return record
+
+
 def get_person_history(session: Session, person_id: int) -> list[dict]:
     """
     Get all historical records for a position (person_id).

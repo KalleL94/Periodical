@@ -560,25 +560,19 @@ async def admin_end_employment(
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
-@router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
-async def admin_delete_employment(
-    request: Request,
-    user_id: int,
-    history_id: int,
-    current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db),
-):
-    """Admin: delete a person history entry."""
+def _delete_employment_record(db: Session, history_record) -> None:
+    """Delete a PersonHistory record, reopening the previous holder if needed.
+
+    When the deleted record is the open one at its position, the most recent
+    closed record on that position is reopened (effective_to cleared) and the
+    holding user's person_id is released. If the record was the user's last
+    remaining history entry, the user is deactivated. Commits once and clears
+    the schedule cache. Shared by the user-page and person-change delete routes.
+    """
     from app.database.database import PersonHistory
 
-    history_record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
-
-    if not history_record:
-        raise HTTPException(status_code=404, detail="Employment record not found")
-
-    if history_record.user_id != user_id:
-        raise HTTPException(status_code=400, detail="Employment record does not belong to this user")
-
+    user_id = history_record.user_id
+    history_id = history_record.id
     person_id = history_record.person_id
 
     if history_record.effective_to is None:
@@ -619,6 +613,28 @@ async def admin_delete_employment(
         raise
 
     clear_schedule_cache()
+
+
+@router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
+async def admin_delete_employment(
+    request: Request,
+    user_id: int,
+    history_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete a person history entry."""
+    from app.database.database import PersonHistory
+
+    history_record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+
+    if not history_record:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    if history_record.user_id != user_id:
+        raise HTTPException(status_code=400, detail="Employment record does not belong to this user")
+
+    _delete_employment_record(db, history_record)
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
@@ -861,11 +877,28 @@ def _person_change_context(
         else db.query(User).order_by(User.name).all()
     )
 
+    history_records = (
+        db.query(PersonHistory).order_by(PersonHistory.person_id.asc(), PersonHistory.effective_from.desc()).all()
+    )
+    history = [
+        {
+            "id": r.id,
+            "person_id": r.person_id,
+            "name": r.name,
+            "username": r.username,
+            "effective_from": r.effective_from,
+            "effective_to": r.effective_to,
+            "is_current": r.effective_to is None,
+        }
+        for r in history_records
+    ]
+
     return {
         "request": request,
         "user": current_user,
         "positions": positions,
         "available_users": available_users,
+        "history": history,
         "error": error,
         "form": form or {},
         "success": False,
@@ -1057,4 +1090,59 @@ async def admin_swap_positions(
         return fail(str(e))
 
     clear_schedule_cache()
+    return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
+
+
+@router.post("/admin/person-change/history/{history_id}/edit", name="admin_person_change_history_edit")
+async def admin_person_change_history_edit(
+    request: Request,
+    history_id: int,
+    effective_from: str = Form(...),
+    effective_to: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: edit an employment record's date range. PRG redirect."""
+    from app.core.schedule.person_history import update_employment_dates
+
+    def fail(message: str):
+        ctx = _person_change_context(request, current_user, db, error=message)
+        return render("admin_person_change.html", ctx, status_code=400)
+
+    try:
+        from_obj = datetime.date.fromisoformat(effective_from.strip())
+    except ValueError:
+        return fail("Ogiltigt startdatum.")
+
+    to_obj = None
+    if effective_to.strip():
+        try:
+            to_obj = datetime.date.fromisoformat(effective_to.strip())
+        except ValueError:
+            return fail("Ogiltigt slutdatum.")
+
+    try:
+        update_employment_dates(db, history_id, from_obj, to_obj)
+    except ValueError as e:
+        db.rollback()
+        return fail(str(e))
+
+    clear_schedule_cache()
+    return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
+
+
+@router.post("/admin/person-change/history/{history_id}/delete", name="admin_person_change_history_delete")
+async def admin_person_change_history_delete(
+    history_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete an employment record from the person change page. PRG redirect."""
+    from app.database.database import PersonHistory
+
+    record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    _delete_employment_record(db, record)
     return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
