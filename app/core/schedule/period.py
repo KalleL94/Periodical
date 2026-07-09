@@ -687,6 +687,44 @@ def _get_substitutes_with_activity(
     return [s for s in subs if s.id in active_ids]
 
 
+def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: datetime.date) -> list[dict]:
+    """
+    Copy a position's generated day dicts, rendering days outside an employment
+    segment as OFF (zero hours, no pay, before_employment flag) so a per-holder
+    column only counts and displays that holder's own days.
+
+    Days inside [seg_from, seg_to] are passed through unchanged (same object).
+    Days outside are shallow-copied and zeroed so summarize_month_for_person
+    contributes nothing for them, exactly like a real before-employment day.
+    The zeroed keys mirror the before-employment early return in
+    _populate_single_person_day; identity keys (date, person_id, rotation_week,
+    weekday_name, etc.) are left intact.
+    """
+    shift_types = get_shift_types()
+    off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+    masked: list[dict] = []
+    for day in days:
+        d = day.get("date")
+        if d is not None and (d < seg_from or d > seg_to):
+            copy = dict(day)
+            copy["shift"] = off_shift
+            copy["hours"] = 0.0
+            copy["start"] = None
+            copy["end"] = None
+            copy["ob"] = {}
+            copy["oncall_pay"] = 0.0
+            copy["oncall_details"] = {}
+            copy["ot_pay"] = 0.0
+            copy["ot_hours"] = 0.0
+            copy["ot_details"] = {}
+            copy["ob_hours_override"] = None
+            copy["before_employment"] = True
+            masked.append(copy)
+        else:
+            masked.append(day)
+    return masked
+
+
 def build_substitute_month_summaries(year: int, month: int, session, include_overtime: bool = False) -> list[dict]:
     """Build per-substitute month summaries (schedule only, no salary) for the month view.
 

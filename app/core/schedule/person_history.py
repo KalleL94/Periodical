@@ -603,3 +603,43 @@ def get_position_vacancy(session: Session, person_id: int, check_date: date) -> 
     if check_date > latest.effective_to:
         return latest
     return None
+
+
+def get_position_holder_segments(session: Session, person_id: int, start_date: date, end_date: date) -> list[dict]:
+    """
+    Return the employment segments overlapping a date window for a position.
+
+    Each segment is a dict with user_id, name, username, from_date and to_date,
+    where the dates are clamped to [start_date, end_date]. Segments are ordered
+    by effective_from ascending. Positions without overlapping history return
+    an empty list; combine with has_position_history to distinguish a vacant
+    position from a legacy position that never had history records.
+
+    Used by team views to render one column/row per holder when a person
+    change happens mid-period.
+    """
+    records = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.person_id == person_id,
+            PersonHistory.effective_from <= end_date,
+            (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= start_date),
+        )
+        .order_by(PersonHistory.effective_from.asc())
+        .all()
+    )
+    return [
+        {
+            "user_id": r.user_id,
+            "name": r.name,
+            "username": r.username,
+            "from_date": max(r.effective_from, start_date),
+            "to_date": min(r.effective_to, end_date) if r.effective_to else end_date,
+        }
+        for r in records
+    ]
+
+
+def has_position_history(session: Session, person_id: int) -> bool:
+    """Check whether a position has any PersonHistory records at all."""
+    return session.query(PersonHistory.id).filter(PersonHistory.person_id == person_id).first() is not None

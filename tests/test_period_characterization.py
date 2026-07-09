@@ -20,7 +20,8 @@ sys.path.insert(0, str(project_root))
 # ruff: noqa: E402
 import app.database.database as db_module
 from app.core.schedule import clear_schedule_cache
-from app.core.schedule.period import build_week_data, generate_month_data
+from app.core.schedule.core import get_shift_types
+from app.core.schedule.period import build_week_data, generate_month_data, mask_days_to_employment
 from app.database.database import (
     Absence,
     AbsenceType,
@@ -279,3 +280,56 @@ def test_build_week_data_basic(char_session):
     assert [d["shift"].code for d in days] == ["OFF", "OFF", "OFF", "N3", "N3", "N3", "N3"]
     assert all(d["person_name"] == "Characterization" for d in days)
     assert all(d["rotation_length"] == 10 for d in days)
+
+
+def test_mask_days_to_employment_zeroes_days_outside_segment():
+    # Days inside the segment pass through untouched; days outside render OFF with
+    # every pay/hour key zeroed so summaries contribute nothing for them.
+    off = next((s for s in get_shift_types() if s.code == "OFF"), None)
+    n1 = next((s for s in get_shift_types() if s.code == "N1"), None)
+    assert off is not None and n1 is not None
+
+    def _work_day(d):
+        return {
+            "date": d,
+            "person_id": 3,
+            "person_name": "Anna",
+            "weekday_name": "Mon",
+            "shift": n1,
+            "original_shift": n1,
+            "rotation_week": 1,
+            "hours": 8.0,
+            "start": datetime.datetime.combine(d, datetime.time(8, 0)),
+            "end": datetime.datetime.combine(d, datetime.time(16, 0)),
+            "ob": {"OB1": 2.0},
+            "oncall_pay": 100.0,
+            "oncall_details": {"total_hours": 5.0},
+            "ot_pay": 50.0,
+            "ot_hours": 1.0,
+            "ot_details": {"start_time": "16:00"},
+            "ob_hours_override": None,
+        }
+
+    inside = _work_day(datetime.date(2026, 8, 10))
+    outside = _work_day(datetime.date(2026, 8, 20))
+    masked = mask_days_to_employment([inside, outside], datetime.date(2026, 8, 1), datetime.date(2026, 8, 14))
+
+    # Inside day is the same object, unchanged.
+    assert masked[0] is inside
+    assert masked[0]["hours"] == 8.0
+
+    # Outside day is a copy (original not mutated) rendered as OFF with zeroed pay.
+    assert outside["hours"] == 8.0  # original untouched
+    m = masked[1]
+    assert m is not outside
+    assert m["shift"].code == "OFF"
+    assert m["hours"] == 0.0
+    assert m["start"] is None and m["end"] is None
+    assert m["ob"] == {}
+    assert m["oncall_pay"] == 0.0 and m["oncall_details"] == {}
+    assert m["ot_pay"] == 0.0 and m["ot_hours"] == 0.0 and m["ot_details"] == {}
+    assert m["before_employment"] is True
+    # Identity keys are preserved.
+    assert m["date"] == datetime.date(2026, 8, 20)
+    assert m["person_id"] == 3
+    assert m["rotation_week"] == 1

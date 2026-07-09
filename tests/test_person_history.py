@@ -11,7 +11,9 @@ import pytest
 from app.core.schedule.person_history import (
     add_person_change,  # noqa: F401  # used by Task 2 tests added in this file
     end_employment,
+    get_position_holder_segments,
     get_position_vacancy,
+    has_position_history,
     start_employment,
 )
 from app.database.database import PersonHistory, User, UserRole
@@ -225,3 +227,42 @@ class TestGetPositionVacancy:
         start_employment(test_db, bert.id, 3, "Bert", "bert1", datetime.date(2026, 8, 5), created_by=1)
 
         assert get_position_vacancy(test_db, 3, datetime.date(2026, 9, 1)) is None
+
+
+class TestPositionHolderSegments:
+    def test_two_segments_for_mid_window_swap(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        add_person_change(
+            test_db,
+            old_user_id=anna.id,
+            new_user_id=bert.id,
+            person_id=3,
+            new_name="Bert",
+            new_username="bert1",
+            effective_from=datetime.date(2026, 8, 15),
+            created_by=1,
+        )
+
+        segs = get_position_holder_segments(test_db, 3, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+
+        assert [s["name"] for s in segs] == ["Anna", "Bert"]
+        assert segs[0]["from_date"] == datetime.date(2026, 8, 1)  # clamped
+        assert segs[0]["to_date"] == datetime.date(2026, 8, 14)
+        assert segs[1]["from_date"] == datetime.date(2026, 8, 15)
+        assert segs[1]["to_date"] == datetime.date(2026, 8, 31)  # open record clamped
+
+    def test_no_overlap_after_departure(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 5, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        end_employment(test_db, anna.id, 5, end_date=datetime.date(2026, 8, 4))
+
+        segs = get_position_holder_segments(test_db, 5, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+
+        assert segs == []
+        assert has_position_history(test_db, 5) is True
+
+    def test_no_history_position(self, test_db):
+        assert get_position_holder_segments(test_db, 7, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31)) == []
+        assert has_position_history(test_db, 7) is False
