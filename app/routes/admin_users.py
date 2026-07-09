@@ -1024,3 +1024,37 @@ async def admin_person_change_submit(
 
     clear_schedule_cache()
     return RedirectResponse(url=f"/admin/users/{successor.id}", status_code=302)
+
+
+@router.post("/admin/person-change/swap-positions", name="admin_swap_positions")
+async def admin_swap_positions(
+    request: Request,
+    position_a: int = Form(...),
+    position_b: int = Form(...),
+    swap_date: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: two current employees trade rotation positions. PRG redirect."""
+    from app.core.schedule.person_history import swap_positions
+
+    def fail(message: str):
+        ctx = _person_change_context(request, current_user, db, error=message)
+        return render("admin_person_change.html", ctx, status_code=400)
+
+    if not (1 <= position_a <= 10 and 1 <= position_b <= 10):
+        return fail("Ogiltig position.")
+
+    try:
+        swap_date_obj = datetime.date.fromisoformat(swap_date.strip())
+    except ValueError:
+        return fail("Ogiltigt bytesdatum.")
+
+    try:
+        swap_positions(db, position_a, position_b, swap_date_obj, created_by=current_user.id)
+    except ValueError as e:
+        db.rollback()
+        return fail(str(e))
+
+    clear_schedule_cache()
+    return RedirectResponse(url="/admin/person-change?success=1", status_code=302)

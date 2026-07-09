@@ -108,6 +108,53 @@
     </form>
 </div>
 
+<div class="card">
+    <h3 class="page-title">{{ t.admin_swap_positions_title }}</h3>
+    <p class="text-muted ue-desc">{{ t.admin_swap_positions_desc }}</p>
+
+    <form method="POST" action="/admin/person-change/swap-positions">
+        <div class="form-grid-2">
+            <div>
+                <label for="position_a" class="form-label">{{ t.admin_swap_positions_a }}</label>
+                <select id="position_a" name="position_a" required class="form-input">
+                    {% for p in positions %}
+                    <option value="{{ p.person_id }}">
+                        {{ p.person_id }} –
+                        {% if p.holder_name %}
+                            {{ p.holder_name }}{% if p.since %} ({{ t.admin_person_change_holder_since }} {{ p.since }}){% endif %}
+                        {% else %}
+                            {{ t.admin_person_change_vacant }}
+                        {% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="position_b" class="form-label">{{ t.admin_swap_positions_b }}</label>
+                <select id="position_b" name="position_b" required class="form-input">
+                    {% for p in positions %}
+                    <option value="{{ p.person_id }}">
+                        {{ p.person_id }} –
+                        {% if p.holder_name %}
+                            {{ p.holder_name }}{% if p.since %} ({{ t.admin_person_change_holder_since }} {{ p.since }}){% endif %}
+                        {% else %}
+                            {{ t.admin_person_change_vacant }}
+                        {% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="swap_date" class="form-label">{{ t.admin_swap_positions_date }}</label>
+            <input type="date" id="swap_date" name="swap_date" required class="form-input">
+        </div>
+
+        <button type="submit" class="btn btn-primary">{{ t.admin_swap_positions_submit }}</button>
+    </form>
+</div>
+
 <script>
     (function () {
         const radios = document.querySelectorAll('input[name="successor_mode"]');

@@ -15,6 +15,7 @@ from app.core.schedule.person_history import (
     get_position_vacancy,
     has_position_history,
     start_employment,
+    swap_positions,
 )
 from app.database.database import PersonHistory, User, UserRole
 
@@ -266,3 +267,59 @@ class TestPositionHolderSegments:
     def test_no_history_position(self, test_db):
         assert get_position_holder_segments(test_db, 7, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31)) == []
         assert has_position_history(test_db, 7) is False
+
+
+class TestSwapPositions:
+    def _two_holders(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        start_employment(test_db, bert.id, 5, "Bert", "bert1", datetime.date(2026, 2, 1), created_by=1)
+        return anna, bert
+
+    def test_swap_crosses_positions(self, test_db):
+        anna, bert = self._two_holders(test_db)
+
+        swap_positions(test_db, 3, 5, datetime.date(2026, 9, 1), created_by=1)
+
+        open_3 = (
+            test_db.query(PersonHistory)
+            .filter(PersonHistory.person_id == 3, PersonHistory.effective_to.is_(None))
+            .one()
+        )
+        open_5 = (
+            test_db.query(PersonHistory)
+            .filter(PersonHistory.person_id == 5, PersonHistory.effective_to.is_(None))
+            .one()
+        )
+        assert open_3.user_id == bert.id and open_3.effective_from == datetime.date(2026, 9, 1)
+        assert open_5.user_id == anna.id and open_5.effective_from == datetime.date(2026, 9, 1)
+
+        closed_3 = (
+            test_db.query(PersonHistory).filter(PersonHistory.person_id == 3, PersonHistory.user_id == anna.id).one()
+        )
+        assert closed_3.effective_to == datetime.date(2026, 8, 31)
+
+        test_db.refresh(anna)
+        test_db.refresh(bert)
+        assert anna.person_id == 5 and bert.person_id == 3
+        assert anna.is_active == 1 and bert.is_active == 1
+        # employment_start_date untouched by a position swap
+        assert anna.employment_start_date == datetime.date(2026, 1, 1)
+
+    def test_swap_rejects_vacant_position(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+
+        with pytest.raises(ValueError):
+            swap_positions(test_db, 3, 5, datetime.date(2026, 9, 1), created_by=1)
+
+    def test_swap_rejects_same_position(self, test_db):
+        self._two_holders(test_db)
+        with pytest.raises(ValueError):
+            swap_positions(test_db, 3, 3, datetime.date(2026, 9, 1), created_by=1)
+
+    def test_swap_rejects_date_before_either_start(self, test_db):
+        self._two_holders(test_db)  # Bert started 2026-02-01
+        with pytest.raises(ValueError):
+            swap_positions(test_db, 3, 5, datetime.date(2026, 1, 15), created_by=1)

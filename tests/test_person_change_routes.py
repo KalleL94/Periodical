@@ -278,3 +278,39 @@ class TestPersonChangePagePost:
         )
 
         assert resp.status_code == 400
+
+
+class TestSwapPositionsRoute:
+    def test_swap_positions_happy_path(self, test_client, test_db, admin_user):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=admin_user.id)
+        start_employment(test_db, bert.id, 5, "Bert", "bert1", datetime.date(2026, 2, 1), created_by=admin_user.id)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.post(
+            "/admin/person-change/swap-positions",
+            data={"position_a": 3, "position_b": 5, "swap_date": "2026-09-01"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        assert "success=1" in resp.headers["location"]
+        test_db.expire_all()
+        assert test_db.get(User, anna.id).person_id == 5
+        assert test_db.get(User, bert.id).person_id == 3
+
+    def test_swap_with_vacant_position_returns_400(self, test_client, test_db, admin_user):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=admin_user.id)
+        _login(test_client, "admin", "adminpass123")
+
+        resp = test_client.post(
+            "/admin/person-change/swap-positions",
+            data={"position_a": 3, "position_b": 5, "swap_date": "2026-09-01"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 400
+        test_db.expire_all()
+        assert test_db.get(User, anna.id).person_id == 3

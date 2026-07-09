@@ -254,7 +254,7 @@ def end_employment(
     return record
 
 
-def start_employment(
+def _create_employment_record(
     session: Session,
     user_id: int,
     person_id: int,
@@ -263,33 +263,10 @@ def start_employment(
     start_date: date,
     created_by: int,
 ) -> PersonHistory:
-    """
-    Start a new person's employment at a position.
+    """Validate and create an employment record without committing.
 
-    This function:
-    1. Creates new PersonHistory record
-    2. Activates user (sets is_active=1)
-    3. Updates user's name and username
-
-    Args:
-        session: Database session
-        user_id: User ID of person starting
-        person_id: Position in rotation (1-10)
-        name: Person's name
-        username: Person's username
-        start_date: First day of employment
-        created_by: Admin user ID creating this change
-
-    Returns:
-        The newly created PersonHistory record
-
-    Example:
-        >>> # Anna (user_id=11) starts at position 6 on 2026-04-01
-        >>> record = start_employment(
-        ...     db, user_id=11, person_id=6,
-        ...     name="Anna", username="abc123",
-        ...     start_date=date(2026, 4, 1), created_by=1
-        ... )
+    Shared by start_employment (public, commits) and swap_positions (which
+    must commit two crossed records atomically).
     """
     # One open record per position: reject if someone already holds it
     open_at_position = (
@@ -344,8 +321,103 @@ def start_employment(
         if user.employment_start_date is None:
             user.employment_start_date = start_date
 
+    return new_record
+
+
+def start_employment(
+    session: Session,
+    user_id: int,
+    person_id: int,
+    name: str,
+    username: str,
+    start_date: date,
+    created_by: int,
+) -> PersonHistory:
+    """
+    Start a new person's employment at a position.
+
+    This function:
+    1. Creates new PersonHistory record
+    2. Activates user (sets is_active=1)
+    3. Updates user's name and username
+
+    Args:
+        session: Database session
+        user_id: User ID of person starting
+        person_id: Position in rotation (1-10)
+        name: Person's name
+        username: Person's username
+        start_date: First day of employment
+        created_by: Admin user ID creating this change
+
+    Returns:
+        The newly created PersonHistory record
+
+    Example:
+        >>> # Anna (user_id=11) starts at position 6 on 2026-04-01
+        >>> record = start_employment(
+        ...     db, user_id=11, person_id=6,
+        ...     name="Anna", username="abc123",
+        ...     start_date=date(2026, 4, 1), created_by=1
+        ... )
+    """
+    new_record = _create_employment_record(session, user_id, person_id, name, username, start_date, created_by)
     session.commit()
     return new_record
+
+
+def swap_positions(
+    session: Session,
+    person_id_a: int,
+    person_id_b: int,
+    swap_date: date,
+    created_by: int,
+) -> tuple[PersonHistory, PersonHistory]:
+    """
+    Two current employees trade rotation positions on a date.
+
+    Closes both open records the day before swap_date, then opens two new
+    records with the holders crossed. The whole swap commits once; any
+    validation failure leaves nothing committed.
+    """
+    if person_id_a == person_id_b:
+        raise ValueError("Cannot swap a position with itself.")
+
+    def _open_record(pid: int) -> PersonHistory:
+        record = (
+            session.query(PersonHistory)
+            .filter(PersonHistory.person_id == pid, PersonHistory.effective_to.is_(None))
+            .first()
+        )
+        if record is None:
+            raise ValueError(f"Position {pid} has no current holder to swap.")
+        return record
+
+    rec_a = _open_record(person_id_a)
+    rec_b = _open_record(person_id_b)
+
+    last_day = swap_date - timedelta(days=1)
+    for rec in (rec_a, rec_b):
+        if last_day < rec.effective_from:
+            raise ValueError(
+                f"Swap date {swap_date} is not after the employment start {rec.effective_from} "
+                f"at position {rec.person_id}."
+            )
+
+    rec_a.effective_to = last_day
+    rec_a.is_active = 0
+    rec_b.effective_to = last_day
+    rec_b.is_active = 0
+    session.flush()
+
+    new_b_at_a = _create_employment_record(
+        session, rec_b.user_id, person_id_a, rec_b.name, rec_b.username, swap_date, created_by
+    )
+    new_a_at_b = _create_employment_record(
+        session, rec_a.user_id, person_id_b, rec_a.name, rec_a.username, swap_date, created_by
+    )
+    session.commit()
+    return new_b_at_a, new_a_at_b
 
 
 def get_person_history(session: Session, person_id: int) -> list[dict]:
