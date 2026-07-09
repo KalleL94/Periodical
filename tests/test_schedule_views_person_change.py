@@ -8,6 +8,7 @@ RotationEra plus the PersonHistory rows there.
 """
 
 import datetime
+import re
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -138,3 +139,31 @@ def test_departed_person_absent_in_later_week(month_env):
     assert resp.status_code == 200
     assert "Anna" not in resp.text
     assert "Vakant" in resp.text or "Vacant" in resp.text
+
+
+def _year_header_cell(html: str, person_id: int) -> str:
+    """Extract the person-header <th> contents for a position in the year view."""
+    match = re.search(
+        rf'<th class="person-header" data-person="{person_id}">(.*?)</th>',
+        html,
+        re.DOTALL,
+    )
+    assert match is not None, f"person-header cell for position {person_id} not found"
+    return match.group(1)
+
+
+def test_year_header_vacant_after_departure(month_env):
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    # Anna held position 3 until 2026-08-04 with no successor. She still appears
+    # in day cells for her employment months, so the assertion targets the
+    # position-3 header cell specifically, which must show the vacancy label.
+    end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
+
+    resp = client.get("/year?year=2026")
+
+    assert resp.status_code == 200
+    header = _year_header_cell(resp.text, 3)
+    assert "Vakant" in header or "Vacant" in header
+    assert "Anna" not in header

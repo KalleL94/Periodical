@@ -38,7 +38,7 @@
         {% for p in person_headers %}
         <label class="col-toggle-label">
             <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" class="cursor-pointer">
-            {{ p.person_name }}
+            {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}
         </label>
         {% endfor %}
         <span class="col-sep">|</span>
@@ -69,11 +69,11 @@
                         <th class="person-header" data-person="{{ p.person_id }}">
                             {% if user and user.rotation_person_id == p.person_id %}
                                 <a href="/year/{{ user.id }}?year={{ year }}">
-                                    {{ p.person_name }}<br>
+                                    {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}<br>
                                     <small>(#{{ p.person_id }})</small>
                                 </a>
                             {% else %}
-                                {{ p.person_name }}<br>
+                                {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}<br>
                                 <small>(#{{ p.person_id }})</small>
                             {% endif %}
                         </th>

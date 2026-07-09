@@ -315,18 +315,28 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
-    # Build person headers using current active holder for each position
-    # (days[0] would show whoever held the position on the first day of rotation,
-    # which can be a predecessor rather than the current person)
+    # Build person headers using the current active holder for each position.
+    # An open PersonHistory record is the current holder; a position with only
+    # closed history is vacant and must show the vacancy label instead of the
+    # departed person the User-table fallback would surface. Positions without
+    # any history keep the legacy fallback name.
     from app.core.schedule.person_history import get_current_person_for_position
+    from app.database.database import PersonHistory
 
-    person_headers = [
-        {
-            "person_id": pid,
-            "person_name": (cp["name"] if (cp := get_current_person_for_position(db, pid)) else f"Person {pid}"),
-        }
-        for pid in range(1, 11)
-    ]
+    person_headers = []
+    for pid in range(1, 11):
+        open_record = (
+            db.query(PersonHistory).filter(PersonHistory.person_id == pid, PersonHistory.effective_to.is_(None)).first()
+        )
+        if open_record:
+            person_headers.append({"person_id": pid, "person_name": open_record.name, "vacant": False})
+        elif has_position_history(db, pid):
+            person_headers.append({"person_id": pid, "person_name": "", "vacant": True})
+        else:
+            cp = get_current_person_for_position(db, pid)
+            person_headers.append(
+                {"person_id": pid, "person_name": cp["name"] if cp else f"Person {pid}", "vacant": False}
+            )
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
 
