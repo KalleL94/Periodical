@@ -240,6 +240,37 @@ def test_oncall_override_remove_clears_oc_day(char_session):
     assert day["oncall_pay"] == 0.0
 
 
+def test_days_after_employment_end_render_off(char_session):
+    from app.database.database import PersonHistory
+
+    char_session.add(
+        PersonHistory(
+            user_id=1,
+            person_id=1,
+            name="Characterization",
+            username="charuser",
+            is_active=0,
+            effective_from=datetime.date(2026, 1, 2),
+            effective_to=datetime.date(2026, 3, 10),
+            created_by=1,
+        )
+    )
+    char_session.commit()
+    clear_schedule_cache()
+
+    days = generate_month_data(2026, 3, person_id=1, session=char_session)
+
+    after = [d for d in days if d["date"] > datetime.date(2026, 3, 10)]
+    assert after, "expected days after the employment end in March"
+    for day in after:
+        assert day.get("before_employment") is True
+        assert day["hours"] == 0.0
+        assert day["shift"] is None or day["shift"].code == "OFF"
+
+    on_or_before = [d for d in days if d["date"] <= datetime.date(2026, 3, 10)]
+    assert any(d["shift"] and d["shift"].code not in ("OFF",) for d in on_or_before)
+
+
 def test_build_week_data_basic(char_session):
     # build_week_data feeds _build_person_day_basic (coworker matching); pin its per-day output.
     days = build_week_data(2026, 11, person_id=1, session=char_session)

@@ -24,7 +24,7 @@ from .core import (
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
 from .overtime import get_overtime_shift_for_date
-from .person_history import get_current_person_for_position, get_person_for_date
+from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
@@ -1376,6 +1376,11 @@ def _resolve_day_person(
     show_off_before_employment = False
 
     if session:
+        # Position vacated with no successor: render OFF after the last employment ended
+        vacancy = get_position_vacancy(session, person_id, current_day)
+        if vacancy:
+            return vacancy.name, True
+
         # First check who held this position on this specific date
         date_person = get_person_for_date(session, person_id, current_day)
         if date_person:

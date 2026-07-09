@@ -579,3 +579,27 @@ def is_date_before_employment(session: Session, person_id: int, check_date: date
         return check_date < current["effective_from"]
 
     return False
+
+
+def get_position_vacancy(session: Session, person_id: int, check_date: date) -> PersonHistory | None:
+    """
+    Return the last closed PersonHistory record if a position is vacant on a date.
+
+    A position is vacant when it has employment history, the most recent record
+    is closed (effective_to set), and check_date falls after that end date.
+    Positions without any history keep legacy behavior and are never vacant.
+
+    Used by schedule rendering to show OFF for rotation days after the last
+    holder's employment ended with no successor.
+    """
+    latest = (
+        session.query(PersonHistory)
+        .filter(PersonHistory.person_id == person_id)
+        .order_by(PersonHistory.effective_from.desc())
+        .first()
+    )
+    if latest is None or latest.effective_to is None:
+        return None
+    if check_date > latest.effective_to:
+        return latest
+    return None

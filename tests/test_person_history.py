@@ -11,6 +11,7 @@ import pytest
 from app.core.schedule.person_history import (
     add_person_change,  # noqa: F401  # used by Task 2 tests added in this file
     end_employment,
+    get_position_vacancy,
     start_employment,
 )
 from app.database.database import PersonHistory, User, UserRole
@@ -186,3 +187,41 @@ class TestAddPersonChange:
                 effective_from=datetime.date(2026, 4, 1),
                 created_by=1,
             )
+
+
+class TestGetPositionVacancy:
+    def _employ_and_end(self, test_db, end):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        end_employment(test_db, anna.id, 3, end_date=end)
+        return anna
+
+    def test_vacant_after_last_employment_ended(self, test_db):
+        self._employ_and_end(test_db, datetime.date(2026, 8, 4))
+
+        vacancy = get_position_vacancy(test_db, 3, datetime.date(2026, 8, 5))
+        assert vacancy is not None
+        assert vacancy.name == "Anna"
+        assert get_position_vacancy(test_db, 3, datetime.date(2026, 9, 15)) is not None
+
+    def test_not_vacant_during_or_on_last_day(self, test_db):
+        self._employ_and_end(test_db, datetime.date(2026, 8, 4))
+
+        assert get_position_vacancy(test_db, 3, datetime.date(2026, 6, 1)) is None
+        assert get_position_vacancy(test_db, 3, datetime.date(2026, 8, 4)) is None
+
+    def test_not_vacant_with_open_employment(self, test_db):
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+
+        assert get_position_vacancy(test_db, 3, datetime.date(2027, 1, 1)) is None
+
+    def test_no_history_keeps_legacy_behavior(self, test_db):
+        assert get_position_vacancy(test_db, 7, datetime.date(2026, 8, 5)) is None
+
+    def test_not_vacant_when_successor_took_over(self, test_db):
+        anna = self._employ_and_end(test_db, datetime.date(2026, 8, 4))  # noqa: F841
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, bert.id, 3, "Bert", "bert1", datetime.date(2026, 8, 5), created_by=1)
+
+        assert get_position_vacancy(test_db, 3, datetime.date(2026, 9, 1)) is None
