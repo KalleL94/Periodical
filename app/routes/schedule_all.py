@@ -38,6 +38,92 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["schedule_all"])
 
 
+def _off_cell(cell: dict, name: str) -> dict:
+    """Mask a person cell to OFF for a day outside a holder's segment.
+
+    Mirrors the shape of a before-employment cell: identity keys are kept, the
+    shift is cleared and the before_employment flag is set so the template
+    renders it as a plain OFF day.
+    """
+    masked = dict(cell)
+    masked["person_name"] = name
+    masked["shift"] = None
+    masked["before_employment"] = True
+    return masked
+
+
+def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sunday: date) -> list[dict]:
+    """Build one week row per position holder segment.
+
+    A position held by a single person yields one row. A mid-week person change
+    yields one row per holder, with days outside each holder's segment masked to
+    OFF. A fully vacated position yields a single vacant row. Substitute entries
+    (person_id outside 1-10) are appended unchanged so they keep rendering.
+    """
+
+    def _cell_for(day: dict, pid: int) -> dict | None:
+        return next((p for p in day.get("persons", []) if p.get("person_id") == pid), None)
+
+    person_rows: list[dict] = []
+    for pid in range(1, 11):
+        base_cells = [_cell_for(day, pid) for day in days_in_week]
+        segments = get_position_holder_segments(db, pid, monday, sunday)
+
+        if not segments and has_position_history(db, pid):
+            # Position vacated entirely: one placeholder row, all days OFF.
+            person_rows.append(
+                {
+                    "person_id": pid,
+                    "person_name": "",
+                    "vacant": True,
+                    "cells": [_off_cell(c, "") if c else None for c in base_cells],
+                }
+            )
+            continue
+
+        if len(segments) <= 1:
+            # Zero (legacy) or one holder: single row, current behavior.
+            name = (
+                segments[0]["name"]
+                if segments
+                else (base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}")
+            )
+            person_rows.append({"person_id": pid, "person_name": name, "vacant": False, "cells": base_cells})
+            continue
+
+        # Mid-week change: one row per holder, days masked to their tenure.
+        for seg in segments:
+            cells = []
+            for day, cell in zip(days_in_week, base_cells, strict=True):
+                if cell is None:
+                    cells.append(None)
+                elif seg["from_date"] <= day["date"] <= seg["to_date"]:
+                    cells.append(cell)
+                else:
+                    cells.append(_off_cell(cell, seg["name"]))
+            person_rows.append({"person_id": pid, "person_name": seg["name"], "vacant": False, "cells": cells})
+
+    # Append substitute rows (person_id outside the 1-10 rotation) unchanged.
+    if days_in_week:
+        for entry in days_in_week[0].get("persons", []):
+            sub_pid = entry.get("person_id")
+            if isinstance(sub_pid, int) and 1 <= sub_pid <= 10:
+                continue
+            cells = [_cell_for(day, sub_pid) for day in days_in_week]
+            person_rows.append(
+                {
+                    "person_id": sub_pid,
+                    "person_name": entry.get("person_name", ""),
+                    "vacant": False,
+                    "is_substitute": True,
+                    "substitute_id": entry.get("substitute_id"),
+                    "cells": cells,
+                }
+            )
+
+    return person_rows
+
+
 @router.get("/week", response_class=HTMLResponse, name="week_all")
 async def show_week_all(
     request: Request,
@@ -57,7 +143,10 @@ async def show_week_all(
     days_in_week = build_week_data(year, week, session=db)
 
     monday = date.fromisocalendar(year, week, 1)
+    sunday = monday + timedelta(days=6)
     nav = get_navigation_dates("week", monday)
+
+    person_rows = _build_person_rows(db, days_in_week, monday, sunday)
 
     real_today = get_today()
 
@@ -72,6 +161,7 @@ async def show_week_all(
             "year": year,
             "week": week,
             "days": days_in_week,
+            "person_rows": person_rows,
             "today": real_today,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,

@@ -98,3 +98,43 @@ def test_departed_person_absent_in_later_month(month_env):
     assert resp.status_code == 200
     assert "Anna" not in resp.text
     assert "Vakant" in resp.text or "Vacant" in resp.text
+
+
+def test_mid_week_change_shows_both_rows(month_env):
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    # Thursday of ISO week 34, 2026: Anna holds the position until Wednesday,
+    # Bert takes over from Thursday within the same week.
+    thursday = datetime.date.fromisocalendar(2026, 34, 4)
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=anna.id,
+        new_user_id=bert.id,
+        person_id=3,
+        new_name="Bert",
+        new_username="bert1",
+        effective_from=thursday,
+        created_by=1,
+    )
+
+    resp = client.get("/week?year=2026&week=34")
+
+    assert resp.status_code == 200
+    assert "Anna" in resp.text
+    assert "Bert" in resp.text
+
+
+def test_departed_person_absent_in_later_week(month_env):
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    # End employment before ISO week 34, 2026: the position row is fully vacant.
+    end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
+
+    resp = client.get("/week?year=2026&week=34")
+
+    assert resp.status_code == 200
+    assert "Anna" not in resp.text
+    assert "Vakant" in resp.text or "Vacant" in resp.text

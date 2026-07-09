@@ -57,42 +57,37 @@
             </tr>
         </thead>
         <tbody>
-            {# Build rows for each person (regular positions plus any substitutes with shifts this week) #}
-            {% for person_entry in (days[0].persons if days and days|length > 0 else []) %}
-                {% set person_id = person_entry.person_id %}
+            {# Build rows for each holder segment (regular positions plus any substitutes with shifts this week) #}
+            {% for row in person_rows %}
+                {% set person_id = row.person_id %}
                 <tr class="person-row">
                     {# Person name column (sticky left) #}
                     <td class="person-name-cell">
-                        {% if person_entry.is_substitute %}
+                        {% if row.vacant %}
+                            {{ t.schedule_vacant }}<br>
+                            <small>(#{{ person_id }})</small>
+                        {% elif row.is_substitute %}
                             {% if user and user.role.value == 'admin' %}
-                                <a href="/admin/substitutes/{{ person_entry.substitute_id }}">
-                                    {{ person_entry.person_name }}<br>
+                                <a href="/admin/substitutes/{{ row.substitute_id }}">
+                                    {{ row.person_name }}<br>
                                     <small>({{ t.substitute_tag }})</small>
                                 </a>
                             {% else %}
-                                {{ person_entry.person_name }}<br>
+                                {{ row.person_name }}<br>
                                 <small>({{ t.substitute_tag }})</small>
                             {% endif %}
                         {% else %}
                             <a href="/week/{{ person_id }}?year={{ year }}&week={{ week }}">
-                                {{ person_entry.person_name }}<br>
+                                {{ row.person_name }}<br>
                                 <small>(#{{ person_id }})</small>
                             </a>
                         {% endif %}
                     </td>
 
-                    {# Day cells for this person #}
+                    {# Day cells for this holder segment #}
                     {% for day in days %}
-                        {# Find this person's shift for this day #}
-                        {% set ns = namespace(person=none) %}
-                        {% for p in day.persons %}
-                            {% if p.person_id == person_id %}
-                                {% set ns.person = p %}
-                            {% endif %}
-                        {% endfor %}
-
                         {% set is_today = today is defined and day.date == today %}
-                        {% set wp = ns.person %}
+                        {% set wp = row.cells[loop.index0] %}
                         {% set w_orig_code = wp.original_shift.code if wp and wp.original_shift else (wp.shift.code if wp and wp.shift else 'OFF') %}
                         {% set w_orig_color = wp.original_shift.color if wp and wp.original_shift else (wp.shift.color if wp and wp.shift else '#ddd') %}
                         {% set w_is_changed = wp and wp.shift and wp.original_shift and wp.shift.code != wp.original_shift.code %}
@@ -121,7 +116,7 @@
 
                             {% if wp and wp.shift %}
                                 {# Länka till day-sida bara om admin eller egen (ej vikarier, de saknar dagsida) #}
-                                {% if not person_entry.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
+                                {% if not row.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
                                     <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                        class="shift-link">
                                 {% endif %}
@@ -139,7 +134,7 @@
                                     </div>
                                 {% endif %}
 
-                                {% if not person_entry.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
+                                {% if not row.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
                                     </a>
                                 {% endif %}
                             {% else %}
