@@ -165,8 +165,8 @@
             <tr>
                 <th class="num">{{ t.admin_person_change_position_label }}</th>
                 <th>{{ t.admin_person_change_existing_user }}</th>
-                <th>{{ t.admin_person_change_last_day }}</th>
-                <th>{{ t.admin_person_change_first_day }}</th>
+                <th>{{ t.admin_col_from }}</th>
+                <th>{{ t.admin_col_to }}</th>
                 <th>{{ t.admin_eras_col_actions }}</th>
             </tr>
         </thead>
@@ -175,8 +175,8 @@
             <tr>
                 <td class="num" data-label="{{ t.admin_person_change_position_label }}">{{ h.person_id }}</td>
                 <td data-label="{{ t.admin_person_change_existing_user }}">{{ h.name }} ({{ h.username }})</td>
-                <td data-label="{{ t.admin_person_change_first_day }}">{{ h.effective_from }}</td>
-                <td data-label="{{ t.admin_person_change_last_day }}">
+                <td data-label="{{ t.admin_col_from }}">{{ h.effective_from }}</td>
+                <td data-label="{{ t.admin_col_to }}">
                     {% if h.effective_to %}
                         {{ h.effective_to }}
                     {% else %}
