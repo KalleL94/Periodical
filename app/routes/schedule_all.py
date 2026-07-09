@@ -3,6 +3,7 @@
 Team-wide schedule view routes - week, month, and year views for all persons.
 """
 
+import calendar as _calendar
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -25,6 +26,8 @@ from app.core.schedule import (
     rotation_start_date,
     summarize_month_for_person,
 )
+from app.core.schedule.period import mask_days_to_employment
+from app.core.schedule.person_history import get_position_holder_segments, has_position_history
 from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, get_db
@@ -102,24 +105,70 @@ async def show_month_all(
     # Only fetch tax tables if user is admin (needed for salary calculations)
     is_admin = current_user is not None and current_user.role == UserRole.ADMIN
 
+    month_start = date(year, month, 1)
+    month_end = date(year, month, _calendar.monthrange(year, month)[1])
+
     persons = []
     for pid in range(1, 11):
         # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
         person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
+        segments = get_position_holder_segments(db, pid, month_start, month_end)
 
-        summary = summarize_month_for_person(
-            year,
-            month,
-            pid,
-            session=db,
-            user_wages=user_wages,
-            year_days=person_month_days,
-            fetch_tax_table=is_admin,
-            payment_year=year,
-        )
-        if not can_see_salary(current_user, pid):
+        if not segments and has_position_history(db, pid):
+            # Position vacated entirely: one placeholder column, all days OFF
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=db,
+                user_wages=user_wages,
+                year_days=person_month_days,
+                fetch_tax_table=False,
+                payment_year=year,
+            )
             summary = strip_salary_data(summary)
-        persons.append(summary)
+            summary["vacant"] = True
+            persons.append(summary)
+            continue
+
+        if len(segments) <= 1:
+            # Zero (legacy) or one holder: single column, current behavior
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=db,
+                user_wages=user_wages,
+                year_days=person_month_days,
+                fetch_tax_table=is_admin,
+                payment_year=year,
+            )
+            if segments:
+                summary["person_name"] = segments[0]["name"]
+            if not can_see_salary(current_user, pid):
+                summary = strip_salary_data(summary)
+            persons.append(summary)
+            continue
+
+        # Mid-month change: one column per holder, days masked to their tenure
+        for seg in segments:
+            masked_days = mask_days_to_employment(person_month_days, seg["from_date"], seg["to_date"])
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=db,
+                user_wages=user_wages,
+                year_days=masked_days,
+                fetch_tax_table=is_admin,
+                payment_year=year,
+                wage_user_id=seg["user_id"],
+            )
+            summary["person_name"] = seg["name"]
+            viewer_is_owner = current_user is not None and current_user.id == seg["user_id"]
+            if not (is_admin or viewer_is_owner):
+                summary = strip_salary_data(summary)
+            persons.append(summary)
 
     # Append substitutes (schedule only, no salary) after the regular positions
     persons.extend(build_substitute_month_summaries(year, month, db))

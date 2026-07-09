@@ -719,6 +719,12 @@ def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: d
             copy["ot_details"] = {}
             copy["ob_hours_override"] = None
             copy["before_employment"] = True
+            # Clear week-based flags the summary counts independently of the shift,
+            # so an out-of-segment day contributes no parental/partial-absence total.
+            if "parental_leave" in copy:
+                copy["parental_leave"] = False
+            if "partial_absence" in copy:
+                copy["partial_absence"] = None
             masked.append(copy)
         else:
             masked.append(day)

@@ -53,7 +53,7 @@
         {% for p in persons %}
         <label class="col-toggle-label">
             <input type="checkbox" checked onchange="togglePersonCol({% if p.is_substitute %}'{{ p.person_id }}'{% else %}{{ p.person_id }}{% endif %}, this.checked)" class="cursor-pointer">
-            {{ p.person_name }}
+            {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}
         </label>
         {% endfor %}
         <span class="col-sep">|</span>
@@ -97,7 +97,7 @@
                                 {% endif %}
                             {% else %}
                                 <a href="/month/{{ p.person_id }}?year={{ year }}&month={{ month }}">
-                                    {{ p.person_name }}<br>
+                                    {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}<br>
                                     <small>(#{{ p.person_id }})</small>
                                 </a>
                             {% endif %}

@@ -308,6 +308,8 @@ def test_mask_days_to_employment_zeroes_days_outside_segment():
             "ot_hours": 1.0,
             "ot_details": {"start_time": "16:00"},
             "ob_hours_override": None,
+            "parental_leave": True,
+            "partial_absence": {"hours": 4.0},
         }
 
     inside = _work_day(datetime.date(2026, 8, 10))
@@ -329,6 +331,10 @@ def test_mask_days_to_employment_zeroes_days_outside_segment():
     assert m["oncall_pay"] == 0.0 and m["oncall_details"] == {}
     assert m["ot_pay"] == 0.0 and m["ot_hours"] == 0.0 and m["ot_details"] == {}
     assert m["before_employment"] is True
+    # Week-based flags the summary counts independently of the shift are cleared,
+    # so a masked day contributes no parental/partial-absence total.
+    assert m["parental_leave"] is False
+    assert m["partial_absence"] is None
     # Identity keys are preserved.
     assert m["date"] == datetime.date(2026, 8, 20)
     assert m["person_id"] == 3

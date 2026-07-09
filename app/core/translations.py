@@ -778,6 +778,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "month_all_day_col": "Dag",
         "month_all_date_col": "Datum",
         "month_all_title": "Månadsschema - {year}-{month}",
+        "schedule_vacant": "Vakant",
         "month_shift_sem_title": "Semester",
         "month_shift_ot_title": "Övertid: {start} - {end}",
         # ── Cowork view ────────────────────────────────────────────
@@ -1803,6 +1804,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "month_all_day_col": "Day",
         "month_all_date_col": "Date",
         "month_all_title": "Monthly schedule - {year}-{month}",
+        "schedule_vacant": "Vacant",
         "month_shift_sem_title": "Vacation",
         "month_shift_ot_title": "Overtime: {start} - {end}",
         # ── Cowork view ────────────────────────────────────────────
