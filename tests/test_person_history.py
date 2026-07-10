@@ -379,3 +379,21 @@ class TestUpdateEmploymentDates:
         test_db.refresh(bert)
         assert bert.is_active == 0
         assert bert.person_id is None
+
+    def test_rejects_reopening_when_user_holds_other_position(self, test_db):
+        # Anna held position 3 (closed), then moved to position 5 (open).
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        end_employment(test_db, anna.id, 3, end_date=datetime.date(2026, 3, 31))
+        start_employment(test_db, anna.id, 5, "Anna", "anna1", datetime.date(2026, 4, 1), created_by=1)
+
+        anna_pos3 = (
+            test_db.query(PersonHistory).filter(PersonHistory.user_id == anna.id, PersonHistory.person_id == 3).one()
+        )
+
+        # Reopening the position-3 record would give Anna two open records.
+        with pytest.raises(ValueError, match="already has an open employment at position 5"):
+            update_employment_dates(test_db, anna_pos3.id, datetime.date(2026, 1, 1), None)
+
+        test_db.refresh(anna)
+        assert anna.person_id == 5

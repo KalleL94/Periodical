@@ -441,6 +441,23 @@ def update_employment_dates(
     if effective_to is not None and effective_to < effective_from:
         raise ValueError(f"End date {effective_to} is before the start date {effective_from}.")
 
+    # Reopening this record must not give the user a second open employment.
+    # Sibling checks below only cover the same position, so a different open
+    # record at another position would otherwise slip through and corrupt the
+    # one-open-record-per-user invariant enforced by _create_employment_record.
+    if effective_to is None:
+        other_open_for_user = (
+            session.query(PersonHistory)
+            .filter(
+                PersonHistory.user_id == record.user_id,
+                PersonHistory.effective_to.is_(None),
+                PersonHistory.id != record.id,
+            )
+            .first()
+        )
+        if other_open_for_user:
+            raise ValueError(f"This user already has an open employment at position {other_open_for_user.person_id}.")
+
     siblings = (
         session.query(PersonHistory)
         .filter(PersonHistory.person_id == record.person_id, PersonHistory.id != record.id)
