@@ -139,7 +139,9 @@
                                 {% endif %}
                             </td>
                             {% else %}
-                            <td class="day-cell month-shift-cell out-of-tenure" data-person="{{ col.col_key }}"{% if col.past %} style="display:none"{% endif %}></td>
+                            <td class="day-cell month-shift-cell out-of-tenure" data-person="{{ col.col_key }}"{% if col.past %} style="display:none"{% endif %}>
+                                <span class="badge badge-off js-sb" data-act-label="OFF">OFF</span>
+                            </td>
                             {% endif %}
                         {% endfor %}
                     </tr>

@@ -238,6 +238,51 @@ def test_year_splits_columns_per_holder_past_hidden(month_env):
     assert f'/year/12?year={today.year}"' in omar_th
 
 
+def _out_of_tenure_cells(html: str, col_key: str) -> list[str]:
+    """Return the out-of-tenure day cells (whole <td>...</td>) for a column."""
+    return re.findall(
+        rf'(<td class="day-cell month-shift-cell out-of-tenure" data-person="{re.escape(col_key)}".*?</td>)',
+        html,
+        re.DOTALL,
+    )
+
+
+def test_year_out_of_tenure_cells_render_off(month_env):
+    """Out-of-tenure day cells render a muted OFF badge instead of being empty."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 11, "isak1", "Isak")
+    omar = _make_user(session, 12, "omar1", "Omar")
+
+    today = get_today()
+    isak_end = today - datetime.timedelta(days=10)
+    omar_start = isak_end + datetime.timedelta(days=1)
+
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=isak.id,
+        new_user_id=omar.id,
+        person_id=3,
+        new_name="Omar",
+        new_username="omar1",
+        effective_from=omar_start,
+        created_by=1,
+    )
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/year?year={today.year}")
+    assert resp.status_code == 200
+
+    # Isak's column has out-of-tenure cells for days after his departure; they
+    # must show OFF rather than be empty.
+    isak_cells = _out_of_tenure_cells(resp.text, "3-11")
+    assert isak_cells, "expected out-of-tenure cells for the departed holder"
+    assert all("OFF" in cell for cell in isak_cells)
+
+
 def test_year_summary_filters_to_viewed_users_employment(month_env):
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)

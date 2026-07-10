@@ -52,7 +52,13 @@ def get_person_for_date(session: Session, person_id: int, effective_date: date) 
             "user_id": record.user_id,
         }
 
-    # Fallback to User table if no PersonHistory exists
+    # Fallback to the User table only for positions without any history records.
+    # When history exists but no record covers the date, the position is
+    # genuinely unstaffed on that date (gap or vacancy) and None must be
+    # returned so schedule rendering can mark the day OFF.
+    if has_position_history(session, person_id):
+        return None
+
     user = session.query(User).filter(User.id == person_id).first()
     if user:
         return {

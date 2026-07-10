@@ -272,6 +272,67 @@ def test_days_after_employment_end_render_off(char_session):
     assert any(d["shift"] and d["shift"].code not in ("OFF",) for d in on_or_before)
 
 
+def test_gap_days_between_holders_render_off(char_session):
+    # Position 1 held until March 10, successor's open record starts May 1: the
+    # rest of March is a genuine gap. Those days must render OFF (before the
+    # successor started), not the departed holder's normal rotation shifts.
+    from app.database.database import PersonHistory
+
+    char_session.add(
+        PersonHistory(
+            user_id=1,
+            person_id=1,
+            name="Characterization",
+            username="charuser",
+            is_active=0,
+            effective_from=datetime.date(2026, 1, 2),
+            effective_to=datetime.date(2026, 3, 10),
+            created_by=1,
+        )
+    )
+    char_session.add(
+        User(
+            id=2,
+            username="successor",
+            password_hash="x",
+            name="Successor",
+            role=UserRole.USER,
+            wage=30000,
+            wage_type=WageType.MONTHLY,
+            person_id=None,
+            tax_table="33",
+            vacation={},
+            must_change_password=0,
+        )
+    )
+    char_session.add(
+        PersonHistory(
+            user_id=2,
+            person_id=1,
+            name="Successor",
+            username="successor",
+            is_active=1,
+            effective_from=datetime.date(2026, 5, 1),
+            effective_to=None,
+            created_by=1,
+        )
+    )
+    char_session.commit()
+    clear_schedule_cache()
+
+    days = generate_month_data(2026, 3, person_id=1, session=char_session)
+
+    gap = [d for d in days if d["date"] > datetime.date(2026, 3, 10)]
+    assert gap, "expected gap days after the employment end in March"
+    for day in gap:
+        assert day.get("before_employment") is True
+        assert day["hours"] == 0.0
+        assert day["shift"] is None or day["shift"].code == "OFF"
+
+    on_or_before = [d for d in days if d["date"] <= datetime.date(2026, 3, 10)]
+    assert any(d["shift"] and d["shift"].code not in ("OFF",) for d in on_or_before)
+
+
 def test_build_week_data_basic(char_session):
     # build_week_data feeds _build_person_day_basic (coworker matching); pin its per-day output.
     days = build_week_data(2026, 11, person_id=1, session=char_session)

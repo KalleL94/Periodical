@@ -11,6 +11,7 @@ import pytest
 from app.core.schedule.person_history import (
     add_person_change,  # noqa: F401  # used by Task 2 tests added in this file
     end_employment,
+    get_person_for_date,
     get_position_holder_segments,
     get_position_vacancy,
     has_position_history,
@@ -229,6 +230,44 @@ class TestGetPositionVacancy:
         start_employment(test_db, bert.id, 3, "Bert", "bert1", datetime.date(2026, 8, 5), created_by=1)
 
         assert get_position_vacancy(test_db, 3, datetime.date(2026, 9, 1)) is None
+
+
+class TestGetPersonForDate:
+    def _closed_then_open_with_gap(self, test_db):
+        """Anna holds position 5 until Aug 3, Bert's open record starts Sep 1.
+
+        A legacy User row exists at id == person_id (5), so the pre-history
+        User-table fallback would otherwise resolve. Aug 4 - Aug 31 is a genuine
+        gap: no record covers it, but the position has history, so
+        get_person_for_date must return None there rather than the legacy user.
+        """
+        _make_user(test_db, 5, "legacy5", "Legacy")
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        bert = _make_user(test_db, 12, "bert1", "Bert")
+        start_employment(test_db, anna.id, 5, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        end_employment(test_db, anna.id, 5, end_date=datetime.date(2026, 8, 3))
+        start_employment(test_db, bert.id, 5, "Bert", "bert1", datetime.date(2026, 9, 1), created_by=1)
+        return anna, bert
+
+    def test_gap_date_returns_none(self, test_db):
+        self._closed_then_open_with_gap(test_db)
+        assert get_person_for_date(test_db, 5, datetime.date(2026, 8, 10)) is None
+
+    def test_date_within_departed_holder_returns_them(self, test_db):
+        self._closed_then_open_with_gap(test_db)
+        person = get_person_for_date(test_db, 5, datetime.date(2026, 8, 2))
+        assert person is not None and person["name"] == "Anna"
+
+    def test_date_within_successor_returns_them(self, test_db):
+        self._closed_then_open_with_gap(test_db)
+        person = get_person_for_date(test_db, 5, datetime.date(2026, 9, 5))
+        assert person is not None and person["name"] == "Bert"
+
+    def test_no_history_position_falls_back_to_user_table(self, test_db):
+        # Position 7 has no PersonHistory: the legacy User-table fallback applies.
+        _make_user(test_db, 7, "legacy7", "Legacy")
+        person = get_person_for_date(test_db, 7, datetime.date(2026, 8, 10))
+        assert person is not None and person["name"] == "Legacy"
 
 
 class TestPositionHolderSegments:
