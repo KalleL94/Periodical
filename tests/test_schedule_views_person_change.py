@@ -299,3 +299,5 @@ def test_team_month_vacant_column_has_no_link(month_env):
     # position is linked for that column.
     assert "/month/11?year=2026&month=9" not in resp.text
     assert "/month/3?year=2026&month=9" not in resp.text
+    # Vacant day cells must not emit a broken /day/None drill-down link.
+    assert "/day/None" not in resp.text

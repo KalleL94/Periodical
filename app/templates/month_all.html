@@ -141,9 +141,10 @@
                                 data-changed="{{ '1' if is_changed else '0' }}"
                                 data-border-left="{% if d.shift %}{{ d.shift.color }}{% else %}transparent{% endif %}">
                                 {% if d.shift %}
-                                    {# Länka till day-sida bara om admin eller egen (ej vikarier, de saknar dagsida) #}
-                                    {% if not p.is_substitute and user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
-                                        {% set link_id = user.id if user.rotation_person_id == p.person_id else p.holder_user_id %}
+                                    {# Link to day page only for admin or own row (not substitutes, they have no day page) #}
+                                    {% set link_id = user.id if (user and user.rotation_person_id == p.person_id) else p.holder_user_id %}
+                                    {# Skip the link for vacant columns where link_id is None #}
+                                    {% if not p.is_substitute and user and link_id and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
                                         <a href="/day/{{ link_id }}/{{ d.date.year }}/{{ d.date.month }}/{{ d.date.day }}"
                                            class="plain-link">
                                     {% endif %}
@@ -162,7 +163,7 @@
                                                   data-act-label="{{ d.shift.code }}"
                                                   data-bg="{{ d.shift.color }}" data-fg="{{ d.shift.color | contrast }}">{{ d.shift.code }}</span>{% if is_changed %}<sup class="orig-asterisk">*</sup>{% endif %}
                                         {% endif %}
-                                    {% if not p.is_substitute and user and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
+                                    {% if not p.is_substitute and user and link_id and (user.role.value == 'admin' or user.rotation_person_id == p.person_id) %}
                                         </a>
                                     {% endif %}
                                 {% else %}
