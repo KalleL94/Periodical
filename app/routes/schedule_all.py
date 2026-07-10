@@ -340,39 +340,36 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
-    # Build person headers using the current active holder for each position.
-    # An open PersonHistory record is the current holder; a position with only
-    # closed history is vacant and must show the vacancy label instead of the
-    # departed person the User-table fallback would surface. Positions without
-    # any history keep the legacy fallback name.
+    # Build person headers listing every holder of the displayed year. A
+    # position that changed hands mid-year names each holder in chronological
+    # order, deduplicated consecutively by user_id, each linking to their own
+    # personal year view. A position with only closed history and no overlap in
+    # the year is vacant and shows the vacancy label. Positions without any
+    # history keep the legacy fallback name linked to the rotation position.
     from app.core.schedule.person_history import get_current_person_for_position
-    from app.database.database import PersonHistory
 
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
     person_headers = []
     for pid in range(1, 11):
-        open_record = (
-            db.query(PersonHistory).filter(PersonHistory.person_id == pid, PersonHistory.effective_to.is_(None)).first()
-        )
-        if open_record:
-            person_headers.append(
-                {
-                    "person_id": pid,
-                    "person_name": open_record.name,
-                    "vacant": False,
-                    "holder_user_id": open_record.user_id,
-                }
-            )
+        segments = get_position_holder_segments(db, pid, year_start, year_end)
+        holders = []
+        for seg in segments:
+            if holders and holders[-1]["user_id"] == seg["user_id"]:
+                continue
+            holders.append({"name": seg["name"], "user_id": seg["user_id"]})
+        if holders:
+            person_headers.append({"person_id": pid, "vacant": False, "holders": holders})
         elif has_position_history(db, pid):
-            person_headers.append({"person_id": pid, "person_name": "", "vacant": True, "holder_user_id": None})
+            person_headers.append({"person_id": pid, "vacant": True, "holders": []})
         else:
             # Legacy position without history: link target is the position itself.
             cp = get_current_person_for_position(db, pid)
             person_headers.append(
                 {
                     "person_id": pid,
-                    "person_name": cp["name"] if cp else f"Person {pid}",
                     "vacant": False,
-                    "holder_user_id": cp["user_id"] if cp else pid,
+                    "holders": [{"name": cp["name"] if cp else f"Person {pid}", "user_id": pid}],
                 }
             )
 

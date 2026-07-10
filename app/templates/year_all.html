@@ -21,8 +21,10 @@
         {# Visa bara länk till egen year-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
             {% for p in person_headers %}
-                {% if not p.vacant and p.holder_user_id %}
-                    <a href="/year/{{ p.holder_user_id }}?year={{ year }}" class="btn secondary">{{ p.person_id }}</a>
+                {% if not p.vacant %}
+                    {% for h in p.holders %}
+                        <a href="/year/{{ h.user_id }}?year={{ year }}" class="btn secondary">{{ p.person_id }}</a>
+                    {% endfor %}
                 {% endif %}
             {% endfor %}
         {% elif user %}
@@ -40,7 +42,7 @@
         {% for p in person_headers %}
         <label class="col-toggle-label">
             <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" class="cursor-pointer">
-            {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}
+            {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.holders | map(attribute='name') | join(' / ') }}{% endif %}
         </label>
         {% endfor %}
         <span class="col-sep">|</span>
@@ -69,13 +71,11 @@
                     <th class="w-lg">{{ t.month_all_date_col }}</th>
                     {% for p in person_headers %}
                         <th class="person-header" data-person="{{ p.person_id }}">
-                            {% if p.holder_user_id %}
-                                <a href="/year/{{ p.holder_user_id }}?year={{ year }}">
-                                    {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}<br>
-                                    <small>(#{{ p.person_id }})</small>
-                                </a>
+                            {% if p.vacant %}
+                                {{ t.schedule_vacant }}<br>
+                                <small>(#{{ p.person_id }})</small>
                             {% else %}
-                                {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}<br>
+                                {% for h in p.holders %}<a href="/year/{{ h.user_id }}?year={{ year }}">{{ h.name }}</a>{% if not loop.last %} / {% endif %}{% endfor %}<br>
                                 <small>(#{{ p.person_id }})</small>
                             {% endif %}
                         </th>

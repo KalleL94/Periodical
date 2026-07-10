@@ -158,17 +158,50 @@ def test_year_header_vacant_after_departure(month_env):
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
-    # Anna held position 3 until 2026-08-04 with no successor. She still appears
-    # in day cells for her employment months, so the assertion targets the
-    # position-3 header cell specifically, which must show the vacancy label.
+    # Anna held position 3 until 2026-08-04 with no successor. The 2027 view has
+    # no holder overlapping that year, so the position-3 header must show the
+    # vacancy label rather than the departed holder.
     end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
 
-    resp = client.get("/year?year=2026")
+    resp = client.get("/year?year=2027")
 
     assert resp.status_code == 200
     header = _year_header_cell(resp.text, 3)
     assert "Vakant" in header or "Vacant" in header
     assert "Anna" not in header
+
+
+def test_year_header_lists_every_holder_of_the_year(month_env):
+    """A position that changed holders mid-year lists both in its header cell.
+
+    Isak held position 3 until 2026-08-04, Omar from 2026-08-05. The year view
+    header for position 3 must name both holders, each linking to their own
+    personal year view (/year/<user_id>).
+    """
+    client, session = month_env
+    isak = _make_user(session, 11, "isak1", "Isak")
+    omar = _make_user(session, 12, "omar1", "Omar")
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=isak.id,
+        new_user_id=omar.id,
+        person_id=3,
+        new_name="Omar",
+        new_username="omar1",
+        effective_from=datetime.date(2026, 8, 5),
+        created_by=1,
+    )
+
+    resp = client.get("/year?year=2026")
+
+    assert resp.status_code == 200
+    header = _year_header_cell(resp.text, 3)
+    assert "Isak" in header
+    assert "Omar" in header
+    # Each holder name links to their own personal year view.
+    assert '/year/11?year=2026"' in header
+    assert '/year/12?year=2026"' in header
 
 
 def test_year_summary_filters_to_viewed_users_employment(month_env):
