@@ -76,6 +76,7 @@ def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sund
                     "person_id": pid,
                     "person_name": "",
                     "vacant": True,
+                    "holder_user_id": None,
                     "cells": [_off_cell(c, "") if c else None for c in base_cells],
                 }
             )
@@ -88,7 +89,18 @@ def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sund
                 if segments
                 else (base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}")
             )
-            person_rows.append({"person_id": pid, "person_name": name, "vacant": False, "cells": base_cells})
+            # Personal-view link target: the single holder's user id, or the
+            # rotation position itself for legacy positions without history.
+            holder_user_id = segments[0]["user_id"] if segments else pid
+            person_rows.append(
+                {
+                    "person_id": pid,
+                    "person_name": name,
+                    "vacant": False,
+                    "holder_user_id": holder_user_id,
+                    "cells": base_cells,
+                }
+            )
             continue
 
         # Mid-week change: one row per holder, days masked to their tenure.
@@ -101,7 +113,15 @@ def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sund
                     cells.append(cell)
                 else:
                     cells.append(_off_cell(cell, seg["name"]))
-            person_rows.append({"person_id": pid, "person_name": seg["name"], "vacant": False, "cells": cells})
+            person_rows.append(
+                {
+                    "person_id": pid,
+                    "person_name": seg["name"],
+                    "vacant": False,
+                    "holder_user_id": seg["user_id"],
+                    "cells": cells,
+                }
+            )
 
     # Append substitute rows (person_id outside the 1-10 rotation) unchanged.
     if days_in_week:
@@ -218,6 +238,7 @@ async def show_month_all(
             )
             summary = strip_salary_data(summary)
             summary["vacant"] = True
+            summary["holder_user_id"] = None
             persons.append(summary)
             continue
 
@@ -235,6 +256,9 @@ async def show_month_all(
             )
             if segments:
                 summary["person_name"] = segments[0]["name"]
+            # Personal-view link target: the single holder's user id, or the
+            # rotation position itself for legacy positions without history.
+            summary["holder_user_id"] = segments[0]["user_id"] if segments else pid
             if not can_see_salary(current_user, pid):
                 summary = strip_salary_data(summary)
             persons.append(summary)
@@ -255,6 +279,7 @@ async def show_month_all(
                 wage_user_id=seg["user_id"],
             )
             summary["person_name"] = seg["name"]
+            summary["holder_user_id"] = seg["user_id"]
             viewer_is_owner = current_user is not None and current_user.id == seg["user_id"]
             if not (is_admin or viewer_is_owner):
                 summary = strip_salary_data(summary)
@@ -329,13 +354,26 @@ async def show_year_all(
             db.query(PersonHistory).filter(PersonHistory.person_id == pid, PersonHistory.effective_to.is_(None)).first()
         )
         if open_record:
-            person_headers.append({"person_id": pid, "person_name": open_record.name, "vacant": False})
+            person_headers.append(
+                {
+                    "person_id": pid,
+                    "person_name": open_record.name,
+                    "vacant": False,
+                    "holder_user_id": open_record.user_id,
+                }
+            )
         elif has_position_history(db, pid):
-            person_headers.append({"person_id": pid, "person_name": "", "vacant": True})
+            person_headers.append({"person_id": pid, "person_name": "", "vacant": True, "holder_user_id": None})
         else:
+            # Legacy position without history: link target is the position itself.
             cp = get_current_person_for_position(db, pid)
             person_headers.append(
-                {"person_id": pid, "person_name": cp["name"] if cp else f"Person {pid}", "vacant": False}
+                {
+                    "person_id": pid,
+                    "person_name": cp["name"] if cp else f"Person {pid}",
+                    "vacant": False,
+                    "holder_user_id": cp["user_id"] if cp else pid,
+                }
             )
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN

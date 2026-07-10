@@ -20,10 +20,12 @@
         </button>
         {# Visa bara länk till egen week-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
-            {% for i in person_ids %}
-                <a href="/week/{{ i }}?year={{ year }}&week={{ week }}" class="btn secondary">
-                    {{ i }}
-                </a>
+            {% for row in person_rows %}
+                {% if not row.vacant and not row.is_substitute and row.holder_user_id %}
+                    <a href="/week/{{ row.holder_user_id }}?year={{ year }}&week={{ week }}" class="btn secondary">
+                        {{ row.person_id }}
+                    </a>
+                {% endif %}
             {% endfor %}
         {% elif user %}
             <a href="/week/{{ user.id }}?year={{ year }}&week={{ week }}" class="btn secondary">{{ t.week_all_my_week }}</a>
@@ -76,11 +78,14 @@
                                 {{ row.person_name }}<br>
                                 <small>({{ t.substitute_tag }})</small>
                             {% endif %}
-                        {% else %}
-                            <a href="/week/{{ person_id }}?year={{ year }}&week={{ week }}">
+                        {% elif row.holder_user_id %}
+                            <a href="/week/{{ row.holder_user_id }}?year={{ year }}&week={{ week }}">
                                 {{ row.person_name }}<br>
                                 <small>(#{{ person_id }})</small>
                             </a>
+                        {% else %}
+                            {{ row.person_name }}<br>
+                            <small>(#{{ person_id }})</small>
                         {% endif %}
                     </td>
 
@@ -117,7 +122,7 @@
                             {% if wp and wp.shift %}
                                 {# Länka till day-sida bara om admin eller egen (ej vikarier, de saknar dagsida) #}
                                 {% if not row.is_substitute and user and (user.role.value == 'admin' or user.id == person_id) %}
-                                    <a href="/day/{{ person_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
+                                    <a href="/day/{{ row.holder_user_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                        class="shift-link">
                                 {% endif %}
 

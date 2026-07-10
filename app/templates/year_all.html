@@ -20,8 +20,10 @@
         {% endif %}
         {# Visa bara länk till egen year-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
-            {% for i in person_ids %}
-                <a href="/year/{{ i }}?year={{ year }}" class="btn secondary">{{ i }}</a>
+            {% for p in person_headers %}
+                {% if not p.vacant and p.holder_user_id %}
+                    <a href="/year/{{ p.holder_user_id }}?year={{ year }}" class="btn secondary">{{ p.person_id }}</a>
+                {% endif %}
             {% endfor %}
         {% elif user %}
             <a href="/year/{{ user.id }}?year={{ year }}" class="btn secondary">{{ t.year_all_my_year }}</a>
@@ -67,8 +69,8 @@
                     <th class="w-lg">{{ t.month_all_date_col }}</th>
                     {% for p in person_headers %}
                         <th class="person-header" data-person="{{ p.person_id }}">
-                            {% if user and user.rotation_person_id == p.person_id %}
-                                <a href="/year/{{ user.id }}?year={{ year }}">
+                            {% if p.holder_user_id %}
+                                <a href="/year/{{ p.holder_user_id }}?year={{ year }}">
                                     {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.person_name }}{% endif %}<br>
                                     <small>(#{{ p.person_id }})</small>
                                 </a>

@@ -56,6 +56,60 @@ def redirect_if_not_own_data(current_user, user_id: int, redirect_url: str) -> R
     return None
 
 
+def _resolve_person_param(db, raw_id: int):
+    """Resolve a personal-view path parameter to (target_user, rotation_position).
+
+    Personal views are keyed by USER id: whenever a User row with the given id
+    exists, the parameter identifies that user and the rotation position comes
+    from their PersonHistory (get_user_person_id). Only when no such user exists
+    does the legacy rotation-position interpretation apply, validated via
+    validate_person_id so out-of-range ids still raise 404.
+
+    Returns a tuple (target_user, rotation_position). target_user is the User
+    when resolved as a user, otherwise None.
+    """
+    from app.core.schedule.person_history import get_user_person_id
+    from app.core.validators import validate_person_id
+    from app.database.database import User
+
+    target_user = db.query(User).filter(User.id == raw_id).first()
+    if target_user is not None:
+        rotation_position = get_user_person_id(db, raw_id)
+        if rotation_position is None:
+            # No PersonHistory for a user id > 10: fall back to the User row's
+            # rotation position (mirrors the previous >10 branch behaviour).
+            rotation_position = target_user.rotation_person_id
+        return target_user, rotation_position
+    return None, validate_person_id(raw_id)
+
+
+def build_position_nav(db) -> list[dict]:
+    """Build the admin jump-bar entries: one per rotation position (1-10).
+
+    Each entry links a position to its current holder's user-keyed page. An open
+    PersonHistory record is the current holder; a position with only closed
+    history is vacant (no link); positions without any history fall back to the
+    position id so legacy setups keep working. Returns dicts with person_id,
+    holder_user_id and vacant.
+    """
+    from app.core.schedule.person_history import get_current_person_for_position, has_position_history
+    from app.database.database import PersonHistory
+
+    nav = []
+    for pid in PERSON_IDS:
+        open_record = (
+            db.query(PersonHistory).filter(PersonHistory.person_id == pid, PersonHistory.effective_to.is_(None)).first()
+        )
+        if open_record:
+            nav.append({"person_id": pid, "holder_user_id": open_record.user_id, "vacant": False})
+        elif has_position_history(db, pid):
+            nav.append({"person_id": pid, "holder_user_id": None, "vacant": True})
+        else:
+            cp = get_current_person_for_position(db, pid)
+            nav.append({"person_id": pid, "holder_user_id": cp["user_id"] if cp else pid, "vacant": False})
+    return nav
+
+
 # ============ Pydantic schemas ============
 
 

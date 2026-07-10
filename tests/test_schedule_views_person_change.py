@@ -216,3 +216,86 @@ def test_year_summary_filters_to_viewed_users_employment(month_env):
     assert '/month/12?year=2026&month=4"' in resp.text
     assert '/month/12?year=2026&month=1"' not in resp.text
     assert '/month/12?year=2026&month=3"' not in resp.text
+
+
+def test_year_by_user_id_shows_old_holder(month_env):
+    """/year/<user_id> for an id <= 10 resolves to that USER, not the position.
+
+    Robin (user id 10) held rotation position 10 until 2026-03-31; Peter (user
+    id 12) took over from 2026-04-01. /year/10 must render Robin's data filtered
+    to his employment (Jan-Mar), never the successor's later months.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    robin = _make_user(session, 10, "robin1", "Robin")
+    peter = _make_user(session, 12, "peter1", "Peter", person_id=10)
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=robin.id,
+        new_user_id=peter.id,
+        person_id=10,
+        new_name="Peter",
+        new_username="peter1",
+        effective_from=datetime.date(2026, 4, 1),
+        created_by=1,
+    )
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year/10?year=2026")
+
+    assert resp.status_code == 200
+    # Robin (user 10) is the subject of the page, not Peter the successor.
+    assert "Robin" in resp.text
+    assert "Peter" not in resp.text
+    # Robin's employment ended 2026-03-31: March present, April filtered out.
+    assert '/month/10?year=2026&month=3"' in resp.text
+    assert '/month/10?year=2026&month=4"' not in resp.text
+
+
+def test_team_month_links_use_holder_user_ids(month_env):
+    """Team month column headers link the holder's user id, not the position.
+
+    A mid-month change at position 3 (Anna user 11 -> Bert user 12) yields two
+    columns, each linking its holder's user id. The bare position link /month/3
+    must not appear.
+    """
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=anna.id,
+        new_user_id=bert.id,
+        person_id=3,
+        new_name="Bert",
+        new_username="bert1",
+        effective_from=datetime.date(2026, 8, 15),
+        created_by=1,
+    )
+
+    resp = client.get("/month?year=2026&month=8")
+
+    assert resp.status_code == 200
+    assert "/month/11?year=2026&month=8" in resp.text
+    assert "/month/12?year=2026&month=8" in resp.text
+    # The changed position is never linked by its bare rotation position.
+    assert "/month/3?year=2026&month=8" not in resp.text
+
+
+def test_team_month_vacant_column_has_no_link(month_env):
+    """A vacant position column renders no personal month link."""
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
+
+    resp = client.get("/month?year=2026&month=9")
+
+    assert resp.status_code == 200
+    # Position 3 is vacant in September: neither the departed user nor the bare
+    # position is linked for that column.
+    assert "/month/11?year=2026&month=9" not in resp.text
+    assert "/month/3?year=2026&month=9" not in resp.text
