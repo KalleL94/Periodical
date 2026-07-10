@@ -4,8 +4,20 @@ import pytest
 from fastapi import HTTPException
 
 from app.auth.auth import get_password_hash
+from app.core.utils import get_today
 from app.database.database import ShiftSwap, SwapStatus, User, UserRole
 from app.routes.shift_swap import accept_swap, propose_swap
+
+
+def _future_dates() -> tuple[datetime.date, datetime.date, datetime.date]:
+    """Three consecutive future dates so propose_swap's future-only check passes.
+
+    Anchored to today so the suite stays green regardless of the wall-clock
+    date. Preserves the original relationships: day_a/day_b are an existing
+    swap and day_a/day_c are the conflicting proposal.
+    """
+    base = get_today() + datetime.timedelta(days=10)
+    return base, base + datetime.timedelta(days=1), base + datetime.timedelta(days=2)
 
 
 def _add_user(db, user_id: int, username: str, person_id: int) -> User:
@@ -28,11 +40,12 @@ def _add_user(db, user_id: int, username: str, person_id: int) -> User:
 
 @pytest.mark.anyio
 async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user, admin_user):
+    day_a, day_b, day_c = _future_dates()
     existing = ShiftSwap(
         requester_id=test_user.id,
         target_id=admin_user.id,
-        requester_date=datetime.date(2026, 7, 10),
-        target_date=datetime.date(2026, 7, 11),
+        requester_date=day_a,
+        target_date=day_b,
         requester_shift_code="N1",
         target_shift_code="N2",
         status=SwapStatus.PENDING,
@@ -43,8 +56,8 @@ async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user,
     with pytest.raises(HTTPException) as exc:
         await propose_swap(
             target_id=admin_user.id,
-            requester_date="2026-07-10",
-            target_date="2026-07-12",
+            requester_date=day_a.isoformat(),
+            target_date=day_c.isoformat(),
             message=None,
             current_user=test_user,
             db=test_db,
@@ -57,12 +70,13 @@ async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user,
 
 @pytest.mark.anyio
 async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user, admin_user):
+    day_a, day_b, day_c = _future_dates()
     other_user = _add_user(test_db, 3, "other", 3)
     accepted = ShiftSwap(
         requester_id=other_user.id,
         target_id=test_user.id,
-        requester_date=datetime.date(2026, 7, 10),
-        target_date=datetime.date(2026, 7, 11),
+        requester_date=day_a,
+        target_date=day_b,
         requester_shift_code="N1",
         target_shift_code="N2",
         status=SwapStatus.ACCEPTED,
@@ -70,8 +84,8 @@ async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user,
     pending = ShiftSwap(
         requester_id=admin_user.id,
         target_id=test_user.id,
-        requester_date=datetime.date(2026, 7, 10),
-        target_date=datetime.date(2026, 7, 12),
+        requester_date=day_a,
+        target_date=day_c,
         requester_shift_code="N3",
         target_shift_code="N1",
         status=SwapStatus.PENDING,
@@ -90,11 +104,12 @@ async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user,
 
 @pytest.mark.anyio
 async def test_accept_swap_allows_non_conflicting_pending_swap(test_db, test_user, admin_user):
+    day_a, _day_b, day_c = _future_dates()
     pending = ShiftSwap(
         requester_id=admin_user.id,
         target_id=test_user.id,
-        requester_date=datetime.date(2026, 7, 10),
-        target_date=datetime.date(2026, 7, 12),
+        requester_date=day_a,
+        target_date=day_c,
         requester_shift_code="N3",
         target_shift_code="N1",
         status=SwapStatus.PENDING,
