@@ -15,7 +15,12 @@ from sqlalchemy.orm import sessionmaker
 
 import app.database.database as db_module
 from app.auth.auth import create_access_token
-from app.core.schedule import clear_schedule_cache, summarize_year_for_person
+from app.core.schedule import (
+    clear_schedule_cache,
+    generate_month_data,
+    summarize_month_for_person,
+    summarize_year_for_person,
+)
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment
 from app.core.utils import get_today
 from app.database.database import RotationEra, User, UserRole, WageType
@@ -369,3 +374,88 @@ def test_team_month_vacant_column_has_no_link(month_env):
     assert "/month/3?year=2026&month=9" not in resp.text
     # Vacant day cells must not emit a broken /day/None drill-down link.
     assert "/day/None" not in resp.text
+
+
+def _august_total_ob(year_data: dict) -> float:
+    """Return the August (work month 8) total_ob from a personal year summary."""
+    for m in year_data["months"]:
+        if m["year"] == 2026 and m["month"] == 8:
+            return m["total_ob"]
+    raise AssertionError("August work month missing from year summary")
+
+
+def test_mid_month_change_splits_august_ob_between_holders(month_env):
+    """A mid-August change must not credit the full month's OB to both holders.
+
+    Anna holds position 3 until 2026-08-14, Bert from 2026-08-15. Each holder's
+    personal year summary must count only their own days: the sum of the two
+    August OB totals equals the unsplit position OB, and neither holder alone
+    carries the whole month.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna", person_id=3)
+    bert = _make_user(session, 12, "bert1", "Bert", person_id=3)
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    add_person_change(
+        session,
+        old_user_id=anna.id,
+        new_user_id=bert.id,
+        person_id=3,
+        new_name="Bert",
+        new_username="bert1",
+        effective_from=datetime.date(2026, 8, 15),
+        created_by=admin.id,
+    )
+
+    # Unsplit position OB for August, computed on unmasked days at the holders'
+    # wage (both hold wage 30000, so OB pay is identical for either holder).
+    unmasked_days = generate_month_data(2026, 8, 3, session=session)
+    unsplit = summarize_month_for_person(
+        2026, 8, 3, session=session, year_days=unmasked_days, wage_user_id=anna.id, payment_year=2026
+    )
+    unsplit_ob = sum(float(unsplit["ob_pay"].get(code, 0.0) or 0.0) for code in ("OB1", "OB2", "OB3", "OB4", "OB5"))
+    assert unsplit_ob > 0  # the month must carry OB for the split to be meaningful
+
+    anna_year = summarize_year_for_person(
+        2026, 3, session=session, current_user=admin, wage_user_id=anna.id, employment_user_id=anna.id
+    )
+    bert_year = summarize_year_for_person(
+        2026, 3, session=session, current_user=admin, wage_user_id=bert.id, employment_user_id=bert.id
+    )
+    anna_aug = _august_total_ob(anna_year)
+    bert_aug = _august_total_ob(bert_year)
+
+    # The two holders partition August OB: their sum reconstructs the full month,
+    # and neither holder alone carries all of it.
+    assert anna_aug + bert_aug == pytest.approx(unsplit_ob)
+    assert anna_aug < unsplit_ob
+    assert bert_aug < unsplit_ob
+
+
+def test_year_totals_api_rejects_foreign_user_id(month_env):
+    """Non-admin totals scoping is limited to legitimate holders of the position.
+
+    A non-admin viewer at position 3 who passes ?user_id pointing at a user who
+    never held position 3 gets 403 (otherwise they could back out that user's
+    wage level). The request for the real holder still returns totals.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    # Peter is the non-admin viewer and the legitimate holder of position 3.
+    peter = _make_user(session, 12, "peter1", "Peter", person_id=3)
+    # Stranger exists but never held position 3.
+    _make_user(session, 13, "stranger1", "Stranger", person_id=5)
+    start_employment(session, peter.id, 3, "Peter", "peter1", datetime.date(2026, 1, 2), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(peter.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    # Foreign holder: forbidden.
+    forbidden = client.get("/api/year/2026/totals/3?user_id=13")
+    assert forbidden.status_code == 403
+
+    # Legitimate holder (Peter himself): totals returned.
+    allowed = client.get("/api/year/2026/totals/3?user_id=12")
+    assert allowed.status_code == 200
+    assert "total_ob" in allowed.json()

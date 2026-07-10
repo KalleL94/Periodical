@@ -763,6 +763,19 @@ def summarize_year_for_person(
         _uid = wage_user_id if wage_user_id is not None else person_id
         _rate_user = session.query(User).filter(User.id == _uid).first()
 
+    # When scoping to a specific holder, resolve their employment bounds up
+    # front so each partially overlapping month can be masked to that holder's
+    # own days. A mid-month change must not credit a full month's OB/hours to a
+    # single holder (payroll accuracy).
+    emp_start_date = None
+    emp_end_date = None
+    if employment_user_id is not None:
+        import calendar
+
+        from app.core.schedule.person_history import get_employment_period
+
+        emp_start_date, emp_end_date = get_employment_period(session, employment_user_id, person_id)
+
     # Bygg kartläggning av utbetalnings-månader
     payment_mappings = _build_payment_month_mapping(year)
 
@@ -827,6 +840,24 @@ def summarize_year_for_person(
                 user_wages=user_wages,
                 user_rates_map=_month_rates_map,
             )
+
+            # Mask days outside the scoped holder's employment so a mid-month
+            # change does not credit the whole month to one holder. Months fully
+            # inside the employment period need no mask; fully-outside months are
+            # dropped by the employment filter below.
+            if employment_user_id is not None and emp_start_date is not None:
+                from app.core.schedule.period import mask_days_to_employment
+
+                month_first = dt.date(work_year, work_month, 1)
+                month_last = dt.date(work_year, work_month, calendar.monthrange(work_year, work_month)[1])
+                starts_mid = emp_start_date > month_first
+                ends_mid = emp_end_date is not None and emp_end_date < month_last
+                if starts_mid or ends_mid:
+                    # Clamp the mask bounds to the month so only this holder's
+                    # days survive; the rest render as OFF and contribute nothing.
+                    seg_from = max(emp_start_date, month_first)
+                    seg_to = min(emp_end_date, month_last) if emp_end_date is not None else month_last
+                    month_days = mask_days_to_employment(month_days, seg_from, seg_to)
 
             # Sammanfatta baserat på ARBETS-månad, inte utbetalnings-månad
             m = summarize_month_for_person(

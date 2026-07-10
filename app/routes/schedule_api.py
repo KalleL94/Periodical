@@ -10,7 +10,7 @@ from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary
 from app.core.schedule import summarize_year_for_person
 from app.core.validators import validate_person_id
-from app.database.database import User, get_db
+from app.database.database import User, UserRole, get_db
 
 router = APIRouter(prefix="/api", tags=["schedule_api"])
 
@@ -43,6 +43,26 @@ async def get_year_totals(
         # Validate that the requested holder exists before scoping to them.
         if db.query(User).filter(User.id == user_id).first() is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        # Non-admin callers may only request totals for a legitimate holder of
+        # this position; otherwise they could read out any user's wage level via
+        # the OB totals. Admins may scope to anyone. A holder is someone with a
+        # PersonHistory record at person_id, or the legacy identity user_id ==
+        # person_id.
+        if current_user.role != UserRole.ADMIN:
+            from app.database.database import PersonHistory
+
+            is_history_holder = (
+                db.query(PersonHistory)
+                .filter(PersonHistory.user_id == user_id, PersonHistory.person_id == person_id)
+                .first()
+                is not None
+            )
+            if not is_history_holder and user_id != person_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized for this position",
+                )
         year_summary = summarize_year_for_person(
             year,
             person_id,
