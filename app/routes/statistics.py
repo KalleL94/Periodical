@@ -72,9 +72,15 @@ async def statistics_view(
                 holder = db.query(User).filter(User.id == rotation_position).first()
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
-    # Fetch year data
+    # Fetch year data. For user-scoped views (person_id > 10) filter months to
+    # the viewed user's employment period regardless of the viewer's role.
     year_data = summarize_year_for_person(
-        year, rotation_position, session=db, current_user=current_user, wage_user_id=user_id_for_wages
+        year,
+        rotation_position,
+        session=db,
+        current_user=current_user,
+        wage_user_id=user_id_for_wages,
+        employment_user_id=user_id_for_wages if person_id > 10 else None,
     )
     months = year_data["months"]
     year_summary = year_data["year_summary"]

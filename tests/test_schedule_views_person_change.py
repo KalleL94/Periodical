@@ -14,24 +14,26 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 import app.database.database as db_module
-from app.core.schedule import clear_schedule_cache
+from app.auth.auth import create_access_token
+from app.core.schedule import clear_schedule_cache, summarize_year_for_person
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment
 from app.database.database import RotationEra, User, UserRole, WageType
 from tests.conftest import _ROTATION_ERA_PATTERN
 
 
-def _make_user(session, uid, username, name):
+def _make_user(session, uid, username, name, *, person_id=None, role=UserRole.USER):
     user = User(
         id=uid,
         username=username,
         password_hash="x",
         name=name,
-        role=UserRole.USER,
+        role=role,
         wage=30000,
         wage_type=WageType.MONTHLY,
         vacation={},
         must_change_password=0,
         is_active=0,
+        person_id=person_id,
     )
     session.add(user)
     session.commit()
@@ -167,3 +169,50 @@ def test_year_header_vacant_after_departure(month_env):
     header = _year_header_cell(resp.text, 3)
     assert "Vakant" in header or "Vacant" in header
     assert "Anna" not in header
+
+
+def test_year_summary_filters_to_viewed_users_employment(month_env):
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    # Peter holds rotation position 3 and is the wage/employment user under test.
+    peter = _make_user(session, 12, "peter1", "Peter", person_id=3)
+    # Anna held position 3 from rotation start until Peter took over 2026-04-01
+    # (add_person_change closes Anna 2026-03-31 and opens Peter 2026-04-01).
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=anna.id,
+        new_user_id=peter.id,
+        person_id=3,
+        new_name="Peter",
+        new_username="peter1",
+        effective_from=datetime.date(2026, 4, 1),
+        created_by=1,
+    )
+
+    data = summarize_year_for_person(
+        2026,
+        3,
+        session=session,
+        current_user=admin,
+        wage_user_id=peter.id,
+        employment_user_id=peter.id,
+    )
+    work_months = [(m["year"], m["month"]) for m in data["months"]]
+    assert (2026, 4) in work_months
+    # Nothing before Peter's employment start (2026-04) survives the filter,
+    # even though the viewer is an admin.
+    assert all(not (y < 2026 or (y == 2026 and mo < 4)) for y, mo in work_months)
+
+    # HTTP level: /year/12 as an admin must not render the pre-employment work
+    # months (Jan-Mar) while the first employed month (April) is present.
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year/12?year=2026")
+
+    assert resp.status_code == 200
+    # Closing quote anchors the match so month=1 does not collide with month=10.
+    assert '/month/12?year=2026&month=4"' in resp.text
+    assert '/month/12?year=2026&month=1"' not in resp.text
+    assert '/month/12?year=2026&month=3"' not in resp.text

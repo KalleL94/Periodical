@@ -715,6 +715,7 @@ def summarize_year_for_person(
     session=None,
     current_user=None,
     wage_user_id: int | None = None,
+    employment_user_id: int | None = None,
 ) -> dict:
     """
     Bygger årsöversikt för en person baserat på UTBETALNINGS-månader.
@@ -731,13 +732,20 @@ def summarize_year_for_person(
         session: SQLAlchemy session
         current_user: Inloggad användare (för att filtrera på anställningsperiod)
         wage_user_id: Användar-ID för löneberäkning (om annan än person_id)
+        employment_user_id: When set, months are filtered against this user's
+            employment period at ``person_id`` regardless of the viewer's role,
+            using WORK-month overlap. This is the user-scoped path (e.g. viewing
+            /year/<user_id>) so an admin looking at another user still sees only
+            that user's employed months. When None, the legacy viewer-based
+            filter applies (non-admin viewers filtered against their own
+            employment with the payment-month overlap rules).
 
     Returns:
         Dict med 'months' (lista med 12 månadsdictar) och 'year_summary'
 
     Note:
         För vanliga användare filtreras månaderna baserat på anställningsperiod.
-        Admins ser alla månader.
+        Admins ser alla månader (utom när employment_user_id är satt).
     """
     import datetime as dt
 
@@ -844,13 +852,23 @@ def summarize_year_for_person(
 
         months.append(m)
 
-    # Filter months by employment period for non-admin users
-    if current_user and current_user.role != UserRole.ADMIN:
+    # Filter months by employment period.
+    # - employment_user_id set: filter against that user regardless of viewer
+    #   role, using WORK-month overlap only (user-scoped view).
+    # - otherwise: legacy behaviour, non-admin viewers filtered against their
+    #   own employment with WORK-month + PAYMENT-month overlap.
+    filter_user_id = None
+    if employment_user_id is not None:
+        filter_user_id = employment_user_id
+    elif current_user and current_user.role != UserRole.ADMIN:
+        filter_user_id = current_user.id
+
+    if filter_user_id is not None:
         import calendar
 
         from app.core.schedule.person_history import get_employment_period
 
-        start_date, end_date = get_employment_period(session, current_user.id, person_id)
+        start_date, end_date = get_employment_period(session, filter_user_id, person_id)
 
         # Filter on both WORK month and PAYMENT month:
         # - Work month must not end before employment start (avoids showing
@@ -858,23 +876,31 @@ def summarize_year_for_person(
         # - Payment month must overlap with employment period (tax year view)
         filtered_months = []
         for m in months:
-            pay_year = m["payment_year"]
-            pay_month = m["payment_month"]
-            month_start = dt.date(pay_year, pay_month, 1)
-            last_day = calendar.monthrange(pay_year, pay_month)[1]
-            month_end = dt.date(pay_year, pay_month, last_day)
-
             # Skip if work month ended before employment started
             work_last_day = calendar.monthrange(m["year"], m["month"])[1]
             work_month_end = dt.date(m["year"], m["month"], work_last_day)
+            work_month_start = dt.date(m["year"], m["month"], 1)
             if start_date > work_month_end:
                 continue
 
-            # Check if there's ANY overlap between employment period and payment month
-            if start_date > month_end:
-                continue
-            if end_date and end_date < month_start:
-                continue
+            if employment_user_id is None:
+                # Legacy payment-month overlap (keeps a departed viewer's final
+                # trailing payment visible).
+                pay_year = m["payment_year"]
+                pay_month = m["payment_month"]
+                month_start = dt.date(pay_year, pay_month, 1)
+                last_day = calendar.monthrange(pay_year, pay_month)[1]
+                month_end = dt.date(pay_year, pay_month, last_day)
+
+                # Check if there's ANY overlap between employment period and payment month
+                if start_date > month_end:
+                    continue
+                if end_date and end_date < month_start:
+                    continue
+            else:
+                # User-scoped work-month overlap only.
+                if end_date and end_date < work_month_start:
+                    continue
 
             filtered_months.append(m)
 

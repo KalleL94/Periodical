@@ -1128,9 +1128,16 @@ async def year_view(
         selected_other_name = _other_row["other_name"] if _other_row else str(with_person_id)
         cowork_details = build_cowork_details(year, rotation_position, with_person_id)
 
-    # Use rotation_position for schedule, user_id_for_wages for wage lookup
+    # Use rotation_position for schedule, user_id_for_wages for wage lookup.
+    # For user-scoped views (person_id > 10) filter months to the viewed user's
+    # employment period, so an admin does not see the predecessor's months.
     year_data = summarize_year_for_person(
-        year, rotation_position, session=db, current_user=current_user, wage_user_id=user_id_for_wages
+        year,
+        rotation_position,
+        session=db,
+        current_user=current_user,
+        wage_user_id=user_id_for_wages,
+        employment_user_id=user_id_for_wages if person_id > 10 else None,
     )
     months = year_data["months"]
     year_summary = year_data["year_summary"]
