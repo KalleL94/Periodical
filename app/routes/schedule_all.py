@@ -340,36 +340,75 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
-    # Build person headers listing every holder of the displayed year. A
-    # position that changed hands mid-year names each holder in chronological
-    # order, deduplicated consecutively by user_id, each linking to their own
-    # personal year view. A position with only closed history and no overlap in
-    # the year is vacant and shows the vacancy label. Positions without any
-    # history keep the legacy fallback name linked to the rotation position.
+    # Build the column list: one column per holder segment of the displayed
+    # year (like the month view), rather than a single joined-header column per
+    # position. A position that changed hands mid-year yields one column per
+    # holder in chronological order, each linking to their own personal year
+    # view. A departed holder whose last working day is already past is flagged
+    # so the template can hide their column by default. A position with only
+    # closed history and no overlap in the year is a single vacant column.
+    # Positions without any history keep one legacy column linked to the
+    # rotation position itself.
     from app.core.schedule.person_history import get_current_person_for_position
 
+    real_today = get_today()
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     person_headers = []
     for pid in range(1, 11):
         segments = get_position_holder_segments(db, pid, year_start, year_end)
-        holders = []
+        # Merge consecutive segments held by the same user so a single
+        # employment split across adjacent history records stays one column and
+        # its col_key (person_id-user_id) remains unique.
+        merged: list[dict] = []
         for seg in segments:
-            if holders and holders[-1]["user_id"] == seg["user_id"]:
-                continue
-            holders.append({"name": seg["name"], "user_id": seg["user_id"]})
-        if holders:
-            person_headers.append({"person_id": pid, "vacant": False, "holders": holders})
+            if merged and merged[-1]["user_id"] == seg["user_id"]:
+                merged[-1]["to_date"] = seg["to_date"]
+            else:
+                merged.append(dict(seg))
+
+        if merged:
+            for seg in merged:
+                to_date = seg["to_date"]
+                past = to_date is not None and to_date < real_today
+                person_headers.append(
+                    {
+                        "person_id": pid,
+                        "user_id": seg["user_id"],
+                        "name": seg["name"],
+                        "vacant": False,
+                        "col_key": f"{pid}-{seg['user_id']}",
+                        "from_date": seg["from_date"],
+                        "to_date": to_date,
+                        "past": past,
+                    }
+                )
         elif has_position_history(db, pid):
-            person_headers.append({"person_id": pid, "vacant": True, "holders": []})
+            person_headers.append(
+                {
+                    "person_id": pid,
+                    "user_id": None,
+                    "name": "",
+                    "vacant": True,
+                    "col_key": f"{pid}-vacant",
+                    "from_date": year_start,
+                    "to_date": year_end,
+                    "past": False,
+                }
+            )
         else:
             # Legacy position without history: link target is the position itself.
             cp = get_current_person_for_position(db, pid)
             person_headers.append(
                 {
                     "person_id": pid,
+                    "user_id": pid,
+                    "name": cp["name"] if cp else f"Person {pid}",
                     "vacant": False,
-                    "holders": [{"name": cp["name"] if cp else f"Person {pid}", "user_id": pid}],
+                    "col_key": f"{pid}-{pid}",
+                    "from_date": year_start,
+                    "to_date": year_end,
+                    "past": False,
                 }
             )
 
@@ -386,8 +425,6 @@ async def show_year_all(
 
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
-
-    real_today = get_today()
 
     return render_template(
         templates,

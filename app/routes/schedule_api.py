@@ -19,10 +19,17 @@ router = APIRouter(prefix="/api", tags=["schedule_api"])
 async def get_year_totals(
     year: int,
     person_id: int,
+    user_id: int | None = None,
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """API endpoint to get year OB totals for a specific person (for lazy loading)."""
+    """API endpoint to get year OB totals for a specific person (for lazy loading).
+
+    When ``user_id`` is supplied the totals are scoped to that user's wage and
+    employment period at ``person_id`` (used by the team year view where each
+    holder of a position gets their own column). Without it the endpoint returns
+    the unchanged position totals for backward compatibility.
+    """
     if current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
@@ -32,8 +39,21 @@ async def get_year_totals(
     if not can_see_salary(current_user, person_id):
         return {"total_ob": None}
 
-    # Calculate year summary for this person
-    year_summary = summarize_year_for_person(year, person_id, session=db, current_user=current_user)
+    if user_id is not None:
+        # Validate that the requested holder exists before scoping to them.
+        if db.query(User).filter(User.id == user_id).first() is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        year_summary = summarize_year_for_person(
+            year,
+            person_id,
+            session=db,
+            current_user=current_user,
+            wage_user_id=user_id,
+            employment_user_id=user_id,
+        )
+    else:
+        year_summary = summarize_year_for_person(year, person_id, session=db, current_user=current_user)
+
     total_ob = year_summary["year_summary"].get("total_ob", 0.0)
 
     return {"person_id": person_id, "total_ob": total_ob, "year": year}

@@ -17,6 +17,7 @@ import app.database.database as db_module
 from app.auth.auth import create_access_token
 from app.core.schedule import clear_schedule_cache, summarize_year_for_person
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment
+from app.core.utils import get_today
 from app.database.database import RotationEra, User, UserRole, WageType
 from tests.conftest import _ROTATION_ERA_PATTERN
 
@@ -143,15 +144,19 @@ def test_departed_person_absent_in_later_week(month_env):
     assert "Vakant" in resp.text or "Vacant" in resp.text
 
 
-def _year_header_cell(html: str, person_id: int) -> str:
-    """Extract the person-header <th> contents for a position in the year view."""
-    match = re.search(
-        rf'<th class="person-header" data-person="{person_id}">(.*?)</th>',
+def _year_header_ths(html: str, person_id: int) -> list[str]:
+    """Return the full person-header <th> tags for a position's holder columns.
+
+    The year view renders one column per holder segment, keyed by a col_key of
+    the form "<person_id>-<user_id>" (or "<person_id>-vacant"), so a position
+    can have several header cells. Each returned string is the whole <th ...>
+    ... </th> tag including its attributes.
+    """
+    return re.findall(
+        rf'(<th class="person-header[^"]*" data-person="{person_id}-[^"]*".*?</th>)',
         html,
         re.DOTALL,
     )
-    assert match is not None, f"person-header cell for position {person_id} not found"
-    return match.group(1)
 
 
 def test_year_header_vacant_after_departure(month_env):
@@ -159,28 +164,37 @@ def test_year_header_vacant_after_departure(month_env):
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
     # Anna held position 3 until 2026-08-04 with no successor. The 2027 view has
-    # no holder overlapping that year, so the position-3 header must show the
+    # no holder overlapping that year, so the position-3 column must show the
     # vacancy label rather than the departed holder.
     end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
 
     resp = client.get("/year?year=2027")
 
     assert resp.status_code == 200
-    header = _year_header_cell(resp.text, 3)
-    assert "Vakant" in header or "Vacant" in header
-    assert "Anna" not in header
+    ths = _year_header_ths(resp.text, 3)
+    assert len(ths) == 1
+    assert "Vakant" in ths[0] or "Vacant" in ths[0]
+    assert "Anna" not in ths[0]
 
 
-def test_year_header_lists_every_holder_of_the_year(month_env):
-    """A position that changed holders mid-year lists both in its header cell.
+def test_year_splits_columns_per_holder_past_hidden(month_env):
+    """A mid-year change yields one header column per holder, past one hidden.
 
-    Isak held position 3 until 2026-08-04, Omar from 2026-08-05. The year view
-    header for position 3 must name both holders, each linking to their own
-    personal year view (/year/<user_id>).
+    Isak held position 3 until a date in the past relative to today, Omar took
+    over the day after. The year view for the current year must render two
+    separate position-3 header cells (not a joined one), each linking to its
+    holder's own personal year view. Isak's column carries the past marker and
+    starts hidden; Omar's does not.
     """
     client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     isak = _make_user(session, 11, "isak1", "Isak")
     omar = _make_user(session, 12, "omar1", "Omar")
+
+    today = get_today()
+    isak_end = today - datetime.timedelta(days=10)
+    omar_start = isak_end + datetime.timedelta(days=1)
+
     start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
     add_person_change(
         session,
@@ -189,19 +203,34 @@ def test_year_header_lists_every_holder_of_the_year(month_env):
         person_id=3,
         new_name="Omar",
         new_username="omar1",
-        effective_from=datetime.date(2026, 8, 5),
+        effective_from=omar_start,
         created_by=1,
     )
 
-    resp = client.get("/year?year=2026")
+    # Authenticate as admin so the day drill-down links and totals row render.
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/year?year={today.year}")
 
     assert resp.status_code == 200
-    header = _year_header_cell(resp.text, 3)
-    assert "Isak" in header
-    assert "Omar" in header
-    # Each holder name links to their own personal year view.
-    assert '/year/11?year=2026"' in header
-    assert '/year/12?year=2026"' in header
+    ths = _year_header_ths(resp.text, 3)
+    assert len(ths) == 2
+
+    isak_th = next(th for th in ths if "Isak" in th)
+    omar_th = next(th for th in ths if "Omar" in th)
+    # Separate cells, not a joined header.
+    assert "Omar" not in isak_th
+    assert "Isak" not in omar_th
+    # Isak departed in the past: past marker set and column hidden by default.
+    assert 'data-past="1"' in isak_th
+    assert "display:none" in isak_th
+    # Omar is current: no past marker, column visible.
+    assert 'data-past="0"' in omar_th
+    assert "display:none" not in omar_th
+    # Each holder links to their own personal year view.
+    assert f'/year/11?year={today.year}"' in isak_th
+    assert f'/year/12?year={today.year}"' in omar_th
 
 
 def test_year_summary_filters_to_viewed_users_employment(month_env):
@@ -321,9 +350,15 @@ def test_team_month_links_use_holder_user_ids(month_env):
 def test_team_month_vacant_column_has_no_link(month_env):
     """A vacant position column renders no personal month link."""
     client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
     end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
+
+    # Authenticate as admin so day drill-down links render; otherwise the
+    # /day/None assertion below is vacuous (day links only render when logged in).
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
 
     resp = client.get("/month?year=2026&month=9")
 
