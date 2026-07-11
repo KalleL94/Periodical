@@ -21,9 +21,10 @@ from app.core.schedule import (
     summarize_month_for_person,
     summarize_year_for_person,
 )
+from app.core.schedule.period import mask_days_to_employment
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment, swap_positions
 from app.core.utils import get_today
-from app.database.database import RotationEra, User, UserRole, WageType
+from app.database.database import Absence, AbsenceType, RotationEra, User, UserRole, WageType
 from tests.conftest import _ROTATION_ERA_PATTERN
 
 
@@ -640,6 +641,159 @@ def test_excel_export_resolves_position_by_exported_month(month_env):
     probe_rows = [row for row in ws.iter_rows(values_only=True) if str(row[0]).startswith("2026-10-05")]
     assert probe_rows, "expected a row for 2026-10-05 in the export"
     assert probe_rows[0][2] == expected
+
+
+def _ob_total(summary: dict) -> float:
+    """Sum the five OB pay codes of a month summary."""
+    ob_pay = summary.get("ob_pay", {}) or {}
+    return sum(float(ob_pay.get(code, 0.0) or 0.0) for code in ("OB1", "OB2", "OB3", "OB4", "OB5"))
+
+
+def test_year_summary_spans_position_swap(month_env):
+    """A user's year summary covers BOTH positions of a future-dated move.
+
+    Rickard holds position 3 until 2026-09-30 and position 8 from 2026-10-01.
+    His personal year summary must contain September (from position 3) and
+    October (from position 8) work months, each matching that position's own
+    unsplit month summary.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _seed_future_position_move(session, admin.id)
+
+    year_data = summarize_year_for_person(
+        2026, 3, session=session, current_user=admin, wage_user_id=rickard.id, employment_user_id=rickard.id
+    )
+    by_month = {(m["year"], m["month"]): m for m in year_data["months"]}
+    assert (2026, 9) in by_month
+    assert (2026, 10) in by_month
+
+    sep_ref = summarize_month_for_person(
+        2026,
+        9,
+        3,
+        session=session,
+        year_days=generate_month_data(2026, 9, 3, session=session),
+        wage_user_id=rickard.id,
+        payment_year=2026,
+    )
+    oct_ref = summarize_month_for_person(
+        2026,
+        10,
+        8,
+        session=session,
+        year_days=generate_month_data(2026, 10, 8, session=session),
+        wage_user_id=rickard.id,
+        payment_year=2026,
+    )
+    assert sep_ref["num_shifts"] > 0
+    assert oct_ref["num_shifts"] > 0
+    assert by_month[(2026, 9)]["num_shifts"] == sep_ref["num_shifts"]
+    assert by_month[(2026, 10)]["num_shifts"] == oct_ref["num_shifts"]
+    assert by_month[(2026, 9)]["total_ob"] == pytest.approx(_ob_total(sep_ref))
+    assert by_month[(2026, 10)]["total_ob"] == pytest.approx(_ob_total(oct_ref))
+
+    # HTTP level: the personal year page lists months across both positions.
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year/11?year=2026")
+
+    assert resp.status_code == 200
+    assert '/month/11?year=2026&month=9"' in resp.text
+    assert '/month/11?year=2026&month=10"' in resp.text
+
+
+def test_year_summary_stitches_mid_month_position_move(month_env):
+    """A mid-month position move stitches the transition month from both halves.
+
+    Rickard holds position 3 until 2026-08-14 and position 8 from 2026-08-15.
+    His August work month must equal position 3's masked first half plus
+    position 8's masked second half, and later months come from position 8.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, rickard.id, 3, end_date=datetime.date(2026, 8, 14))
+    start_employment(session, rickard.id, 8, "Rickard", "rickard1", datetime.date(2026, 8, 15), created_by=admin.id)
+
+    # Reference halves: each position's August, masked to its tenure segment.
+    a_days = mask_days_to_employment(
+        generate_month_data(2026, 8, 3, session=session), datetime.date(2026, 8, 1), datetime.date(2026, 8, 14)
+    )
+    a_sum = summarize_month_for_person(
+        2026, 8, 3, session=session, year_days=a_days, wage_user_id=rickard.id, payment_year=2026
+    )
+    b_days = mask_days_to_employment(
+        generate_month_data(2026, 8, 8, session=session), datetime.date(2026, 8, 15), datetime.date(2026, 8, 31)
+    )
+    b_sum = summarize_month_for_person(
+        2026, 8, 8, session=session, year_days=b_days, wage_user_id=rickard.id, payment_year=2026
+    )
+    # Both halves must carry OB for the reconstruction to be meaningful.
+    assert _ob_total(a_sum) > 0
+    assert _ob_total(b_sum) > 0
+
+    year_data = summarize_year_for_person(
+        2026, 3, session=session, current_user=admin, wage_user_id=rickard.id, employment_user_id=rickard.id
+    )
+    by_month = {(m["year"], m["month"]): m for m in year_data["months"]}
+    aug = by_month[(2026, 8)]
+
+    # The stitched month reconstructs the sum of the two masked halves.
+    assert aug["total_ob"] == pytest.approx(_ob_total(a_sum) + _ob_total(b_sum))
+    assert aug["num_shifts"] == a_sum["num_shifts"] + b_sum["num_shifts"]
+    assert aug["total_hours"] == pytest.approx(a_sum["total_hours"] + b_sum["total_hours"])
+
+    # Months after the move exist and come from position 8.
+    assert (2026, 9) in by_month
+    sep_ref = summarize_month_for_person(
+        2026,
+        9,
+        8,
+        session=session,
+        year_days=generate_month_data(2026, 9, 8, session=session),
+        wage_user_id=rickard.id,
+        payment_year=2026,
+    )
+    assert sep_ref["num_shifts"] > 0
+    assert by_month[(2026, 9)]["num_shifts"] == sep_ref["num_shifts"]
+
+
+def test_year_summary_counts_user_keyed_absences(month_env):
+    """Absence deductions in the user-scoped year summary key on the USER id.
+
+    Rickard is user 11 at rotation position 3. His sick day must appear in his
+    own year summary even though his user id differs from the position id
+    (absences are stored per user id).
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+
+    # First working day in March 2026 for position 3.
+    sick_date = None
+    for day in range(1, 32):
+        d = datetime.date(2026, 3, day)
+        shift, _ = determine_shift_for_date(d, start_week=3)
+        if shift and shift.code in ("N1", "N2", "N3"):
+            sick_date = d
+            break
+    assert sick_date is not None
+
+    session.add(Absence(user_id=rickard.id, date=sick_date, absence_type=AbsenceType.SICK))
+    session.commit()
+
+    year_data = summarize_year_for_person(
+        2026, 3, session=session, current_user=admin, wage_user_id=rickard.id, employment_user_id=rickard.id
+    )
+    march = next(m for m in year_data["months"] if (m["year"], m["month"]) == (2026, 3))
+
+    assert march["sick_days"] == 1
+    assert march["absence_deduction"] > 0
 
 
 def test_year_totals_api_rejects_foreign_user_id(month_env):

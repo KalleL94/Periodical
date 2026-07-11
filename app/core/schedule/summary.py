@@ -326,12 +326,15 @@ def summarize_month_for_person(
     # Aggregate OB/OT hours per calendar day for the per-day breakdown toggle.
     _attach_calendar_day_breakdown(days_out)
 
-    # Fetch absence deductions for the month
+    # Fetch absence deductions for the month. Absences are stored per USER id
+    # (Absence.user_id), so key the lookup on uid_for_wages: identical to
+    # person_id for legacy users, and the viewed user's own absences when
+    # wage_user_id is set (a rotation position must not read another user's rows).
     absence_details = []
     if session:
         absence_info = get_absence_deductions_for_month(
             session,
-            person_id,
+            uid_for_wages,
             year,
             month,
             base_salary,
@@ -709,6 +712,74 @@ def _build_payment_month_mapping(year: int) -> list[dict]:
     return mappings
 
 
+def _records_overlapping_work_month(records: list[dict], month_first, month_last) -> list[tuple]:
+    """Return (record, seg_from, seg_to) for employment records overlapping a work month.
+
+    seg_from/seg_to are the record's employment range clamped to the month.
+    Records must be sorted by effective_from ascending, so the first returned
+    segment is the position the user held at the start of their month.
+    """
+    import datetime as dt
+
+    segments = []
+    for record in records:
+        record_end = record["effective_to"] if record["effective_to"] is not None else dt.date.max
+        if record["effective_from"] <= month_last and record_end >= month_first:
+            segments.append((record, max(record["effective_from"], month_first), min(record_end, month_last)))
+    return segments
+
+
+def _stitch_user_month_days(
+    session,
+    work_year: int,
+    work_month: int,
+    segments: list[tuple],
+    user_wages: dict[int, int] | None,
+    month_rates: dict | None,
+) -> list[dict]:
+    """Build one day list for a user's work month across the position(s) they held.
+
+    Generates each overlapping position's month data, masks it to the record's
+    clamped tenure segment (masking is skipped when the record covers the whole
+    month), and for a mid-month move stitches a single list by taking each
+    date's day dict from the segment covering that date, falling back to the
+    first segment's masked OFF day for dates no record covers (employment gap).
+    """
+    import calendar
+    import datetime as dt
+
+    from app.core.schedule.period import mask_days_to_employment
+
+    month_first = dt.date(work_year, work_month, 1)
+    month_last = dt.date(work_year, work_month, calendar.monthrange(work_year, work_month)[1])
+
+    masked_lists: list[tuple] = []
+    for record, seg_from, seg_to in segments:
+        position = record["person_id"]
+        rates_map = {position: month_rates} if month_rates else None
+        days = generate_month_data(
+            work_year, work_month, position, session=session, user_wages=user_wages, user_rates_map=rates_map
+        )
+        if seg_from > month_first or seg_to < month_last:
+            days = mask_days_to_employment(days, seg_from, seg_to)
+        masked_lists.append((seg_from, seg_to, days))
+
+    if len(masked_lists) == 1:
+        return masked_lists[0][2]
+
+    by_date = [(seg_from, seg_to, {d["date"]: d for d in days}) for seg_from, seg_to, days in masked_lists]
+    stitched = []
+    for day in masked_lists[0][2]:
+        day_date = day["date"]
+        chosen = day  # fallback: the first segment's masked OFF day
+        for seg_from, seg_to, date_map in by_date:
+            if seg_from <= day_date <= seg_to and day_date in date_map:
+                chosen = date_map[day_date]
+                break
+        stitched.append(chosen)
+    return stitched
+
+
 def summarize_year_for_person(
     year: int,
     person_id: int,
@@ -732,13 +803,17 @@ def summarize_year_for_person(
         session: SQLAlchemy session
         current_user: Inloggad användare (för att filtrera på anställningsperiod)
         wage_user_id: Användar-ID för löneberäkning (om annan än person_id)
-        employment_user_id: When set, months are filtered against this user's
-            employment period at ``person_id`` regardless of the viewer's role,
-            using WORK-month overlap. This is the user-scoped path (e.g. viewing
-            /year/<user_id>) so an admin looking at another user still sees only
-            that user's employed months. When None, the legacy viewer-based
-            filter applies (non-admin viewers filtered against their own
-            employment with the payment-month overlap rules).
+        employment_user_id: When set, each WORK month is built from this user's
+            full PersonHistory record list regardless of the viewer's role: a
+            month is skipped when no record overlaps it, computed from the held
+            position when one record does, and stitched across positions when a
+            mid-month move splits it. Days outside the user's tenure are masked
+            to OFF. This is the user-scoped path (e.g. viewing /year/<user_id>),
+            so an admin looking at another user still sees only that user's
+            employed months, and the passed ``person_id`` only matters for the
+            no-history fallback. When None, the legacy viewer-based filter
+            applies (non-admin viewers filtered against their own employment
+            with the payment-month overlap rules).
 
     Returns:
         Dict med 'months' (lista med 12 månadsdictar) och 'year_summary'
@@ -763,18 +838,24 @@ def summarize_year_for_person(
         _uid = wage_user_id if wage_user_id is not None else person_id
         _rate_user = session.query(User).filter(User.id == _uid).first()
 
-    # When scoping to a specific holder, resolve their employment bounds up
-    # front so each partially overlapping month can be masked to that holder's
-    # own days. A mid-month change must not credit a full month's OB/hours to a
-    # single holder (payroll accuracy).
-    emp_start_date = None
-    emp_end_date = None
+    # When scoping to a specific user, load their FULL employment record list up
+    # front so the year covers every position they held: a position change must
+    # not truncate the year to one (position, employment period) pairing, and a
+    # mid-month move must not credit a whole month's OB/hours to one position.
+    emp_records = None
     if employment_user_id is not None:
-        import calendar
+        import calendar  # used by the per-month overlap bounds in the loop below
 
-        from app.core.schedule.person_history import get_employment_period
+        from app.core.schedule.person_history import get_user_history
 
-        emp_start_date, emp_end_date = get_employment_period(session, employment_user_id, person_id)
+        emp_records = sorted(get_user_history(session, employment_user_id), key=lambda r: r["effective_from"])
+        if not emp_records:
+            # No history: mirror get_employment_period's fallback (employed at
+            # the passed position from rotation start, open-ended) so legacy
+            # users without PersonHistory rows keep their full year.
+            from app.core.schedule.core import get_rotation_start_date
+
+            emp_records = [{"person_id": person_id, "effective_from": get_rotation_start_date(), "effective_to": None}]
 
     # Bygg kartläggning av utbetalnings-månader
     payment_mappings = _build_payment_month_mapping(year)
@@ -784,6 +865,17 @@ def summarize_year_for_person(
         work_year = mapping["work_year"]
         work_month = mapping["work_month"]
         payment_date = mapping["payment_date"]
+
+        # User-scoped path: collect the user's employment segments overlapping
+        # this WORK month. No overlap means the user held no position that
+        # month, so it is skipped (this replaces the legacy post-loop filter).
+        month_segments = None
+        if emp_records is not None:
+            month_first = dt.date(work_year, work_month, 1)
+            month_last = dt.date(work_year, work_month, calendar.monthrange(work_year, work_month)[1])
+            month_segments = _records_overlapping_work_month(emp_records, month_first, month_last)
+            if not month_segments:
+                continue
 
         # Special case: Dec 2025 - använd bara grundlön (rotation startade inte förrän 2026)
         if work_year == 2025 and work_month == 12:
@@ -806,10 +898,14 @@ def summarize_year_for_person(
             # Calculate net pay using the correct tax table for the payment year
             netto_pay = base_salary - _calculate_tax(base_salary, tax_table, payment_year=mapping["payment_year"])
 
+            # User-scoped path: label the row with the position the user held in
+            # Dec 2025; the legacy path keeps the passed position unchanged.
+            dec_person_id = month_segments[0][0]["person_id"] if month_segments else person_id
+
             m = {
                 "year": 2025,
                 "month": 12,
-                "person_id": person_id,
+                "person_id": dec_person_id,
                 "total_hours": 0.0,
                 "num_shifts": 0,
                 "ob_hours": {},
@@ -824,6 +920,32 @@ def summarize_year_for_person(
                 "leave_days": 0,
                 "off_days": 0,
             }
+        elif month_segments is not None:
+            # User-scoped path: build the month from the position(s) the user
+            # actually held, each masked to its tenure segment, stitched into
+            # one day list for a mid-month move.
+            _month_rates = None
+            if _rate_user:
+                _month_effective = dt.date(work_year, work_month, 1)
+                _month_rates = get_user_rates(_rate_user, session=session, effective_date=_month_effective)
+
+            stitched_days = _stitch_user_month_days(
+                session, work_year, work_month, month_segments, user_wages, _month_rates
+            )
+
+            # person_id for the summary is the position held at the month start
+            # (the first overlapping record): name resolution and the month's
+            # person_id field reflect where the user's month began.
+            m = summarize_month_for_person(
+                work_year,
+                work_month,
+                month_segments[0][0]["person_id"],
+                session=session,
+                user_wages=user_wages,
+                year_days=stitched_days,
+                payment_year=mapping["payment_year"],
+                wage_user_id=wage_user_id,
+            )
         else:
             # Generate per-month data with temporal rates for correct on-call/OT
             _month_rates_map = None
@@ -840,24 +962,6 @@ def summarize_year_for_person(
                 user_wages=user_wages,
                 user_rates_map=_month_rates_map,
             )
-
-            # Mask days outside the scoped holder's employment so a mid-month
-            # change does not credit the whole month to one holder. Months fully
-            # inside the employment period need no mask; fully-outside months are
-            # dropped by the employment filter below.
-            if employment_user_id is not None and emp_start_date is not None:
-                from app.core.schedule.period import mask_days_to_employment
-
-                month_first = dt.date(work_year, work_month, 1)
-                month_last = dt.date(work_year, work_month, calendar.monthrange(work_year, work_month)[1])
-                starts_mid = emp_start_date > month_first
-                ends_mid = emp_end_date is not None and emp_end_date < month_last
-                if starts_mid or ends_mid:
-                    # Clamp the mask bounds to the month so only this holder's
-                    # days survive; the rest render as OFF and contribute nothing.
-                    seg_from = max(emp_start_date, month_first)
-                    seg_to = min(emp_end_date, month_last) if emp_end_date is not None else month_last
-                    month_days = mask_days_to_employment(month_days, seg_from, seg_to)
 
             # Sammanfatta baserat på ARBETS-månad, inte utbetalnings-månad
             m = summarize_month_for_person(
@@ -883,15 +987,11 @@ def summarize_year_for_person(
 
         months.append(m)
 
-    # Filter months by employment period.
-    # - employment_user_id set: filter against that user regardless of viewer
-    #   role, using WORK-month overlap only (user-scoped view).
-    # - otherwise: legacy behaviour, non-admin viewers filtered against their
-    #   own employment with WORK-month + PAYMENT-month overlap.
+    # Filter months by employment period (legacy viewer-based path only): the
+    # user-scoped path already skipped work months without an employment record
+    # overlap inside the loop above.
     filter_user_id = None
-    if employment_user_id is not None:
-        filter_user_id = employment_user_id
-    elif current_user and current_user.role != UserRole.ADMIN:
+    if employment_user_id is None and current_user and current_user.role != UserRole.ADMIN:
         filter_user_id = current_user.id
 
     if filter_user_id is not None:
@@ -910,28 +1010,22 @@ def summarize_year_for_person(
             # Skip if work month ended before employment started
             work_last_day = calendar.monthrange(m["year"], m["month"])[1]
             work_month_end = dt.date(m["year"], m["month"], work_last_day)
-            work_month_start = dt.date(m["year"], m["month"], 1)
             if start_date > work_month_end:
                 continue
 
-            if employment_user_id is None:
-                # Legacy payment-month overlap (keeps a departed viewer's final
-                # trailing payment visible).
-                pay_year = m["payment_year"]
-                pay_month = m["payment_month"]
-                month_start = dt.date(pay_year, pay_month, 1)
-                last_day = calendar.monthrange(pay_year, pay_month)[1]
-                month_end = dt.date(pay_year, pay_month, last_day)
+            # Legacy payment-month overlap (keeps a departed viewer's final
+            # trailing payment visible).
+            pay_year = m["payment_year"]
+            pay_month = m["payment_month"]
+            month_start = dt.date(pay_year, pay_month, 1)
+            last_day = calendar.monthrange(pay_year, pay_month)[1]
+            month_end = dt.date(pay_year, pay_month, last_day)
 
-                # Check if there's ANY overlap between employment period and payment month
-                if start_date > month_end:
-                    continue
-                if end_date and end_date < month_start:
-                    continue
-            else:
-                # User-scoped work-month overlap only.
-                if end_date and end_date < work_month_start:
-                    continue
+            # Check if there's ANY overlap between employment period and payment month
+            if start_date > month_end:
+                continue
+            if end_date and end_date < month_start:
+                continue
 
             filtered_months.append(m)
 
