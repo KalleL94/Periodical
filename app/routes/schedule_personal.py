@@ -89,7 +89,11 @@ async def show_day_for_person(
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
-    target_user, rotation_position = _resolve_person_param(db, person_id)
+    date_obj = validate_date_params(year, month, day)
+
+    # Resolve the position held on the VIEWED date, so a future-dated change only
+    # shows once its date is reached (mirrors the month/week/range views).
+    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=date_obj)
     user_id_for_wages = target_user.id if target_user is not None else person_id
 
     if redirect := redirect_if_not_own_data(
@@ -97,7 +101,6 @@ async def show_day_for_person(
     ):
         return redirect
 
-    date_obj = validate_date_params(year, month, day)
     nav = get_navigation_dates("day", date_obj)
     iso_year, iso_week, _ = date_obj.isocalendar()
 
@@ -982,18 +985,21 @@ async def export_month_excel(
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
-    # Resolve person_id -> rotation_position (same logic as show_month_for_person)
-    target_user, rotation_position = _resolve_person_param(db, person_id)
+    safe_today = get_safe_today(rotation_start_date)
+    year = year or safe_today.year
+    month = month or safe_today.month
+
+    validate_date_params(year, month, None)
+
+    # Resolve the position held during the EXPORTED month, so a future-dated
+    # change only shows once its month is reached (same as show_month_for_person).
+    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=date(year, month, 1))
     if target_user is not None:
         user_id_for_wages = target_user.id
         person_name = target_user.name
     else:
         user_id_for_wages = person_id
         person_name = None
-
-    safe_today = get_safe_today(rotation_start_date)
-    year = year or safe_today.year
-    month = month or safe_today.month
 
     if redirect := redirect_if_not_own_data(
         current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
@@ -1002,8 +1008,6 @@ async def export_month_excel(
 
     if not can_see_salary(current_user, rotation_position):
         raise HTTPException(status_code=403, detail="Åtkomst nekad")
-
-    validate_date_params(year, month, None)
 
     days_in_month = summarize_month_for_person(year, month, rotation_position, session=db, payment_year=year)
 

@@ -558,6 +558,90 @@ def test_mid_month_change_splits_august_ob_between_holders(month_env):
     assert bert_aug < unsplit_ob
 
 
+def _seed_future_position_move(session, admin_id):
+    """Seed Rickard (user 11) holding position 3 until 2026-09-30, position 8 after.
+
+    The move is future-dated relative to the real today, so date-unaware
+    resolution (default today) lands on position 3 while any view of an
+    October 2026 date must resolve position 8.
+    """
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin_id)
+    end_employment(session, rickard.id, 3, end_date=datetime.date(2026, 9, 30))
+    start_employment(session, rickard.id, 8, "Rickard", "rickard1", datetime.date(2026, 10, 1), created_by=admin_id)
+    return rickard
+
+
+def test_day_view_resolves_position_by_viewed_date(month_env):
+    """/day/<user>/... after a future position move renders the NEW position.
+
+    Rickard moves from position 3 to position 8 on 2026-10-01. Viewing
+    2026-10-05 must show position 8's rotation week and shift, not the
+    position he holds today.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    _seed_future_position_move(session, admin.id)
+
+    viewed = datetime.date(2026, 10, 5)
+    shift_new, week_new = determine_shift_for_date(viewed, start_week=8)
+    shift_old, week_old = determine_shift_for_date(viewed, start_week=3)
+    # Sanity: the two positions must be distinguishable on the chosen date.
+    assert week_new != week_old
+    assert (shift_new.code if shift_new else "OFF") != (shift_old.code if shift_old else "OFF")
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/day/11/2026/10/5")
+
+    assert resp.status_code == 200
+    # The rotation-week cell renders exactly "<week>/<length>" for the position
+    # held on the viewed date.
+    assert f">{week_new}/10<" in resp.text
+    assert f">{week_old}/10<" not in resp.text
+
+
+def test_excel_export_resolves_position_by_exported_month(month_env):
+    """The month Excel export after a future move exports the NEW position.
+
+    Exporting October 2026 for Rickard must contain position 8's shift on a
+    day where positions 3 and 8 differ.
+    """
+    import io as _io
+
+    import openpyxl
+
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    _seed_future_position_move(session, admin.id)
+
+    # The sheet's Skifttyp column carries the shift LABEL, so compare labels.
+    probe = datetime.date(2026, 10, 5)
+    shift_new, _ = determine_shift_for_date(probe, start_week=8)
+    shift_old, _ = determine_shift_for_date(probe, start_week=3)
+    expected = shift_new.label if shift_new else "OFF"
+    wrong = shift_old.label if shift_old else "OFF"
+    assert expected != wrong  # sanity: the probe day distinguishes the positions
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11/export-excel?year=2026&month=10")
+
+    assert resp.status_code == 200
+    wb = openpyxl.load_workbook(_io.BytesIO(resp.content))
+    ws = wb.active
+    # Find the probe day's row (column 1 = date, column 3 = shift code).
+    probe_rows = [row for row in ws.iter_rows(values_only=True) if str(row[0]).startswith("2026-10-05")]
+    assert probe_rows, "expected a row for 2026-10-05 in the export"
+    assert probe_rows[0][2] == expected
+
+
 def test_year_totals_api_rejects_foreign_user_id(month_env):
     """Non-admin totals scoping is limited to legitimate holders of the position.
 
