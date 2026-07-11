@@ -447,6 +447,22 @@ def test_year_by_user_id_shows_old_holder(month_env):
     assert '/month/10?year=2026&month=4"' not in resp.text
 
 
+def test_year_redirects_non_owner_non_admin(month_env):
+    """/year/<id> for someone else's data redirects a regular user to their own page."""
+    client, session = month_env
+    robin = _make_user(session, 10, "robin1", "Robin")
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=1)
+    viewer = _make_user(session, 13, "viewer1", "Viewer")
+    start_employment(session, viewer.id, 3, "Viewer", "viewer1", datetime.date(2026, 1, 2), created_by=1)
+
+    token = create_access_token(data={"sub": str(viewer.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year/10?year=2026", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/year/13?year=2026"
+
+
 def test_team_month_links_use_holder_user_ids(month_env):
     """Team month column headers link the holder's user id, not the position.
 

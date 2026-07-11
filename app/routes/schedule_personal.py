@@ -1105,11 +1105,14 @@ async def year_view(
         user_id_for_wages = person_id  # Same as person_id for legacy positions
         person_name = None  # Will be looked up below
 
-    if with_person_id is not None:
-        with_person_id = validate_person_id(with_person_id)
-
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
+
+    if redirect := redirect_if_not_own_data(current_user, user_id_for_wages, f"/year/{current_user.id}?year={year}"):
+        return redirect
+
+    if with_person_id is not None:
+        with_person_id = validate_person_id(with_person_id)
 
     # Get person name if not already set (for user_id > 10 case, it's set above)
     if person_name is None:
