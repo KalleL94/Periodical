@@ -16,8 +16,13 @@ router = APIRouter()
 VERSIONS = [
     {
         "version": "0.28.1",
-        "date": "2026-07-10",
+        "date": "2026-07-11",
         "entries": [
+            {
+                "type": "fix",
+                "sv": "Byter två anställda rotationsplats med varandra syns bytet i schemat först från och med bytesdatumet. Deras personliga års- och månadssidor visar hela året över bytet, med rätt pass, lön och frånvaro för tiden på varje plats",
+                "en": "When two employees trade rotation positions, the change only appears in the schedule from the effective date. Their personal year and month pages show the whole year across the change, with the correct shifts, wage and absences for the time at each position",
+            },
             {
                 "type": "fix",
                 "sv": "Pass efter en anställds sista arbetsdag visas nu som OFF i schemat i stället för att ligga kvar som vanliga arbetspass, även när en efterträdare börjar först senare. Personen räknas inte längre in i månader efter att anställningen tagit slut",
