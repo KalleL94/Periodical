@@ -407,6 +407,36 @@ class TestGetUserPersonId:
         # No record covers today: fall back to the upcoming position.
         assert get_user_person_id(test_db, newbie.id) == 7
 
+    def test_pre_first_record_resolves_earliest_not_latest(self, test_db):
+        """A user with 2+ records, viewed before all of them, must resolve to
+        their earliest position, not whichever record has the latest start.
+
+        Reproduces the Rickard/January 2026 bug: hired at position 3 on
+        2026-01-26, later swapped to position 8 on 2026-10-01. Viewing a date
+        before both records (e.g. 2026-01-01) must resolve to position 3 (the
+        position he actually held once employed), not position 8 (picked by a
+        naive "most recent effective_from" fallback).
+        """
+        rickard = _make_user(test_db, 11, "rickard1", "Rickard")
+        other = _make_user(test_db, 12, "other1", "Other")
+        start_employment(test_db, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 26), created_by=1)
+        start_employment(test_db, other.id, 8, "Other", "other1", datetime.date(2026, 1, 1), created_by=1)
+
+        swap_positions(test_db, 3, 8, datetime.date(2026, 10, 1), created_by=1)
+
+        assert get_user_person_id(test_db, rickard.id, on_date=datetime.date(2026, 1, 1)) == 3
+
+    def test_gap_between_records_resolves_preceding_one(self, test_db):
+        """A date falling in a real employment gap resolves to the closest
+        preceding record, not the earliest or latest overall."""
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 1), created_by=1)
+        end_employment(test_db, anna.id, 3, end_date=datetime.date(2026, 3, 31))
+        start_employment(test_db, anna.id, 6, "Anna", "anna1", datetime.date(2026, 6, 1), created_by=1)
+
+        # 2026-05-01 is after position 3 closed but before position 6 opened.
+        assert get_user_person_id(test_db, anna.id, on_date=datetime.date(2026, 5, 1)) == 3
+
 
 class TestUpdateEmploymentDates:
     def _closed_and_open(self, test_db):

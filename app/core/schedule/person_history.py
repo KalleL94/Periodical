@@ -591,9 +591,11 @@ def get_user_person_id(session: Session, user_id: int, on_date: date | None = No
     future-dated position change invisible until its effective date: today's
     resolution stays on the position held today, not the upcoming one.
 
-    When no record covers on_date, falls back to the most recent record so
-    departed users keep their last position and future-only hires resolve their
-    upcoming one.
+    When no record covers on_date, falls back to the closest record relative to
+    on_date: the most recent one that already started (so departed users keep
+    their last position), or if none has started yet, the earliest one (so
+    future-only hires resolve their upcoming position, even when they hold
+    2+ records and on_date precedes all of them).
 
     Args:
         session: Database session
@@ -627,13 +629,31 @@ def get_user_person_id(session: Session, user_id: int, on_date: date | None = No
     )
 
     if record is None:
-        # No record covers on_date: fall back to the most recent one. This keeps
-        # departed users on their last position and resolves future-only hires
-        # to their upcoming position.
+        # No record covers on_date. Prefer the closest record that already
+        # started (effective_from <= on_date) so departed users - and dates
+        # falling in a real employment gap - keep resolving to the position
+        # they most recently held, relative to on_date. This must NOT default
+        # to whichever record has the globally latest effective_from: a user
+        # with 2+ records viewed before all of them (e.g. before their first
+        # hire date) would otherwise resolve to a future position they never
+        # held yet, instead of the one they are about to start.
+        record = (
+            session.query(PersonHistory)
+            .filter(
+                PersonHistory.user_id == user_id,
+                PersonHistory.effective_from <= on_date,
+            )
+            .order_by(PersonHistory.effective_from.desc())
+            .first()
+        )
+
+    if record is None:
+        # on_date precedes every record: fall back to the earliest one, i.e.
+        # the user's first/next assignment (future-only hire case).
         record = (
             session.query(PersonHistory)
             .filter(PersonHistory.user_id == user_id)
-            .order_by(PersonHistory.effective_from.desc())
+            .order_by(PersonHistory.effective_from.asc())
             .first()
         )
 

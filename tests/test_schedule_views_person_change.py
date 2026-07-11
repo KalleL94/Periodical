@@ -605,6 +605,49 @@ def test_day_view_resolves_position_by_viewed_date(month_env):
     assert f">{week_old}/10<" not in resp.text
 
 
+def test_month_view_shows_real_shifts_from_mid_month_hire_despite_later_move(month_env):
+    """A mid-month hire followed by a later position move must not blank the
+    hire month.
+
+    Rickard is hired at position 3 on 2026-01-26, then moves to position 8 on
+    2026-10-01. Viewing his OWN month page for January 2026 (before either
+    record's start date is irrelevant here - the route resolves the position
+    using on_date=2026-01-01, which precedes BOTH his records) must still
+    render his real position-3 shifts from Jan 26 onward, not OFF for the
+    whole month. This reproduces a bug where the fallback in
+    get_user_person_id picked the record with the latest effective_from
+    (position 8, Oct 1) instead of the earliest one (position 3, Jan 26),
+    which made get_employment_period return Oct 1 as the employment start and
+    masked the entire month as before-employment.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 26), created_by=admin.id)
+    end_employment(session, rickard.id, 3, end_date=datetime.date(2026, 9, 30))
+    start_employment(session, rickard.id, 8, "Rickard", "rickard1", datetime.date(2026, 10, 1), created_by=admin.id)
+
+    probe = datetime.date(2026, 1, 27)
+    real_shift, _ = determine_shift_for_date(probe, start_week=3)
+    assert real_shift is not None and real_shift.code != "OFF"  # sanity: position 3 really works that day
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/month/{rickard.id}?year=2026&month=1")
+
+    assert resp.status_code == 200
+    assert "Rickard" in resp.text
+
+    match = re.search(rf'/day/{rickard.id}/2026/1/27".*?</td>', resp.text, re.DOTALL)
+    assert match, "expected a calendar cell for 2026-01-27"
+    cell_html = match.group(0)
+    assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", cell_html)
+    assert re.search(r">\s*OFF\s*<", cell_html) is None
+
+
 def test_month_view_masks_successor_schedule_after_departure(month_env):
     """A departed user's month page must not leak a successor's real schedule.
 
