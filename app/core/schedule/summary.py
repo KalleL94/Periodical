@@ -411,6 +411,7 @@ def build_calendar_grid_for_month(
     include_coworkers: bool = False,
     employment_start=None,
     employment_end=None,
+    viewer_user_id: int | None = None,
 ) -> dict:
     """
     Bygger en komplett kalendergrid inklusive intilliggande månaders dagar.
@@ -426,6 +427,13 @@ def build_calendar_grid_for_month(
             own employment for this position has ended (with or without a
             successor since taking over) - the grid must render the viewer's
             own OFF days, not a successor's real schedule.
+        viewer_user_id: The user whose page this is. When set, the adjacent-month
+            padding days that complete the calendar's partial weeks are
+            re-resolved against this user's own PersonHistory: if the viewer held
+            a DIFFERENT position on a padding date (e.g. a position swap on the
+            month boundary), that day is re-fetched under the correct position
+            instead of being masked to OFF by the main month's employment window.
+            Padding dates outside the viewer's own tenure entirely stay OFF.
 
     Returns:
         Dict med 'summary' (månadssammanfattning) och 'grid' (lista med veckor)
@@ -478,6 +486,40 @@ def build_calendar_grid_for_month(
         # Build lookup: date -> persons list
         all_persons_data = {day["date"]: day.get("persons", []) for day in all_persons_extended}
 
+    def _attach_coworkers(day_data: dict, source_day: dict, holder_position: int) -> None:
+        """Compute and attach the coworker list for one rendered day.
+
+        holder_position is the rotation position whose schedule source_day
+        represents; it may differ from the main grid's person_id when a padding
+        day was re-resolved to another of the viewer's own positions.
+        """
+        if not (include_coworkers and holder_position is not None and all_persons_data):
+            return
+        from .cowork import get_coworkers_for_day
+
+        actual_shift = source_day.get("shift")
+
+        # For OT shifts with time-based matching, use a special marker
+        # For regular shifts, use original_shift if available, otherwise actual shift
+        if actual_shift and actual_shift.code == "OT":
+            # Use OT as shift_code to trigger time-based matching
+            original_shift = source_day.get("original_shift")
+            # If original_shift is a work shift, use it; otherwise use "OT" for time matching
+            if original_shift and original_shift.code in ("N1", "N2", "N3"):
+                shift_code = original_shift.code
+            else:
+                shift_code = "OT"  # Will use time-based matching
+        else:
+            # Use actual_shift directly - if this person has a swap, actual_shift
+            # already reflects the swapped shift code.
+            shift_code = actual_shift.code if actual_shift else "OFF"
+
+        persons_today = all_persons_data.get(day_data["date"], [])
+        coworkers = get_coworkers_for_day(
+            holder_position, shift_code, persons_today, source_day.get("start"), source_day.get("end")
+        )
+        day_data["coworkers"] = coworkers
+
     # Build date lookup with is_current_month flag
     days_by_date = {}
     for day in extended_days:
@@ -496,34 +538,55 @@ def build_calendar_grid_for_month(
             "partial_absence": day.get("partial_absence"),
         }
 
-        # Add coworkers if requested
-        if include_coworkers and person_id is not None and all_persons_data:
-            from .cowork import get_coworkers_for_day
-
-            actual_shift = day.get("shift")
-
-            # For OT shifts with time-based matching, use a special marker
-            # For regular shifts, use original_shift if available, otherwise actual shift
-            if actual_shift and actual_shift.code == "OT":
-                # Use OT as shift_code to trigger time-based matching
-                original_shift = day.get("original_shift")
-                # If original_shift is a work shift, use it; otherwise use "OT" for time matching
-                if original_shift and original_shift.code in ("N1", "N2", "N3"):
-                    shift_code = original_shift.code
-                else:
-                    shift_code = "OT"  # Will use time-based matching
-            else:
-                # Use actual_shift directly - if this person has a swap, actual_shift
-                # already reflects the swapped shift code.
-                shift_code = actual_shift.code if actual_shift else "OFF"
-
-            persons_today = all_persons_data.get(day_date, [])
-            target_start = day.get("start")
-            target_end = day.get("end")
-            coworkers = get_coworkers_for_day(person_id, shift_code, persons_today, target_start, target_end)
-            day_data["coworkers"] = coworkers
+        _attach_coworkers(day_data, day, person_id)
 
         days_by_date[day_date] = day_data
+
+    # Correct adjacent-month padding days for a viewer whose own tenure spans a
+    # position change on the month boundary. The extended range was fetched under
+    # a single position and masked to the main month's employment window, which
+    # wrongly blanks padding days that fall in a DIFFERENT position the same
+    # viewer actually held (e.g. a swap on Sep 30 / Oct 1). Re-resolve each
+    # padding day against the viewer's PersonHistory and splice in their real
+    # schedule; days outside the viewer's own tenure entirely stay OFF.
+    if viewer_user_id is not None and session is not None:
+        from .person_history import get_employment_period, get_user_person_id
+
+        corrections: dict[int, list] = {}
+        for pad_date, pad_data in days_by_date.items():
+            if pad_data["is_current_month"]:
+                continue
+            pad_position = get_user_person_id(session, viewer_user_id, on_date=pad_date)
+            # A None or same-position resolution needs no correction: the main
+            # fetch already produced (and correctly masked) that position's day.
+            if pad_position is None or pad_position == person_id:
+                continue
+            pad_start, pad_end = get_employment_period(session, viewer_user_id, pad_position)
+            if pad_date < pad_start or (pad_end is not None and pad_date > pad_end):
+                # Padding date is outside the viewer's tenure at that position
+                # (departed, or a successor now holds it): keep it OFF.
+                continue
+            corrections.setdefault(pad_position, []).append(pad_date)
+
+        for pad_position, pad_dates in corrections.items():
+            refetched = generate_period_data(
+                min(pad_dates), max(pad_dates), pad_position, session=session, user_wages=user_wages
+            )
+            refetched_by_date = {d["date"]: d for d in refetched}
+            for pad_date in pad_dates:
+                src = refetched_by_date.get(pad_date)
+                if src is None:
+                    continue
+                pad_data = days_by_date[pad_date]
+                pad_data["shift"] = src.get("shift")
+                pad_data["rotation_week"] = src.get("rotation_week")
+                pad_data["rotation_length"] = src.get("rotation_length")
+                pad_data["hours"] = src.get("hours", 0.0)
+                pad_data["start"] = src.get("start")
+                pad_data["end"] = src.get("end")
+                pad_data["weekday_name"] = src.get("weekday_name")
+                pad_data["partial_absence"] = src.get("partial_absence")
+                _attach_coworkers(pad_data, src, pad_position)
 
     # Build grid structure (list of weeks, each week = 7 days)
     grid = []

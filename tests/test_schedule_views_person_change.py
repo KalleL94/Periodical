@@ -696,6 +696,108 @@ def test_month_view_masks_successor_schedule_after_departure(month_env):
     assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", cell_html) is None
 
 
+def _first_working_day(dates, start_week):
+    """Return the first date in dates whose position (start_week) is a real shift."""
+    from app.core.schedule import determine_shift_for_date
+
+    for d in dates:
+        shift, _ = determine_shift_for_date(d, start_week=start_week)
+        if shift is not None and shift.code != "OFF":
+            return d, shift.code
+    return None, None
+
+
+def test_month_view_shows_swap_padding_days_from_next_month(month_env):
+    """September's grid padding days from October must show the NEW position.
+
+    Rickard holds position 3 until 2026-09-30, position 8 from 2026-10-01. The
+    September calendar grid is expanded to full weeks, pulling in the first few
+    October days as padding. Those padding days fall in Rickard's own position-8
+    tenure and must render his real position-8 shifts, not OFF.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    _seed_future_position_move(session, admin.id)
+
+    # October padding days shown in the September grid (Oct 1-4 complete the last week).
+    padding = [datetime.date(2026, 10, d) for d in range(1, 5)]
+    probe, real_code = _first_working_day(padding, start_week=8)
+    assert probe is not None, "expected at least one working October padding day for position 8"
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11?year=2026&month=9")
+
+    assert resp.status_code == 200
+    match = re.search(rf'/day/11/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
+    assert match, f"expected a calendar cell for {probe.isoformat()}"
+    cell_html = match.group(0)
+    assert re.search(rf">\s*{re.escape(real_code)}\s*<", cell_html), cell_html
+    assert re.search(r">\s*OFF\s*<", cell_html) is None
+
+
+def test_month_view_shows_swap_padding_days_from_prev_month(month_env):
+    """October's grid padding days from September must show the OLD position.
+
+    The October calendar grid pulls in the last few September days as padding.
+    Those days fall in Rickard's own position-3 tenure (through 2026-09-30) and
+    must render his real position-3 shifts, not OFF.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    _seed_future_position_move(session, admin.id)
+
+    # September padding days shown in the October grid (Sep 28-30 lead the first week).
+    padding = [datetime.date(2026, 9, d) for d in (28, 29, 30)]
+    probe, real_code = _first_working_day(padding, start_week=3)
+    assert probe is not None, "expected at least one working September padding day for position 3"
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11?year=2026&month=10")
+
+    assert resp.status_code == 200
+    match = re.search(rf'/day/11/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
+    assert match, f"expected a calendar cell for {probe.isoformat()}"
+    cell_html = match.group(0)
+    assert re.search(rf">\s*{re.escape(real_code)}\s*<", cell_html), cell_html
+    assert re.search(r">\s*OFF\s*<", cell_html) is None
+
+
+def test_month_view_masks_successor_padding_after_departure(month_env):
+    """Padding days must stay OFF when they fall to an unrelated successor.
+
+    Anna held position 3 until 2026-03-31; Bert took over. Viewing Anna's own
+    November page, the grid's December padding days belong to Bert - outside
+    Anna's tenure entirely - and must render OFF, never Bert's real schedule.
+    This guards the 313a7df successor-leak fix against the padding-day
+    correction added for the position-swap case.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna, _bert = _seed_departed_with_successor(session, admin.id)
+
+    # December padding days shown in the November grid (Dec 1-6 complete the last week).
+    padding = [datetime.date(2026, 12, d) for d in range(1, 7)]
+    probe, real_code = _first_working_day(padding, start_week=3)
+    assert probe is not None, "expected at least one working December padding day for position 3"
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11?year=2026&month=11")
+
+    assert resp.status_code == 200
+    assert "Anna" in resp.text
+    match = re.search(rf'/day/11/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
+    assert match, f"expected a calendar cell for {probe.isoformat()}"
+    cell_html = match.group(0)
+    assert re.search(r">\s*OFF\s*<", cell_html), cell_html
+    assert re.search(rf">\s*{re.escape(real_code)}\s*<", cell_html) is None
+
+
 def _seed_departed_with_successor(session, admin_id, *, old_end=datetime.date(2026, 3, 31)):
     """Seed Anna holding position 3 until old_end, Bert taking over the next day.
 
