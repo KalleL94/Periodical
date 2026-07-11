@@ -324,11 +324,22 @@ async def show_year_all(
     year: int = None,
     current_user: User = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
+    simulated_date: str = None,
 ):
     """Year view for all persons."""
     start_time = datetime.now()
 
-    safe_today = get_safe_today(rotation_start_date)
+    # Testing aid: ?simulated_date=YYYY-MM-DD views the page as if today were
+    # that date (default year selection and past/future column hiding).
+    # Invalid values fall back to the real date instead of erroring.
+    sim_today = None
+    if simulated_date:
+        try:
+            sim_today = date.fromisoformat(simulated_date.strip())
+        except ValueError:
+            sim_today = None
+
+    safe_today = sim_today or get_safe_today(rotation_start_date)
     year = year or safe_today.year
 
     # Pre-load wages once to avoid N+1 queries (10 persons × 12 months = 120 queries → 1 query)
@@ -351,7 +362,7 @@ async def show_year_all(
     # rotation position itself.
     from app.core.schedule.person_history import get_current_person_for_position
 
-    real_today = get_today()
+    real_today = sim_today or get_today()
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     person_headers = []
