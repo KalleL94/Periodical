@@ -370,7 +370,14 @@ async def show_year_all(
         if merged:
             for seg in merged:
                 to_date = seg["to_date"]
+                from_date = seg["from_date"]
                 past = to_date is not None and to_date < real_today
+                # A holder whose tenure begins after today is future-dated: its
+                # column stays hidden (like a past one) until its start passes.
+                # Use the raw employment start, not the window-clamped from_date,
+                # so an ongoing holder viewed in a later year is not mistaken for
+                # a future hire.
+                future = seg["effective_from"] > real_today
                 person_headers.append(
                     {
                         "person_id": pid,
@@ -378,9 +385,10 @@ async def show_year_all(
                         "name": seg["name"],
                         "vacant": False,
                         "col_key": f"{pid}-{seg['user_id']}",
-                        "from_date": seg["from_date"],
+                        "from_date": from_date,
                         "to_date": to_date,
                         "past": past,
+                        "future": future,
                     }
                 )
         elif has_position_history(db, pid):
@@ -394,6 +402,7 @@ async def show_year_all(
                     "from_date": year_start,
                     "to_date": year_end,
                     "past": False,
+                    "future": False,
                 }
             )
         else:
@@ -409,6 +418,7 @@ async def show_year_all(
                     "from_date": year_start,
                     "to_date": year_end,
                     "past": False,
+                    "future": False,
                 }
             )
 

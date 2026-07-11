@@ -56,7 +56,7 @@ def redirect_if_not_own_data(current_user, user_id: int, redirect_url: str) -> R
     return None
 
 
-def _resolve_person_param(db, raw_id: int):
+def _resolve_person_param(db, raw_id: int, on_date=None):
     """Resolve a personal-view path parameter to (target_user, rotation_position).
 
     Personal views are keyed by USER id: whenever a User row with the given id
@@ -64,6 +64,10 @@ def _resolve_person_param(db, raw_id: int):
     from their PersonHistory (get_user_person_id). Only when no such user exists
     does the legacy rotation-position interpretation apply, validated via
     validate_person_id so out-of-range ids still raise 404.
+
+    on_date selects which position a future-dated change resolves to: pass the
+    viewed period's start date so the view resolves the position held during that
+    period. Defaults to today (get_user_person_id resolves get_today()).
 
     Returns a tuple (target_user, rotation_position). target_user is the User
     when resolved as a user, otherwise None.
@@ -74,7 +78,7 @@ def _resolve_person_param(db, raw_id: int):
 
     target_user = db.query(User).filter(User.id == raw_id).first()
     if target_user is not None:
-        rotation_position = get_user_person_id(db, raw_id)
+        rotation_position = get_user_person_id(db, raw_id, on_date=on_date)
         if rotation_position is None:
             # No PersonHistory for a user id > 10: fall back to the User row's
             # rotation position (mirrors the previous >10 branch behaviour).

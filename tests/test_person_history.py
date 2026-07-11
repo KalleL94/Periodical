@@ -14,11 +14,13 @@ from app.core.schedule.person_history import (
     get_person_for_date,
     get_position_holder_segments,
     get_position_vacancy,
+    get_user_person_id,
     has_position_history,
     start_employment,
     swap_positions,
     update_employment_dates,
 )
+from app.core.utils import get_today
 from app.database.database import PersonHistory, User, UserRole
 
 
@@ -363,6 +365,47 @@ class TestSwapPositions:
         self._two_holders(test_db)  # Bert started 2026-02-01
         with pytest.raises(ValueError):
             swap_positions(test_db, 3, 5, datetime.date(2026, 1, 15), created_by=1)
+
+
+class TestGetUserPersonId:
+    def test_current_record_wins_today_future_on_future_date(self, test_db):
+        """A future-dated move must not flip today's resolution.
+
+        Rickard holds position 3 now and moves to position 8 on a future date.
+        Today he still resolves to 3; only an on_date on or after the move
+        resolves 8.
+        """
+        today = get_today()
+        future = today + datetime.timedelta(days=30)
+        rickard = _make_user(test_db, 11, "rickard1", "Rickard")
+        start_employment(
+            test_db, rickard.id, 3, "Rickard", "rickard1", today - datetime.timedelta(days=100), created_by=1
+        )
+        end_employment(test_db, rickard.id, 3, end_date=future - datetime.timedelta(days=1))
+        start_employment(test_db, rickard.id, 8, "Rickard", "rickard1", future, created_by=1)
+
+        assert get_user_person_id(test_db, rickard.id) == 3
+        assert get_user_person_id(test_db, rickard.id, on_date=future) == 8
+
+    def test_departed_user_resolves_last_position(self, test_db):
+        """A departed user (only closed records) keeps their last position."""
+        today = get_today()
+        anna = _make_user(test_db, 11, "anna1", "Anna")
+        start_employment(test_db, anna.id, 3, "Anna", "anna1", today - datetime.timedelta(days=100), created_by=1)
+        end_employment(test_db, anna.id, 3, end_date=today - datetime.timedelta(days=10))
+
+        # No record covers today: fall back to the most recent (last) position.
+        assert get_user_person_id(test_db, anna.id) == 3
+
+    def test_future_only_hire_resolves_upcoming(self, test_db):
+        """A future-only hire resolves their upcoming position."""
+        today = get_today()
+        future = today + datetime.timedelta(days=30)
+        newbie = _make_user(test_db, 11, "new1", "Newbie")
+        start_employment(test_db, newbie.id, 7, "Newbie", "new1", future, created_by=1)
+
+        # No record covers today: fall back to the upcoming position.
+        assert get_user_person_id(test_db, newbie.id) == 7
 
 
 class TestUpdateEmploymentDates:

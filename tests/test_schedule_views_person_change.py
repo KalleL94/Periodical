@@ -21,7 +21,7 @@ from app.core.schedule import (
     summarize_month_for_person,
     summarize_year_for_person,
 )
-from app.core.schedule.person_history import add_person_change, end_employment, start_employment
+from app.core.schedule.person_history import add_person_change, end_employment, start_employment, swap_positions
 from app.core.utils import get_today
 from app.database.database import RotationEra, User, UserRole, WageType
 from tests.conftest import _ROTATION_ERA_PATTERN
@@ -239,6 +239,78 @@ def test_year_splits_columns_per_holder_past_hidden(month_env):
     # Past holders' filter checkbox is disabled server-side so a departed holder
     # cannot be revealed individually while past days are hidden.
     assert re.search(r'<input[^>]*data-past="1"[^>]*\bdisabled\b', resp.text)
+
+
+def test_year_future_swap_columns_hidden_until_effective(month_env):
+    """A future-dated swap hides the incoming columns until their start passes.
+
+    Isak holds position 3 and Omar holds position 5; they swap on a date in the
+    future. Today the current holders' columns stay visible while the two future
+    columns (each holder at their new position) render hidden + disabled, so the
+    swap is invisible until it takes effect.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 11, "isak1", "Isak")
+    omar = _make_user(session, 12, "omar1", "Omar")
+
+    today = get_today()
+    swap_date = today + datetime.timedelta(days=30)
+
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, omar.id, 5, "Omar", "omar1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, swap_date, created_by=1)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/year?year={today.year}")
+    assert resp.status_code == 200
+
+    # Position 3: Isak currently holds it (visible), Omar takes it in the future
+    # (hidden). Position 5 mirrors this.
+    ths3 = _year_header_ths(resp.text, 3)
+    assert len(ths3) == 2
+    isak3 = next(th for th in ths3 if "Isak" in th)
+    omar3 = next(th for th in ths3 if "Omar" in th)
+    assert 'data-future="0"' in isak3 and "display:none" not in isak3
+    assert 'data-future="1"' in omar3 and "display:none" in omar3
+
+    ths5 = _year_header_ths(resp.text, 5)
+    assert len(ths5) == 2
+    omar5 = next(th for th in ths5 if "Omar" in th)
+    isak5 = next(th for th in ths5 if "Isak" in th)
+    assert 'data-future="0"' in omar5 and "display:none" not in omar5
+    assert 'data-future="1"' in isak5 and "display:none" in isak5
+
+    # Both future holders' filter checkboxes are disabled server-side, so they
+    # cannot be revealed individually until the swap takes effect.
+    assert len(re.findall(r'<input[^>]*data-future="1"[^>]*\bdisabled\b', resp.text)) == 2
+
+
+def test_year_ongoing_holder_visible_in_later_year(month_env):
+    """An ongoing holder viewed in a later year is not mistaken for a future hire.
+
+    Nils holds position 3 with an open record since 2026. Viewing 2027 clamps his
+    segment start to 2027-01-01, which is after today, but his raw employment
+    start is in the past, so his column must stay visible (future flag off).
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    nils = _make_user(session, 11, "nils1", "Nils")
+    start_employment(session, nils.id, 3, "Nils", "nils1", datetime.date(2026, 1, 2), created_by=1)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/year?year=2027")
+    assert resp.status_code == 200
+
+    ths3 = _year_header_ths(resp.text, 3)
+    assert len(ths3) == 1
+    assert "Nils" in ths3[0]
+    assert 'data-future="0"' in ths3[0]
+    assert "display:none" not in ths3[0]
 
 
 def _out_of_tenure_cells(html: str, col_key: str) -> list[str]:

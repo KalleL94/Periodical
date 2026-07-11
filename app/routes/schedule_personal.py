@@ -546,18 +546,21 @@ async def show_week_for_person(
     that id exists; only when no such user exists does the legacy rotation
     position interpretation apply.
     """
-    target_user, rotation_position = _resolve_person_param(db, person_id)
-    if target_user is not None:
-        person_name = target_user.name
-    else:
-        pos_user = db.query(User).filter(User.person_id == rotation_position, User.is_active == 1).first()
-        person_name = pos_user.name if pos_user else None
-
     safe_today = get_safe_today(rotation_start_date)
     iso_year, iso_week, _ = safe_today.isocalendar()
 
     year = year or iso_year
     week = week or iso_week
+
+    # Resolve the position held during the VIEWED week (its Monday), so a
+    # future-dated change only shows once its week is reached.
+    monday = date.fromisocalendar(year, week, 1)
+    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=monday)
+    if target_user is not None:
+        person_name = target_user.name
+    else:
+        pos_user = db.query(User).filter(User.person_id == rotation_position, User.is_active == 1).first()
+        person_name = pos_user.name if pos_user else None
 
     # Use rotation_position for schedule calculation
     # For user_id lookups, pass employment start so before-employment days show correctly
@@ -577,7 +580,6 @@ async def show_week_for_person(
         employment_start=week_employment_start,
     )
 
-    monday = date.fromisocalendar(year, week, 1)
     nav = get_navigation_dates("week", monday)
 
     real_today = get_today()
@@ -619,17 +621,6 @@ async def show_range_for_person(
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
-    target_user, rotation_position = _resolve_person_param(db, person_id)
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
-
-    if redirect := redirect_if_not_own_data(current_user, user_id_for_wages, f"/range/{current_user.id}"):
-        return redirect
-
     real_today = get_today()
 
     # Weeks-based mode: snap to Monday, compute end from weeks count
@@ -654,6 +645,19 @@ async def show_range_for_person(
             end = start
         if (end - start).days >= 70:
             end = start + timedelta(days=69)
+
+    # Resolve the position held at the VIEWED range's start, so a future-dated
+    # change only shows once the range reaches it.
+    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=start)
+    if target_user is not None:
+        user_id_for_wages = target_user.id
+        person_name = target_user.name
+    else:
+        user_id_for_wages = person_id
+        person_name = None
+
+    if redirect := redirect_if_not_own_data(current_user, user_id_for_wages, f"/range/{current_user.id}"):
+        return redirect
 
     if person_name is None:
         if current_user is not None and current_user.rotation_person_id == rotation_position:
@@ -754,20 +758,22 @@ async def show_month_for_person(
     """
     start_time = datetime.now()
 
-    target_user, rotation_position = _resolve_person_param(db, person_id)
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
-
     safe_today = get_safe_today(rotation_start_date)
 
     year = year or safe_today.year
     month = month or safe_today.month
 
     validate_date_params(year, month, None)
+
+    # Resolve the position held during the VIEWED month, so a future-dated change
+    # only shows once its month is reached.
+    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=date(year, month, 1))
+    if target_user is not None:
+        user_id_for_wages = target_user.id
+        person_name = target_user.name
+    else:
+        user_id_for_wages = person_id
+        person_name = None
 
     # Get person name if not already set
     if person_name is None:

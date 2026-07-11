@@ -582,31 +582,60 @@ def get_user_history(session: Session, user_id: int) -> list[dict]:
     ]
 
 
-def get_user_person_id(session: Session, user_id: int) -> int | None:
+def get_user_person_id(session: Session, user_id: int, on_date: date | None = None) -> int | None:
     """
-    Get the person_id (rotation position) for a user.
+    Get the person_id (rotation position) a user holds on a given date.
 
-    Looks up PersonHistory to find which position the user occupies or occupied.
-    Returns the most recent person_id assignment.
+    Resolves the PersonHistory record covering on_date (effective_from <= on_date
+    and the record is still open or ends on/after on_date). This keeps a
+    future-dated position change invisible until its effective date: today's
+    resolution stays on the position held today, not the upcoming one.
+
+    When no record covers on_date, falls back to the most recent record so
+    departed users keep their last position and future-only hires resolve their
+    upcoming one.
 
     Args:
         session: Database session
         user_id: User ID
+        on_date: Date to resolve the position for. Defaults to get_today().
 
     Returns:
         The person_id (1-10) or None if no assignment found.
 
     Example:
-        >>> # Rickard (user_id=11) has person_id=3
-        >>> pid = get_user_person_id(db, user_id=11)
-        >>> print(pid)  # 3
+        >>> # Rickard (user_id=11) holds position 3 today, position 8 from Oct 1
+        >>> get_user_person_id(db, user_id=11)  # 3 (today)
+        >>> get_user_person_id(db, user_id=11, on_date=date(2026, 10, 1))  # 8
     """
+    from app.core.utils import get_today
+
+    if on_date is None:
+        on_date = get_today()
+
+    # Prefer the record covering on_date, so a future-dated change does not flip
+    # resolution before it takes effect.
     record = (
         session.query(PersonHistory)
-        .filter(PersonHistory.user_id == user_id)
+        .filter(
+            PersonHistory.user_id == user_id,
+            PersonHistory.effective_from <= on_date,
+            (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= on_date),
+        )
         .order_by(PersonHistory.effective_from.desc())
         .first()
     )
+
+    if record is None:
+        # No record covers on_date: fall back to the most recent one. This keeps
+        # departed users on their last position and resolves future-only hires
+        # to their upcoming position.
+        record = (
+            session.query(PersonHistory)
+            .filter(PersonHistory.user_id == user_id)
+            .order_by(PersonHistory.effective_from.desc())
+            .first()
+        )
 
     if record:
         return record.person_id
@@ -787,6 +816,10 @@ def get_position_holder_segments(session: Session, person_id: int, start_date: d
             "username": r.username,
             "from_date": max(r.effective_from, start_date),
             "to_date": min(r.effective_to, end_date) if r.effective_to else end_date,
+            # Raw (unclamped) employment start. Consumers use this to tell a
+            # genuinely future-dated tenure from a segment merely clamped to the
+            # window start (e.g. an ongoing holder viewed in a later year).
+            "effective_from": r.effective_from,
         }
         for r in records
     ]
