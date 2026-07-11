@@ -39,7 +39,7 @@
         <span class="col-sep">|</span>
         {% for p in person_headers %}
         <label class="col-toggle-label">
-            <input type="checkbox" {% if not p.past %}checked{% endif %}{% if p.past %} data-past="1"{% endif %} onchange="togglePersonCol('{{ p.col_key }}', this.checked)" class="cursor-pointer">
+            <input type="checkbox" {% if not p.past %}checked{% endif %}{% if p.past %} data-past="1" disabled{% endif %} onchange="togglePersonCol('{{ p.col_key }}', this.checked)" class="cursor-pointer">
             {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.name }}{% endif %}
         </label>
         {% endfor %}
@@ -139,7 +139,12 @@
                                 {% endif %}
                             </td>
                             {% else %}
-                            <td class="day-cell month-shift-cell out-of-tenure" data-person="{{ col.col_key }}"{% if col.past %} style="display:none"{% endif %}>
+                            <td class="day-cell month-shift-cell out-of-tenure" data-person="{{ col.col_key }}"{% if col.past %} style="display:none"{% endif %}
+                                data-act-color="transparent"
+                                data-orig-color="transparent"
+                                data-orig-code="OFF"
+                                data-changed="0"
+                                data-border-left="transparent">
                                 <span class="badge badge-off js-sb" data-act-label="OFF">OFF</span>
                             </td>
                             {% endif %}
@@ -160,6 +165,9 @@ function togglePersonCol(colKey, show) {
 }
 function setAllPersonCols(show) {
     document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        // Skip disabled past holders: they can only be revealed via the
+        // "show past days" toggle, never through "select all"/"deselect all".
+        if (cb.disabled) return;
         cb.checked = show;
         cb.dispatchEvent(new Event('change'));
     });
@@ -191,15 +199,18 @@ function _colKeyOf(cb) {
 }
 
 function _saveFilterState() {
+    // Persist only non-past columns. Past holders are never stored: they always
+    // start hidden + disabled and are revealed transiently via "show past days".
     var hidden = [];
     document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        if (cb.getAttribute('data-past') === '1') return;
         if (!cb.checked) {
             var key = _colKeyOf(cb);
             if (key) hidden.push(key);
         }
     });
     try {
-        localStorage.setItem('p_filter_persons', JSON.stringify(hidden));
+        localStorage.setItem('p_filter_cols_v2', JSON.stringify({ hidden: hidden }));
         localStorage.setItem('p_filter_orig', showOriginal ? '1' : '0');
     } catch(e) {}
 }
@@ -207,21 +218,26 @@ function _saveFilterState() {
 function _loadFilterState() {
     _filterInit = true;
     try {
-        // Precedence: an explicit stored choice fully determines column
-        // visibility and overrides the server-side default of hiding past
-        // holders. When no choice was ever stored (key absent), we leave the
-        // server default in place so departed holders start hidden.
-        var raw = localStorage.getItem('p_filter_persons');
+        // Drop the legacy key: its numeric-pid payload predates col_keys and, if
+        // present, would force-show every column and resurrect past holders.
+        localStorage.removeItem('p_filter_persons');
+        // Non-past columns honour the stored hidden list; past holders are never
+        // stored and keep the server default (hidden + disabled), so stored
+        // state can never implicitly reveal a departed holder.
+        var raw = localStorage.getItem('p_filter_cols_v2');
+        var hiddenSet = new Set();
         if (raw !== null) {
-            var hiddenSet = new Set(JSON.parse(raw));
-            document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
-                var key = _colKeyOf(cb);
-                if (!key) return;
-                var show = !hiddenSet.has(key);
-                cb.checked = show;
-                togglePersonCol(key, show);
-            });
+            var parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.hidden)) hiddenSet = new Set(parsed.hidden);
         }
+        document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+            if (cb.getAttribute('data-past') === '1') return;
+            var key = _colKeyOf(cb);
+            if (!key) return;
+            var show = !hiddenSet.has(key);
+            cb.checked = show;
+            togglePersonCol(key, show);
+        });
         if (localStorage.getItem('p_filter_orig') === '1') {
             showOriginal = true;
             var btn = document.getElementById('orig-toggle-btn');
@@ -288,6 +304,10 @@ function togglePastRows() {
     document.querySelectorAll('input[data-past="1"][onchange^="togglePersonCol"]').forEach(function(cb) {
         var key = _colKeyOf(cb);
         if (!key) return;
+        // Enable + check when revealing past days; uncheck + disable (and hide
+        // the column) when hiding them again, so a departed holder cannot be
+        // toggled on individually while past days are hidden.
+        cb.disabled = !pastRowsVisible;
         cb.checked = pastRowsVisible;
         togglePersonCol(key, pastRowsVisible);
     });

@@ -236,6 +236,9 @@ def test_year_splits_columns_per_holder_past_hidden(month_env):
     # Each holder links to their own personal year view.
     assert f'/year/11?year={today.year}"' in isak_th
     assert f'/year/12?year={today.year}"' in omar_th
+    # Past holders' filter checkbox is disabled server-side so a departed holder
+    # cannot be revealed individually while past days are hidden.
+    assert re.search(r'<input[^>]*data-past="1"[^>]*\bdisabled\b', resp.text)
 
 
 def _out_of_tenure_cells(html: str, col_key: str) -> list[str]:
@@ -281,6 +284,11 @@ def test_year_out_of_tenure_cells_render_off(month_env):
     isak_cells = _out_of_tenure_cells(resp.text, "3-11")
     assert isak_cells, "expected out-of-tenure cells for the departed holder"
     assert all("OFF" in cell for cell in isak_cells)
+    # The out-of-tenure OFF cell renders the same badge markup and data-act
+    # attributes as an in-tenure OFF day cell, so the two are indistinguishable
+    # (including under the rotation-mode toggle).
+    assert all('class="badge badge-off js-sb" data-act-label="OFF"' in cell for cell in isak_cells)
+    assert all('data-orig-code="OFF"' in cell for cell in isak_cells)
 
 
 def test_year_summary_filters_to_viewed_users_employment(month_env):

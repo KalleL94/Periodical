@@ -311,6 +311,10 @@ input, select {
 .week-shift-time { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
 .col-toggle-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; background: var(--panel); border-radius: var(--radius); border: 1px solid var(--border); align-items: center; }
 .col-toggle-label { display: flex; align-items: center; gap: 0.3rem; cursor: pointer; font-size: 0.85rem; user-select: none; }
+/* A departed holder's checkbox is disabled while past days are hidden; mute its
+   label so the locked state reads clearly. */
+.col-toggle-label:has(input:disabled) { opacity: 0.45; cursor: default; }
+.col-toggle-label input:disabled { cursor: default; }
 .col-sep { color: var(--border); margin: 0 0.25rem; }
 .btn-xs { font-size: 0.8rem; padding: 2px 8px; }
 .cursor-pointer { cursor: pointer; }
