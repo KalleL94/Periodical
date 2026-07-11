@@ -3,6 +3,7 @@
 Team-wide schedule view routes - week, month, and year views for all persons.
 """
 
+import calendar as _calendar
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -25,6 +26,8 @@ from app.core.schedule import (
     rotation_start_date,
     summarize_month_for_person,
 )
+from app.core.schedule.period import mask_days_to_employment
+from app.core.schedule.person_history import get_position_holder_segments, has_position_history
 from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, get_db
@@ -33,6 +36,112 @@ from app.routes.shared import templates
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["schedule_all"])
+
+
+def _off_cell(cell: dict, name: str) -> dict:
+    """Mask a person cell to OFF for a day outside a holder's segment.
+
+    Mirrors the shape of a before-employment cell: identity keys are kept, the
+    shift is cleared and the before_employment flag is set so the template
+    renders it as a plain OFF day.
+    """
+    masked = dict(cell)
+    masked["person_name"] = name
+    masked["shift"] = None
+    masked["before_employment"] = True
+    return masked
+
+
+def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sunday: date) -> list[dict]:
+    """Build one week row per position holder segment.
+
+    A position held by a single person yields one row. A mid-week person change
+    yields one row per holder, with days outside each holder's segment masked to
+    OFF. A fully vacated position yields a single vacant row. Substitute entries
+    (person_id outside 1-10) are appended unchanged so they keep rendering.
+    """
+
+    def _cell_for(day: dict, pid: int) -> dict | None:
+        return next((p for p in day.get("persons", []) if p.get("person_id") == pid), None)
+
+    person_rows: list[dict] = []
+    for pid in range(1, 11):
+        base_cells = [_cell_for(day, pid) for day in days_in_week]
+        segments = get_position_holder_segments(db, pid, monday, sunday)
+
+        if not segments and has_position_history(db, pid):
+            # Position vacated entirely: one placeholder row, all days OFF.
+            person_rows.append(
+                {
+                    "person_id": pid,
+                    "person_name": "",
+                    "vacant": True,
+                    "holder_user_id": None,
+                    "cells": [_off_cell(c, "") if c else None for c in base_cells],
+                }
+            )
+            continue
+
+        if len(segments) <= 1:
+            # Zero (legacy) or one holder: single row, current behavior.
+            name = (
+                segments[0]["name"]
+                if segments
+                else (base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}")
+            )
+            # Personal-view link target: the single holder's user id, or the
+            # rotation position itself for legacy positions without history.
+            holder_user_id = segments[0]["user_id"] if segments else pid
+            person_rows.append(
+                {
+                    "person_id": pid,
+                    "person_name": name,
+                    "vacant": False,
+                    "holder_user_id": holder_user_id,
+                    "cells": base_cells,
+                }
+            )
+            continue
+
+        # Mid-week change: one row per holder, days masked to their tenure.
+        for seg in segments:
+            cells = []
+            for day, cell in zip(days_in_week, base_cells, strict=True):
+                if cell is None:
+                    cells.append(None)
+                elif seg["from_date"] <= day["date"] <= seg["to_date"]:
+                    cells.append(cell)
+                else:
+                    cells.append(_off_cell(cell, seg["name"]))
+            person_rows.append(
+                {
+                    "person_id": pid,
+                    "person_name": seg["name"],
+                    "vacant": False,
+                    "holder_user_id": seg["user_id"],
+                    "cells": cells,
+                }
+            )
+
+    # Append substitute rows (person_id outside the 1-10 rotation) unchanged.
+    if days_in_week:
+        for entry in days_in_week[0].get("persons", []):
+            sub_pid = entry.get("person_id")
+            if isinstance(sub_pid, int) and 1 <= sub_pid <= 10:
+                continue
+            cells = [_cell_for(day, sub_pid) for day in days_in_week]
+            person_rows.append(
+                {
+                    "person_id": sub_pid,
+                    "person_name": entry.get("person_name", ""),
+                    "vacant": False,
+                    "is_substitute": True,
+                    "substitute_id": entry.get("substitute_id"),
+                    "cells": cells,
+                }
+            )
+
+    return person_rows
 
 
 @router.get("/week", response_class=HTMLResponse, name="week_all")
@@ -54,7 +163,10 @@ async def show_week_all(
     days_in_week = build_week_data(year, week, session=db)
 
     monday = date.fromisocalendar(year, week, 1)
+    sunday = monday + timedelta(days=6)
     nav = get_navigation_dates("week", monday)
+
+    person_rows = _build_person_rows(db, days_in_week, monday, sunday)
 
     real_today = get_today()
 
@@ -69,6 +181,7 @@ async def show_week_all(
             "year": year,
             "week": week,
             "days": days_in_week,
+            "person_rows": person_rows,
             "today": real_today,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
@@ -102,24 +215,75 @@ async def show_month_all(
     # Only fetch tax tables if user is admin (needed for salary calculations)
     is_admin = current_user is not None and current_user.role == UserRole.ADMIN
 
+    month_start = date(year, month, 1)
+    month_end = date(year, month, _calendar.monthrange(year, month)[1])
+
     persons = []
     for pid in range(1, 11):
         # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
         person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
+        segments = get_position_holder_segments(db, pid, month_start, month_end)
 
-        summary = summarize_month_for_person(
-            year,
-            month,
-            pid,
-            session=db,
-            user_wages=user_wages,
-            year_days=person_month_days,
-            fetch_tax_table=is_admin,
-            payment_year=year,
-        )
-        if not can_see_salary(current_user, pid):
+        if not segments and has_position_history(db, pid):
+            # Position vacated entirely: one placeholder column, all days OFF
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=db,
+                user_wages=user_wages,
+                year_days=person_month_days,
+                fetch_tax_table=False,
+                payment_year=year,
+            )
             summary = strip_salary_data(summary)
-        persons.append(summary)
+            summary["vacant"] = True
+            summary["holder_user_id"] = None
+            persons.append(summary)
+            continue
+
+        if len(segments) <= 1:
+            # Zero (legacy) or one holder: single column, current behavior
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=db,
+                user_wages=user_wages,
+                year_days=person_month_days,
+                fetch_tax_table=is_admin,
+                payment_year=year,
+            )
+            if segments:
+                summary["person_name"] = segments[0]["name"]
+            # Personal-view link target: the single holder's user id, or the
+            # rotation position itself for legacy positions without history.
+            summary["holder_user_id"] = segments[0]["user_id"] if segments else pid
+            if not can_see_salary(current_user, pid):
+                summary = strip_salary_data(summary)
+            persons.append(summary)
+            continue
+
+        # Mid-month change: one column per holder, days masked to their tenure
+        for seg in segments:
+            masked_days = mask_days_to_employment(person_month_days, seg["from_date"], seg["to_date"])
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=db,
+                user_wages=user_wages,
+                year_days=masked_days,
+                fetch_tax_table=is_admin,
+                payment_year=year,
+                wage_user_id=seg["user_id"],
+            )
+            summary["person_name"] = seg["name"]
+            summary["holder_user_id"] = seg["user_id"]
+            viewer_is_owner = current_user is not None and current_user.id == seg["user_id"]
+            if not (is_admin or viewer_is_owner):
+                summary = strip_salary_data(summary)
+            persons.append(summary)
 
     # Append substitutes (schedule only, no salary) after the regular positions
     persons.extend(build_substitute_month_summaries(year, month, db))
@@ -160,11 +324,22 @@ async def show_year_all(
     year: int = None,
     current_user: User = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
+    simulated_date: str = None,
 ):
     """Year view for all persons."""
     start_time = datetime.now()
 
-    safe_today = get_safe_today(rotation_start_date)
+    # Testing aid: ?simulated_date=YYYY-MM-DD views the page as if today were
+    # that date (default year selection and past/future column hiding).
+    # Invalid values fall back to the real date instead of erroring.
+    sim_today = None
+    if simulated_date:
+        try:
+            sim_today = date.fromisoformat(simulated_date.strip())
+        except ValueError:
+            sim_today = None
+
+    safe_today = sim_today or get_safe_today(rotation_start_date)
     year = year or safe_today.year
 
     # Pre-load wages once to avoid N+1 queries (10 persons × 12 months = 120 queries → 1 query)
@@ -176,18 +351,87 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
-    # Build person headers using current active holder for each position
-    # (days[0] would show whoever held the position on the first day of rotation,
-    # which can be a predecessor rather than the current person)
+    # Build the column list: one column per holder segment of the displayed
+    # year (like the month view), rather than a single joined-header column per
+    # position. A position that changed hands mid-year yields one column per
+    # holder in chronological order, each linking to their own personal year
+    # view. A departed holder whose last working day is already past is flagged
+    # so the template can hide their column by default. A position with only
+    # closed history and no overlap in the year is a single vacant column.
+    # Positions without any history keep one legacy column linked to the
+    # rotation position itself.
     from app.core.schedule.person_history import get_current_person_for_position
 
-    person_headers = [
-        {
-            "person_id": pid,
-            "person_name": (cp["name"] if (cp := get_current_person_for_position(db, pid)) else f"Person {pid}"),
-        }
-        for pid in range(1, 11)
-    ]
+    real_today = sim_today or get_today()
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    person_headers = []
+    for pid in range(1, 11):
+        segments = get_position_holder_segments(db, pid, year_start, year_end)
+        # Merge consecutive segments held by the same user so a single
+        # employment split across adjacent history records stays one column and
+        # its col_key (person_id-user_id) remains unique.
+        merged: list[dict] = []
+        for seg in segments:
+            if merged and merged[-1]["user_id"] == seg["user_id"]:
+                merged[-1]["to_date"] = seg["to_date"]
+            else:
+                merged.append(dict(seg))
+
+        if merged:
+            for seg in merged:
+                to_date = seg["to_date"]
+                from_date = seg["from_date"]
+                past = to_date is not None and to_date < real_today
+                # A holder whose tenure begins after today is future-dated: its
+                # column stays hidden (like a past one) until its start passes.
+                # Use the raw employment start, not the window-clamped from_date,
+                # so an ongoing holder viewed in a later year is not mistaken for
+                # a future hire.
+                future = seg["effective_from"] > real_today
+                person_headers.append(
+                    {
+                        "person_id": pid,
+                        "user_id": seg["user_id"],
+                        "name": seg["name"],
+                        "vacant": False,
+                        "col_key": f"{pid}-{seg['user_id']}",
+                        "from_date": from_date,
+                        "to_date": to_date,
+                        "past": past,
+                        "future": future,
+                    }
+                )
+        elif has_position_history(db, pid):
+            person_headers.append(
+                {
+                    "person_id": pid,
+                    "user_id": None,
+                    "name": "",
+                    "vacant": True,
+                    "col_key": f"{pid}-vacant",
+                    "from_date": year_start,
+                    "to_date": year_end,
+                    "past": False,
+                    "future": False,
+                }
+            )
+        else:
+            # Legacy position without history: link target is the position itself.
+            cp = get_current_person_for_position(db, pid)
+            person_headers.append(
+                {
+                    "person_id": pid,
+                    "user_id": pid,
+                    "name": cp["name"] if cp else f"Person {pid}",
+                    "vacant": False,
+                    "col_key": f"{pid}-{pid}",
+                    "from_date": year_start,
+                    "to_date": year_end,
+                    "past": False,
+                    "future": False,
+                }
+            )
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
 
@@ -202,8 +446,6 @@ async def show_year_all(
 
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
-
-    real_today = get_today()
 
     return render_template(
         templates,

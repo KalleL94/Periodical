@@ -18,12 +18,14 @@
         <a href="/range/{{ person_id }}?from={{ days[0].date }}&to={{ days[6].date }}" class="btn secondary">{{ t.range_btn }}</a>
         <a href="/week?year={{ year }}&week={{ week }}" class="btn secondary">{{ t.week_all }}</a>
         {# Navigering mellan personer - endast för admin #}
-        {% if user and user.role.value == 'admin' %}
-            {% for i in person_ids %}
-                <a href="/week/{{ i }}?year={{ year }}&week={{ week }}"
-                   class="btn secondary {% if i == person_id %}btn-person-active{% endif %}">
-                    {{ i }}
-                </a>
+        {% if user and user.role.value == 'admin' and person_nav %}
+            {% for p in person_nav %}
+                {% if not p.vacant and p.holder_user_id %}
+                    <a href="/week/{{ p.holder_user_id }}?year={{ year }}&week={{ week }}"
+                       class="btn secondary {% if p.holder_user_id == person_id %}btn-person-active{% endif %}">
+                        {{ p.person_id }}
+                    </a>
+                {% endif %}
             {% endfor %}
         {% endif %}
     </div>

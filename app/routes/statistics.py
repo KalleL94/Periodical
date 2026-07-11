@@ -1,7 +1,7 @@
 # app/routes/statistics.py
 """Statistics and trends routes - charts and visualizations for schedule data."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,8 @@ from app.core.schedule import (
 from app.core.schedule import persons as person_list
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_safe_today
-from app.core.validators import validate_person_id
 from app.database.database import User, UserRole, get_db
-from app.routes.shared import templates
+from app.routes.shared import _resolve_person_param, templates
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 
@@ -34,18 +33,13 @@ async def statistics_view(
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
-    # Handle both user_id (>10) and rotation position (1-10)
-    if person_id > 10:
-        target_user = db.query(User).filter(User.id == person_id).first()
-        if not target_user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id_for_wages = person_id
-        rotation_position = target_user.rotation_person_id
+    # Resolve as a USER id when a User row exists, else legacy rotation position.
+    target_user, rotation_position = _resolve_person_param(db, person_id)
+    if target_user is not None:
+        user_id_for_wages = target_user.id
         person_name = target_user.name
     else:
-        person_id = validate_person_id(person_id)
         user_id_for_wages = person_id
-        rotation_position = person_id
         person_name = None
 
     # Non-admin users can only view their own data
@@ -72,9 +66,15 @@ async def statistics_view(
                 holder = db.query(User).filter(User.id == rotation_position).first()
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
-    # Fetch year data
+    # Fetch year data. For user-scoped views (a User resolved) filter months to
+    # the viewed user's employment period regardless of the viewer's role.
     year_data = summarize_year_for_person(
-        year, rotation_position, session=db, current_user=current_user, wage_user_id=user_id_for_wages
+        year,
+        rotation_position,
+        session=db,
+        current_user=current_user,
+        wage_user_id=user_id_for_wages,
+        employment_user_id=target_user.id if target_user is not None else None,
     )
     months = year_data["months"]
     year_summary = year_data["year_summary"]
@@ -88,8 +88,8 @@ async def statistics_view(
     # Add vacation supplement data
     if show_salary:
         vac_user = (
-            db.query(User).filter(User.id == user_id_for_wages).first()
-            if user_id_for_wages > 10
+            target_user
+            if target_user is not None
             else db.query(User).filter(User.person_id == rotation_position).first()
         )
         if vac_user:

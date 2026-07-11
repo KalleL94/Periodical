@@ -24,7 +24,7 @@ from .core import (
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
 from .overtime import get_overtime_shift_for_date
-from .person_history import get_current_person_for_position, get_person_for_date
+from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
@@ -65,6 +65,7 @@ def build_week_data(
     session=None,
     include_coworkers: bool = False,
     employment_start: datetime.date | None = None,
+    employment_end: datetime.date | None = None,
 ) -> list[dict]:
     """
     Bygger veckodata för ett år/vecka.
@@ -74,6 +75,10 @@ def build_week_data(
         week: Veckonummer (ISO)
         person_id: Om None, returneras alla personer per dag
         session: SQLAlchemy session för DB-queries
+        employment_start: Mask days before this date to OFF (viewer not yet employed)
+        employment_end: Mask days after this date to OFF (viewer's own employment
+            for this position has ended, with or without a successor since taking
+            over - their page must not show a successor's real schedule)
 
     Returns:
         Lista med 7 dagar, varje dag innehåller skiftinfo
@@ -130,6 +135,9 @@ def build_week_data(
             day_info.update(_build_person_day_basic(current_date, person_id, ctx, session, employment_start))
 
         days_in_week.append(day_info)
+
+    if person_id is not None and employment_end is not None:
+        days_in_week = mask_days_to_employment(days_in_week, datetime.date.min, employment_end)
 
     # Add coworkers if requested
     if include_coworkers and person_id is not None:
@@ -386,6 +394,50 @@ def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[
         if u.person_id is not None:
             result[u.person_id] = u.id
     return result
+
+
+def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]):
+    """Return a date-aware (user_id, date) -> rotation position resolver.
+
+    Reads PersonHistory once so each fetched row is bucketed onto the position its
+    user held ON THAT ROW'S DATE, not the user's current position. A position swap
+    updates User.person_id immediately (even for a future-dated swap), so keying on
+    current state alone would move a pre-swap row onto the successor's column.
+
+    current_map (user_id -> current position) is the fallback for users that have no
+    PersonHistory rows at all (legacy assignments), preserving existing behavior for
+    them. Resolution mirrors get_user_person_id: prefer the record covering the date,
+    otherwise the most recent record.
+    """
+    from app.database.database import PersonHistory
+
+    segments: dict[int, list] = {}
+    if session and user_ids:
+        rows = (
+            session.query(PersonHistory)
+            .filter(PersonHistory.user_id.in_(list(user_ids)))
+            .order_by(PersonHistory.effective_from.asc())
+            .all()
+        )
+        for r in rows:
+            segments.setdefault(r.user_id, []).append(r)
+
+    def resolve(user_id: int, on_date: datetime.date) -> int:
+        recs = segments.get(user_id)
+        if not recs:
+            return current_map.get(user_id, user_id)
+        # recs are ascending by effective_from; the last covering match is the one
+        # with the latest effective_from, matching get_user_person_id's ordering.
+        covering = None
+        for r in recs:
+            if r.effective_from <= on_date and (r.effective_to is None or r.effective_to >= on_date):
+                covering = r
+        if covering is not None:
+            return covering.person_id
+        # No tenure covers the date: fall back to the most recent record.
+        return recs[-1].person_id
+
+    return resolve
 
 
 def _get_substitutes_with_shifts(session, start_date: datetime.date, end_date: datetime.date) -> list:
@@ -687,6 +739,50 @@ def _get_substitutes_with_activity(
     return [s for s in subs if s.id in active_ids]
 
 
+def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: datetime.date) -> list[dict]:
+    """
+    Copy a position's generated day dicts, rendering days outside an employment
+    segment as OFF (zero hours, no pay, before_employment flag) so a per-holder
+    column only counts and displays that holder's own days.
+
+    Days inside [seg_from, seg_to] are passed through unchanged (same object).
+    Days outside are shallow-copied and zeroed so summarize_month_for_person
+    contributes nothing for them, exactly like a real before-employment day.
+    The zeroed keys mirror the before-employment early return in
+    _populate_single_person_day; identity keys (date, person_id, rotation_week,
+    weekday_name, etc.) are left intact.
+    """
+    shift_types = get_shift_types()
+    off_shift = next((s for s in shift_types if s.code == "OFF"), None)
+    masked: list[dict] = []
+    for day in days:
+        d = day.get("date")
+        if d is not None and (d < seg_from or d > seg_to):
+            copy = dict(day)
+            copy["shift"] = off_shift
+            copy["hours"] = 0.0
+            copy["start"] = None
+            copy["end"] = None
+            copy["ob"] = {}
+            copy["oncall_pay"] = 0.0
+            copy["oncall_details"] = {}
+            copy["ot_pay"] = 0.0
+            copy["ot_hours"] = 0.0
+            copy["ot_details"] = {}
+            copy["ob_hours_override"] = None
+            copy["before_employment"] = True
+            # Clear week-based flags the summary counts independently of the shift,
+            # so an out-of-segment day contributes no parental/partial-absence total.
+            if "parental_leave" in copy:
+                copy["parental_leave"] = False
+            if "partial_absence" in copy:
+                copy["partial_absence"] = None
+            masked.append(copy)
+        else:
+            masked.append(day)
+    return masked
+
+
 def build_substitute_month_summaries(year: int, month: int, session, include_overtime: bool = False) -> list[dict]:
     """Build per-substitute month summaries (schedule only, no salary) for the month view.
 
@@ -837,7 +933,8 @@ def _batch_fetch_absences(
         .all()
     )
 
-    return {(user_id_to_rotation.get(a.user_id, a.user_id), a.date): a for a in absences}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(a.user_id, a.date), a.date): a for a in absences}
 
 
 def _batch_fetch_ot_shifts(
@@ -878,7 +975,8 @@ def _batch_fetch_ot_shifts(
         .all()
     )
 
-    return {(user_id_to_rotation.get(s.user_id, s.user_id), s.date): s for s in ot_shifts}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(s.user_id, s.date), s.date): s for s in ot_shifts}
 
 
 def _batch_fetch_oncall_overrides(
@@ -916,7 +1014,8 @@ def _batch_fetch_oncall_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_shift_overrides(
@@ -953,7 +1052,8 @@ def _batch_fetch_shift_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_day_pay_overrides(
@@ -990,7 +1090,8 @@ def _batch_fetch_day_pay_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_swap_map(
@@ -1045,29 +1146,35 @@ def _batch_fetch_swap_map(
             if u.id not in user_rotation:
                 user_rotation[u.id] = u.person_id if u.person_id else u.id
 
+    # Resolve each participant's rotation position by the specific date being keyed,
+    # so a position change between requester_date and target_date buckets each shift
+    # onto the position its holder actually occupied on that day.
+    resolve_pos = _build_user_position_resolver(session, set(user_ids) | all_swap_user_ids, user_rotation)
     rotation_set = set(person_ids)
     swap_map = {}
     for swap in swaps:
-        req_rot = user_rotation.get(swap.requester_id, swap.requester_id)
-        tgt_rot = user_rotation.get(swap.target_id, swap.target_id)
+        req_rot_rd = resolve_pos(swap.requester_id, swap.requester_date)
+        tgt_rot_rd = resolve_pos(swap.target_id, swap.requester_date)
+        req_rot_td = resolve_pos(swap.requester_id, swap.target_date)
+        tgt_rot_td = resolve_pos(swap.target_id, swap.target_date)
 
         # On requester_date: they swap shifts
-        if req_rot in rotation_set:
+        if req_rot_rd in rotation_set:
             # Requester gets what target normally has on this date
-            tgt_result = determine_shift_for_date(swap.requester_date, tgt_rot)
-            swap_map[(req_rot, swap.requester_date)] = tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
-        if tgt_rot in rotation_set:
+            tgt_result = determine_shift_for_date(swap.requester_date, tgt_rot_rd)
+            swap_map[(req_rot_rd, swap.requester_date)] = tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
+        if tgt_rot_rd in rotation_set:
             # Target gets requester's shift on this date
-            swap_map[(tgt_rot, swap.requester_date)] = swap.requester_shift_code or "OFF"
+            swap_map[(tgt_rot_rd, swap.requester_date)] = swap.requester_shift_code or "OFF"
 
         # On target_date: they swap shifts
-        if tgt_rot in rotation_set:
+        if tgt_rot_td in rotation_set:
             # Target gets what requester normally has on this date
-            req_result = determine_shift_for_date(swap.target_date, req_rot)
-            swap_map[(tgt_rot, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
-        if req_rot in rotation_set:
+            req_result = determine_shift_for_date(swap.target_date, req_rot_td)
+            swap_map[(tgt_rot_td, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
+        if req_rot_td in rotation_set:
             # Requester gets target's shift on this date
-            swap_map[(req_rot, swap.target_date)] = swap.target_shift_code or "OFF"
+            swap_map[(req_rot_td, swap.target_date)] = swap.target_shift_code or "OFF"
 
     return swap_map
 
@@ -1376,6 +1483,11 @@ def _resolve_day_person(
     show_off_before_employment = False
 
     if session:
+        # Position vacated with no successor: render OFF after the last employment ended
+        vacancy = get_position_vacancy(session, person_id, current_day)
+        if vacancy:
+            return vacancy.name, True
+
         # First check who held this position on this specific date
         date_person = get_person_for_date(session, person_id, current_day)
         if date_person:

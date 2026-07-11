@@ -20,8 +20,10 @@
         {% endif %}
         {# Visa bara länk till egen year-sida, eller alla om admin #}
         {% if user and user.role.value == 'admin' %}
-            {% for i in person_ids %}
-                <a href="/year/{{ i }}?year={{ year }}" class="btn secondary">{{ i }}</a>
+            {% for p in person_headers %}
+                {% if not p.vacant %}
+                    <a href="/year/{{ p.user_id }}?year={{ year }}" class="btn secondary">{{ p.person_id }}</a>
+                {% endif %}
             {% endfor %}
         {% elif user %}
             <a href="/year/{{ user.id }}?year={{ year }}" class="btn secondary">{{ t.year_all_my_year }}</a>
@@ -36,9 +38,10 @@
         <button onclick="setAllPersonCols(false)" class="btn secondary btn-xs">Avmarkera alla</button>
         <span class="col-sep">|</span>
         {% for p in person_headers %}
+        {% set off_window = p.past or p.future %}
         <label class="col-toggle-label">
-            <input type="checkbox" checked onchange="togglePersonCol({{ p.person_id }}, this.checked)" class="cursor-pointer">
-            {{ p.person_name }}
+            <input type="checkbox" {% if not off_window %}checked{% endif %}{% if p.past %} data-past="1"{% endif %}{% if p.future %} data-future="1"{% endif %}{% if off_window %} data-off-window="1" disabled{% endif %} onchange="togglePersonCol('{{ p.col_key }}', this.checked)" class="cursor-pointer">
+            {% if p.vacant %}{{ t.schedule_vacant }}{% else %}{{ p.name }}{% endif %}
         </label>
         {% endfor %}
         <span class="col-sep">|</span>
@@ -56,8 +59,8 @@
                         <th></th>
                         <th></th>
                         {% for p in person_headers %}
-                            <th class="num" id="total-{{ p.person_id }}" data-person="{{ p.person_id }}">
-                                <span class="loading-spinner">...</span>
+                            <th class="num" id="total-{{ p.col_key }}" data-person="{{ p.col_key }}"{% if p.past or p.future %} style="display:none"{% endif %}>
+                                {% if p.vacant %}-{% else %}<span class="loading-spinner">...</span>{% endif %}
                             </th>
                         {% endfor %}
                     </tr>
@@ -66,14 +69,12 @@
                     <th class="w-md">{{ t.month_all_day_col }}</th>
                     <th class="w-lg">{{ t.month_all_date_col }}</th>
                     {% for p in person_headers %}
-                        <th class="person-header" data-person="{{ p.person_id }}">
-                            {% if user and user.rotation_person_id == p.person_id %}
-                                <a href="/year/{{ user.id }}?year={{ year }}">
-                                    {{ p.person_name }}<br>
-                                    <small>(#{{ p.person_id }})</small>
-                                </a>
+                        <th class="person-header{% if p.past %} past-col{% endif %}{% if p.future %} future-col{% endif %}" data-person="{{ p.col_key }}" data-past="{{ '1' if p.past else '0' }}" data-future="{{ '1' if p.future else '0' }}"{% if p.past or p.future %} style="display:none"{% endif %}>
+                            {% if p.vacant %}
+                                {{ t.schedule_vacant }}<br>
+                                <small>(#{{ p.person_id }})</small>
                             {% else %}
-                                {{ p.person_name }}<br>
+                                <a href="/year/{{ p.user_id }}?year={{ year }}">{{ p.name }}</a><br>
                                 <small>(#{{ p.person_id }})</small>
                             {% endif %}
                         </th>
@@ -96,20 +97,23 @@
                                 <span class="badge badge-ob4 badge-marker-xs">H</span>
                             {% endif %}
                         </td>
-                        {% for person in day.persons %}
+                        {% for col in person_headers %}
+                            {% set person = (day.persons | selectattr('person_id', 'equalto', col.person_id) | list | first) %}
+                            {% if person and col.from_date <= day.date <= col.to_date %}
                             {% set orig_code = person.original_shift.code if person.original_shift else (person.shift.code if person.shift else 'OFF') %}
                             {% set orig_color = person.original_shift.color if person.original_shift else (person.shift.color if person.shift else 'transparent') %}
                             {% set is_changed = person.shift and person.original_shift and person.shift.code != person.original_shift.code %}
-                            <td class="day-cell month-shift-cell" data-person="{{ person.person_id }}"
+                            <td class="day-cell month-shift-cell" data-person="{{ col.col_key }}"{% if col.past or col.future %} style="display:none"{% endif %}
                                 data-act-color="{{ person.shift.color if person.shift else 'transparent' }}"
                                 data-orig-color="{{ orig_color }}"
                                 data-orig-code="{{ orig_code }}"
                                 data-changed="{{ '1' if is_changed else '0' }}"
                                 data-border-left="{% if person.shift %}{{ person.shift.color }}{% else %}transparent{% endif %}">
                                 {% if person.shift %}
-                                    {# Länka till day-sida bara om admin eller egen #}
-                                    {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
-                                        {% set link_id = user.id if user.rotation_person_id == person.person_id else person.person_id %}
+                                    {# Länka till day-sida bara om admin eller egen. Länken pekar på innehavarens användar-id. #}
+                                    {% set is_own = user and user.rotation_person_id == col.person_id %}
+                                    {% set link_id = user.id if is_own else col.user_id %}
+                                    {% if user and link_id and (user.role.value == 'admin' or is_own) %}
                                         <a href="/day/{{ link_id }}/{{ day.date.year }}/{{ day.date.month }}/{{ day.date.day }}"
                                            class="plain-link">
                                     {% endif %}
@@ -128,13 +132,23 @@
                                                   data-act-label="{{ person.shift.code }}"
                                                   data-bg="{{ person.shift.color }}" data-fg="{{ person.shift.color | contrast }}">{{ person.shift.code }}</span>{% if is_changed %}<sup class="orig-asterisk">*</sup>{% endif %}
                                         {% endif %}
-                                    {% if user and (user.role.value == 'admin' or user.rotation_person_id == person.person_id) %}
+                                    {% if user and link_id and (user.role.value == 'admin' or is_own) %}
                                         </a>
                                     {% endif %}
                                 {% else %}
                                     <span class="badge badge-off js-sb" data-act-label="OFF">OFF</span>
                                 {% endif %}
                             </td>
+                            {% else %}
+                            <td class="day-cell month-shift-cell out-of-tenure" data-person="{{ col.col_key }}"{% if col.past or col.future %} style="display:none"{% endif %}
+                                data-act-color="transparent"
+                                data-orig-color="transparent"
+                                data-orig-code="OFF"
+                                data-changed="0"
+                                data-border-left="transparent">
+                                <span class="badge badge-off js-sb" data-act-label="OFF">OFF</span>
+                            </td>
+                            {% endif %}
                         {% endfor %}
                     </tr>
                 {% endfor %}
@@ -144,14 +158,17 @@
 
 <script>
 var _filterInit = false;
-function togglePersonCol(pid, show) {
-    document.querySelectorAll('[data-person="' + pid + '"]').forEach(function(c) {
+function togglePersonCol(colKey, show) {
+    document.querySelectorAll('[data-person="' + colKey + '"]').forEach(function(c) {
         c.style.display = show ? '' : 'none';
     });
     if (!_filterInit) _saveFilterState();
 }
 function setAllPersonCols(show) {
     document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        // Skip disabled past holders: they can only be revealed via the
+        // "show past days" toggle, never through "select all"/"deselect all".
+        if (cb.disabled) return;
         cb.checked = show;
         cb.dispatchEvent(new Event('change'));
     });
@@ -177,16 +194,25 @@ function toggleOriginalMode() {
     _saveFilterState();
 }
 
+function _colKeyOf(cb) {
+    var m = cb.getAttribute('onchange').match(/togglePersonCol\('([^']+)'/);
+    return m ? m[1] : null;
+}
+
 function _saveFilterState() {
+    // Persist only in-window columns. Off-window holders (past or future) are
+    // never stored: they always start hidden + disabled and are revealed
+    // transiently via "show past days".
     var hidden = [];
     document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+        if (cb.getAttribute('data-off-window') === '1') return;
         if (!cb.checked) {
-            var m = cb.getAttribute('onchange').match(/\((\d+)/);
-            if (m) hidden.push(+m[1]);
+            var key = _colKeyOf(cb);
+            if (key) hidden.push(key);
         }
     });
     try {
-        localStorage.setItem('p_filter_persons', JSON.stringify(hidden));
+        localStorage.setItem('p_filter_cols_v2', JSON.stringify({ hidden: hidden }));
         localStorage.setItem('p_filter_orig', showOriginal ? '1' : '0');
     } catch(e) {}
 }
@@ -194,16 +220,27 @@ function _saveFilterState() {
 function _loadFilterState() {
     _filterInit = true;
     try {
-        var hiddenSet = new Set(JSON.parse(localStorage.getItem('p_filter_persons') || '[]'));
-        if (hiddenSet.size > 0) {
-            document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
-                var m = cb.getAttribute('onchange').match(/\((\d+)/);
-                if (m && hiddenSet.has(+m[1])) {
-                    cb.checked = false;
-                    togglePersonCol(+m[1], false);
-                }
-            });
+        // Drop the legacy key: its numeric-pid payload predates col_keys and, if
+        // present, would force-show every column and resurrect past holders.
+        localStorage.removeItem('p_filter_persons');
+        // In-window columns honour the stored hidden list; off-window holders
+        // (past or future) are never stored and keep the server default (hidden +
+        // disabled), so stored state can never implicitly reveal a departed or
+        // not-yet-started holder.
+        var raw = localStorage.getItem('p_filter_cols_v2');
+        var hiddenSet = new Set();
+        if (raw !== null) {
+            var parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.hidden)) hiddenSet = new Set(parsed.hidden);
         }
+        document.querySelectorAll('input[onchange^="togglePersonCol"]').forEach(function(cb) {
+            if (cb.getAttribute('data-off-window') === '1') return;
+            var key = _colKeyOf(cb);
+            if (!key) return;
+            var show = !hiddenSet.has(key);
+            cb.checked = show;
+            togglePersonCol(key, show);
+        });
         if (localStorage.getItem('p_filter_orig') === '1') {
             showOriginal = true;
             var btn = document.getElementById('orig-toggle-btn');
@@ -262,6 +299,23 @@ function togglePastRows() {
     rows.forEach(function(row) {
         row.style.display = pastRowsVisible ? '' : 'none';
     });
+    // Reveal/hide the off-window columns (departed and not-yet-started holders)
+    // alongside the past rows and sync their checkboxes. This is a transient view
+    // toggle (like past rows), so suppress persistence: off-window holders stay
+    // hidden by default on reload.
+    var wasInit = _filterInit;
+    _filterInit = true;
+    document.querySelectorAll('input[data-off-window="1"][onchange^="togglePersonCol"]').forEach(function(cb) {
+        var key = _colKeyOf(cb);
+        if (!key) return;
+        // Enable + check when revealing past days; uncheck + disable (and hide
+        // the column) when hiding them again, so an off-window holder cannot be
+        // toggled on individually while past days are hidden.
+        cb.disabled = !pastRowsVisible;
+        cb.checked = pastRowsVisible;
+        togglePersonCol(key, pastRowsVisible);
+    });
+    _filterInit = wasInit;
     var btn = document.getElementById('toggle-past-btn');
     if (btn) {
         var lang = document.documentElement.lang || 'sv';
@@ -286,17 +340,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     {% if user and user.role.value == 'admin' %}
     const year = {{ year }};
-    const personIds = [
-        {% if days and days|length > 0 %}
-            {% for p in days[0].persons %}{{ p.person_id }}{% if not loop.last %}, {% endif %}{% endfor %}
-        {% endif %}
+    // One entry per holder column. Each column scopes totals to its own holder
+    // via the user_id query param; vacant columns render a dash without fetching.
+    const cols = [
+        {% for p in person_headers %}{col_key: '{{ p.col_key }}', person_id: {{ p.person_id }}, user_id: {{ p.user_id if p.user_id is not none else 'null' }}, vacant: {{ 'true' if p.vacant else 'false' }}}{% if not loop.last %}, {% endif %}{% endfor %}
     ];
 
-    console.log('[Year View] Lazy-loading totals for', personIds.length, 'persons');
+    console.log('[Year View] Lazy-loading totals for', cols.length, 'columns');
 
-    // Fetch totals for each person
-    personIds.forEach(personId => {
-        fetch(`/api/year/${year}/totals/${personId}`)
+    // Fetch totals for each holder column
+    cols.forEach(col => {
+        const totalCell = document.getElementById(`total-${col.col_key}`);
+        if (col.vacant) {
+            if (totalCell) totalCell.innerHTML = '-';
+            return;
+        }
+        let url = `/api/year/${year}/totals/${col.person_id}`;
+        if (col.user_id !== null) url += `?user_id=${col.user_id}`;
+        fetch(url)
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -304,8 +365,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(data => {
-                console.log(`[Year View] Loaded total for person ${personId}:`, data.total_ob);
-                const totalCell = document.getElementById(`total-${personId}`);
+                console.log(`[Year View] Loaded total for column ${col.col_key}:`, data.total_ob);
                 if (totalCell && data.total_ob !== null && data.total_ob !== undefined) {
                     totalCell.innerHTML = data.total_ob.toFixed(2);
                 } else if (totalCell) {
@@ -313,8 +373,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(error => {
-                console.error(`[Year View] Error loading total for person ${personId}:`, error);
-                const totalCell = document.getElementById(`total-${personId}`);
+                console.error(`[Year View] Error loading total for column ${col.col_key}:`, error);
                 if (totalCell) {
                     totalCell.innerHTML = '<span class="text-danger">✗</span>';
                 }

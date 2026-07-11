@@ -29,12 +29,14 @@
         <div class="day-buttons-right">
             <a href="/handover?date={{ date }}" class="btn secondary">{{ t.handover_title }}</a>
             {# Navigering mellan personer - endast för admin #}
-            {% if user and user.role.value == 'admin' %}
-                {% for i in person_ids %}
-                    <a href="/day/{{ i }}/{{ date.year }}/{{ date.month }}/{{ date.day }}"
-                       class="btn secondary btn-person {% if i == person_id %}btn-person-active{% endif %}">
-                        {{ i }}
-                    </a>
+            {% if user and user.role.value == 'admin' and person_nav %}
+                {% for p in person_nav %}
+                    {% if not p.vacant and p.holder_user_id %}
+                        <a href="/day/{{ p.holder_user_id }}/{{ date.year }}/{{ date.month }}/{{ date.day }}"
+                           class="btn secondary btn-person {% if p.holder_user_id == person_id %}btn-person-active{% endif %}">
+                            {{ p.person_id }}
+                        </a>
+                    {% endif %}
                 {% endfor %}
             {% endif %}
         </div>

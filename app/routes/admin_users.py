@@ -95,14 +95,13 @@ async def admin_create_user(
     return RedirectResponse(url="/admin/users", status_code=302)
 
 
-@router.get("/admin/users/{user_id}", response_class=HTMLResponse, name="admin_edit_user_page")
-async def admin_edit_user_page(
-    request: Request,
-    user_id: int,
-    current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db),
-):
-    """Admin: show edit user form."""
+def _build_user_edit_context(request, current_user, edit_user, db):
+    """Build the full template context for admin_user_edit.html.
+
+    Shared by the edit page GET route and by the POST routes that need to
+    re-render the page with a form error, so the template always has every
+    variable it (and its included partials) expect.
+    """
     from app.core.rates import get_all_defaults, get_rate_history
     from app.core.schedule import get_wage_history
     from app.core.schedule.person_history import get_user_history
@@ -116,13 +115,9 @@ async def admin_edit_user_page(
     from app.core.utils import get_today
     from app.database.database import EmploymentTransition
 
-    edit_user = db.query(User).filter(User.id == user_id).first()
-    if not edit_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
     available_tax_tables = get_available_tax_tables()
-    wage_history = get_wage_history(db, user_id)
-    person_history = get_user_history(db, user_id)
+    wage_history = get_wage_history(db, edit_user.id)
+    person_history = get_user_history(db, edit_user.id)
     vacation_balance = calculate_vacation_balance(edit_user, get_today().year, db)
 
     edit_transition = db.query(EmploymentTransition).filter(EmploymentTransition.user_id == edit_user.id).first()
@@ -134,28 +129,40 @@ async def admin_edit_user_page(
             admin_auto_variable_avg = calculate_variable_avg_daily(edit_user, db, earning_start, earning_end)
         admin_auto_vacation_days = calculate_consultant_vacation_days(edit_user, edit_transition, session=db)
 
-    return render(
-        "admin_user_edit.html",
-        {
-            "request": request,
-            "user": current_user,
-            "edit_user": edit_user,
-            "available_tax_tables": available_tax_tables,
-            "wage_history": wage_history,
-            "person_history": person_history,
-            "vacation_balance": vacation_balance,
-            "rate_defaults": get_all_defaults(),
-            "custom_rates": edit_user.custom_rates or {},
-            "rate_history": get_rate_history(db, edit_user.id),
-            "edit_transition": edit_transition,
-            "admin_auto_variable_avg": admin_auto_variable_avg,
-            "admin_auto_vacation_days": admin_auto_vacation_days,
-            "salary_types": [
-                ("trailing", "Släpande (lön för föregående månad)"),
-                ("current", "Innestående (lön för aktuell månad)"),
-            ],
-        },
-    )
+    return {
+        "request": request,
+        "user": current_user,
+        "edit_user": edit_user,
+        "available_tax_tables": available_tax_tables,
+        "wage_history": wage_history,
+        "person_history": person_history,
+        "vacation_balance": vacation_balance,
+        "rate_defaults": get_all_defaults(),
+        "custom_rates": edit_user.custom_rates or {},
+        "rate_history": get_rate_history(db, edit_user.id),
+        "edit_transition": edit_transition,
+        "admin_auto_variable_avg": admin_auto_variable_avg,
+        "admin_auto_vacation_days": admin_auto_vacation_days,
+        "salary_types": [
+            ("trailing", "Släpande (lön för föregående månad)"),
+            ("current", "Innestående (lön för aktuell månad)"),
+        ],
+    }
+
+
+@router.get("/admin/users/{user_id}", response_class=HTMLResponse, name="admin_edit_user_page")
+async def admin_edit_user_page(
+    request: Request,
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: show edit user form."""
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return render("admin_user_edit.html", _build_user_edit_context(request, current_user, edit_user, db))
 
 
 @router.post("/admin/users/{user_id}", name="admin_update_user")
@@ -468,6 +475,17 @@ async def admin_start_employment(
 
     try:
         start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        return render(
+            "admin_user_edit.html",
+            {
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": f"Ogiltigt datumformat: {e}",
+            },
+            status_code=400,
+        )
+
+    try:
         start_employment(
             session=db,
             user_id=user_id,
@@ -477,19 +495,18 @@ async def admin_start_employment(
             start_date=start_date_obj,
             created_by=current_user.id,
         )
-        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
-
     except ValueError as e:
         return render(
             "admin_user_edit.html",
             {
-                "request": request,
-                "user": current_user,
-                "edit_user": edit_user,
-                "error": f"Ogiltigt datumformat: {e}",
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": str(e),
             },
             status_code=400,
         )
+
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
 
 @router.post("/admin/users/{user_id}/end-employment", name="admin_end_employment")
@@ -512,46 +529,50 @@ async def admin_end_employment(
 
     try:
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        return render(
+            "admin_user_edit.html",
+            {
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": f"Ogiltigt datumformat: {e}",
+            },
+            status_code=400,
+        )
+
+    try:
         end_employment(
             session=db,
             user_id=user_id,
             person_id=person_id,
             end_date=end_date_obj,
         )
-        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
-
     except ValueError as e:
         return render(
             "admin_user_edit.html",
             {
-                "request": request,
-                "user": current_user,
-                "edit_user": edit_user,
-                "error": f"Ogiltigt datumformat: {e}",
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": str(e),
             },
             status_code=400,
         )
 
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
-@router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
-async def admin_delete_employment(
-    request: Request,
-    user_id: int,
-    history_id: int,
-    current_user: User = Depends(get_admin_user),
-    db: Session = Depends(get_db),
-):
-    """Admin: delete a person history entry."""
+
+def _delete_employment_record(db: Session, history_record) -> None:
+    """Delete a PersonHistory record, reopening the previous holder if needed.
+
+    When the deleted record is the open one at its position, the most recent
+    closed record on that position is reopened (effective_to cleared) and the
+    holding user's person_id is released. If the record was the user's last
+    remaining history entry, the user is deactivated. Commits once and clears
+    the schedule cache. Shared by the user-page and person-change delete routes.
+    """
     from app.database.database import PersonHistory
 
-    history_record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
-
-    if not history_record:
-        raise HTTPException(status_code=404, detail="Employment record not found")
-
-    if history_record.user_id != user_id:
-        raise HTTPException(status_code=400, detail="Employment record does not belong to this user")
-
+    user_id = history_record.user_id
+    history_id = history_record.id
     person_id = history_record.person_id
 
     if history_record.effective_to is None:
@@ -592,6 +613,28 @@ async def admin_delete_employment(
         raise
 
     clear_schedule_cache()
+
+
+@router.post("/admin/users/{user_id}/delete-employment/{history_id}", name="admin_delete_employment")
+async def admin_delete_employment(
+    request: Request,
+    user_id: int,
+    history_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete a person history entry."""
+    from app.database.database import PersonHistory
+
+    history_record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+
+    if not history_record:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    if history_record.user_id != user_id:
+        raise HTTPException(status_code=400, detail="Employment record does not belong to this user")
+
+    _delete_employment_record(db, history_record)
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
@@ -787,3 +830,319 @@ async def admin_transition_delete(
             raise
 
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+def _person_change_context(
+    request: Request,
+    current_user: User,
+    db: Session,
+    error: str | None = None,
+    form: dict | None = None,
+) -> dict:
+    """Build template context for the person change page."""
+    from app.database.database import PersonHistory
+
+    open_records = {r.person_id: r for r in db.query(PersonHistory).filter(PersonHistory.effective_to.is_(None)).all()}
+
+    positions = []
+    for pid in range(1, 11):
+        record = open_records.get(pid)
+        holder_name = record.name if record else None
+        holder_user_id = record.user_id if record else None
+        since = record.effective_from if record else None
+        if record is None:
+            # Legacy fallback: an active user assigned to the position without history
+            legacy = (
+                db.query(User)
+                .filter(User.is_active == 1)
+                .filter((User.person_id == pid) | ((User.person_id.is_(None)) & (User.id == pid)))
+                .first()
+            )
+            if legacy:
+                holder_name = legacy.name
+                holder_user_id = legacy.id
+        positions.append(
+            {
+                "person_id": pid,
+                "holder_name": holder_name,
+                "holder_user_id": holder_user_id,
+                "since": since,
+            }
+        )
+
+    held_user_ids = [p["holder_user_id"] for p in positions if p["holder_user_id"] is not None]
+    available_users = (
+        db.query(User).filter(User.id.notin_(held_user_ids)).order_by(User.name).all()
+        if held_user_ids
+        else db.query(User).order_by(User.name).all()
+    )
+
+    history_records = (
+        db.query(PersonHistory).order_by(PersonHistory.person_id.asc(), PersonHistory.effective_from.desc()).all()
+    )
+    history = [
+        {
+            "id": r.id,
+            "person_id": r.person_id,
+            "name": r.name,
+            "username": r.username,
+            "effective_from": r.effective_from,
+            "effective_to": r.effective_to,
+            "is_current": r.effective_to is None,
+        }
+        for r in history_records
+    ]
+
+    return {
+        "request": request,
+        "user": current_user,
+        "positions": positions,
+        "available_users": available_users,
+        "history": history,
+        "error": error,
+        "form": form or {},
+        "success": False,
+    }
+
+
+@router.get("/admin/person-change", response_class=HTMLResponse, name="admin_person_change_page")
+async def admin_person_change_page(
+    request: Request,
+    success: int = Query(0),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: show the guided person change page."""
+    ctx = _person_change_context(request, current_user, db)
+    ctx["success"] = bool(success)
+    return render("admin_person_change.html", ctx)
+
+
+@router.post("/admin/person-change", name="admin_person_change_submit")
+async def admin_person_change_submit(
+    request: Request,
+    person_id: int = Form(...),
+    last_working_day: str = Form(""),
+    start_date: str = Form(""),
+    successor_mode: str = Form(...),
+    existing_user_id: str = Form(""),
+    new_name: str = Form(""),
+    new_username: str = Form(""),
+    new_password: str = Form(""),
+    new_wage: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: perform a guided person change (swap, hire, or vacancy). PRG redirect."""
+    from app.core.schedule.person_history import add_person_change, end_employment, start_employment
+
+    form = {
+        "person_id": person_id,
+        "last_working_day": last_working_day,
+        "start_date": start_date,
+        "successor_mode": successor_mode,
+        "existing_user_id": existing_user_id,
+        "new_name": new_name,
+        "new_username": new_username,
+        "new_wage": new_wage,
+    }
+
+    def fail(message: str):
+        ctx = _person_change_context(request, current_user, db, error=message, form=form)
+        return render("admin_person_change.html", ctx, status_code=400)
+
+    if not (1 <= person_id <= 10) or successor_mode not in ("existing", "new", "none"):
+        return fail("Ogiltigt val.")
+
+    # Resolve the current holder the same way the GET page displays it
+    holder_user_id = next(
+        (
+            p["holder_user_id"]
+            for p in _person_change_context(request, current_user, db)["positions"]
+            if p["person_id"] == person_id
+        ),
+        None,
+    )
+
+    last_day_obj = None
+    if last_working_day.strip():
+        try:
+            last_day_obj = datetime.date.fromisoformat(last_working_day.strip())
+        except ValueError:
+            return fail("Ogiltigt datum för sista arbetsdag.")
+
+    if successor_mode == "none":
+        if holder_user_id is None:
+            return fail("Positionen är redan vakant.")
+        if last_day_obj is None:
+            return fail("Ange sista arbetsdag.")
+        try:
+            end_employment(db, holder_user_id, person_id, last_day_obj)
+        except ValueError as e:
+            return fail(str(e))
+        clear_schedule_cache()
+        return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
+
+    # Swap or plain start: a start date is required
+    try:
+        start_date_obj = datetime.date.fromisoformat(start_date.strip())
+    except ValueError:
+        return fail("Ogiltigt startdatum.")
+
+    if holder_user_id is not None and last_day_obj is None:
+        return fail("Ange sista arbetsdag för den avgående personen.")
+
+    # Resolve or create the successor
+    if successor_mode == "existing":
+        try:
+            successor = db.query(User).filter(User.id == int(existing_user_id)).first()
+        except ValueError:
+            successor = None
+        if successor is None:
+            return fail("Välj en efterträdare.")
+    else:
+        if not new_name.strip() or not new_username.strip():
+            return fail("Namn och användarnamn krävs.")
+        if len(new_password) < 8:
+            return fail("Lösenordet måste vara minst 8 tecken.")
+        try:
+            wage_int = int(new_wage.strip())
+        except ValueError:
+            return fail("Ogiltig månadslön.")
+        # Reject a zero or negative wage for the new successor
+        if wage_int <= 0:
+            return fail("Ogiltig månadslön.")
+        if get_user_by_username(db, new_username.strip()):
+            return fail("Användarnamnet finns redan.")
+        successor = User(
+            username=new_username.strip(),
+            password_hash=get_password_hash(new_password),
+            name=new_name.strip(),
+            role=UserRole.USER,
+            wage=wage_int,
+            wage_type=WageType.MONTHLY,
+            vacation={},
+            must_change_password=1,
+            is_active=0,
+        )
+        db.add(successor)
+        db.flush()  # assign id; committed together with the swap below
+
+    try:
+        if holder_user_id is not None:
+            add_person_change(
+                session=db,
+                old_user_id=holder_user_id,
+                new_user_id=successor.id,
+                person_id=person_id,
+                new_name=successor.name,
+                new_username=successor.username,
+                effective_from=start_date_obj,
+                created_by=current_user.id,
+                old_end_date=last_day_obj,
+            )
+        else:
+            start_employment(
+                session=db,
+                user_id=successor.id,
+                person_id=person_id,
+                name=successor.name,
+                username=successor.username,
+                start_date=start_date_obj,
+                created_by=current_user.id,
+            )
+    except ValueError as e:
+        db.rollback()
+        return fail(str(e))
+
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{successor.id}", status_code=302)
+
+
+@router.post("/admin/person-change/swap-positions", name="admin_swap_positions")
+async def admin_swap_positions(
+    request: Request,
+    position_a: int = Form(...),
+    position_b: int = Form(...),
+    swap_date: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: two current employees trade rotation positions. PRG redirect."""
+    from app.core.schedule.person_history import swap_positions
+
+    def fail(message: str):
+        ctx = _person_change_context(request, current_user, db, error=message)
+        return render("admin_person_change.html", ctx, status_code=400)
+
+    if not (1 <= position_a <= 10 and 1 <= position_b <= 10):
+        return fail("Ogiltig position.")
+
+    try:
+        swap_date_obj = datetime.date.fromisoformat(swap_date.strip())
+    except ValueError:
+        return fail("Ogiltigt bytesdatum.")
+
+    try:
+        swap_positions(db, position_a, position_b, swap_date_obj, created_by=current_user.id)
+    except ValueError as e:
+        db.rollback()
+        return fail(str(e))
+
+    clear_schedule_cache()
+    return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
+
+
+@router.post("/admin/person-change/history/{history_id}/edit", name="admin_person_change_history_edit")
+async def admin_person_change_history_edit(
+    request: Request,
+    history_id: int,
+    effective_from: str = Form(...),
+    effective_to: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: edit an employment record's date range. PRG redirect."""
+    from app.core.schedule.person_history import update_employment_dates
+
+    def fail(message: str):
+        ctx = _person_change_context(request, current_user, db, error=message)
+        return render("admin_person_change.html", ctx, status_code=400)
+
+    try:
+        from_obj = datetime.date.fromisoformat(effective_from.strip())
+    except ValueError:
+        return fail("Ogiltigt startdatum.")
+
+    to_obj = None
+    if effective_to.strip():
+        try:
+            to_obj = datetime.date.fromisoformat(effective_to.strip())
+        except ValueError:
+            return fail("Ogiltigt slutdatum.")
+
+    try:
+        update_employment_dates(db, history_id, from_obj, to_obj)
+    except ValueError as e:
+        db.rollback()
+        return fail(str(e))
+
+    clear_schedule_cache()
+    return RedirectResponse(url="/admin/person-change?success=1", status_code=302)
+
+
+@router.post("/admin/person-change/history/{history_id}/delete", name="admin_person_change_history_delete")
+async def admin_person_change_history_delete(
+    history_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: delete an employment record from the person change page. PRG redirect."""
+    from app.database.database import PersonHistory
+
+    record = db.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    _delete_employment_record(db, record)
+    return RedirectResponse(url="/admin/person-change?success=1", status_code=302)

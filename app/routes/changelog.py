@@ -15,6 +15,32 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.28.1",
+        "date": "2026-07-11",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "Byter två anställda rotationsplats med varandra syns bytet i schemat först från och med bytesdatumet. Deras personliga års- och månadssidor visar hela året över bytet, med rätt pass, lön och frånvaro för tiden på varje plats",
+                "en": "When two employees trade rotation positions, the change only appears in the schedule from the effective date. Their personal year and month pages show the whole year across the change, with the correct shifts, wage and absences for the time at each position",
+            },
+            {
+                "type": "fix",
+                "sv": "Pass efter en anställds sista arbetsdag visas nu som OFF i schemat i stället för att ligga kvar som vanliga arbetspass, även när en efterträdare börjar först senare. Personen räknas inte längre in i månader efter att anställningen tagit slut",
+                "en": "Shifts after an employee's last working day now show as OFF in the schedule instead of remaining as normal work shifts, including when a successor starts later. The person is no longer counted in months after their employment ended",
+            },
+            {
+                "type": "fix",
+                "sv": "Vid personbyte visas nu båda personerna i lagvyerna: varsin kolumn i månads- och årsvyn och varsin rad i veckovyn. I årsvyn döljs en avgången persons kolumn efter sista arbetsdagen och visas igen med Visa passerade dagar. En position utan innehavare märks som Vakant i stället för att visa fel namn",
+                "en": "When a person changes, both persons now appear in the team views: separate columns in the month and year views and separate rows in the week view. In the year view a departed person's column is hidden after their last working day and revealed with Show past days. A position without a holder is labeled Vacant instead of showing the wrong name",
+            },
+            {
+                "type": "fix",
+                "sv": "Personliga scheman öppnas nu per person i stället för per rotationsplats, så länkar visar rätt person även efter ett byte. Års- och månadssummeringar räknas bara på personens egen anställningstid och egen lön, även när ett byte sker mitt i en månad",
+                "en": "Personal schedules now open per person instead of per rotation position, so links show the right person even after a change. Year and month summaries are calculated only on the person's own employment period and own wage, including when a change happens mid-month",
+            },
+        ],
+    },
+    {
         "version": "0.28.0",
         "date": "2026-07-05",
         "entries": [

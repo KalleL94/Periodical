@@ -52,7 +52,13 @@ def get_person_for_date(session: Session, person_id: int, effective_date: date) 
             "user_id": record.user_id,
         }
 
-    # Fallback to User table if no PersonHistory exists
+    # Fallback to the User table only for positions without any history records.
+    # When history exists but no record covers the date, the position is
+    # genuinely unstaffed on that date (gap or vacancy) and None must be
+    # returned so schedule rendering can mark the day OFF.
+    if has_position_history(session, person_id):
+        return None
+
     user = session.query(User).filter(User.id == person_id).first()
     if user:
         return {
@@ -109,15 +115,20 @@ def add_person_change(
     new_username: str,
     effective_from: date,
     created_by: int,
+    old_end_date: date | None = None,
 ) -> PersonHistory:
     """
     Register a person change (someone leaving, someone else starting).
 
-    This function:
+    This function performs the whole swap in a single transaction:
     1. Closes old person's PersonHistory record (sets effective_to)
     2. Deactivates old user (sets is_active=0)
-    3. Creates new person's PersonHistory record
+    3. Creates new person's PersonHistory record via the validated
+       start_employment logic
     4. Activates new user (sets is_active=1)
+
+    The close and deactivate steps are uncommitted until start_employment
+    commits at the end, so any validation failure leaves nothing committed.
 
     Args:
         session: Database session
@@ -128,9 +139,18 @@ def add_person_change(
         new_username: New person's username
         effective_from: Date when new person starts
         created_by: Admin user ID creating this change
+        old_end_date: Last day of the old person's employment. Defaults to the
+            day before effective_from. Supply an earlier date to leave a gap
+            between the old person's last day and the new person's first day.
+            Must be before effective_from.
 
     Returns:
         The newly created PersonHistory record
+
+    Raises:
+        ValueError: If old_end_date is not before effective_from, if it
+            predates the old person's employment start, or if the position is
+            still held by someone other than old_user_id.
 
     Example:
         >>> # Person 6 (Kalle, user_id=6) leaves 2026-03-31
@@ -141,7 +161,12 @@ def add_person_change(
         ...     effective_from=date(2026, 4, 1), created_by=1
         ... )
     """
-    # Close old person's record (end date is day before new person starts)
+    if old_end_date is None:
+        old_end_date = effective_from - timedelta(days=1)
+    if old_end_date >= effective_from:
+        raise ValueError(f"The old person's end date {old_end_date} must be before the new start {effective_from}.")
+
+    # Close old person's record
     old_record = (
         session.query(PersonHistory)
         .filter(
@@ -153,7 +178,9 @@ def add_person_change(
     )
 
     if old_record:
-        old_record.effective_to = effective_from - timedelta(days=1)
+        if old_end_date < old_record.effective_from:
+            raise ValueError(f"End date {old_end_date} is before the employment start {old_record.effective_from}.")
+        old_record.effective_to = old_end_date
         old_record.is_active = 0
 
     # Deactivate old user and clear their rotation position
@@ -162,28 +189,20 @@ def add_person_change(
         old_user.is_active = 0
         old_user.person_id = None
 
-    # Create new person's record
-    new_record = PersonHistory(
+    # Make the closed record visible to the collision check below
+    session.flush()
+
+    # Reuse the validated start logic; it raises ValueError if the position
+    # is still held (e.g. old_user_id did not match the actual holder).
+    new_record = start_employment(
+        session=session,
         user_id=new_user_id,
         person_id=person_id,
         name=new_name,
         username=new_username,
-        is_active=1,
-        effective_from=effective_from,
-        effective_to=None,
+        start_date=effective_from,
         created_by=created_by,
     )
-    session.add(new_record)
-
-    # Activate new user and set their rotation position
-    new_user = session.query(User).filter(User.id == new_user_id).first()
-    if new_user:
-        new_user.is_active = 1
-        new_user.name = new_name
-        new_user.username = new_username
-        new_user.person_id = person_id
-
-    session.commit()
     return new_record
 
 
@@ -224,6 +243,9 @@ def end_employment(
         .first()
     )
 
+    if record and end_date < record.effective_from:
+        raise ValueError(f"End date {end_date} is before the employment start {record.effective_from}.")
+
     if record:
         record.effective_to = end_date
         record.is_active = 0
@@ -236,6 +258,76 @@ def end_employment(
 
     session.commit()
     return record
+
+
+def _create_employment_record(
+    session: Session,
+    user_id: int,
+    person_id: int,
+    name: str,
+    username: str,
+    start_date: date,
+    created_by: int,
+) -> PersonHistory:
+    """Validate and create an employment record without committing.
+
+    Shared by start_employment (public, commits) and swap_positions (which
+    must commit two crossed records atomically).
+    """
+    # One open record per position: reject if someone already holds it
+    open_at_position = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.person_id == person_id,
+            PersonHistory.effective_to.is_(None),
+        )
+        .first()
+    )
+    if open_at_position:
+        raise ValueError(
+            f"Position {person_id} is already held by {open_at_position.name} "
+            f"(since {open_at_position.effective_from}). End that employment first."
+        )
+
+    # One open record per user: a person cannot hold two positions
+    open_for_user = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.user_id == user_id,
+            PersonHistory.effective_to.is_(None),
+        )
+        .first()
+    )
+    if open_for_user:
+        raise ValueError(f"This user already has an open employment at position {open_for_user.person_id}.")
+
+    # Create new person's record
+    new_record = PersonHistory(
+        user_id=user_id,
+        person_id=person_id,
+        name=name,
+        username=username,
+        is_active=1,
+        effective_from=start_date,
+        effective_to=None,
+        created_by=created_by,
+    )
+    session.add(new_record)
+
+    # Activate user and set their rotation position
+    user = session.query(User).filter(User.id == user_id).first()
+    if user:
+        user.is_active = 1
+        user.name = name
+        user.username = username
+        user.person_id = person_id  # Set the rotation position
+        # Keep the vacation-balance start date in sync. An already populated
+        # value may deliberately predate the rotation (e.g. consultant history),
+        # so only fill it when empty.
+        if user.employment_start_date is None:
+            user.employment_start_date = start_date
+
+    return new_record
 
 
 def start_employment(
@@ -275,29 +367,137 @@ def start_employment(
         ...     start_date=date(2026, 4, 1), created_by=1
         ... )
     """
-    # Create new person's record
-    new_record = PersonHistory(
-        user_id=user_id,
-        person_id=person_id,
-        name=name,
-        username=username,
-        is_active=1,
-        effective_from=start_date,
-        effective_to=None,
-        created_by=created_by,
-    )
-    session.add(new_record)
-
-    # Activate user and set their rotation position
-    user = session.query(User).filter(User.id == user_id).first()
-    if user:
-        user.is_active = 1
-        user.name = name
-        user.username = username
-        user.person_id = person_id  # Set the rotation position
-
+    new_record = _create_employment_record(session, user_id, person_id, name, username, start_date, created_by)
     session.commit()
     return new_record
+
+
+def swap_positions(
+    session: Session,
+    person_id_a: int,
+    person_id_b: int,
+    swap_date: date,
+    created_by: int,
+) -> tuple[PersonHistory, PersonHistory]:
+    """
+    Two current employees trade rotation positions on a date.
+
+    Closes both open records the day before swap_date, then opens two new
+    records with the holders crossed. The whole swap commits once; any
+    validation failure leaves nothing committed.
+    """
+    if person_id_a == person_id_b:
+        raise ValueError("Cannot swap a position with itself.")
+
+    def _open_record(pid: int) -> PersonHistory:
+        record = (
+            session.query(PersonHistory)
+            .filter(PersonHistory.person_id == pid, PersonHistory.effective_to.is_(None))
+            .first()
+        )
+        if record is None:
+            raise ValueError(f"Position {pid} has no current holder to swap.")
+        return record
+
+    rec_a = _open_record(person_id_a)
+    rec_b = _open_record(person_id_b)
+
+    last_day = swap_date - timedelta(days=1)
+    for rec in (rec_a, rec_b):
+        if last_day < rec.effective_from:
+            raise ValueError(
+                f"Swap date {swap_date} is not after the employment start {rec.effective_from} "
+                f"at position {rec.person_id}."
+            )
+
+    rec_a.effective_to = last_day
+    rec_a.is_active = 0
+    rec_b.effective_to = last_day
+    rec_b.is_active = 0
+    session.flush()
+
+    new_b_at_a = _create_employment_record(
+        session, rec_b.user_id, person_id_a, rec_b.name, rec_b.username, swap_date, created_by
+    )
+    new_a_at_b = _create_employment_record(
+        session, rec_a.user_id, person_id_b, rec_a.name, rec_a.username, swap_date, created_by
+    )
+    session.commit()
+    return new_b_at_a, new_a_at_b
+
+
+def update_employment_dates(
+    session: Session,
+    history_id: int,
+    effective_from: date,
+    effective_to: date | None,
+) -> PersonHistory:
+    """
+    Edit the date range of an employment record, rotation-era style.
+
+    Validates against sibling records on the same position (no overlaps, at
+    most one open record). Closing the currently open record deactivates the
+    user; reopening a record activates the user at the position. The user's
+    employment_start_date is not modified by edits.
+    """
+    record = session.query(PersonHistory).filter(PersonHistory.id == history_id).first()
+    if record is None:
+        raise ValueError(f"Employment record {history_id} not found.")
+
+    if effective_to is not None and effective_to < effective_from:
+        raise ValueError(f"End date {effective_to} is before the start date {effective_from}.")
+
+    # Reopening this record must not give the user a second open employment.
+    # Sibling checks below only cover the same position, so a different open
+    # record at another position would otherwise slip through and corrupt the
+    # one-open-record-per-user invariant enforced by _create_employment_record.
+    if effective_to is None:
+        other_open_for_user = (
+            session.query(PersonHistory)
+            .filter(
+                PersonHistory.user_id == record.user_id,
+                PersonHistory.effective_to.is_(None),
+                PersonHistory.id != record.id,
+            )
+            .first()
+        )
+        if other_open_for_user:
+            raise ValueError(f"This user already has an open employment at position {other_open_for_user.person_id}.")
+
+    siblings = (
+        session.query(PersonHistory)
+        .filter(PersonHistory.person_id == record.person_id, PersonHistory.id != record.id)
+        .all()
+    )
+    for sib in siblings:
+        if effective_to is None and sib.effective_to is None:
+            raise ValueError(f"Position {record.person_id} already has an open employment ({sib.name}).")
+        sib_end = sib.effective_to or date.max
+        new_end = effective_to or date.max
+        if effective_from <= sib_end and sib.effective_from <= new_end:
+            raise ValueError(
+                f"The dates overlap {sib.name}'s employment "
+                f"({sib.effective_from} to {sib.effective_to or 'open'}) at position {record.person_id}."
+            )
+
+    was_open = record.effective_to is None
+    record.effective_from = effective_from
+    record.effective_to = effective_to
+
+    user = session.query(User).filter(User.id == record.user_id).first()
+    if effective_to is not None:
+        record.is_active = 0
+        if was_open and user:
+            user.is_active = 0
+            user.person_id = None
+    else:
+        record.is_active = 1
+        if user:
+            user.is_active = 1
+            user.person_id = record.person_id
+
+    session.commit()
+    return record
 
 
 def get_person_history(session: Session, person_id: int) -> list[dict]:
@@ -382,31 +582,80 @@ def get_user_history(session: Session, user_id: int) -> list[dict]:
     ]
 
 
-def get_user_person_id(session: Session, user_id: int) -> int | None:
+def get_user_person_id(session: Session, user_id: int, on_date: date | None = None) -> int | None:
     """
-    Get the person_id (rotation position) for a user.
+    Get the person_id (rotation position) a user holds on a given date.
 
-    Looks up PersonHistory to find which position the user occupies or occupied.
-    Returns the most recent person_id assignment.
+    Resolves the PersonHistory record covering on_date (effective_from <= on_date
+    and the record is still open or ends on/after on_date). This keeps a
+    future-dated position change invisible until its effective date: today's
+    resolution stays on the position held today, not the upcoming one.
+
+    When no record covers on_date, falls back to the closest record relative to
+    on_date: the most recent one that already started (so departed users keep
+    their last position), or if none has started yet, the earliest one (so
+    future-only hires resolve their upcoming position, even when they hold
+    2+ records and on_date precedes all of them).
 
     Args:
         session: Database session
         user_id: User ID
+        on_date: Date to resolve the position for. Defaults to get_today().
 
     Returns:
         The person_id (1-10) or None if no assignment found.
 
     Example:
-        >>> # Rickard (user_id=11) has person_id=3
-        >>> pid = get_user_person_id(db, user_id=11)
-        >>> print(pid)  # 3
+        >>> # Rickard (user_id=11) holds position 3 today, position 8 from Oct 1
+        >>> get_user_person_id(db, user_id=11)  # 3 (today)
+        >>> get_user_person_id(db, user_id=11, on_date=date(2026, 10, 1))  # 8
     """
+    from app.core.utils import get_today
+
+    if on_date is None:
+        on_date = get_today()
+
+    # Prefer the record covering on_date, so a future-dated change does not flip
+    # resolution before it takes effect.
     record = (
         session.query(PersonHistory)
-        .filter(PersonHistory.user_id == user_id)
+        .filter(
+            PersonHistory.user_id == user_id,
+            PersonHistory.effective_from <= on_date,
+            (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= on_date),
+        )
         .order_by(PersonHistory.effective_from.desc())
         .first()
     )
+
+    if record is None:
+        # No record covers on_date. Prefer the closest record that already
+        # started (effective_from <= on_date) so departed users - and dates
+        # falling in a real employment gap - keep resolving to the position
+        # they most recently held, relative to on_date. This must NOT default
+        # to whichever record has the globally latest effective_from: a user
+        # with 2+ records viewed before all of them (e.g. before their first
+        # hire date) would otherwise resolve to a future position they never
+        # held yet, instead of the one they are about to start.
+        record = (
+            session.query(PersonHistory)
+            .filter(
+                PersonHistory.user_id == user_id,
+                PersonHistory.effective_from <= on_date,
+            )
+            .order_by(PersonHistory.effective_from.desc())
+            .first()
+        )
+
+    if record is None:
+        # on_date precedes every record: fall back to the earliest one, i.e.
+        # the user's first/next assignment (future-only hire case).
+        record = (
+            session.query(PersonHistory)
+            .filter(PersonHistory.user_id == user_id)
+            .order_by(PersonHistory.effective_from.asc())
+            .first()
+        )
 
     if record:
         return record.person_id
@@ -531,3 +780,71 @@ def is_date_before_employment(session: Session, person_id: int, check_date: date
         return check_date < current["effective_from"]
 
     return False
+
+
+def get_position_vacancy(session: Session, person_id: int, check_date: date) -> PersonHistory | None:
+    """
+    Return the last closed PersonHistory record if a position is vacant on a date.
+
+    A position is vacant when it has employment history, the most recent record
+    is closed (effective_to set), and check_date falls after that end date.
+    Positions without any history keep legacy behavior and are never vacant.
+
+    Used by schedule rendering to show OFF for rotation days after the last
+    holder's employment ended with no successor.
+    """
+    latest = (
+        session.query(PersonHistory)
+        .filter(PersonHistory.person_id == person_id)
+        .order_by(PersonHistory.effective_from.desc())
+        .first()
+    )
+    if latest is None or latest.effective_to is None:
+        return None
+    if check_date > latest.effective_to:
+        return latest
+    return None
+
+
+def get_position_holder_segments(session: Session, person_id: int, start_date: date, end_date: date) -> list[dict]:
+    """
+    Return the employment segments overlapping a date window for a position.
+
+    Each segment is a dict with user_id, name, username, from_date and to_date,
+    where the dates are clamped to [start_date, end_date]. Segments are ordered
+    by effective_from ascending. Positions without overlapping history return
+    an empty list; combine with has_position_history to distinguish a vacant
+    position from a legacy position that never had history records.
+
+    Used by team views to render one column/row per holder when a person
+    change happens mid-period.
+    """
+    records = (
+        session.query(PersonHistory)
+        .filter(
+            PersonHistory.person_id == person_id,
+            PersonHistory.effective_from <= end_date,
+            (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= start_date),
+        )
+        .order_by(PersonHistory.effective_from.asc())
+        .all()
+    )
+    return [
+        {
+            "user_id": r.user_id,
+            "name": r.name,
+            "username": r.username,
+            "from_date": max(r.effective_from, start_date),
+            "to_date": min(r.effective_to, end_date) if r.effective_to else end_date,
+            # Raw (unclamped) employment start. Consumers use this to tell a
+            # genuinely future-dated tenure from a segment merely clamped to the
+            # window start (e.g. an ongoing holder viewed in a later year).
+            "effective_from": r.effective_from,
+        }
+        for r in records
+    ]
+
+
+def has_position_history(session: Session, person_id: int) -> bool:
+    """Check whether a position has any PersonHistory records at all."""
+    return session.query(PersonHistory.id).filter(PersonHistory.person_id == person_id).first() is not None
