@@ -388,6 +388,50 @@ def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[
     return result
 
 
+def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]):
+    """Return a date-aware (user_id, date) -> rotation position resolver.
+
+    Reads PersonHistory once so each fetched row is bucketed onto the position its
+    user held ON THAT ROW'S DATE, not the user's current position. A position swap
+    updates User.person_id immediately (even for a future-dated swap), so keying on
+    current state alone would move a pre-swap row onto the successor's column.
+
+    current_map (user_id -> current position) is the fallback for users that have no
+    PersonHistory rows at all (legacy assignments), preserving existing behavior for
+    them. Resolution mirrors get_user_person_id: prefer the record covering the date,
+    otherwise the most recent record.
+    """
+    from app.database.database import PersonHistory
+
+    segments: dict[int, list] = {}
+    if session and user_ids:
+        rows = (
+            session.query(PersonHistory)
+            .filter(PersonHistory.user_id.in_(list(user_ids)))
+            .order_by(PersonHistory.effective_from.asc())
+            .all()
+        )
+        for r in rows:
+            segments.setdefault(r.user_id, []).append(r)
+
+    def resolve(user_id: int, on_date: datetime.date) -> int:
+        recs = segments.get(user_id)
+        if not recs:
+            return current_map.get(user_id, user_id)
+        # recs are ascending by effective_from; the last covering match is the one
+        # with the latest effective_from, matching get_user_person_id's ordering.
+        covering = None
+        for r in recs:
+            if r.effective_from <= on_date and (r.effective_to is None or r.effective_to >= on_date):
+                covering = r
+        if covering is not None:
+            return covering.person_id
+        # No tenure covers the date: fall back to the most recent record.
+        return recs[-1].person_id
+
+    return resolve
+
+
 def _get_substitutes_with_shifts(session, start_date: datetime.date, end_date: datetime.date) -> list:
     """Return active substitutes that have at least one shift in the range.
 
@@ -881,7 +925,8 @@ def _batch_fetch_absences(
         .all()
     )
 
-    return {(user_id_to_rotation.get(a.user_id, a.user_id), a.date): a for a in absences}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(a.user_id, a.date), a.date): a for a in absences}
 
 
 def _batch_fetch_ot_shifts(
@@ -922,7 +967,8 @@ def _batch_fetch_ot_shifts(
         .all()
     )
 
-    return {(user_id_to_rotation.get(s.user_id, s.user_id), s.date): s for s in ot_shifts}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(s.user_id, s.date), s.date): s for s in ot_shifts}
 
 
 def _batch_fetch_oncall_overrides(
@@ -960,7 +1006,8 @@ def _batch_fetch_oncall_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_shift_overrides(
@@ -997,7 +1044,8 @@ def _batch_fetch_shift_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_day_pay_overrides(
@@ -1034,7 +1082,8 @@ def _batch_fetch_day_pay_overrides(
         .all()
     )
 
-    return {(user_id_to_rotation.get(o.user_id, o.user_id), o.date): o for o in overrides}
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_swap_map(
@@ -1089,29 +1138,35 @@ def _batch_fetch_swap_map(
             if u.id not in user_rotation:
                 user_rotation[u.id] = u.person_id if u.person_id else u.id
 
+    # Resolve each participant's rotation position by the specific date being keyed,
+    # so a position change between requester_date and target_date buckets each shift
+    # onto the position its holder actually occupied on that day.
+    resolve_pos = _build_user_position_resolver(session, set(user_ids) | all_swap_user_ids, user_rotation)
     rotation_set = set(person_ids)
     swap_map = {}
     for swap in swaps:
-        req_rot = user_rotation.get(swap.requester_id, swap.requester_id)
-        tgt_rot = user_rotation.get(swap.target_id, swap.target_id)
+        req_rot_rd = resolve_pos(swap.requester_id, swap.requester_date)
+        tgt_rot_rd = resolve_pos(swap.target_id, swap.requester_date)
+        req_rot_td = resolve_pos(swap.requester_id, swap.target_date)
+        tgt_rot_td = resolve_pos(swap.target_id, swap.target_date)
 
         # On requester_date: they swap shifts
-        if req_rot in rotation_set:
+        if req_rot_rd in rotation_set:
             # Requester gets what target normally has on this date
-            tgt_result = determine_shift_for_date(swap.requester_date, tgt_rot)
-            swap_map[(req_rot, swap.requester_date)] = tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
-        if tgt_rot in rotation_set:
+            tgt_result = determine_shift_for_date(swap.requester_date, tgt_rot_rd)
+            swap_map[(req_rot_rd, swap.requester_date)] = tgt_result[0].code if tgt_result and tgt_result[0] else "OFF"
+        if tgt_rot_rd in rotation_set:
             # Target gets requester's shift on this date
-            swap_map[(tgt_rot, swap.requester_date)] = swap.requester_shift_code or "OFF"
+            swap_map[(tgt_rot_rd, swap.requester_date)] = swap.requester_shift_code or "OFF"
 
         # On target_date: they swap shifts
-        if tgt_rot in rotation_set:
+        if tgt_rot_td in rotation_set:
             # Target gets what requester normally has on this date
-            req_result = determine_shift_for_date(swap.target_date, req_rot)
-            swap_map[(tgt_rot, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
-        if req_rot in rotation_set:
+            req_result = determine_shift_for_date(swap.target_date, req_rot_td)
+            swap_map[(tgt_rot_td, swap.target_date)] = req_result[0].code if req_result and req_result[0] else "OFF"
+        if req_rot_td in rotation_set:
             # Requester gets target's shift on this date
-            swap_map[(req_rot, swap.target_date)] = swap.target_shift_code or "OFF"
+            swap_map[(req_rot_td, swap.target_date)] = swap.target_shift_code or "OFF"
 
     return swap_map
 

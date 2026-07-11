@@ -24,7 +24,7 @@ from app.core.schedule import (
 from app.core.schedule.period import mask_days_to_employment
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment, swap_positions
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, RotationEra, User, UserRole, WageType
+from app.database.database import Absence, AbsenceType, OvertimeShift, RotationEra, User, UserRole, WageType
 from tests.conftest import _ROTATION_ERA_PATTERN
 
 
@@ -794,6 +794,51 @@ def test_year_summary_counts_user_keyed_absences(month_env):
 
     assert march["sick_days"] == 1
     assert march["absence_deduction"] > 0
+
+
+def test_ot_shift_stays_on_pre_swap_holder(month_env):
+    """An OT shift dated before a position swap stays on its original holder.
+
+    Rickard (user 11) holds position 3 and Okan (user 8) holds position 8; they
+    swap on 2026-10-01. Okan works an overtime shift on 2026-09-10, while he still
+    holds position 8. In the September team view that OT must render under position
+    8 (Okan), never under position 3 (Rickard's September column).
+
+    Regression: the batch OT fetch keyed rows by the user's CURRENT position (from
+    User.person_id, which the swap updated immediately), so Okan's pre-swap OT
+    landed on Rickard's column.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    ot_date = datetime.date(2026, 9, 10)
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=ot_date,
+            start_time=datetime.time(18, 0),
+            end_time=datetime.time(22, 0),
+            hours=4.0,
+            ot_pay=1000.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    days = generate_month_data(2026, 9, session=session)
+    day = next(d for d in days if d["date"] == ot_date)
+    persons = {p["person_id"]: p for p in day["persons"]}
+
+    okan_shift = persons[8]["shift"]
+    rickard_shift = persons[3]["shift"]
+    # Okan (position 8 in September) carries the OT; Rickard (position 3) does not.
+    assert okan_shift is not None and okan_shift.code == "OT"
+    assert rickard_shift is None or rickard_shift.code != "OT"
 
 
 def test_year_totals_api_rejects_foreign_user_id(month_env):
