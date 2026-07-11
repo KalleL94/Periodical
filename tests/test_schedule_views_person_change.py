@@ -605,6 +605,152 @@ def test_day_view_resolves_position_by_viewed_date(month_env):
     assert f">{week_old}/10<" not in resp.text
 
 
+def test_month_view_masks_successor_schedule_after_departure(month_env):
+    """A departed user's month page must not leak a successor's real schedule.
+
+    Anna holds position 3 Jan 2 - Mar 31, 2026; Bert takes over Apr 1
+    (open-ended, immediate succession, no vacancy gap). Viewing Anna's OWN
+    personal month page for November - long after both her departure and
+    Bert's takeover - must still show her name in the header, but the
+    calendar must render November as OFF, not Bert's real November shifts.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    add_person_change(
+        session,
+        old_user_id=anna.id,
+        new_user_id=bert.id,
+        person_id=3,
+        new_name="Bert",
+        new_username="bert1",
+        effective_from=datetime.date(2026, 4, 1),
+        created_by=admin.id,
+    )
+
+    probe = datetime.date(2026, 11, 16)
+    real_shift, _ = determine_shift_for_date(probe, start_week=3)
+    assert real_shift is not None and real_shift.code != "OFF"  # sanity: position 3 really works that day
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/month/{anna.id}?year=2026&month=11")
+
+    assert resp.status_code == 200
+    assert "Anna" in resp.text  # still Anna's own page
+
+    # Locate the probe day's calendar cell and confirm it renders OFF, not
+    # Bert's real (successor) shift.
+    match = re.search(rf'/day/{anna.id}/2026/11/16".*?</td>', resp.text, re.DOTALL)
+    assert match, "expected a calendar cell for 2026-11-16"
+    cell_html = match.group(0)
+    assert re.search(r">\s*OFF\s*<", cell_html)
+    assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", cell_html) is None
+
+
+def _seed_departed_with_successor(session, admin_id, *, old_end=datetime.date(2026, 3, 31)):
+    """Seed Anna holding position 3 until old_end, Bert taking over the next day.
+
+    Immediate succession, no vacancy gap - Anna's own page for any date after
+    old_end must not render Bert's real schedule.
+    """
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin_id)
+    add_person_change(
+        session,
+        old_user_id=anna.id,
+        new_user_id=bert.id,
+        person_id=3,
+        new_name="Bert",
+        new_username="bert1",
+        effective_from=old_end + datetime.timedelta(days=1),
+        created_by=admin_id,
+        old_end_date=old_end,
+    )
+    return anna, bert
+
+
+def test_day_view_masks_successor_schedule_after_departure(month_env):
+    """A departed user's day page must not leak a successor's real shift."""
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna, _bert = _seed_departed_with_successor(session, admin.id)
+
+    probe = datetime.date(2026, 11, 16)
+    real_shift, _ = determine_shift_for_date(probe, start_week=3)
+    assert real_shift is not None and real_shift.code != "OFF"
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/day/{anna.id}/2026/11/16")
+
+    assert resp.status_code == 200
+    assert "Anna" in resp.text
+    assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", resp.text) is None
+
+
+def test_week_view_masks_successor_schedule_after_departure(month_env):
+    """A departed user's week page must not leak a successor's real shifts."""
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna, _bert = _seed_departed_with_successor(session, admin.id)
+
+    iso_year, iso_week, _ = datetime.date(2026, 11, 16).isocalendar()
+    monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
+    real_codes = set()
+    for offset in range(7):
+        shift, _ = determine_shift_for_date(monday + datetime.timedelta(days=offset), start_week=3)
+        if shift is not None and shift.code not in ("OFF",):
+            real_codes.add(shift.code)
+    assert real_codes  # sanity: at least one real work shift in this week
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/week/{anna.id}?year={iso_year}&week={iso_week}")
+
+    assert resp.status_code == 200
+    assert "Anna" in resp.text
+    for code in real_codes:
+        assert re.search(rf">\s*{re.escape(code)}\s*<", resp.text) is None
+
+
+def test_excel_export_masks_successor_schedule_after_departure(month_env):
+    """The month Excel export for a departed user must not contain a successor's hours."""
+    import io as _io
+
+    import openpyxl
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna, _bert = _seed_departed_with_successor(session, admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/month/{anna.id}/export-excel?year=2026&month=11")
+
+    assert resp.status_code == 200
+    wb = openpyxl.load_workbook(_io.BytesIO(resp.content))
+    ws = wb.active
+    rows = [row for row in ws.iter_rows(values_only=True) if str(row[0]).startswith("2026-11")]
+    assert len(rows) == 30, "expected one row per day in November 2026"
+    # Every November row must show "Ledig" (OFF) - no successor shift leaking in.
+    for row in rows:
+        assert row[2] == "Ledig"
+
+
 def test_excel_export_resolves_position_by_exported_month(month_env):
     """The month Excel export after a future move exports the NEW position.
 

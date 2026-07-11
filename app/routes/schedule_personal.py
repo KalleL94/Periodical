@@ -109,13 +109,19 @@ async def show_day_for_person(
     rotation_length = get_rotation_length_for_date(date_obj)
     original_shift = shift  # Keep track of original shift for OC calculation
 
-    # Check if date is before user's employment started - show OFF if so
+    # Check if date is outside the viewer's own employment window - before it
+    # started, or after it ended (departed, with or without a successor since
+    # taking over the position) - show OFF if so. Reuses the same
+    # before_employment flag/override for both edges since the treatment
+    # (mask to OFF, hide coworkers) is identical.
     from app.core.schedule.person_history import get_current_person_for_position, get_employment_period
 
     before_employment = False
     if target_user is not None:
-        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
         if emp_start and date_obj < emp_start:
+            before_employment = True
+        elif emp_end and date_obj > emp_end:
             before_employment = True
     else:
         current_person = get_current_person_for_position(db, rotation_position)
@@ -566,13 +572,17 @@ async def show_week_for_person(
         person_name = pos_user.name if pos_user else None
 
     # Use rotation_position for schedule calculation
-    # For user_id lookups, pass employment start so before-employment days show correctly
+    # For user_id lookups, pass employment start/end so days outside the
+    # viewer's own tenure show as before-employment (covers both a viewer who
+    # hasn't started yet and one whose own tenure at this position has ended).
     week_employment_start = None
+    week_employment_end = None
     if target_user is not None:
         from app.core.schedule.person_history import get_employment_period
 
-        week_emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        week_emp_start, week_emp_end = get_employment_period(db, target_user.id, rotation_position)
         week_employment_start = week_emp_start
+        week_employment_end = week_emp_end
 
     days_in_week = build_week_data(
         year,
@@ -581,6 +591,7 @@ async def show_week_for_person(
         session=db,
         include_coworkers=True,
         employment_start=week_employment_start,
+        employment_end=week_employment_end,
     )
 
     nav = get_navigation_dates("week", monday)
@@ -670,11 +681,13 @@ async def show_range_for_person(
             person_name = holder.name if holder else person_list[rotation_position - 1].name
 
     range_employment_start = None
+    range_employment_end = None
     if target_user is not None:
         from app.core.schedule.person_history import get_employment_period
 
-        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
         range_employment_start = emp_start
+        range_employment_end = emp_end
 
     # Build days week-by-week then filter to exact range (reuses build_week_data incl. coworkers)
     days_in_range = []
@@ -691,6 +704,7 @@ async def show_range_for_person(
                 session=db,
                 include_coworkers=True,
                 employment_start=range_employment_start,
+                employment_end=range_employment_end,
             )
             for d in week_days:
                 if start <= d["date"] <= end:
@@ -791,13 +805,18 @@ async def show_month_for_person(
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
     # Use rotation_position for schedule calculation
-    # For user_id lookups, pass the user's employment start so dates before it show as before_employment
+    # For user_id lookups, pass the user's own employment start/end so dates
+    # outside it show as before_employment - this covers both a viewer who
+    # hasn't started yet and one whose own tenure at this position has ended
+    # (with or without a successor since taking over).
     viewer_employment_start = None
+    viewer_employment_end = None
     if target_user is not None:
         from app.core.schedule.person_history import get_employment_period
 
-        emp_start, _ = get_employment_period(db, target_user.id, rotation_position)
+        emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
         viewer_employment_start = emp_start
+        viewer_employment_end = emp_end
 
     calendar_data = build_calendar_grid_for_month(
         year,
@@ -806,6 +825,7 @@ async def show_month_for_person(
         session=db,
         include_coworkers=True,
         employment_start=viewer_employment_start,
+        employment_end=viewer_employment_end,
     )
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]
@@ -855,13 +875,17 @@ async def show_month_for_person(
                         "Semestertillägg kunde inte beräknas för user_id=%s", user_id_for_wages, exc_info=True
                     )
 
-    # Hide summary stats if the entire month is before the viewer's employment start
+    # Hide summary stats if the entire month is outside the viewer's own
+    # employment window - before it starts, or after it ends (departed, with
+    # or without a successor since taking over the position).
     import calendar as _cal_mod
     from datetime import date as _date
 
     before_employment_month = viewer_employment_start is not None and viewer_employment_start > _date(
         year, month, _cal_mod.monthrange(year, month)[1]
     )
+    after_employment_month = viewer_employment_end is not None and viewer_employment_end < _date(year, month, 1)
+    before_employment_month = before_employment_month or after_employment_month
 
     # Aggregated payslip-style breakdown for hourly wage users
     hourly_breakdown = None
@@ -1009,7 +1033,25 @@ async def export_month_excel(
     if not can_see_salary(current_user, rotation_position):
         raise HTTPException(status_code=403, detail="Åtkomst nekad")
 
-    days_in_month = summarize_month_for_person(year, month, rotation_position, session=db, payment_year=year)
+    # When resolved as a user, mask days outside their own employment window
+    # (before it started, or after it ended - with or without a successor
+    # since taking over the position) so the export never contains another
+    # holder's real hours/pay under this user's file.
+    if target_user is not None:
+        from datetime import date as _date
+
+        from app.core.schedule import generate_month_data
+        from app.core.schedule.period import mask_days_to_employment
+        from app.core.schedule.person_history import get_employment_period
+
+        emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
+        month_days = generate_month_data(year, month, rotation_position, session=db)
+        month_days = mask_days_to_employment(month_days, emp_start or _date.min, emp_end or _date.max)
+        days_in_month = summarize_month_for_person(
+            year, month, rotation_position, session=db, year_days=month_days, payment_year=year
+        )
+    else:
+        days_in_month = summarize_month_for_person(year, month, rotation_position, session=db, payment_year=year)
 
     # ── Build workbook ───────────────────────────────────────────────────
     wb = openpyxl.Workbook()

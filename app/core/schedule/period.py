@@ -65,6 +65,7 @@ def build_week_data(
     session=None,
     include_coworkers: bool = False,
     employment_start: datetime.date | None = None,
+    employment_end: datetime.date | None = None,
 ) -> list[dict]:
     """
     Bygger veckodata för ett år/vecka.
@@ -74,6 +75,10 @@ def build_week_data(
         week: Veckonummer (ISO)
         person_id: Om None, returneras alla personer per dag
         session: SQLAlchemy session för DB-queries
+        employment_start: Mask days before this date to OFF (viewer not yet employed)
+        employment_end: Mask days after this date to OFF (viewer's own employment
+            for this position has ended, with or without a successor since taking
+            over - their page must not show a successor's real schedule)
 
     Returns:
         Lista med 7 dagar, varje dag innehåller skiftinfo
@@ -130,6 +135,9 @@ def build_week_data(
             day_info.update(_build_person_day_basic(current_date, person_id, ctx, session, employment_start))
 
         days_in_week.append(day_info)
+
+    if person_id is not None and employment_end is not None:
+        days_in_week = mask_days_to_employment(days_in_week, datetime.date.min, employment_end)
 
     # Add coworkers if requested
     if include_coworkers and person_id is not None:

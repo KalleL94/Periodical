@@ -6,7 +6,7 @@ from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings, weekday_names
 from .ob import calculate_ob_hours, calculate_ob_hours_by_day, calculate_ob_pay, get_combined_rules_for_year
-from .period import generate_month_data, generate_period_data, generate_year_data
+from .period import generate_month_data, generate_period_data, generate_year_data, mask_days_to_employment
 from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage, get_user_wage
 
 _tax_brackets = None
@@ -410,6 +410,7 @@ def build_calendar_grid_for_month(
     user_wages: dict[int, int] | None = None,
     include_coworkers: bool = False,
     employment_start=None,
+    employment_end=None,
 ) -> dict:
     """
     Bygger en komplett kalendergrid inklusive intilliggande månaders dagar.
@@ -420,6 +421,11 @@ def build_calendar_grid_for_month(
         person_id: Person-ID
         session: SQLAlchemy session
         user_wages: Förladdade löner
+        employment_start: Mask days before this date to OFF (viewer not yet employed)
+        employment_end: Mask days after this date to OFF. Used when the viewer's
+            own employment for this position has ended (with or without a
+            successor since taking over) - the grid must render the viewer's
+            own OFF days, not a successor's real schedule.
 
     Returns:
         Dict med 'summary' (månadssammanfattning) och 'grid' (lista med veckor)
@@ -428,8 +434,21 @@ def build_calendar_grid_for_month(
     from datetime import date as dt_date
     from datetime import timedelta
 
-    # Get the monthly summary for totals and day data
-    month_summary = summarize_month_for_person(year, month, person_id, session, user_wages, payment_year=year)
+    # Get the monthly summary for totals and day data. When the viewer's own
+    # employment window is bounded (either end), generate the exact-month days
+    # once and mask them to that window before summarizing, so the aggregate
+    # totals (and anything the route derives from days_in_month, e.g. the
+    # hourly payslip breakdown) agree with the masked calendar grid below -
+    # neither a predecessor's nor a successor's real hours leak into a viewer's
+    # page for months outside their own tenure.
+    if employment_start is not None or employment_end is not None:
+        month_days = generate_month_data(year, month, person_id, session=session, user_wages=user_wages)
+        month_days = mask_days_to_employment(month_days, employment_start or dt_date.min, employment_end or dt_date.max)
+        month_summary = summarize_month_for_person(
+            year, month, person_id, session, user_wages, year_days=month_days, payment_year=year
+        )
+    else:
+        month_summary = summarize_month_for_person(year, month, person_id, session, user_wages, payment_year=year)
 
     # Determine grid boundaries from the weekday of the first and last day
     first_day = dt_date(year, month, 1)
@@ -447,6 +466,8 @@ def build_calendar_grid_for_month(
     extended_days = generate_period_data(
         grid_start, grid_end, person_id, session=session, user_wages=user_wages, employment_start=employment_start
     )
+    if employment_end is not None:
+        extended_days = mask_days_to_employment(extended_days, dt_date.min, employment_end)
 
     # Fetch all persons' data if coworkers requested
     all_persons_data = None
