@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 import app.database.database as db_module
 from app.auth.auth import create_access_token
 from app.core.schedule import (
+    build_week_data,
     clear_schedule_cache,
     generate_month_data,
     summarize_month_for_person,
@@ -1202,6 +1203,100 @@ def test_week_view_merges_swap_into_one_row(month_env):
     assert resp.status_code == 200
     assert _rows_containing(resp.text, "person-row", "Rickard") == 1
     assert _rows_containing(resp.text, "person-row", "Okan") == 1
+
+
+def test_week_view_merge_picks_correct_position_per_day_across_swap(month_env):
+    """The merged swap row pulls each day's cell from the position actually
+    held on that specific date, not from a single fixed position for the
+    whole week.
+
+    Same setup as test_week_view_merges_swap_into_one_row: Rickard (position 3)
+    and Okan (position 8) swap on 2026-10-01, and week 40 2026 (Mon 2026-09-28
+    to Sun 2026-10-04) straddles the boundary. This calls _build_person_rows
+    directly (the per-day segment lookup that is the riskiest part of the
+    merge refactor) and checks, for every day of the week, that each person's
+    cell carries the right person_id AND the right shift code: position 3's
+    rotation for Rickard / position 8's for Okan on the days before the swap,
+    and the reverse from 2026-10-01 onward.
+    """
+    from app.core.schedule import determine_shift_for_date
+    from app.routes.schedule_all import _build_person_rows
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_date = datetime.date(2026, 10, 1)
+    swap_positions(session, 3, 8, swap_date, created_by=admin.id)
+
+    monday = datetime.date.fromisocalendar(2026, 40, 1)
+    sunday = monday + datetime.timedelta(days=6)
+    days_in_week = build_week_data(2026, 40, session=session)
+    person_rows = _build_person_rows(session, days_in_week, monday, sunday)
+
+    rickard_row = next(r for r in person_rows if r["person_name"] == "Rickard")
+    okan_row = next(r for r in person_rows if r["person_name"] == "Okan")
+
+    for day, cell in zip(days_in_week, rickard_row["cells"], strict=True):
+        expected_pid = 3 if day["date"] < swap_date else 8
+        expected_shift, _ = determine_shift_for_date(day["date"], start_week=expected_pid)
+        expected_code = expected_shift.code if expected_shift else "OFF"
+        assert cell is not None, f"Rickard: missing cell for {day['date']}"
+        assert cell["person_id"] == expected_pid, f"Rickard: wrong position on {day['date']}"
+        actual_code = cell["shift"].code if cell["shift"] else "OFF"
+        assert actual_code == expected_code, f"Rickard: {day['date']} expected {expected_code} got {actual_code}"
+
+    for day, cell in zip(days_in_week, okan_row["cells"], strict=True):
+        expected_pid = 8 if day["date"] < swap_date else 3
+        expected_shift, _ = determine_shift_for_date(day["date"], start_week=expected_pid)
+        expected_code = expected_shift.code if expected_shift else "OFF"
+        assert cell is not None, f"Okan: missing cell for {day['date']}"
+        assert cell["person_id"] == expected_pid, f"Okan: wrong position on {day['date']}"
+        actual_code = cell["shift"].code if cell["shift"] else "OFF"
+        assert actual_code == expected_code, f"Okan: {day['date']} expected {expected_code} got {actual_code}"
+
+    # Sanity: the two positions must actually differ somewhere in the week for
+    # this to be a meaningful check (otherwise a wrong-position bug could pass
+    # by coincidence).
+    codes_pos3 = [(determine_shift_for_date(d["date"], start_week=3)[0] or None) for d in days_in_week]
+    codes_pos8 = [(determine_shift_for_date(d["date"], start_week=8)[0] or None) for d in days_in_week]
+    codes_pos3 = [c.code if c else "OFF" for c in codes_pos3]
+    codes_pos8 = [c.code if c else "OFF" for c in codes_pos8]
+    assert codes_pos3 != codes_pos8
+
+
+def test_week_view_orders_rows_by_position_id_with_mixed_legacy(month_env):
+    """Row order stays strictly pid-ascending when legacy and history-tracked
+    positions are mixed in the same week.
+
+    Position 1 is history-tracked (Alice, via start_employment). Position 5 has
+    no PersonHistory at all - a legacy position never touched by the
+    person-change admin flow - so it falls into the "no row" fast path... no,
+    into the legacy branch (no segments, no history) that renders straight from
+    the base rotation cells. Before this refactor, a single per-pid loop from 1
+    to 10 rendered rows in strict ascending person_id order regardless of
+    vacant/legacy/single/succession status. The merge refactor must preserve
+    that: position 1's row must render above position 5's, not after every
+    legacy row.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    alice = _make_user(session, 11, "alice1", "Alice")
+    start_employment(session, alice.id, 1, "Alice", "alice1", datetime.date(2026, 1, 2), created_by=admin.id)
+    # Position 5 is left completely untouched: no start_employment/add_person_change
+    # calls, so it has zero PersonHistory rows and falls into the legacy branch.
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/week?year=2026&week=3")
+
+    assert resp.status_code == 200
+    rows = re.findall(r'(<tr class="person-row">.*?</tr>)', resp.text, re.DOTALL)
+    alice_idx = next(i for i, r in enumerate(rows) if "Alice" in r)
+    legacy_idx = next(i for i, r in enumerate(rows) if "Person 5" in r)
+    assert alice_idx < legacy_idx
 
 
 def test_week_view_hides_fully_vacant_position(month_env):

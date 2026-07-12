@@ -127,7 +127,7 @@ def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sund
             }
         )
 
-    person_rows = legacy_rows + sorted(merged_rows, key=lambda r: r["person_id"])
+    person_rows = sorted(legacy_rows + merged_rows, key=lambda r: r["person_id"])
 
     if days_in_week:
         for entry in days_in_week[0].get("persons", []):
