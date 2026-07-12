@@ -290,6 +290,8 @@ def test_year_future_swap_merges_into_one_visible_column(month_env):
     unaffected). The merged column is therefore visible immediately, not hidden
     pending the future swap date.
     """
+    from app.core.schedule import determine_shift_for_date
+
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     isak = _make_user(session, 11, "isak1", "Isak")
@@ -325,6 +327,36 @@ def test_year_future_swap_merges_into_one_visible_column(month_env):
     assert "display:none" not in isak_th
     assert 'data-past="0"' in omar_th and 'data-future="0"' in omar_th
     assert "display:none" not in omar_th
+
+    # Verify per-day content: check that each person's cell shows their own real
+    # shift from whichever position they held on that specific date.
+    pre_swap_day = swap_date - datetime.timedelta(days=10)
+    post_swap_day = swap_date + datetime.timedelta(days=10)
+
+    isak_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=3)
+    isak_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=5)
+    omar_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=5)
+    omar_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=3)
+
+    for label, link_id, day, expected in [
+        ("Isak pre-swap", isak.id, pre_swap_day, isak_pre_shift),
+        ("Isak post-swap", isak.id, post_swap_day, isak_post_shift),
+        ("Omar pre-swap", omar.id, pre_swap_day, omar_pre_shift),
+        ("Omar post-swap", omar.id, post_swap_day, omar_post_shift),
+    ]:
+        match = re.search(rf'/day/{link_id}/{day.year}/{day.month}/{day.day}".*?</td>', resp.text, re.DOTALL)
+        assert match, f"expected a calendar cell for {label} ({day.isoformat()})"
+        cell_html = match.group(0)
+        expected_code = expected.code if expected else "OFF"
+        assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+    # Sanity check: verify that positions 3 and 5 have different rotations on the
+    # test days so this assertion is meaningful (not passing by coincidence).
+    codes_pos3 = [determine_shift_for_date(d, start_week=3)[0] for d in [pre_swap_day, post_swap_day]]
+    codes_pos5 = [determine_shift_for_date(d, start_week=5)[0] for d in [pre_swap_day, post_swap_day]]
+    codes_pos3 = [c.code if c else "OFF" for c in codes_pos3]
+    codes_pos5 = [c.code if c else "OFF" for c in codes_pos5]
+    assert codes_pos3 != codes_pos5, "positions 3 and 5 must differ on the test days for a meaningful check"
 
 
 def test_year_ongoing_holder_visible_in_later_year(month_env):
