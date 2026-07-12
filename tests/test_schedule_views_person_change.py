@@ -549,6 +549,118 @@ def test_team_month_vacant_column_has_no_link(month_env):
     assert "/day/None" not in resp.text
 
 
+def test_month_view_merges_swap_into_one_column(month_env):
+    """A position swap landing mid-month yields ONE column per person.
+
+    Anna (user 11) and Bert (user 12) hold positions 3 and 5 respectively,
+    then swap on 2026-06-15 (mid-June). June's view must show each of them
+    exactly once, with their correct shift on each side of the swap date.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=6")
+
+    assert resp.status_code == 200
+    assert _headers_containing(resp.text, "Anna") == 1
+    assert _headers_containing(resp.text, "Bert") == 1
+
+
+def test_month_view_merge_picks_correct_shift_per_day_across_swap(month_env):
+    """The merged month column must show each holder's OWN real shift on each
+    side of the swap date, not OFF or the other holder's schedule.
+
+    Anna (position 3) and Bert (position 5) swap on 2026-06-15. Anna's column
+    must render position 3's real shift for a pre-swap day and position 5's
+    real shift for a post-swap day (and vice versa for Bert).
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=admin.id)
+
+    pre_swap_day = datetime.date(2026, 6, 10)
+    post_swap_day = datetime.date(2026, 6, 20)
+    anna_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=3)
+    anna_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=5)
+    bert_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=5)
+    bert_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=3)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=6")
+
+    assert resp.status_code == 200
+
+    for label, link_id, day, expected in [
+        ("Anna pre-swap", anna.id, pre_swap_day, anna_pre_shift),
+        ("Anna post-swap", anna.id, post_swap_day, anna_post_shift),
+        ("Bert pre-swap", bert.id, pre_swap_day, bert_pre_shift),
+        ("Bert post-swap", bert.id, post_swap_day, bert_post_shift),
+    ]:
+        match = re.search(rf'/day/{link_id}/{day.year}/{day.month}/{day.day}".*?</td>', resp.text, re.DOTALL)
+        assert match, f"expected a calendar cell for {label} ({day.isoformat()})"
+        cell_html = match.group(0)
+        expected_code = expected.code if expected else "OFF"
+        assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+
+def test_month_view_hides_fully_vacant_position(month_env):
+    """A position with no holder at all during the displayed month shows no column."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 8, 3))
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=8")  # August: Isak leaves Aug 3, rest of month vacant
+
+    assert resp.status_code == 200
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
+
+
+def test_month_view_orders_columns_by_position_id_with_mixed_legacy(month_env):
+    """Column order stays strictly pid-ascending when legacy and history-tracked
+    positions are mixed in the same month.
+
+    Position 1 is history-tracked (Alice, via start_employment). Position 5 has
+    no PersonHistory at all - a legacy position never touched by the
+    person-change admin flow. A two-pass restructure (vacant/legacy columns
+    resolved eagerly, per-user merged columns resolved afterwards) must not
+    let position 1's column drift after every legacy column: it belongs first.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    alice = _make_user(session, 11, "alice1", "Alice")
+    start_employment(session, alice.id, 1, "Alice", "alice1", datetime.date(2026, 1, 2), created_by=admin.id)
+    # Position 5 is left completely untouched: zero PersonHistory rows, so it
+    # falls into the legacy branch (no segments, no history).
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=1")
+
+    assert resp.status_code == 200
+    headers = re.findall(r'(<th class="person-header[^"]*"[^>]*>.*?</th>)', resp.text, re.DOTALL)
+    alice_idx = next(i for i, h in enumerate(headers) if "Alice" in h)
+    legacy_idx = next(i for i, h in enumerate(headers) if "Person 5" in h)
+    assert alice_idx < legacy_idx
+
+
 def _august_total_ob(year_data: dict) -> float:
     """Return the August (work month 8) total_ob from a personal year summary."""
     for m in year_data["months"]:
