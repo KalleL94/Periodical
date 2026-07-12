@@ -197,21 +197,24 @@ def _rows_containing(html: str, row_class: str, name: str) -> int:
 
 
 def test_year_header_vacant_after_departure(month_env):
+    """A position vacant for the whole displayed year shows no column at all.
+
+    Anna held position 3 until 2026-08-04 with no successor. The 2027 view has
+    no holder overlapping that year at all, so the position-3 column is fully
+    hidden (Goal 2: no vacant placeholder), matching the week and month views.
+    """
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
-    # Anna held position 3 until 2026-08-04 with no successor. The 2027 view has
-    # no holder overlapping that year, so the position-3 column must show the
-    # vacancy label rather than the departed holder.
     end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
 
     resp = client.get("/year?year=2027")
 
     assert resp.status_code == 200
     ths = _year_header_ths(resp.text, 3)
-    assert len(ths) == 1
-    assert "Vakant" in ths[0] or "Vacant" in ths[0]
-    assert "Anna" not in ths[0]
+    assert len(ths) == 0
+    assert "Anna" not in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def test_year_splits_columns_per_holder_past_hidden(month_env):
@@ -273,13 +276,19 @@ def test_year_splits_columns_per_holder_past_hidden(month_env):
     assert re.search(r'<input[^>]*data-past="1"[^>]*\bdisabled\b', resp.text)
 
 
-def test_year_future_swap_columns_hidden_until_effective(month_env):
-    """A future-dated swap hides the incoming columns until their start passes.
+def test_year_future_swap_merges_into_one_visible_column(month_env):
+    """A future-dated swap still merges into one column per person, visible now.
 
     Isak holds position 3 and Omar holds position 5; they swap on a date in the
-    future. Today the current holders' columns stay visible while the two future
-    columns (each holder at their new position) render hidden + disabled, so the
-    swap is invisible until it takes effect.
+    future. Before this refactor, a future-dated swap rendered as two separate
+    per-position columns (the incoming one hidden until effective) because each
+    position was processed independently. Now that segments are grouped by
+    user_id across positions first, Isak and Omar each get ONE merged column
+    spanning both positions (per the swap-merge design, a genuine swap
+    participant's column is never flagged past or future as a whole - unlike a
+    genuine departure/successor pair, which stays on separate user_ids and is
+    unaffected). The merged column is therefore visible immediately, not hidden
+    pending the future swap date.
     """
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
@@ -299,25 +308,23 @@ def test_year_future_swap_columns_hidden_until_effective(month_env):
     resp = client.get(f"/year?year={today.year}")
     assert resp.status_code == 200
 
-    # Position 3: Isak currently holds it (visible), Omar takes it in the future
-    # (hidden). Position 5 mirrors this.
-    ths3 = _year_header_ths(resp.text, 3)
-    assert len(ths3) == 2
-    isak3 = next(th for th in ths3 if "Isak" in th)
-    omar3 = next(th for th in ths3 if "Omar" in th)
-    assert 'data-future="0"' in isak3 and "display:none" not in isak3
-    assert 'data-future="1"' in omar3 and "display:none" in omar3
+    # One column per person, not one per position segment.
+    assert _headers_containing(resp.text, "Isak") == 1
+    assert _headers_containing(resp.text, "Omar") == 1
+    # Neither position number keys a separate header anymore: both people's
+    # segments were grouped under their own user_id across positions 3 and 5.
+    assert len(_year_header_ths(resp.text, 3)) == 0
+    assert len(_year_header_ths(resp.text, 5)) == 0
 
-    ths5 = _year_header_ths(resp.text, 5)
-    assert len(ths5) == 2
-    omar5 = next(th for th in ths5 if "Omar" in th)
-    isak5 = next(th for th in ths5 if "Isak" in th)
-    assert 'data-future="0"' in omar5 and "display:none" not in omar5
-    assert 'data-future="1"' in isak5 and "display:none" in isak5
-
-    # Both future holders' filter checkboxes are disabled server-side, so they
-    # cannot be revealed individually until the swap takes effect.
-    assert len(re.findall(r'<input[^>]*data-future="1"[^>]*\bdisabled\b', resp.text)) == 2
+    blocks = re.findall(r'(<th class="person-header[^"]*"[^>]*>.*?</th>)', resp.text, re.DOTALL)
+    isak_th = next(b for b in blocks if "Isak" in b)
+    omar_th = next(b for b in blocks if "Omar" in b)
+    # Merged swap columns are visible immediately, not force-hidden pending the
+    # future swap date.
+    assert 'data-past="0"' in isak_th and 'data-future="0"' in isak_th
+    assert "display:none" not in isak_th
+    assert 'data-past="0"' in omar_th and 'data-future="0"' in omar_th
+    assert "display:none" not in omar_th
 
 
 def test_year_ongoing_holder_visible_in_later_year(month_env):
@@ -1424,6 +1431,88 @@ def test_week_view_hides_fully_vacant_position(month_env):
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
     resp = client.get("/week?year=2026&week=35")
+
+    assert resp.status_code == 200
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
+
+
+def test_year_view_merges_swap_into_one_column(month_env):
+    """A position swap between two active people yields ONE column per person
+    in the year view, with the correct shift on each side of the swap date."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+
+    assert resp.status_code == 200
+    assert _headers_containing(resp.text, "Rickard") == 1
+    assert _headers_containing(resp.text, "Okan") == 1
+
+
+def test_year_view_merge_picks_correct_position_per_day_across_swap(month_env):
+    """The merged year column pulls each day's cell from the position actually
+    held on that specific date, not from a single fixed position for the
+    whole year.
+
+    Rickard (position 3) and Okan (position 8) swap on 2026-10-01. This checks,
+    for a day before and a day after the swap, that each person's cell shows
+    their own real shift from whichever position they held that day.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+
+    pre_swap_day = datetime.date(2026, 9, 20)
+    post_swap_day = datetime.date(2026, 10, 10)
+    rickard_pre, _ = determine_shift_for_date(pre_swap_day, start_week=3)
+    rickard_post, _ = determine_shift_for_date(post_swap_day, start_week=8)
+    okan_pre, _ = determine_shift_for_date(pre_swap_day, start_week=8)
+    okan_post, _ = determine_shift_for_date(post_swap_day, start_week=3)
+
+    for label, link_id, day, expected in [
+        ("Rickard pre-swap", rickard.id, pre_swap_day, rickard_pre),
+        ("Rickard post-swap", rickard.id, post_swap_day, rickard_post),
+        ("Okan pre-swap", okan.id, pre_swap_day, okan_pre),
+        ("Okan post-swap", okan.id, post_swap_day, okan_post),
+    ]:
+        match = re.search(rf'/day/{link_id}/{day.year}/{day.month}/{day.day}".*?</td>', resp.text, re.DOTALL)
+        assert match, f"expected a calendar cell for {label} ({day.isoformat()})"
+        cell_html = match.group(0)
+        expected_code = expected.code if expected else "OFF"
+        assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+
+def test_year_view_hides_fully_vacant_position(month_env):
+    """A position with no holder at all during the displayed year shows no column."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 1, 31))
+    # No successor at all after Isak's departure: position 5 has zero overlap
+    # with 2027, so its column is fully hidden (Goal 2: no vacant placeholder).
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2027")  # Position 5 has zero overlap with 2027 at all
 
     assert resp.status_code == 200
     assert "Vakant" not in resp.text and "Vacant" not in resp.text

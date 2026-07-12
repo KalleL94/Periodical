@@ -98,7 +98,8 @@
                             {% endif %}
                         </td>
                         {% for col in person_headers %}
-                            {% set person = (day.persons | selectattr('person_id', 'equalto', col.person_id) | list | first) %}
+                            {% set effective_pid = col.position_by_date[day.date.isoformat()] if col.position_by_date is defined and day.date.isoformat() in col.position_by_date else col.person_id %}
+                            {% set person = (day.persons | selectattr('person_id', 'equalto', effective_pid) | list | first) %}
                             {% if person and col.from_date <= day.date <= col.to_date %}
                             {% set orig_code = person.original_shift.code if person.original_shift else (person.shift.code if person.shift else 'OFF') %}
                             {% set orig_color = person.original_shift.color if person.original_shift else (person.shift.color if person.shift else 'transparent') %}

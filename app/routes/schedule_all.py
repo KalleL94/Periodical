@@ -438,21 +438,20 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
-    # Build the column list: one column per holder segment of the displayed
-    # year (like the month view), rather than a single joined-header column per
-    # position. A position that changed hands mid-year yields one column per
-    # holder in chronological order, each linking to their own personal year
-    # view. A departed holder whose last working day is already past is flagged
-    # so the template can hide their column by default. A position with only
-    # closed history and no overlap in the year is a single vacant column.
-    # Positions without any history keep one legacy column linked to the
-    # rotation position itself.
+    # Build the column list with a two-pass restructure, matching the pattern
+    # established in _build_person_rows (week view) and show_month_all (month
+    # view). First pass: scan every position and collect its holder segments,
+    # keyed by user_id ACROSS ALL positions (not just the position currently
+    # being scanned). A position with no history at all resolves to a legacy
+    # single column right away. A fully vacant position (has history but no
+    # segment overlaps this year) is skipped entirely: no placeholder column.
     from app.core.schedule.person_history import get_current_person_for_position
 
     real_today = sim_today or get_today()
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     person_headers = []
+    segments_by_user: dict[int, list[dict]] = {}
     for pid in range(1, 11):
         segments = get_position_holder_segments(db, pid, year_start, year_end)
         # Merge consecutive segments held by the same user so a single
@@ -465,45 +464,9 @@ async def show_year_all(
             else:
                 merged.append(dict(seg))
 
-        if merged:
-            for seg in merged:
-                to_date = seg["to_date"]
-                from_date = seg["from_date"]
-                past = to_date is not None and to_date < real_today
-                # A holder whose tenure begins after today is future-dated: its
-                # column stays hidden (like a past one) until its start passes.
-                # Use the raw employment start, not the window-clamped from_date,
-                # so an ongoing holder viewed in a later year is not mistaken for
-                # a future hire.
-                future = seg["effective_from"] > real_today
-                person_headers.append(
-                    {
-                        "person_id": pid,
-                        "user_id": seg["user_id"],
-                        "name": seg["name"],
-                        "vacant": False,
-                        "col_key": f"{pid}-{seg['user_id']}",
-                        "from_date": from_date,
-                        "to_date": to_date,
-                        "past": past,
-                        "future": future,
-                    }
-                )
-        elif has_position_history(db, pid):
-            person_headers.append(
-                {
-                    "person_id": pid,
-                    "user_id": None,
-                    "name": "",
-                    "vacant": True,
-                    "col_key": f"{pid}-vacant",
-                    "from_date": year_start,
-                    "to_date": year_end,
-                    "past": False,
-                    "future": False,
-                }
-            )
-        else:
+        if not merged:
+            if has_position_history(db, pid):
+                continue  # Fully vacant for the whole year: no column.
             # Legacy position without history: link target is the position itself.
             cp = get_current_person_for_position(db, pid)
             person_headers.append(
@@ -519,6 +482,80 @@ async def show_year_all(
                     "future": False,
                 }
             )
+            continue
+
+        for seg in merged:
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    # Second pass: one column per user, built from their COMPLETE segment set
+    # across every position. A user holding a single position throughout the
+    # year (the common case, including an ordinary succession where a
+    # different person took over mid-year) yields one column, unchanged in
+    # shape from before: a departed holder whose last working day is already
+    # past is flagged so the template can hide their column by default, and a
+    # holder whose tenure begins after today is future-dated (hidden until its
+    # start passes). A user holding two or more DIFFERENT positions during the
+    # year (a position swap) is merged into ONE column: each day's cell is
+    # resolved via position_by_date, a map of ISO date string -> person_id
+    # that only the template's merged-column branch consults. A swap
+    # participant's column is never flagged past or future as a whole -
+    # departures/future hires stay on separate user_ids and are unaffected.
+    for user_id, segs in segments_by_user.items():
+        segs.sort(key=lambda s: s["effective_from"])
+        positions_held = {s["person_id"] for s in segs}
+
+        if len(positions_held) == 1:
+            seg = segs[0]
+            to_date = seg["to_date"]
+            from_date = seg["from_date"]
+            past = to_date is not None and to_date < real_today
+            # Use the raw employment start, not the window-clamped from_date,
+            # so an ongoing holder viewed in a later year is not mistaken for
+            # a future hire.
+            future = seg["effective_from"] > real_today
+            person_headers.append(
+                {
+                    "person_id": seg["person_id"],
+                    "user_id": user_id,
+                    "name": seg["name"],
+                    "vacant": False,
+                    "col_key": f"{seg['person_id']}-{user_id}",
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "past": past,
+                    "future": future,
+                }
+            )
+        else:
+            current_pid = get_user_person_id(db, user_id, on_date=real_today) or segs[-1]["person_id"]
+            position_by_date: dict[str, int] = {}
+            d = min(s["from_date"] for s in segs)
+            end = max(s["to_date"] for s in segs)
+            while d <= end:
+                seg_for_day = next((s for s in segs if s["from_date"] <= d <= s["to_date"]), None)
+                if seg_for_day:
+                    position_by_date[d.isoformat()] = seg_for_day["person_id"]
+                d += timedelta(days=1)
+            person_headers.append(
+                {
+                    "person_id": current_pid,
+                    "user_id": user_id,
+                    "name": segs[-1]["name"],
+                    "vacant": False,
+                    "col_key": f"user-{user_id}",
+                    "from_date": min(s["from_date"] for s in segs),
+                    "to_date": max(s["to_date"] for s in segs),
+                    "past": False,
+                    "future": False,
+                    "position_by_date": position_by_date,
+                }
+            )
+
+    # Restore strict position-id ascending order: the two-pass split above
+    # resolves legacy/vacant columns eagerly (first pass) and per-user columns
+    # afterwards (second pass), which would otherwise group all legacy columns
+    # before any history-tracked column regardless of position number.
+    person_headers.sort(key=lambda h: h["person_id"])
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
 
