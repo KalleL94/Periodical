@@ -818,6 +818,16 @@ async def show_month_for_person(
         viewer_employment_start = emp_start
         viewer_employment_end = emp_end
 
+    if (
+        target_user is not None
+        and viewer_employment_end is not None
+        and current_user is not None
+        and target_user.id == current_user.id
+    ):
+        month_start = date(year, month, 1)
+        if month_start > viewer_employment_end:
+            return RedirectResponse(url=f"/month?year={year}&month={month}", status_code=302)
+
     calendar_data = build_calendar_grid_for_month(
         year,
         month,

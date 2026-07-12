@@ -1583,3 +1583,25 @@ def test_year_totals_api_rejects_foreign_user_id(month_env):
     allowed = client.get("/api/year/2026/totals/3?user_id=12")
     assert allowed.status_code == 200
     assert "total_ob" in allowed.json()
+
+
+def test_month_redirects_departed_user_to_team_view(month_env):
+    """A departed user's personal month view redirects to month_all once the
+    ENTIRE requested month is after their own last working day."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    robin = _make_user(session, 10, "robin1", "Robin")
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, robin.id, 10, datetime.date(2026, 3, 31))
+
+    token = create_access_token(data={"sub": str(robin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    # July is entirely after his own tenure: redirect.
+    resp = client.get("/month/10?year=2026&month=7", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/month?year=2026&month=7"
+
+    # March is his own real last month: no redirect, renders normally.
+    resp2 = client.get("/month/10?year=2026&month=3", follow_redirects=False)
+    assert resp2.status_code == 200
