@@ -584,6 +584,12 @@ async def show_week_for_person(
         week_employment_start = week_emp_start
         week_employment_end = week_emp_end
 
+    # Redirect ANY viewer (self, another user, or an admin) once the ENTIRE
+    # requested week falls after the resolved user's own tenure end at this
+    # position - regardless of whether a successor has since taken over.
+    if target_user is not None and week_employment_end is not None and monday > week_employment_end:
+        return RedirectResponse(url=f"/week?year={year}&week={week}", status_code=302)
+
     days_in_week = build_week_data(
         year,
         week,

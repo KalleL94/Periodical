@@ -1029,32 +1029,34 @@ def test_day_view_masks_successor_schedule_after_departure(month_env):
     assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", resp.text) is None
 
 
-def test_week_view_masks_successor_schedule_after_departure(month_env):
-    """A departed user's week page must not leak a successor's real shifts."""
-    from app.core.schedule import determine_shift_for_date
+def test_week_view_redirects_even_when_successor_exists(month_env):
+    """Any viewer is redirected once the week is entirely past the departed
+    user's OWN tenure, even when a successor has since taken over the
+    position (so the position itself is not vacant).
 
+    Anna holds position 3 Jan 2 - Mar 31, 2026; Bert takes over Apr 1
+    (open-ended, immediate succession, no vacancy gap). An admin requesting
+    Anna's personal week page for mid-November - long after both her
+    departure and Bert's takeover - must be redirected to the team week
+    view, not shown a masked week. The redirect rule depends solely on
+    Anna's own tenure end, never on whether a successor exists. This
+    supersedes the old test_week_view_masks_successor_schedule_after_departure
+    masking assertion for this exact request: since the redirect now fires
+    first, there is no page left to leak from.
+    """
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     anna, _bert = _seed_departed_with_successor(session, admin.id)
 
     iso_year, iso_week, _ = datetime.date(2026, 11, 16).isocalendar()
-    monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
-    real_codes = set()
-    for offset in range(7):
-        shift, _ = determine_shift_for_date(monday + datetime.timedelta(days=offset), start_week=3)
-        if shift is not None and shift.code not in ("OFF",):
-            real_codes.add(shift.code)
-    assert real_codes  # sanity: at least one real work shift in this week
 
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get(f"/week/{anna.id}?year={iso_year}&week={iso_week}")
+    resp = client.get(f"/week/{anna.id}?year={iso_year}&week={iso_week}", follow_redirects=False)
 
-    assert resp.status_code == 200
-    assert "Anna" in resp.text
-    for code in real_codes:
-        assert re.search(rf">\s*{re.escape(code)}\s*<", resp.text) is None
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/week?year={iso_year}&week={iso_week}"
 
 
 def test_excel_export_masks_successor_schedule_after_departure(month_env):
@@ -1585,4 +1587,26 @@ def test_month_redirects_departed_user_to_team_view(month_env):
 
     # March is his own real last month: no redirect, renders normally.
     resp2 = client.get("/month/10?year=2026&month=3", follow_redirects=False)
+    assert resp2.status_code == 200
+
+
+def test_week_redirects_departed_user_to_team_view(month_env):
+    """A departed user's personal week view redirects to week_all once the
+    ENTIRE requested week is after their own last working day."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    robin = _make_user(session, 10, "robin1", "Robin")
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, robin.id, 10, datetime.date(2026, 3, 31))
+
+    token = create_access_token(data={"sub": str(robin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    # Week 30 (late July) is entirely after his tenure: redirect.
+    resp = client.get("/week/10?year=2026&week=30", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/week?year=2026&week=30"
+
+    # Week 1 (his own real first week) still renders normally.
+    resp2 = client.get("/week/10?year=2026&week=1", follow_redirects=False)
     assert resp2.status_code == 200
