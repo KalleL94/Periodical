@@ -818,12 +818,10 @@ async def show_month_for_person(
         viewer_employment_start = emp_start
         viewer_employment_end = emp_end
 
-    if (
-        target_user is not None
-        and viewer_employment_end is not None
-        and current_user is not None
-        and target_user.id == current_user.id
-    ):
+    # Redirect ANY viewer (self, another user, or an admin) once the ENTIRE
+    # requested month falls after the resolved user's own tenure end at this
+    # position - regardless of whether a successor has since taken over.
+    if target_user is not None and viewer_employment_end is not None:
         month_start = date(year, month, 1)
         if month_start > viewer_employment_end:
             return RedirectResponse(url=f"/month?year={year}&month={month}", status_code=302)

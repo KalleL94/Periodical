@@ -853,17 +853,18 @@ def test_month_view_shows_real_shifts_from_mid_month_hire_despite_later_move(mon
     assert re.search(r">\s*OFF\s*<", cell_html) is None
 
 
-def test_month_view_masks_successor_schedule_after_departure(month_env):
-    """A departed user's month page must not leak a successor's real schedule.
+def test_month_view_redirects_even_when_successor_exists(month_env):
+    """Any viewer is redirected once the month is entirely past the departed
+    user's OWN tenure, even when a successor has since taken over the
+    position (so the position itself is not vacant).
 
     Anna holds position 3 Jan 2 - Mar 31, 2026; Bert takes over Apr 1
-    (open-ended, immediate succession, no vacancy gap). Viewing Anna's OWN
-    personal month page for November - long after both her departure and
-    Bert's takeover - must still show her name in the header, but the
-    calendar must render November as OFF, not Bert's real November shifts.
+    (open-ended, immediate succession, no vacancy gap). An admin requesting
+    Anna's personal month page for November - long after both her departure
+    and Bert's takeover - must be redirected to the team month view, not
+    shown a masked calendar. The redirect rule depends solely on Anna's own
+    tenure end, never on whether a successor exists.
     """
-    from app.core.schedule import determine_shift_for_date
-
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     anna = _make_user(session, 11, "anna1", "Anna")
@@ -880,25 +881,13 @@ def test_month_view_masks_successor_schedule_after_departure(month_env):
         created_by=admin.id,
     )
 
-    probe = datetime.date(2026, 11, 16)
-    real_shift, _ = determine_shift_for_date(probe, start_week=3)
-    assert real_shift is not None and real_shift.code != "OFF"  # sanity: position 3 really works that day
-
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get(f"/month/{anna.id}?year=2026&month=11")
+    resp = client.get(f"/month/{anna.id}?year=2026&month=11", follow_redirects=False)
 
-    assert resp.status_code == 200
-    assert "Anna" in resp.text  # still Anna's own page
-
-    # Locate the probe day's calendar cell and confirm it renders OFF, not
-    # Bert's real (successor) shift.
-    match = re.search(rf'/day/{anna.id}/2026/11/16".*?</td>', resp.text, re.DOTALL)
-    assert match, "expected a calendar cell for 2026-11-16"
-    cell_html = match.group(0)
-    assert re.search(r">\s*OFF\s*<", cell_html)
-    assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", cell_html) is None
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/month?year=2026&month=11"
 
 
 def _first_working_day(dates, start_week):
@@ -971,36 +960,28 @@ def test_month_view_shows_swap_padding_days_from_prev_month(month_env):
     assert re.search(r">\s*OFF\s*<", cell_html) is None
 
 
-def test_month_view_masks_successor_padding_after_departure(month_env):
-    """Padding days must stay OFF when they fall to an unrelated successor.
+def test_month_view_redirects_for_padding_month_even_with_successor(month_env):
+    """A month whose only content would have been successor padding also redirects.
 
-    Anna held position 3 until 2026-03-31; Bert took over. Viewing Anna's own
-    November page, the grid's December padding days belong to Bert - outside
-    Anna's tenure entirely - and must render OFF, never Bert's real schedule.
-    This guards the 313a7df successor-leak fix against the padding-day
-    correction added for the position-swap case.
+    Anna held position 3 until 2026-03-31; Bert took over. November is
+    entirely past Anna's own tenure end, so any viewer (here, an admin) is
+    redirected to the team month view before the grid - and its December
+    padding days, which would otherwise belong to Bert - is ever built. This
+    supersedes the old 313a7df successor-leak fix's masking assertion for
+    this exact request: since the redirect now fires first, there is no page
+    left to leak from.
     """
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
-    anna, _bert = _seed_departed_with_successor(session, admin.id)
-
-    # December padding days shown in the November grid (Dec 1-6 complete the last week).
-    padding = [datetime.date(2026, 12, d) for d in range(1, 7)]
-    probe, real_code = _first_working_day(padding, start_week=3)
-    assert probe is not None, "expected at least one working December padding day for position 3"
+    _anna, _bert = _seed_departed_with_successor(session, admin.id)
 
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get("/month/11?year=2026&month=11")
+    resp = client.get("/month/11?year=2026&month=11", follow_redirects=False)
 
-    assert resp.status_code == 200
-    assert "Anna" in resp.text
-    match = re.search(rf'/day/11/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
-    assert match, f"expected a calendar cell for {probe.isoformat()}"
-    cell_html = match.group(0)
-    assert re.search(r">\s*OFF\s*<", cell_html), cell_html
-    assert re.search(rf">\s*{re.escape(real_code)}\s*<", cell_html) is None
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/month?year=2026&month=11"
 
 
 def _seed_departed_with_successor(session, admin_id, *, old_end=datetime.date(2026, 3, 31)):
