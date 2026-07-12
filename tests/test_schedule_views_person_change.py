@@ -289,6 +289,12 @@ def test_year_future_swap_merges_into_one_visible_column(month_env):
     genuine departure/successor pair, which stays on separate user_ids and is
     unaffected). The merged column is therefore visible immediately, not hidden
     pending the future swap date.
+
+    Uses fixed dates plus the year view's `?simulated_date=` testing hook
+    (rather than monkeypatching get_today) to avoid flakiness: real "today"
+    would occasionally land on a probe date where positions 3 and 5 happen to
+    share a rotation code, silently weakening or spuriously failing the
+    differentiation check below.
     """
     from app.core.schedule import determine_shift_for_date
 
@@ -297,8 +303,12 @@ def test_year_future_swap_merges_into_one_visible_column(month_env):
     isak = _make_user(session, 11, "isak1", "Isak")
     omar = _make_user(session, 12, "omar1", "Omar")
 
-    today = get_today()
-    swap_date = today + datetime.timedelta(days=30)
+    # Fixed dates, verified to give positions 3 and 5 different rotation codes
+    # on both probe days: 2027-06-10 (N1 vs OFF) and 2027-06-20 (N2 vs OC).
+    simulated_today = datetime.date(2027, 5, 15)
+    swap_date = datetime.date(2027, 6, 15)
+    pre_swap_day = datetime.date(2027, 6, 10)
+    post_swap_day = datetime.date(2027, 6, 20)
 
     start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
     start_employment(session, omar.id, 5, "Omar", "omar1", datetime.date(2026, 1, 2), created_by=1)
@@ -307,7 +317,7 @@ def test_year_future_swap_merges_into_one_visible_column(month_env):
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get(f"/year?year={today.year}")
+    resp = client.get(f"/year?year={simulated_today.year}&simulated_date={simulated_today.isoformat()}")
     assert resp.status_code == 200
 
     # One column per person, not one per position segment.
@@ -330,9 +340,6 @@ def test_year_future_swap_merges_into_one_visible_column(month_env):
 
     # Verify per-day content: check that each person's cell shows their own real
     # shift from whichever position they held on that specific date.
-    pre_swap_day = swap_date - datetime.timedelta(days=10)
-    post_swap_day = swap_date + datetime.timedelta(days=10)
-
     isak_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=3)
     isak_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=5)
     omar_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=5)
