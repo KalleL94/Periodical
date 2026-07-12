@@ -27,7 +27,7 @@ from app.core.schedule import (
     summarize_month_for_person,
 )
 from app.core.schedule.period import mask_days_to_employment
-from app.core.schedule.person_history import get_position_holder_segments, has_position_history
+from app.core.schedule.person_history import get_position_holder_segments, get_user_person_id, has_position_history
 from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, get_db
@@ -53,77 +53,82 @@ def _off_cell(cell: dict, name: str) -> dict:
 
 
 def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sunday: date) -> list[dict]:
-    """Build one week row per position holder segment.
+    """Build one week row per person holding a position during the week.
 
-    A position held by a single person yields one row. A mid-week person change
-    yields one row per holder, with days outside each holder's segment masked to
-    OFF. A fully vacated position yields a single vacant row. Substitute entries
-    (person_id outside 1-10) are appended unchanged so they keep rendering.
+    A person holding a single position throughout the week (the common case,
+    including an ordinary succession where a different person took over
+    mid-week) yields exactly one row, masked to their own tenure as before.
+    A person holding two or more DIFFERENT positions during the week (a
+    position swap) is merged into ONE row: each day's cell is pulled from
+    whichever position they actually held on that specific date. A position
+    with no holder at all during the week is skipped entirely (no vacant
+    placeholder row). Substitute entries (person_id outside 1-10) are
+    appended unchanged.
     """
+    from app.core.utils import get_today
 
     def _cell_for(day: dict, pid: int) -> dict | None:
         return next((p for p in day.get("persons", []) if p.get("person_id") == pid), None)
 
-    person_rows: list[dict] = []
+    legacy_rows: list[dict] = []
+    segments_by_user: dict[int, list[dict]] = {}
     for pid in range(1, 11):
-        base_cells = [_cell_for(day, pid) for day in days_in_week]
         segments = get_position_holder_segments(db, pid, monday, sunday)
-
-        if not segments and has_position_history(db, pid):
-            # Position vacated entirely: one placeholder row, all days OFF.
-            person_rows.append(
-                {
-                    "person_id": pid,
-                    "person_name": "",
-                    "vacant": True,
-                    "holder_user_id": None,
-                    "cells": [_off_cell(c, "") if c else None for c in base_cells],
-                }
-            )
-            continue
-
-        if len(segments) <= 1:
-            # Zero (legacy) or one holder: single row, current behavior.
-            name = (
-                segments[0]["name"]
-                if segments
-                else (base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}")
-            )
-            # Personal-view link target: the single holder's user id, or the
-            # rotation position itself for legacy positions without history.
-            holder_user_id = segments[0]["user_id"] if segments else pid
-            person_rows.append(
+        if not segments:
+            if has_position_history(db, pid):
+                continue  # Fully vacant for the whole week: no row.
+            base_cells = [_cell_for(day, pid) for day in days_in_week]
+            name = base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}"
+            legacy_rows.append(
                 {
                     "person_id": pid,
                     "person_name": name,
                     "vacant": False,
-                    "holder_user_id": holder_user_id,
+                    "holder_user_id": pid,
                     "cells": base_cells,
                 }
             )
             continue
-
-        # Mid-week change: one row per holder, days masked to their tenure.
         for seg in segments:
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    real_today = get_today()
+    merged_rows: list[dict] = []
+    for user_id, segs in segments_by_user.items():
+        segs.sort(key=lambda s: s["from_date"])
+        positions_held = {s["person_id"] for s in segs}
+        name = segs[-1]["name"]
+
+        if len(positions_held) == 1:
+            pid = segs[0]["person_id"]
+            base_cells = [_cell_for(day, pid) for day in days_in_week]
             cells = []
             for day, cell in zip(days_in_week, base_cells, strict=True):
                 if cell is None:
                     cells.append(None)
-                elif seg["from_date"] <= day["date"] <= seg["to_date"]:
+                elif any(s["from_date"] <= day["date"] <= s["to_date"] for s in segs):
                     cells.append(cell)
                 else:
-                    cells.append(_off_cell(cell, seg["name"]))
-            person_rows.append(
-                {
-                    "person_id": pid,
-                    "person_name": seg["name"],
-                    "vacant": False,
-                    "holder_user_id": seg["user_id"],
-                    "cells": cells,
-                }
-            )
+                    cells.append(_off_cell(cell, name))
+        else:
+            pid = get_user_person_id(db, user_id, on_date=real_today) or segs[-1]["person_id"]
+            cells = []
+            for day in days_in_week:
+                seg_for_day = next((s for s in segs if s["from_date"] <= day["date"] <= s["to_date"]), None)
+                cells.append(_cell_for(day, seg_for_day["person_id"]) if seg_for_day else None)
 
-    # Append substitute rows (person_id outside the 1-10 rotation) unchanged.
+        merged_rows.append(
+            {
+                "person_id": pid,
+                "person_name": name,
+                "vacant": False,
+                "holder_user_id": user_id,
+                "cells": cells,
+            }
+        )
+
+    person_rows = legacy_rows + sorted(merged_rows, key=lambda r: r["person_id"])
+
     if days_in_week:
         for entry in days_in_week[0].get("persons", []):
             sub_pid = entry.get("person_id")
@@ -225,21 +230,7 @@ async def show_month_all(
         segments = get_position_holder_segments(db, pid, month_start, month_end)
 
         if not segments and has_position_history(db, pid):
-            # Position vacated entirely: one placeholder column, all days OFF
-            summary = summarize_month_for_person(
-                year,
-                month,
-                pid,
-                session=db,
-                user_wages=user_wages,
-                year_days=person_month_days,
-                fetch_tax_table=False,
-                payment_year=year,
-            )
-            summary = strip_salary_data(summary)
-            summary["vacant"] = True
-            summary["holder_user_id"] = None
-            persons.append(summary)
+            # Position vacated entirely: skip it (no placeholder column).
             continue
 
         if len(segments) <= 1:

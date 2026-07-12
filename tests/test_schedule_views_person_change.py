@@ -98,6 +98,11 @@ def test_mid_month_change_shows_both_persons(month_env):
 
 
 def test_departed_person_absent_in_later_month(month_env):
+    """A position vacant for the whole displayed month shows no column at all.
+
+    Anna left with no successor; September falls entirely in the resulting
+    gap. Fully vacant positions are hidden (no placeholder column).
+    """
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
@@ -107,7 +112,7 @@ def test_departed_person_absent_in_later_month(month_env):
 
     assert resp.status_code == 200
     assert "Anna" not in resp.text
-    assert "Vakant" in resp.text or "Vacant" in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def test_mid_week_change_shows_both_rows(month_env):
@@ -137,6 +142,12 @@ def test_mid_week_change_shows_both_rows(month_env):
 
 
 def test_departed_person_absent_in_later_week(month_env):
+    """A position vacant for the whole displayed week shows no row at all.
+
+    Anna left with no successor; week 34 falls entirely in the resulting gap.
+    Fully vacant positions are hidden (no placeholder row), unlike a partial
+    gap within an otherwise-active week, which still needs the OFF cells.
+    """
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
@@ -147,7 +158,7 @@ def test_departed_person_absent_in_later_week(month_env):
 
     assert resp.status_code == 200
     assert "Anna" not in resp.text
-    assert "Vakant" in resp.text or "Vacant" in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def _year_header_ths(html: str, person_id: int) -> list[str]:
@@ -163,6 +174,25 @@ def _year_header_ths(html: str, person_id: int) -> list[str]:
         html,
         re.DOTALL,
     )
+
+
+def _headers_containing(html: str, name: str) -> int:
+    """Count <th class="person-header...">...</th> blocks whose content includes name.
+
+    Robust against whitespace between Jinja tags and against the name appearing
+    more than once elsewhere on the page (e.g. toggle checkboxes): only the
+    single header cell rendered once per row/column is counted, matching the
+    year view's col_key format ("<pid>-<uid>" or the merged "user-<uid>")
+    without needing to know which format applies.
+    """
+    blocks = re.findall(r'(<th class="person-header[^"]*"[^>]*>.*?</th>)', html, re.DOTALL)
+    return sum(1 for b in blocks if name in b)
+
+
+def _rows_containing(html: str, row_class: str, name: str) -> int:
+    """Count <tr class="{row_class}">...</tr> blocks whose content includes name."""
+    blocks = re.findall(rf'(<tr class="{row_class}">.*?</tr>)', html, re.DOTALL)
+    return sum(1 for b in blocks if name in b)
 
 
 def test_year_header_vacant_after_departure(month_env):
@@ -1146,6 +1176,50 @@ def test_ot_shift_stays_on_pre_swap_holder(month_env):
     # Okan (position 8 in September) carries the OT; Rickard (position 3) does not.
     assert okan_shift is not None and okan_shift.code == "OT"
     assert rickard_shift is None or rickard_shift.code != "OT"
+
+
+def test_week_view_merges_swap_into_one_row(month_env):
+    """A position swap between two active people yields ONE row per person,
+    not one row per position segment.
+
+    Rickard (user 11, position 3) and Okan (user 8, position 8) swap on
+    2026-10-01. Week 40 2026 (2026-09-28 to 2026-10-04) straddles the swap.
+    Each person must appear exactly once, with their own real shifts on each
+    side of the swap date - not twice (once per position).
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/week?year=2026&week=40")
+
+    assert resp.status_code == 200
+    assert _rows_containing(resp.text, "person-row", "Rickard") == 1
+    assert _rows_containing(resp.text, "person-row", "Okan") == 1
+
+
+def test_week_view_hides_fully_vacant_position(month_env):
+    """A position with no holder at all during the displayed week shows no row."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, end_date=datetime.date(2026, 8, 3))
+    # Position 5 has a real gap: Isak left 2026-08-03, nobody holds it until
+    # a successor (not seeded here) starts 2026-09-01. Week 35 falls in the gap.
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/week?year=2026&week=35")
+
+    assert resp.status_code == 200
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def test_year_totals_api_rejects_foreign_user_id(month_env):
