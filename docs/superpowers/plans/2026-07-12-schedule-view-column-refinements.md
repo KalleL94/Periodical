@@ -55,8 +55,8 @@ def test_week_view_merges_swap_into_one_row(month_env):
     resp = client.get("/week?year=2026&week=40")
 
     assert resp.status_code == 200
-    assert resp.text.count(">Rickard<") == 1
-    assert resp.text.count(">Okan<") == 1
+    assert _rows_containing(resp.text, "person-row", "Rickard") == 1
+    assert _rows_containing(resp.text, "person-row", "Okan") == 1
 
 
 def test_week_view_hides_fully_vacant_position(month_env):
@@ -65,7 +65,7 @@ def test_week_view_hides_fully_vacant_position(month_env):
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     isak = _make_user(session, 5, "isak1", "Isak")
     start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
-    end_employment(session, isak.id, datetime.date(2026, 8, 3), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 8, 3))
     # Position 5 has a real gap: Isak left 2026-08-03, nobody holds it until
     # a successor (not seeded here) starts 2026-09-01. Week 35 falls in the gap.
 
@@ -74,7 +74,7 @@ def test_week_view_hides_fully_vacant_position(month_env):
     resp = client.get("/week?year=2026&week=35")
 
     assert resp.status_code == 200
-    assert "Vacant" not in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -244,8 +244,8 @@ def test_month_view_merges_swap_into_one_column(month_env):
     resp = client.get("/month?year=2026&month=6")
 
     assert resp.status_code == 200
-    assert resp.text.count(">Anna<") == 1
-    assert resp.text.count(">Bert<") == 1
+    assert _headers_containing(resp.text, "Anna") == 1
+    assert _headers_containing(resp.text, "Bert") == 1
 
 
 def test_month_view_hides_fully_vacant_position(month_env):
@@ -254,14 +254,14 @@ def test_month_view_hides_fully_vacant_position(month_env):
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     isak = _make_user(session, 5, "isak1", "Isak")
     start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
-    end_employment(session, isak.id, datetime.date(2026, 8, 3), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 8, 3))
 
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
     resp = client.get("/month?year=2026&month=8")  # August: Isak leaves Aug 3, rest of month vacant
 
     assert resp.status_code == 200
-    assert "Vacant" not in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -273,6 +273,14 @@ Expected: both FAIL (Anna/Bert each appear twice; "Vacant" appears in the August
 
 Add this helper function above `show_month_all` in `app/routes/schedule_all.py` (after `_build_person_rows`, before the `@router.get("/week"...)` line):
 
+**Correction (verified against `summarize_month_for_person`'s actual return
+shape, `app/core/schedule/summary.py:367-402`):** the return dict has more
+fields than a first pass suggests, including dict-valued fields (`ob_hours`,
+`ob_pay`, keyed by OB code like `"OB1"`) plus `sick_ob_pay_by_code` and
+`sick_ob_hours_by_code`. A merge that only sums scalar fields would silently
+drop the OB breakdown for a merged (swapped) person's month. Use this exact
+implementation:
+
 ```python
 def _merge_month_summaries(summaries: list[dict]) -> dict:
     """Combine date-disjoint month summaries for the same person into one.
@@ -281,11 +289,13 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
     date range via mask_days_to_employment (every day outside that segment is
     already zeroed to OFF with no pay). Segments for the same person during
     one month never overlap in time (PersonHistory allows only one open
-    record per position), so merging is safe: take the first summary's shape,
-    overlay any day from a later summary whose shift is not OFF, and sum
-    every numeric aggregate field.
+    record per position), so merging is safe: take the first summary's
+    `days` list and overlay any non-OFF day from later summaries; sum every
+    numeric aggregate field; merge the per-OB-code dict fields by summing
+    values per key; concatenate `absence_details`.
     """
     merged = dict(summaries[0])
+
     merged_days = list(summaries[0]["days"])
     for other in summaries[1:]:
         for i, other_day in enumerate(other["days"]):
@@ -294,18 +304,25 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
     merged["days"] = merged_days
 
     numeric_fields = [
-        "total_hours",
-        "num_shifts",
-        "total_ob",
-        "ob_pay",
-        "netto_pay",
-        "brutto_pay",
-        "oncall_pay",
-        "ot_pay",
+        "total_hours", "num_shifts", "oncall_pay", "oncall_hours", "ot_pay", "ot_hours",
+        "absence_deduction", "absence_hours", "sick_days", "sick_hours", "sick_ob_pay",
+        "sick_total_ob", "sick_ob_lost", "vab_days", "vab_hours", "leave_days", "leave_hours",
+        "off_days", "off_hours", "parental_days", "parental_hours", "vacation_days",
+        "brutto_pay", "netto_pay",
     ]
     for field in numeric_fields:
-        if field in merged and isinstance(merged.get(field), (int, float)):
-            merged[field] = sum(s.get(field) or 0 for s in summaries)
+        merged[field] = sum(s.get(field) or 0 for s in summaries)
+
+    dict_fields = ["ob_hours", "ob_pay", "sick_ob_pay_by_code", "sick_ob_hours_by_code"]
+    for field in dict_fields:
+        combined: dict = {}
+        for s in summaries:
+            for code, value in (s.get(field) or {}).items():
+                combined[code] = combined.get(code, 0.0) + value
+        merged[field] = combined
+
+    merged["absence_details"] = [d for s in summaries for d in s.get("absence_details", [])]
+
     return merged
 ```
 
@@ -418,8 +435,8 @@ def test_year_view_merges_swap_into_one_column(month_env):
     resp = client.get("/year?year=2026")
 
     assert resp.status_code == 200
-    assert resp.text.count(">Rickard<") == 1
-    assert resp.text.count(">Okan<") == 1
+    assert _headers_containing(resp.text, "Rickard") == 1
+    assert _headers_containing(resp.text, "Okan") == 1
 
 
 def test_year_view_hides_fully_vacant_position(month_env):
@@ -428,7 +445,7 @@ def test_year_view_hides_fully_vacant_position(month_env):
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     isak = _make_user(session, 5, "isak1", "Isak")
     start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
-    end_employment(session, isak.id, datetime.date(2026, 1, 31), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 1, 31))
     # No successor at all during 2026: position 5 vacant for 11 of 12 months.
     # (Still overlaps January, so this exercises the "held briefly" case, not
     # a full-year vacancy - see test_year_header_vacant_after_departure for
@@ -439,7 +456,7 @@ def test_year_view_hides_fully_vacant_position(month_env):
     resp = client.get("/year?year=2027")  # Position 5 has zero overlap with 2027 at all
 
     assert resp.status_code == 200
-    assert "Vacant" not in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -595,7 +612,7 @@ def test_month_redirects_departed_user_to_team_view(month_env):
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     robin = _make_user(session, 10, "robin1", "Robin")
     start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=admin.id)
-    end_employment(session, robin.id, datetime.date(2026, 3, 31), created_by=admin.id)
+    end_employment(session, robin.id, 10, datetime.date(2026, 3, 31))
 
     token = create_access_token(data={"sub": str(robin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
@@ -671,7 +688,7 @@ def test_week_redirects_departed_user_to_team_view(month_env):
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     robin = _make_user(session, 10, "robin1", "Robin")
     start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=admin.id)
-    end_employment(session, robin.id, datetime.date(2026, 3, 31), created_by=admin.id)
+    end_employment(session, robin.id, 10, datetime.date(2026, 3, 31))
 
     token = create_access_token(data={"sub": str(robin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
