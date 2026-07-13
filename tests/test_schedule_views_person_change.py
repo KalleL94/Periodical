@@ -20,7 +20,6 @@ from app.core.schedule import (
     clear_schedule_cache,
     generate_month_data,
     generate_period_data,
-    generate_year_data,
     summarize_month_for_person,
     summarize_year_for_person,
 )
@@ -2129,51 +2128,170 @@ def test_single_person_month_shows_pre_swap_ot_and_oncall(month_env):
     Regression: generate_period_data built the queried user_id set from the
     CURRENT holder of the viewed position (Rickard), so Okan's own September rows
     were excluded from the SQL query entirely on a single-position personal view.
+    This hits the real /month/<user_id> route (not the engine directly), so it
+    also exercises _resolve_person_param and the employment-window masking the
+    route applies around the engine call.
     """
     client, session = month_env
-    _, _, _, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+    admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
 
-    days = generate_month_data(2026, 9, 8, session=session)
-    by_date = {d["date"]: d for d in days}
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{okan.id}?year=2026&month=9")
 
-    assert by_date[ot_date]["shift"] is not None and by_date[ot_date]["shift"].code == "OT"
-    assert by_date[oc_date]["shift"] is not None and by_date[oc_date]["shift"].code == "OC"
+    assert resp.status_code == 200
+    for target_date, code in ((ot_date, "OT"), (oc_date, "OC")):
+        match = re.search(
+            rf'/day/{okan.id}/{target_date.year}/{target_date.month}/{target_date.day}".*?</td>',
+            resp.text,
+            re.DOTALL,
+        )
+        assert match, f"expected a calendar cell for {target_date.isoformat()}"
+        cell_html = match.group(0)
+        assert re.search(rf">\s*{code}\s*<", cell_html), cell_html
 
 
 def test_single_person_year_shows_pre_swap_ot_and_oncall(month_env):
     """Same pre-swap OT and on-call entries must also surface on the personal
-    year view engine (the user reported both month and year views empty)."""
+    year view route (the user reported both month and year views empty).
+
+    Hits the real /year/<user_id> route and checks the rendered September row's
+    OT pay and on-call pay figures against an independently computed reference,
+    the same pattern test_year_summary_spans_position_swap uses.
+    """
     client, session = month_env
-    _, _, _, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+    admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
 
-    days = generate_year_data(2026, 8, session=session)
-    by_date = {d["date"]: d for d in days}
+    sep_ref = summarize_month_for_person(
+        2026,
+        9,
+        8,
+        session=session,
+        year_days=generate_month_data(2026, 9, 8, session=session),
+        wage_user_id=okan.id,
+        payment_year=2026,
+    )
+    assert sep_ref["ot_pay"] > 0
+    assert sep_ref["oncall_pay"] > 0
 
-    assert by_date[ot_date]["shift"] is not None and by_date[ot_date]["shift"].code == "OT"
-    assert by_date[oc_date]["shift"] is not None and by_date[oc_date]["shift"].code == "OC"
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/year/{okan.id}?year=2026")
+
+    assert resp.status_code == 200
+    # Isolate September's own <tr>...</tr> row: locate the month link, then walk
+    # backward/forward to its enclosing row tags (rather than a greedy regex,
+    # which could span multiple months' rows).
+    link = f"/month/{okan.id}?year=2026&month=9"
+    link_pos = resp.text.index(link)
+    row_start = resp.text.rfind('<tr class="shift-row', 0, link_pos)
+    row_end = resp.text.index("</tr>", link_pos)
+    assert row_start != -1, "expected a row for September"
+    row_html = resp.text[row_start:row_end]
+    assert f"{sep_ref['ot_pay']:.0f}" in row_html
+    assert f"{sep_ref['oncall_pay']:.0f}" in row_html
 
 
 def test_single_person_week_shows_pre_swap_ot_and_oncall(month_env):
-    """The personal week view engine has the same single-position batch-fetch
+    """The personal week view route has the same single-position batch-fetch
     path and must also surface the pre-swap OT and on-call entries."""
     client, session = month_env
-    _, _, _, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+    admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
 
     iso = ot_date.isocalendar()
     assert oc_date.isocalendar()[:2] == iso[:2]  # both days share one ISO week
-    days = build_week_data(iso[0], iso[1], person_id=8, session=session)
-    by_date = {d["date"]: d for d in days}
 
-    assert by_date[ot_date]["shift"] is not None and by_date[ot_date]["shift"].code == "OT"
-    assert by_date[oc_date]["shift"] is not None and by_date[oc_date]["shift"].code == "OC"
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/week/{okan.id}?year={iso[0]}&week={iso[1]}")
+
+    assert resp.status_code == 200
+    for target_date, code in ((ot_date, "OT"), (oc_date, "OC")):
+        match = re.search(
+            rf'/day/{okan.id}/{target_date.year}/{target_date.month}/{target_date.day}".*?</td>',
+            resp.text,
+            re.DOTALL,
+        )
+        assert match, f"expected a calendar cell for {target_date.isoformat()}"
+        cell_html = match.group(0)
+        assert re.search(rf">\s*{code}\s*<", cell_html), cell_html
 
 
-def test_single_person_day_shows_pre_swap_ot(month_env):
-    """The single-day personal view engine (generate_period_data over one date)
-    must surface the pre-swap OT shift for the position's prior holder."""
+def test_single_person_day_engine_shows_pre_swap_ot(month_env):
+    """generate_period_data (the shared engine), called with a fixed person_id,
+    must surface the pre-swap OT shift for the position's prior holder.
+
+    This is an engine-level guard, not a day-ROUTE regression test: the day
+    route (show_day_for_person in app/routes/schedule_personal.py) resolves the
+    viewed user's OWN overtime/on-call data directly by user_id
+    (get_overtime_shift_for_date, OnCallOverride.user_id == user_id_for_wages),
+    never through generate_period_data with a fixed person_id for that user's
+    own data - that engine call in the day route is person_id=None, used only to
+    fetch coworkers' data for the same day. So the day route itself never had
+    the bug this commit fixes for a user's own data. This test still guards the
+    underlying engine function, which the coworker-fetching path (and other
+    single-person callers like month/week/year) does rely on.
+    """
     client, session = month_env
-    _, _, _, ot_date, _ = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+    _, _, okan, ot_date, _ = _seed_okan_rickard_swap_with_pre_swap_entries(session)
 
     days = generate_period_data(ot_date, ot_date, person_id=8, session=session)
     assert len(days) == 1
     assert days[0]["shift"] is not None and days[0]["shift"].code == "OT"
+
+
+def test_month_view_excludes_post_swap_entry_from_prior_holder(month_env):
+    """The widened past-holder fetch must not leak a holder's POST-swap rows
+    onto the position's column for dates after they left it.
+
+    Rickard (position 3) and Okan (position 8) swap on 2026-10-01: Rickard now
+    holds position 8, Okan holds position 3. Okan works an overtime shift on
+    2026-10-02 - after the swap, while he holds position 3, not 8.
+
+    Rickard's own October month page resolves to position 8, and October's
+    calendar grid pads back into late September (Okan's tenure at position 8),
+    so Okan is pulled into the widened extra_user_ids fetch for this query - the
+    same widening the pre-swap tests above rely on. This proves that widening
+    does not also let Okan's October row (fetched because his user_id is now in
+    scope) get attributed to position 8: the per-row resolver must still bucket
+    it under position 3, the position he actually held on 2026-10-02, so
+    position 8's October 2 cell shows Rickard's real shift, never Okan's OT.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    leak_date = datetime.date(2026, 10, 2)
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=leak_date,
+            start_time=datetime.time(18, 0),
+            end_time=datetime.time(22, 0),
+            hours=4.0,
+            ot_pay=1000.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    real_shift, _ = determine_shift_for_date(leak_date, start_week=8)
+    expected_code = real_shift.code if real_shift else "OFF"
+    assert expected_code != "OT"  # sanity: position 8's real schedule isn't itself OT
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{rickard.id}?year=2026&month=10")
+
+    assert resp.status_code == 200
+    match = re.search(rf'/day/{rickard.id}/2026/10/2".*?</td>', resp.text, re.DOTALL)
+    assert match, "expected a calendar cell for 2026-10-02"
+    cell_html = match.group(0)
+    assert re.search(r">\s*OT\s*<", cell_html) is None, cell_html
+    assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), cell_html
