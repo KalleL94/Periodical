@@ -19,13 +19,25 @@ from app.core.schedule import (
     build_week_data,
     clear_schedule_cache,
     generate_month_data,
+    generate_period_data,
+    generate_year_data,
     summarize_month_for_person,
     summarize_year_for_person,
 )
 from app.core.schedule.period import mask_days_to_employment
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment, swap_positions
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, OvertimeShift, RotationEra, User, UserRole, WageType
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    OnCallOverride,
+    OnCallOverrideType,
+    OvertimeShift,
+    RotationEra,
+    User,
+    UserRole,
+    WageType,
+)
 from tests.conftest import _ROTATION_ERA_PATTERN
 
 
@@ -2067,3 +2079,101 @@ def test_week_redirects_departed_user_to_team_view(month_env):
     # Week 1 (his own real first week) still renders normally.
     resp2 = client.get("/week/10?year=2026&week=1", follow_redirects=False)
     assert resp2.status_code == 200
+
+
+def _seed_okan_rickard_swap_with_pre_swap_entries(session):
+    """Rickard (pos 3) and Okan (pos 8) swap on 2026-10-01. Okan works an OT
+    shift and gets an on-call ADD override in September, while he still holds
+    position 8. Returns (admin, rickard, okan, ot_date, oc_date).
+
+    After the swap, User.person_id for Okan already reads position 3 (the swap
+    updates it immediately), so a narrow single-position view of position 8 must
+    still fetch Okan's September rows via PersonHistory, not via his current
+    position.
+    """
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    ot_date = datetime.date(2026, 9, 10)  # base N2 for position 8 -> renders OT
+    oc_date = datetime.date(2026, 9, 12)  # base OFF for position 8 -> ADD renders OC
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=ot_date,
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=2000.0,
+            is_extension=False,
+        )
+    )
+    session.add(
+        OnCallOverride(
+            user_id=okan.id,
+            date=oc_date,
+            override_type=OnCallOverrideType.ADD,
+        )
+    )
+    session.commit()
+    return admin, rickard, okan, ot_date, oc_date
+
+
+def test_single_person_month_shows_pre_swap_ot_and_oncall(month_env):
+    """Okan's personal month view of his pre-swap position must show the OT shift
+    and on-call override he registered before the position changed hands.
+
+    Regression: generate_period_data built the queried user_id set from the
+    CURRENT holder of the viewed position (Rickard), so Okan's own September rows
+    were excluded from the SQL query entirely on a single-position personal view.
+    """
+    client, session = month_env
+    _, _, _, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    days = generate_month_data(2026, 9, 8, session=session)
+    by_date = {d["date"]: d for d in days}
+
+    assert by_date[ot_date]["shift"] is not None and by_date[ot_date]["shift"].code == "OT"
+    assert by_date[oc_date]["shift"] is not None and by_date[oc_date]["shift"].code == "OC"
+
+
+def test_single_person_year_shows_pre_swap_ot_and_oncall(month_env):
+    """Same pre-swap OT and on-call entries must also surface on the personal
+    year view engine (the user reported both month and year views empty)."""
+    client, session = month_env
+    _, _, _, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    days = generate_year_data(2026, 8, session=session)
+    by_date = {d["date"]: d for d in days}
+
+    assert by_date[ot_date]["shift"] is not None and by_date[ot_date]["shift"].code == "OT"
+    assert by_date[oc_date]["shift"] is not None and by_date[oc_date]["shift"].code == "OC"
+
+
+def test_single_person_week_shows_pre_swap_ot_and_oncall(month_env):
+    """The personal week view engine has the same single-position batch-fetch
+    path and must also surface the pre-swap OT and on-call entries."""
+    client, session = month_env
+    _, _, _, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    iso = ot_date.isocalendar()
+    assert oc_date.isocalendar()[:2] == iso[:2]  # both days share one ISO week
+    days = build_week_data(iso[0], iso[1], person_id=8, session=session)
+    by_date = {d["date"]: d for d in days}
+
+    assert by_date[ot_date]["shift"] is not None and by_date[ot_date]["shift"].code == "OT"
+    assert by_date[oc_date]["shift"] is not None and by_date[oc_date]["shift"].code == "OC"
+
+
+def test_single_person_day_shows_pre_swap_ot(month_env):
+    """The single-day personal view engine (generate_period_data over one date)
+    must surface the pre-swap OT shift for the position's prior holder."""
+    client, session = month_env
+    _, _, _, ot_date, _ = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    days = generate_period_data(ot_date, ot_date, person_id=8, session=session)
+    assert len(days) == 1
+    assert days[0]["shift"] is not None and days[0]["shift"].code == "OT"
