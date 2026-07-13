@@ -619,6 +619,125 @@ def test_month_view_merges_swap_into_one_column(month_env):
     assert _headers_containing(resp.text, "Bert") == 1
 
 
+def _fake_month_summary(*, brutto_pay, base_salary, wage_type=WageType.MONTHLY, year=2026, tax_table=None):
+    """Minimal fabricated summarize_month_for_person-shaped dict for merge unit tests.
+
+    Only the keys _merge_month_summaries actually reads are populated; every
+    numeric/dict field defaults to a zero-ish value via .get() in the merge
+    function except "days", which is read unconditionally.
+    """
+    return {
+        "year": year,
+        "days": [],
+        "brutto_pay": brutto_pay,
+        "netto_pay": brutto_pay,
+        "base_salary": base_salary,
+        "wage_type": wage_type,
+        "tax_table": tax_table,
+        "absence_details": [],
+    }
+
+
+def test_merge_month_summaries_monthly_wage_does_not_double_count_base(month_env):
+    """_merge_month_summaries must not sum a monthly-wage user's flat base twice.
+
+    Two segments share the same 30000 SEK monthly base: segment 1 carries 2000
+    SEK of variable pay on top (brutto_pay=32000), segment 2 carries 1500 SEK
+    (brutto_pay=31500). The correct merged gross is ONE base plus BOTH
+    variable parts (30000 + 2000 + 1500 = 33500). Naively summing the two
+    segments' brutto_pay (the pre-fix bug) would instead yield 63500, roughly
+    2x the correct value.
+    """
+    from app.core.schedule.summary import _calculate_tax
+    from app.routes.schedule_all import _merge_month_summaries
+
+    base_salary = 30000.0
+    seg1 = _fake_month_summary(brutto_pay=base_salary + 2000.0, base_salary=base_salary)
+    seg2 = _fake_month_summary(brutto_pay=base_salary + 1500.0, base_salary=base_salary)
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    naive_double_counted = seg1["brutto_pay"] + seg2["brutto_pay"]
+    assert merged["brutto_pay"] == pytest.approx(33500.0)
+    assert merged["brutto_pay"] < naive_double_counted - base_salary * 0.9
+
+    expected_netto = merged["brutto_pay"] - _calculate_tax(merged["brutto_pay"], None, payment_year=2026)
+    assert merged["netto_pay"] == pytest.approx(expected_netto)
+
+
+def test_merge_month_summaries_hourly_wage_sums_normally(month_env):
+    """An hourly-wage user's already day-derived brutto_pay is safe to sum as-is.
+
+    Hourly brutto_pay carries no flat base component (summary.py replaces it
+    entirely with a worked-hours-derived figure), so unlike the monthly case,
+    summing two segments' brutto_pay directly is correct.
+    """
+    from app.routes.schedule_all import _merge_month_summaries
+
+    seg1 = _fake_month_summary(brutto_pay=12000.0, base_salary=30000.0, wage_type=WageType.HOURLY)
+    seg2 = _fake_month_summary(brutto_pay=9000.0, base_salary=30000.0, wage_type=WageType.HOURLY)
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    assert merged["brutto_pay"] == pytest.approx(21000.0)
+
+
+def test_month_swap_merge_brutto_pay_not_double_counted(month_env):
+    """End-to-end: a real monthly-wage swap's merged brutto_pay stays sane.
+
+    Anna holds position 3 from January, swaps to position 5 mid-June. Her June
+    column is built from two per-segment summaries (masked to before/after the
+    swap) merged by _merge_month_summaries, exercising the exact code path
+    show_month_all uses. Before the fix this came out near 2x her monthly wage
+    because each segment independently resolved the same flat base salary.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+    from app.routes.schedule_all import _merge_month_summaries
+
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=1)
+
+    year, month = 2026, 6
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, 30)
+
+    segments_by_user: dict[int, list[dict]] = {}
+    for pid in (3, 5):
+        for seg in get_position_holder_segments(session, pid, month_start, month_end):
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    anna_segs = sorted(segments_by_user[anna.id], key=lambda s: s["from_date"])
+    assert len(anna_segs) == 2, "expected Anna to hold two segments (pre- and post-swap position) in June"
+
+    per_segment_summaries = []
+    for seg in anna_segs:
+        days = generate_month_data(year, month, seg["person_id"], session=session)
+        masked_days = mask_days_to_employment(days, seg["from_date"], seg["to_date"])
+        s = summarize_month_for_person(
+            year,
+            month,
+            seg["person_id"],
+            session=session,
+            year_days=masked_days,
+            fetch_tax_table=False,
+            payment_year=year,
+            wage_user_id=anna.id,
+        )
+        per_segment_summaries.append(s)
+
+    merged = _merge_month_summaries(per_segment_summaries)
+
+    naive_double_counted = sum(s["brutto_pay"] for s in per_segment_summaries)
+    # Well under 2x the base wage: the pre-fix bug summed the flat base once
+    # per segment, landing close to naive_double_counted (~2x anna.wage).
+    assert merged["brutto_pay"] < naive_double_counted - anna.wage * 0.9
+    assert merged["brutto_pay"] < 1.5 * anna.wage
+
+
 def test_month_view_merge_picks_correct_shift_per_day_across_swap(month_env):
     """The merged month column must show each holder's OWN real shift on each
     side of the swap date, not OFF or the other holder's schedule.

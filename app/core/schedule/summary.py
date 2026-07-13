@@ -398,6 +398,9 @@ def summarize_month_for_person(
         "absence_details": absence_details,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
+        "base_salary": base_salary,
+        "wage_type": user.wage_type if user else None,
+        "tax_table": tax_table,
         "days": days_out,
     }
 

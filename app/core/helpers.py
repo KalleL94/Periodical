@@ -112,6 +112,10 @@ def strip_salary_data(data: dict) -> dict:
     result["ob_pay"] = {}
     result["ob_hours"] = {}
     result["total_ob"] = None
+    if "base_salary" in result:
+        result["base_salary"] = None
+    if "tax_table" in result:
+        result["tax_table"] = None
 
     if "days" in result and result["days"]:
         stripped_days = []

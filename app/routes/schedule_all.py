@@ -28,9 +28,10 @@ from app.core.schedule import (
 )
 from app.core.schedule.period import mask_days_to_employment
 from app.core.schedule.person_history import get_position_holder_segments, get_user_person_id, has_position_history
+from app.core.schedule.summary import _calculate_tax
 from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
-from app.database.database import User, UserRole, get_db
+from app.database.database import User, UserRole, WageType, get_db
 from app.routes.shared import templates
 
 logger = get_logger(__name__)
@@ -193,8 +194,6 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
         "parental_days",
         "parental_hours",
         "vacation_days",
-        "brutto_pay",
-        "netto_pay",
     ]
     for field in numeric_fields:
         merged[field] = sum(s.get(field) or 0 for s in summaries)
@@ -209,7 +208,45 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
 
     merged["absence_details"] = [d for s in summaries for d in s.get("absence_details", [])]
 
+    merged["brutto_pay"], merged["netto_pay"] = _merge_brutto_netto(summaries)
+
     return merged
+
+
+def _merge_brutto_netto(summaries: list[dict]) -> tuple[float, float]:
+    """Combine brutto/netto pay across segments without double-counting the flat base.
+
+    summarize_month_for_person seeds a monthly-wage user's brutto_pay with the
+    full flat monthly base_salary, then layers day-derived variable pay on top
+    (see summary.py's totals["brutto_pay"] = base_salary). When a swap
+    participant's month is split into per-position segments, each segment
+    independently resolves the SAME monthly base, so naively summing brutto_pay
+    across segments would count that flat base once per segment instead of
+    once for the whole month. The correct merged gross is one instance of the
+    base plus every segment's own variable/day-derived contribution on top of
+    it: the first segment's brutto_pay already IS base + its own variable part,
+    so only the later segments' base components need to be subtracted back out.
+
+    Hourly-wage users don't have this problem: summarize_month_for_person fully
+    replaces their brutto_pay with a worked-hours-derived figure
+    (_hourly_corrected_gross) that carries no flat base component at all and is
+    already zero for the masked-out days of every segment but their own, so
+    summing it across segments is correct as-is.
+    """
+    if len(summaries) == 1:
+        return summaries[0]["brutto_pay"], summaries[0]["netto_pay"]
+
+    if summaries[0].get("wage_type") == WageType.HOURLY:
+        merged_brutto = sum(s.get("brutto_pay") or 0 for s in summaries)
+    else:
+        merged_brutto = (summaries[0].get("brutto_pay") or 0) + sum(
+            (s.get("brutto_pay") or 0) - (s.get("base_salary") or 0) for s in summaries[1:]
+        )
+
+    tax_table = summaries[0].get("tax_table")
+    payment_year = summaries[0].get("year")
+    merged_netto = merged_brutto - _calculate_tax(merged_brutto, tax_table, payment_year=payment_year)
+    return merged_brutto, merged_netto
 
 
 @router.get("/week", response_class=HTMLResponse, name="week_all")
