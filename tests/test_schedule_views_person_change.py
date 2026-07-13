@@ -784,6 +784,141 @@ def test_month_swap_merge_brutto_pay_not_double_counted(month_env):
     assert merged["brutto_pay"] < 1.5 * anna.wage
 
 
+def test_merge_month_summaries_does_not_double_count_whole_month_absence_fields(month_env):
+    """_merge_month_summaries must not sum absence-derived fields across segments.
+
+    get_absence_deductions_for_month (wages.py) queries Absence rows by user_id for
+    the ENTIRE calendar month with no date-range/segment scoping, so every segment's
+    summary independently carries the SAME whole-month sick_days/absence_deduction/
+    sick_ob_pay_by_code figures. Naively summing them across two segments (the
+    pre-fix bug) doubles them; they must instead be taken from exactly one segment.
+    """
+    from app.routes.schedule_all import _merge_month_summaries
+
+    seg1 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    seg2 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    for s in (seg1, seg2):
+        s["sick_days"] = 2
+        s["sick_hours"] = 16.0
+        s["absence_deduction"] = 2400.0
+        s["absence_hours"] = 16.0
+        s["sick_ob_pay"] = 150.0
+        s["sick_total_ob"] = 200.0
+        s["sick_ob_lost"] = 50.0
+        s["sick_ob_pay_by_code"] = {"kväll": 150.0}
+        s["sick_ob_hours_by_code"] = {"kväll": 3.0}
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    naive_double_counted = seg1["sick_days"] + seg2["sick_days"]
+    assert naive_double_counted == 4, "sanity check on the fabricated scenario"
+    assert merged["sick_days"] == 2
+    assert merged["sick_hours"] == pytest.approx(16.0)
+    assert merged["absence_deduction"] == pytest.approx(2400.0)
+    assert merged["absence_hours"] == pytest.approx(16.0)
+    assert merged["sick_ob_pay"] == pytest.approx(150.0)
+    assert merged["sick_total_ob"] == pytest.approx(200.0)
+    assert merged["sick_ob_lost"] == pytest.approx(50.0)
+    assert merged["sick_ob_pay_by_code"] == {"kväll": 150.0}
+    assert merged["sick_ob_hours_by_code"] == {"kväll": 3.0}
+
+
+def test_merge_month_summaries_parental_days_mix_is_reconstructed_correctly(month_env):
+    """parental_days mixes a whole-month absence component with a per-segment
+    day-derived (week-based) component; the merge must not double the absence
+    part while still summing the week-based part from every segment.
+
+    Fabricated scenario: an identical whole-month absence-derived component of 2
+    (constant across both segments, as get_absence_deductions_for_month would
+    produce) plus 1 week-based flagged day in segment 1's own `days` list and 2
+    in segment 2's. Correct merged total: 2 (absence, once) + 1 + 2 (both
+    segments' week-based days) = 5.
+    """
+    from app.routes.schedule_all import _merge_month_summaries
+
+    seg1 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    seg2 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    seg1["days"] = [{"parental_leave": True}, {}, {}]
+    seg2["days"] = [{}, {"parental_leave": True}, {"parental_leave": True}]
+    seg1["parental_days"] = 2 + 1  # absence-only component (2) + this segment's own week day (1)
+    seg2["parental_days"] = 2 + 2  # same absence-only component (2) + this segment's 2 week days
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    assert merged["parental_days"] == 5
+
+
+def test_month_swap_merge_sick_days_not_double_counted(month_env):
+    """End-to-end: a real swap month with sick days on BOTH sides is not double-counted.
+
+    Anna holds position 3 from January, swaps to position 5 mid-June. She has one
+    sick day before the swap (still on position 3) and one sick day after the swap
+    (now on position 5), both stored as Absence rows keyed by her user_id. Because
+    get_absence_deductions_for_month queries the whole calendar month by user_id
+    with no segment scoping, each of Anna's two per-segment summaries independently
+    reports sick_days=2 for June. Before the fix, _merge_month_summaries summed
+    that across both segments to 4; the correct merged total is 2, matching a
+    single authoritative call to get_absence_deductions_for_month for the month.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+    from app.core.schedule.wages import get_absence_deductions_for_month
+    from app.routes.schedule_all import _merge_month_summaries
+
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=1)
+
+    # One sick day before the swap (position 3) and one after (position 5).
+    session.add(Absence(user_id=anna.id, date=datetime.date(2026, 6, 8), absence_type=AbsenceType.SICK))
+    session.add(Absence(user_id=anna.id, date=datetime.date(2026, 6, 22), absence_type=AbsenceType.SICK))
+    session.commit()
+
+    year, month = 2026, 6
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, 30)
+
+    segments_by_user: dict[int, list[dict]] = {}
+    for pid in (3, 5):
+        for seg in get_position_holder_segments(session, pid, month_start, month_end):
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    anna_segs = sorted(segments_by_user[anna.id], key=lambda s: s["from_date"])
+    assert len(anna_segs) == 2, "expected Anna to hold two segments (pre- and post-swap position) in June"
+
+    per_segment_summaries = []
+    for seg in anna_segs:
+        days = generate_month_data(year, month, seg["person_id"], session=session)
+        masked_days = mask_days_to_employment(days, seg["from_date"], seg["to_date"])
+        s = summarize_month_for_person(
+            year,
+            month,
+            seg["person_id"],
+            session=session,
+            year_days=masked_days,
+            fetch_tax_table=False,
+            payment_year=year,
+            wage_user_id=anna.id,
+        )
+        per_segment_summaries.append(s)
+
+    # Sanity check on the bug: each segment independently re-queries the WHOLE
+    # month's absences and therefore already reports both sick days.
+    assert per_segment_summaries[0]["sick_days"] == 2
+    assert per_segment_summaries[1]["sick_days"] == 2
+
+    merged = _merge_month_summaries(per_segment_summaries)
+
+    authoritative = get_absence_deductions_for_month(session, anna.id, year, month, anna.wage)
+    assert merged["sick_days"] == authoritative["sick_days"] == 2
+    assert merged["absence_deduction"] == pytest.approx(authoritative["total_deduction"])
+    naive_double_counted = sum(s["sick_days"] for s in per_segment_summaries)
+    assert naive_double_counted == 4
+    assert merged["sick_days"] != naive_double_counted
+
+
 def test_month_view_merge_picks_correct_shift_per_day_across_swap(month_env):
     """The merged month column must show each holder's OWN real shift on each
     side of the swap date, not OFF or the other holder's schedule.

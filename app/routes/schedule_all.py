@@ -150,6 +150,17 @@ def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sund
     return person_rows
 
 
+def _count_week_based_parental_days(days: list[dict]) -> int:
+    """Count week-based parental-leave days flagged on a segment's own `days` list.
+
+    This is distinct from day-level PARENTAL absence rows (see the module docstring
+    on _merge_month_summaries): mask_days_to_employment clears this flag on days
+    outside a segment's own range, so counting it per segment and summing across
+    segments is correct.
+    """
+    return sum(1 for d in days if d.get("parental_leave"))
+
+
 def _merge_month_summaries(summaries: list[dict]) -> dict:
     """Combine date-disjoint month summaries for the same person into one.
 
@@ -157,10 +168,41 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
     date range via mask_days_to_employment (every day outside that segment is
     already zeroed to OFF with no pay). Segments for the same person during
     one month never overlap in time (PersonHistory allows only one open
-    record per position), so merging is safe: take the first summary's
-    `days` list and overlay any non-OFF day from later summaries; sum every
-    numeric aggregate field; merge the per-OB-code dict fields by summing
-    values per key; concatenate `absence_details`.
+    record per position), so merging the `days` lists is safe: take the first
+    summary's `days` list and overlay any non-OFF day from later summaries.
+
+    The aggregate fields, however, fall into three groups that must be merged
+    differently:
+
+    1. Day-derived fields (`_SUM_FIELDS` / `_SUM_DICT_FIELDS`): accumulated in
+       summary.py's _process_day_for_summary from each segment's own masked
+       `days` list, so every segment's contribution is genuinely its own share
+       of the month. Safe to sum across segments.
+
+    2. Whole-month absence-derived fields (`_ABSENCE_ONLY_FIELDS` /
+       `_ABSENCE_ONLY_DICT_FIELDS`): summary.py's summarize_month_for_person
+       calls get_absence_deductions_for_month(session, uid_for_wages, year,
+       month, ...) (wages.py), which queries Absence rows by user_id for the
+       ENTIRE calendar month with no date-range/segment scoping at all. Since
+       every segment of a swap belongs to the SAME user_id, each segment's
+       summary independently carries the identical whole-month absence
+       figures. Summing them across N segments would multiply them by N;
+       instead take them from exactly one segment (summaries[0]) since they
+       are already identical across all segments.
+
+    3. `parental_days`: a MIX of the two. summary.py adds a day-derived
+       "week_parental_days" count (from the day-level `parental_leave` flag,
+       correctly zeroed outside each segment by mask_days_to_employment) on
+       top of the whole-month absence query's PARENTAL-type day count. Summed
+       naively it double-counts the absence component; taken from one segment
+       it drops the other segments' week-based days. It is reconstructed here
+       by subtracting summaries[0]'s own week-based count back out (to
+       recover the absence-only component) and adding the week-based counts
+       from every segment.
+
+    `brutto_pay`/`netto_pay` have their own dedicated merge in
+    _merge_brutto_netto (a similar but distinct flat-base-vs-variable-pay
+    split); this function does not touch that logic.
     """
     merged = dict(summaries[0])
 
@@ -171,13 +213,22 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
                 merged_days[i] = other_day
     merged["days"] = merged_days
 
-    numeric_fields = [
+    # Group 1: genuinely day-derived, safe to sum across segments.
+    sum_fields = [
         "total_hours",
         "num_shifts",
         "oncall_pay",
         "oncall_hours",
         "ot_pay",
         "ot_hours",
+        "vacation_days",
+    ]
+    for field in sum_fields:
+        merged[field] = sum(s.get(field) or 0 for s in summaries)
+
+    # Group 2: sourced from the whole-month absence query, identical across
+    # every segment of the same user/month. Take from one segment only.
+    absence_only_fields = [
         "absence_deduction",
         "absence_hours",
         "sick_days",
@@ -191,20 +242,35 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
         "leave_hours",
         "off_days",
         "off_hours",
-        "parental_days",
         "parental_hours",
-        "vacation_days",
     ]
-    for field in numeric_fields:
-        merged[field] = sum(s.get(field) or 0 for s in summaries)
+    for field in absence_only_fields:
+        merged[field] = summaries[0].get(field) or 0
 
-    dict_fields = ["ob_hours", "ob_pay", "sick_ob_pay_by_code", "sick_ob_hours_by_code"]
-    for field in dict_fields:
+    # Group 1 dict fields: per-OB-code breakdowns derived from each segment's
+    # own masked shifts. Safe to sum per key.
+    sum_dict_fields = ["ob_hours", "ob_pay"]
+    for field in sum_dict_fields:
         combined: dict = {}
         for s in summaries:
             for code, value in (s.get(field) or {}).items():
                 combined[code] = combined.get(code, 0.0) + value
         merged[field] = combined
+
+    # Group 2 dict fields: also sourced from the whole-month absence query.
+    # Take from one segment, do not sum.
+    absence_only_dict_fields = ["sick_ob_pay_by_code", "sick_ob_hours_by_code"]
+    for field in absence_only_dict_fields:
+        merged[field] = dict(summaries[0].get(field) or {})
+
+    # Group 3: parental_days mixes a whole-month absence component (constant
+    # across segments) with a day-derived week-based component (varies per
+    # segment). Recover the absence-only component from summaries[0] and add
+    # every segment's own week-based count.
+    first_week_based = _count_week_based_parental_days(summaries[0].get("days") or [])
+    absence_only_parental_days = (summaries[0].get("parental_days") or 0) - first_week_based
+    total_week_based = sum(_count_week_based_parental_days(s.get("days") or []) for s in summaries)
+    merged["parental_days"] = absence_only_parental_days + total_week_based
 
     merged["absence_details"] = [d for s in summaries for d in s.get("absence_details", [])]
 
