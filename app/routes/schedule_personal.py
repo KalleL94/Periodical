@@ -841,6 +841,7 @@ async def show_month_for_person(
         employment_start=viewer_employment_start,
         employment_end=viewer_employment_end,
         viewer_user_id=target_user.id if target_user is not None else None,
+        wage_user_id=user_id_for_wages,
     )
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]

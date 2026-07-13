@@ -415,6 +415,7 @@ def build_calendar_grid_for_month(
     employment_start=None,
     employment_end=None,
     viewer_user_id: int | None = None,
+    wage_user_id: int | None = None,
 ) -> dict:
     """
     Bygger en komplett kalendergrid inklusive intilliggande månaders dagar.
@@ -437,6 +438,11 @@ def build_calendar_grid_for_month(
             month boundary), that day is re-fetched under the correct position
             instead of being masked to OFF by the main month's employment window.
             Padding dates outside the viewer's own tenure entirely stay OFF.
+        wage_user_id: The USER id whose rates (RateHistory) should price this
+            month's OT/on-call pay, when it differs from person_id (a rotation
+            position may be held by different users over time). Falls back to
+            person_id when not set, matching summarize_month_for_person and
+            summarize_year_for_person.
 
     Returns:
         Dict med 'summary' (månadssammanfattning) och 'grid' (lista med veckor)
@@ -444,6 +450,26 @@ def build_calendar_grid_for_month(
     import calendar as cal
     from datetime import date as dt_date
     from datetime import timedelta
+
+    from app.core.rates import get_user_rates
+    from app.database.database import User
+
+    # Resolve the rates for the actual USER whose month this is (not just
+    # whoever currently holds the rotation position), effective at the start
+    # of the viewed month. This must be threaded into generate_month_data /
+    # generate_period_data below as user_rates_map, keyed by person_id: without
+    # it, per-day OT pay silently falls back to the generic
+    # monthly-wage/OT_RATE_DIVISOR formula instead of a custom stored OT rate
+    # (OB pay does not have this problem - it is recomputed fresh from
+    # user_rates inside summarize_month_for_person regardless of this map).
+    _rate_uid = wage_user_id if wage_user_id is not None else person_id
+    _month_rates_map = None
+    if session is not None and _rate_uid is not None:
+        _rate_user = session.query(User).filter(User.id == _rate_uid).first()
+        if _rate_user is not None:
+            _month_rates = get_user_rates(_rate_user, session=session, effective_date=dt_date(year, month, 1))
+            if _month_rates:
+                _month_rates_map = {person_id: _month_rates}
 
     # Get the monthly summary for totals and day data. When the viewer's own
     # employment window is bounded (either end), generate the exact-month days
@@ -453,13 +479,24 @@ def build_calendar_grid_for_month(
     # neither a predecessor's nor a successor's real hours leak into a viewer's
     # page for months outside their own tenure.
     if employment_start is not None or employment_end is not None:
-        month_days = generate_month_data(year, month, person_id, session=session, user_wages=user_wages)
+        month_days = generate_month_data(
+            year, month, person_id, session=session, user_wages=user_wages, user_rates_map=_month_rates_map
+        )
         month_days = mask_days_to_employment(month_days, employment_start or dt_date.min, employment_end or dt_date.max)
         month_summary = summarize_month_for_person(
-            year, month, person_id, session, user_wages, year_days=month_days, payment_year=year
+            year,
+            month,
+            person_id,
+            session,
+            user_wages,
+            year_days=month_days,
+            payment_year=year,
+            wage_user_id=wage_user_id,
         )
     else:
-        month_summary = summarize_month_for_person(year, month, person_id, session, user_wages, payment_year=year)
+        month_summary = summarize_month_for_person(
+            year, month, person_id, session, user_wages, payment_year=year, wage_user_id=wage_user_id
+        )
 
     # Determine grid boundaries from the weekday of the first and last day
     first_day = dt_date(year, month, 1)
@@ -475,7 +512,13 @@ def build_calendar_grid_for_month(
 
     # Generate schedule data for the extended range
     extended_days = generate_period_data(
-        grid_start, grid_end, person_id, session=session, user_wages=user_wages, employment_start=employment_start
+        grid_start,
+        grid_end,
+        person_id,
+        session=session,
+        user_wages=user_wages,
+        employment_start=employment_start,
+        user_rates_map=_month_rates_map,
     )
     if employment_end is not None:
         extended_days = mask_days_to_employment(extended_days, dt_date.min, employment_end)

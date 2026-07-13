@@ -32,6 +32,7 @@ from app.database.database import (
     OnCallOverride,
     OnCallOverrideType,
     OvertimeShift,
+    RateHistory,
     RotationEra,
     User,
     UserRole,
@@ -2295,3 +2296,134 @@ def test_month_view_excludes_post_swap_entry_from_prior_holder(month_env):
     cell_html = match.group(0)
     assert re.search(r">\s*OT\s*<", cell_html) is None, cell_html
     assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), cell_html
+
+
+def _seed_user_with_custom_ot_and_ob_rates(session, admin_id):
+    """Single-position user (position 8) with a custom OT rate and custom OB
+    rates stored in RateHistory, clearly different from the generic
+    monthly-wage/OT_RATE_DIVISOR fallback. Mirrors the live bug report: Okan
+    (user_id=8), wage 39500, custom OT rate 451.43 kr/h (39500/72 = 548.61
+    kr/h, a visibly different number).
+    """
+    okan = _make_user(session, 8, "okan1", "Okan", person_id=8)
+    okan.wage = 39500
+    session.add(okan)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin_id)
+    session.add(
+        RateHistory(
+            user_id=okan.id,
+            rates={
+                "ot": 451.43,
+                "ob": {"OB1": 27.24, "OB2": 40.86, "OB3": 54.48, "OB4": 54.48, "OB5": 106.7},
+            },
+            effective_from=datetime.date(2026, 1, 2),
+            effective_to=None,
+        )
+    )
+    session.commit()
+    return okan
+
+
+def test_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month_env):
+    """Personal month view must price overtime with the user's stored custom
+    OT rate (RateHistory), not the generic monthly-wage/OT_RATE_DIVISOR
+    fallback.
+
+    Regression: build_calendar_grid_for_month (the personal month view's
+    calendar builder, used by /month/<user_id>) generated the calendar's day
+    data via generate_month_data without threading a user_rates_map through,
+    so every day's OT pay silently fell back to (monthly_wage / 72) even
+    though this user has a custom stored OT rate. The year view resolves and
+    threads the rate correctly, so the same hours priced differently on the
+    two views for the same user and month.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _seed_user_with_custom_ot_and_ob_rates(session, admin.id)
+
+    ot_date = datetime.date(2026, 6, 5)
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=ot_date,
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    custom_rate_pay = 8.5 * 451.43
+    fallback_pay = 8.5 * (39500 / 72)
+    assert round(custom_rate_pay, 2) != round(fallback_pay, 2)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{okan.id}?year=2026&month=6")
+
+    assert resp.status_code == 200
+    assert f"{custom_rate_pay:.2f}" in resp.text, resp.text
+    assert f"{fallback_pay:.2f}" not in resp.text
+
+
+def test_month_and_year_view_agree_on_ot_and_ob_pay_for_same_month(month_env):
+    """The month view and the year view must report IDENTICAL OT pay and OB
+    pay for the exact same user and month - this directly encodes the bug
+    report's own discovery method (the user noticed the two views disagreed
+    for the same month) as a permanent regression guard.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _seed_user_with_custom_ot_and_ob_rates(session, admin.id)
+
+    for ot_date in (
+        datetime.date(2026, 6, 5),
+        datetime.date(2026, 6, 9),
+        datetime.date(2026, 6, 16),
+    ):
+        session.add(
+            OvertimeShift(
+                user_id=okan.id,
+                date=ot_date,
+                start_time=datetime.time(14, 0),
+                end_time=datetime.time(22, 30),
+                hours=8.5,
+                ot_pay=0.0,
+                is_extension=False,
+            )
+        )
+    session.commit()
+
+    ref = summarize_month_for_person(
+        2026,
+        6,
+        8,
+        session=session,
+        wage_user_id=okan.id,
+        payment_year=2026,
+    )
+    assert ref["ot_pay"] > 0
+    assert sum(ref["ob_pay"].values()) > 0
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    month_resp = client.get(f"/month/{okan.id}?year=2026&month=6")
+    year_resp = client.get(f"/year/{okan.id}?year=2026")
+
+    assert month_resp.status_code == 200
+    assert year_resp.status_code == 200
+
+    assert f"{ref['ot_pay']:.2f}" in month_resp.text, month_resp.text
+    assert f"{sum(ref['ob_pay'].values()):.2f}" in month_resp.text, month_resp.text
+
+    link = f"/month/{okan.id}?year=2026&month=6"
+    link_pos = year_resp.text.index(link)
+    row_start = year_resp.text.rfind('<tr class="shift-row', 0, link_pos)
+    row_end = year_resp.text.index("</tr>", link_pos)
+    assert row_start != -1, "expected a row for June"
+    row_html = year_resp.text[row_start:row_end]
+    assert f"{ref['ot_pay']:.0f}" in row_html, row_html
+    assert f"{sum(ref['ob_pay'].values()):.0f}" in row_html, row_html
