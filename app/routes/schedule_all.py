@@ -397,6 +397,11 @@ async def show_month_all(
         )
         summary["person_name"] = segs[-1]["name"]
         summary["holder_user_id"] = user_id
+        if len({s["person_id"] for s in segs}) > 1:
+            # Swap participant: display their CURRENT position, matching the
+            # year view's approach (get_user_person_id) instead of the
+            # earliest/pre-swap position the first segment happens to carry.
+            summary["person_id"] = get_user_person_id(db, user_id, on_date=get_today()) or summary["person_id"]
         viewer_is_owner = current_user is not None and current_user.id == user_id
         if not (is_admin or viewer_is_owner):
             summary = strip_salary_data(summary)

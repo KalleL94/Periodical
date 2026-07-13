@@ -391,6 +391,52 @@ def test_year_ongoing_holder_visible_in_later_year(month_env):
     assert "display:none" not in ths3[0]
 
 
+def test_year_future_succession_column_hidden_until_effective(month_env):
+    """A future-dated succession (not a swap) still hides the incoming holder.
+
+    Isak currently holds position 3; a future-dated add_person_change hands the
+    position to Bob (a different user_id, not a mutual swap). Unlike the
+    merged-swap case above, a plain succession keeps its holders on separate
+    user_ids, so Bob's column must stay hidden (data-future="1", display:none
+    and a disabled filter checkbox) until his start date passes, while Isak's
+    current column stays visible.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 11, "isak1", "Isak")
+    bob = _make_user(session, 12, "bob1", "Bob")
+
+    today = get_today()
+    succession_date = today + datetime.timedelta(days=30)
+
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=isak.id,
+        new_user_id=bob.id,
+        person_id=3,
+        new_name="Bob",
+        new_username="bob1",
+        effective_from=succession_date,
+        created_by=1,
+    )
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/year?year={today.year}")
+    assert resp.status_code == 200
+
+    ths = _year_header_ths(resp.text, 3)
+    assert len(ths) == 2
+    isak_th = next(th for th in ths if "Isak" in th)
+    bob_th = next(th for th in ths if "Bob" in th)
+
+    assert 'data-future="0"' in isak_th and "display:none" not in isak_th
+    assert 'data-future="1"' in bob_th and "display:none" in bob_th
+    assert re.search(r'<input[^>]*data-future="1"[^>]*\bdisabled\b', resp.text)
+
+
 def _out_of_tenure_cells(html: str, col_key: str) -> list[str]:
     """Return the out-of-tenure day cells (whole <td>...</td>) for a column."""
     return re.findall(
@@ -780,6 +826,37 @@ def test_month_view_merge_picks_correct_shift_per_day_across_swap(month_env):
         cell_html = match.group(0)
         expected_code = expected.code if expected else "OFF"
         assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+
+def test_month_view_swap_participant_shows_current_position_badge(month_env):
+    """A swap participant's month-view header shows their CURRENT position.
+
+    Anna moves from position 3 to position 5 on 2026-06-15; Bert moves the
+    opposite direction. Viewed after the swap has taken effect, each header's
+    "(#N)" badge must show the position they hold NOW, matching the year
+    view's get_user_person_id-based approach, not the earliest/pre-swap
+    position the merge's first segment happens to carry.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=6")
+
+    assert resp.status_code == 200
+
+    blocks = re.findall(r'(<th class="person-header"[^>]*>.*?</th>)', resp.text, re.DOTALL)
+    anna_th = next(b for b in blocks if "Anna" in b)
+    bert_th = next(b for b in blocks if "Bert" in b)
+
+    assert "(#5)" in anna_th and "(#3)" not in anna_th
+    assert "(#3)" in bert_th and "(#5)" not in bert_th
 
 
 def test_month_view_hides_fully_vacant_position(month_env):
