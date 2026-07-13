@@ -586,6 +586,45 @@ def test_year_redirects_non_owner_non_admin(month_env):
     assert resp.headers["location"] == "/year/13?year=2026"
 
 
+def test_year_all_name_links_respect_viewer_role(month_env):
+    """Names in /year link to the personal view only when the viewer is allowed to see it.
+
+    Anonymous viewers get no links at all. A regular logged-in user only gets a
+    link for their own name - everyone else's name is plain text. An admin gets
+    links for every name.
+    """
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+
+    # Anonymous: no /year/<id> link for either person.
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+    assert f'href="/year/{anna.id}?' not in resp.text
+    assert f'href="/year/{bert.id}?' not in resp.text
+    assert "Anna" in resp.text
+    assert "Bert" in resp.text
+
+    # Regular user (Anna): only her own name is linked, Bert's is plain text.
+    token = create_access_token(data={"sub": str(anna.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+    assert f'href="/year/{anna.id}?' in resp.text
+    assert f'href="/year/{bert.id}?' not in resp.text
+
+    # Admin: every name is linked.
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+    assert f'href="/year/{anna.id}?' in resp.text
+    assert f'href="/year/{bert.id}?' in resp.text
+
+
 def test_team_month_links_use_holder_user_ids(month_env):
     """Team month column headers link the holder's user id, not the position.
 

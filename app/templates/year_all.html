@@ -74,7 +74,12 @@
                                 {{ t.schedule_vacant }}<br>
                                 <small>(#{{ p.person_id }})</small>
                             {% else %}
+                                {% set is_own = user and user.id == p.user_id %}
+                                {% if user and (user.role.value == 'admin' or is_own) %}
                                 <a href="/year/{{ p.user_id }}?year={{ year }}">{{ p.name }}</a><br>
+                                {% else %}
+                                {{ p.name }}<br>
+                                {% endif %}
                                 <small>(#{{ p.person_id }})</small>
                             {% endif %}
                         </th>
