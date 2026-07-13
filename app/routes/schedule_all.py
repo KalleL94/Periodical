@@ -280,18 +280,31 @@ def _merge_month_summaries(summaries: list[dict]) -> dict:
 
 
 def _merge_brutto_netto(summaries: list[dict]) -> tuple[float, float]:
-    """Combine brutto/netto pay across segments without double-counting the flat base.
+    """Combine brutto/netto pay across segments without double-counting whole-month components.
 
-    summarize_month_for_person seeds a monthly-wage user's brutto_pay with the
-    full flat monthly base_salary, then layers day-derived variable pay on top
-    (see summary.py's totals["brutto_pay"] = base_salary). When a swap
-    participant's month is split into per-position segments, each segment
-    independently resolves the SAME monthly base, so naively summing brutto_pay
-    across segments would count that flat base once per segment instead of
-    once for the whole month. The correct merged gross is one instance of the
-    base plus every segment's own variable/day-derived contribution on top of
-    it: the first segment's brutto_pay already IS base + its own variable part,
-    so only the later segments' base components need to be subtracted back out.
+    A monthly-wage segment's brutto_pay (see summary.py's summarize_month_for_person)
+    is built as:
+
+        base_salary + day_derived_variable_pay - absence_deduction + sick_ob_pay
+
+    where day_derived_variable_pay is OB/oncall/OT pay accumulated from the
+    segment's own masked `days` (genuinely this segment's share, safe to sum),
+    but absence_deduction and sick_ob_pay both come from
+    get_absence_deductions_for_month queried unscoped for the ENTIRE month by
+    user_id (wages.py) - identical across every segment of the same swap. When
+    a swap participant's month is split into per-position segments, each
+    segment independently resolves the SAME base_salary AND the SAME
+    absence_deduction/sick_ob_pay. Naively summing brutto_pay across segments
+    would therefore count the flat base, the absence deduction, and the
+    sick-OB addition once per segment instead of once for the whole month.
+
+    The merged gross is reconstructed from scratch: recover each segment's own
+    day-derived variable pay by removing the shared base and undoing the
+    shared absence adjustments from its brutto_pay, sum those variable parts,
+    then add back exactly one base_salary, one absence_deduction subtraction,
+    and one sick_ob_pay addition. absence_deduction/sick_ob_pay are already
+    correctly single (not summed) per the commit bb143aa fix to
+    _merge_month_summaries, so they can be read directly off summaries[0].
 
     Hourly-wage users don't have this problem: summarize_month_for_person fully
     replaces their brutto_pay with a worked-hours-derived figure
@@ -305,9 +318,13 @@ def _merge_brutto_netto(summaries: list[dict]) -> tuple[float, float]:
     if summaries[0].get("wage_type") == WageType.HOURLY:
         merged_brutto = sum(s.get("brutto_pay") or 0 for s in summaries)
     else:
-        merged_brutto = (summaries[0].get("brutto_pay") or 0) + sum(
-            (s.get("brutto_pay") or 0) - (s.get("base_salary") or 0) for s in summaries[1:]
+        base_salary = summaries[0].get("base_salary") or 0
+        absence_deduction = summaries[0].get("absence_deduction") or 0
+        sick_ob_pay = summaries[0].get("sick_ob_pay") or 0
+        variable_pay_total = sum(
+            (s.get("brutto_pay") or 0) - base_salary + absence_deduction - sick_ob_pay for s in summaries
         )
+        merged_brutto = base_salary + variable_pay_total - absence_deduction + sick_ob_pay
 
     tax_table = summaries[0].get("tax_table")
     payment_year = summaries[0].get("year")

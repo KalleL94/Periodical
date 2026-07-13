@@ -919,6 +919,93 @@ def test_month_swap_merge_sick_days_not_double_counted(month_env):
     assert merged["sick_days"] != naive_double_counted
 
 
+def test_month_swap_merge_brutto_pay_not_double_counted_with_absence(month_env):
+    """End-to-end: a real swap month with a paid absence deduction merges brutto_pay once.
+
+    Anna swaps positions mid-June and has one sick day during the month, which
+    produces a nonzero absence_deduction from get_absence_deductions_for_month.
+    That query is unscoped by segment (whole month, by user_id), so both of
+    Anna's per-segment summaries independently carry the SAME absence_deduction
+    (and sick_ob_pay). _merge_brutto_netto must fold the flat base_salary AND
+    these whole-month absence adjustments in exactly once each, summing only
+    each segment's own day-derived variable pay (OB/oncall/OT) on top.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+    from app.core.schedule.summary import _calculate_tax
+    from app.core.schedule.wages import get_absence_deductions_for_month
+    from app.routes.schedule_all import _merge_brutto_netto, _merge_month_summaries
+
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=1)
+
+    # One sick day before the swap, still on position 3.
+    session.add(Absence(user_id=anna.id, date=datetime.date(2026, 6, 8), absence_type=AbsenceType.SICK))
+    session.commit()
+
+    year, month = 2026, 6
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, 30)
+
+    segments_by_user: dict[int, list[dict]] = {}
+    for pid in (3, 5):
+        for seg in get_position_holder_segments(session, pid, month_start, month_end):
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    anna_segs = sorted(segments_by_user[anna.id], key=lambda s: s["from_date"])
+    assert len(anna_segs) == 2, "expected Anna to hold two segments (pre- and post-swap position) in June"
+
+    per_segment_summaries = []
+    for seg in anna_segs:
+        days = generate_month_data(year, month, seg["person_id"], session=session)
+        masked_days = mask_days_to_employment(days, seg["from_date"], seg["to_date"])
+        s = summarize_month_for_person(
+            year,
+            month,
+            seg["person_id"],
+            session=session,
+            year_days=masked_days,
+            fetch_tax_table=False,
+            payment_year=year,
+            wage_user_id=anna.id,
+        )
+        per_segment_summaries.append(s)
+
+    # Sanity check on the bug: both segments independently carry the SAME
+    # whole-month absence deduction (nonzero, since Anna was sick once in June).
+    authoritative = get_absence_deductions_for_month(session, anna.id, year, month, anna.wage)
+    assert authoritative["total_deduction"] > 0
+    assert per_segment_summaries[0]["absence_deduction"] == pytest.approx(authoritative["total_deduction"])
+    assert per_segment_summaries[1]["absence_deduction"] == pytest.approx(authoritative["total_deduction"])
+
+    # Independently derive the expected merged gross from the parts summary.py
+    # itself defines as genuinely per-segment (OB/oncall/OT pay from each
+    # segment's own masked days), plus exactly one base salary and one whole-
+    # month absence adjustment - NOT by re-deriving _merge_brutto_netto's formula.
+    variable_pay_total = sum(
+        sum((s.get("ob_pay") or {}).values()) + (s.get("oncall_pay") or 0) + (s.get("ot_pay") or 0)
+        for s in per_segment_summaries
+    )
+    expected_brutto = (
+        anna.wage + variable_pay_total - authoritative["total_deduction"] + authoritative.get("sick_ob_pay", 0.0)
+    )
+
+    merged_brutto, merged_netto = _merge_brutto_netto(per_segment_summaries)
+
+    naive_double_counted = per_segment_summaries[0]["brutto_pay"] + (per_segment_summaries[1]["brutto_pay"] - anna.wage)
+    assert merged_brutto == pytest.approx(expected_brutto)
+    assert merged_brutto != pytest.approx(naive_double_counted)
+
+    expected_netto = merged_brutto - _calculate_tax(merged_brutto, None, payment_year=year)
+    assert merged_netto == pytest.approx(expected_netto)
+
+    merged = _merge_month_summaries(per_segment_summaries)
+    assert merged["brutto_pay"] == pytest.approx(expected_brutto)
+
+
 def test_month_view_merge_picks_correct_shift_per_day_across_swap(month_env):
     """The merged month column must show each holder's OWN real shift on each
     side of the swap date, not OFF or the other holder's schedule.
