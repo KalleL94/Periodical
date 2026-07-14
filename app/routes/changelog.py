@@ -40,6 +40,16 @@ VERSIONS = [
             },
             {
                 "type": "fix",
+                "sv": "Sidan för samarbeten och överlämningar räknar nu bara dagar inom personens egen anställningstid på platsen. Tidigare kunde en efterträdares pass och överlämningar tillskrivas en person som slutat eller bytt plats",
+                "en": "The coworking and handover page now only counts days within the person's own employment period at the position. Previously a successor's shifts and handovers could be attributed to someone who had left or changed position",
+            },
+            {
+                "type": "fix",
+                "sv": "Frånvaroavdrag räknas nu på skifttiderna för den plats personen hade på frånvarodagen. Tidigare kunde en frånvaro före ett platsbyte dras av med den nya platsens skifttider, vilket gav fel timmar vid bland annat delvis frånvaro",
+                "en": "Absence deductions are now calculated from the shift times of the position the person held on the day of absence. Previously an absence before a position change could be deducted using the new position's shift times, giving wrong hours for partial-day absences among others",
+            },
+            {
+                "type": "fix",
                 "sv": "Byter två anställda rotationsplats med varandra syns bytet i schemat först från och med bytesdatumet. Deras personliga års- och månadssidor visar hela året över bytet, med rätt pass, lön och frånvaro för tiden på varje plats",
                 "en": "When two employees trade rotation positions, the change only appears in the schedule from the effective date. Their personal year and month pages show the whole year across the change, with the correct shifts, wage and absences for the time at each position",
             },
