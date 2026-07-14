@@ -1192,8 +1192,11 @@ async def year_view(
                 holder = db.query(User).filter(User.id == rotation_position).first()
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
-    # Use rotation_position for schedule-related calculations
-    cowork_rows = build_cowork_stats(year, rotation_position)
+    # Use rotation_position for schedule-related calculations. Scope the cowork
+    # stats to the viewed user's own employment window so a successor's days at
+    # the same position are not attributed to a departed holder.
+    employment_user_id = target_user.id if target_user is not None else None
+    cowork_rows = build_cowork_stats(year, rotation_position, session=db, employment_user_id=employment_user_id)
     selected_other_id = None
     selected_other_name = None
     cowork_details: list[dict] = []
@@ -1202,7 +1205,9 @@ async def year_view(
         selected_other_id = with_person_id
         _other_row = next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
         selected_other_name = _other_row["other_name"] if _other_row else str(with_person_id)
-        cowork_details = build_cowork_details(year, rotation_position, with_person_id)
+        cowork_details = build_cowork_details(
+            year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
+        )
 
     # Use rotation_position for schedule, user_id_for_wages for wage lookup.
     # For user-scoped views (a User resolved) filter months to the viewed user's
@@ -1416,7 +1421,11 @@ async def cowork_view(
                 holder = db.query(User).filter(User.id == rotation_position).first()
                 person_name = holder.name if holder else person_list[rotation_position - 1].name
 
-    cowork_rows = build_cowork_stats(year, rotation_position)
+    # Scope the cowork stats to the viewed user's own employment window so a
+    # successor's days at the same position are not attributed to a departed
+    # holder.
+    employment_user_id = target_user.id if target_user is not None else None
+    cowork_rows = build_cowork_stats(year, rotation_position, session=db, employment_user_id=employment_user_id)
 
     selected_other_id = None
     selected_other_name = None
@@ -1428,8 +1437,12 @@ async def cowork_view(
         selected_other_id = with_person_id
         selected_cowork_row = next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
         selected_other_name = selected_cowork_row["other_name"] if selected_cowork_row else str(with_person_id)
-        cowork_details = build_cowork_details(year, rotation_position, with_person_id)
-        handover_details = build_handover_details(year, rotation_position, with_person_id)
+        cowork_details = build_cowork_details(
+            year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
+        )
+        handover_details = build_handover_details(
+            year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
+        )
 
     return render_template(
         templates,
