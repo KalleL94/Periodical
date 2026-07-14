@@ -2727,3 +2727,114 @@ def test_team_month_view_resolves_each_successive_holders_own_rate(month_env, mo
     rickard_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == rickard.id)
     assert anna_summary["ot_pay"] == pytest.approx(expected_anna_ot)
     assert rickard_summary["ot_pay"] == pytest.approx(expected_rickard_ot)
+
+
+def _single_view_sem_dates(session, year, month, person_id):
+    """SEM dates shown by the single-position month view for a position."""
+    days = generate_month_data(year, month, person_id, session=session)
+    out = set()
+    for d in days:
+        shift = d.get("shift")
+        if shift is not None and shift.code == "SEM":
+            out.add(d["date"])
+    return out
+
+
+def _team_view_sem_dates(session, year, month, person_id):
+    """SEM dates shown by the all-persons team month view for a position."""
+    days = generate_month_data(year, month, None, session=session)
+    out = set()
+    for d in days:
+        for p in d.get("persons", []):
+            if p.get("person_id") == person_id:
+                shift = p.get("shift")
+                if shift is not None and shift.code == "SEM":
+                    out.add(d["date"])
+    return out
+
+
+def test_vacation_attributed_to_position_held_on_date(month_env):
+    """Week-based vacation renders on the position its holder occupied on that date.
+
+    Rickard (user 11) holds position 3 and Okan (user 8) holds position 8; they
+    swap on 2026-10-01, so afterwards Rickard's current position is 8. Rickard's
+    August vacation (ISO weeks 32-34) was accrued while he held position 3 and
+    must render as SEM on position 3, never on position 8 (Okan's August). The
+    bug bucketed it under Rickard's CURRENT position (8), silently deleting it
+    from his own August schedule and painting it onto Okan's. This must hold for
+    both the single-position view and the all-persons team view.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.core.schedule.vacation import get_vacation_dates_for_year
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+    rickard.vacation = {"2026": [32, 33, 34]}
+    flag_modified(rickard, "vacation")
+    session.commit()
+    clear_schedule_cache()
+
+    # Direct attribution: every August vacation date lands on position 3, none on 8.
+    per_person = get_vacation_dates_for_year(2026, session=session)
+    aug_pos3 = {d for d in per_person[3] if d.month == 8}
+    aug_pos8 = {d for d in per_person[8] if d.month == 8}
+    assert aug_pos3, "Rickard's August vacation must attribute to position 3"
+    assert not aug_pos8, "position 8 (Okan) must carry none of Rickard's August vacation"
+
+    # Rendered SEM (only on scheduled, non-OFF rotation days) follows the split.
+    single_pos3 = _single_view_sem_dates(session, 2026, 8, 3)
+    single_pos8 = _single_view_sem_dates(session, 2026, 8, 8)
+    team_pos3 = _team_view_sem_dates(session, 2026, 8, 3)
+    team_pos8 = _team_view_sem_dates(session, 2026, 8, 8)
+
+    assert single_pos3, "position 3's single view must show Rickard's SEM in August"
+    assert not single_pos8, "position 8's single view must not show SEM (Okan took no vacation)"
+    assert team_pos3, "team view must show SEM on position 3 in August"
+    assert not team_pos8, "team view must not show SEM on position 8 in August"
+    assert single_pos3 == team_pos3, "single and team views must agree on position 3's SEM days"
+
+
+def test_vacation_week_straddling_swap_splits_per_day(month_env):
+    """A vacation week crossing a swap date splits day-by-day across positions.
+
+    Rickard holds position 3 and Okan position 8; they swap on the Thursday of
+    ISO week 40. Rickard has all of week 40 as vacation. Mon-Wed fall while he
+    still holds position 3, Thu-Sun after he has moved to position 8, so the
+    week's days must be partitioned between the two positions accordingly.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.core.schedule.vacation import get_vacation_dates_for_year
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+
+    week = 40
+    thursday = datetime.date.fromisocalendar(2026, week, 4)
+    swap_positions(session, 3, 8, thursday, created_by=admin.id)
+    rickard.vacation = {"2026": [week]}
+    flag_modified(rickard, "vacation")
+    session.commit()
+    clear_schedule_cache()
+
+    mon = datetime.date.fromisocalendar(2026, week, 1)
+    tue = datetime.date.fromisocalendar(2026, week, 2)
+    wed = datetime.date.fromisocalendar(2026, week, 3)
+    thu = datetime.date.fromisocalendar(2026, week, 4)
+    fri = datetime.date.fromisocalendar(2026, week, 5)
+
+    per_person = get_vacation_dates_for_year(2026, session=session)
+    assert {mon, tue, wed} <= per_person[3]
+    assert not ({thu, fri} & per_person[3])
+    assert {thu, fri} <= per_person[8]
+    assert not ({mon, tue, wed} & per_person[8])

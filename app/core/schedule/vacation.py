@@ -9,67 +9,118 @@ from app.core.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _leave_dates_by_position(year: int, session, *, week_attr: str, absence_type) -> dict[int, set[datetime.date]]:
+    """Bucket a year's leave dates by the rotation position held on each date.
+
+    Shared implementation for vacation and parental leave. Both sources
+    (week-based JSON on the User row and day-level Absence rows) are attributed
+    per day to the position the holder occupied ON THAT DATE via PersonHistory,
+    not the holder's current position. This mirrors the batch-fetch helpers in
+    period.py so a vacation/parental date recorded before a position swap or
+    succession stays on the position that was actually held then, and a week
+    straddling a change splits day-by-day across the two positions.
+
+    Args:
+        week_attr: User attribute holding the week-based JSON ("vacation" or
+            "parental_leave").
+        absence_type: AbsenceType whose day-level rows are day-level leave.
+
+    Returns:
+        Dict med person_id (rotationsposition) -> set av datum
+    """
+    from app.core.schedule.period import _build_user_position_resolver
+    from app.database.database import Absence, PersonHistory, User
+
+    per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
+
+    year_start = datetime.date(year, 1, 1)
+    year_end = datetime.date(year, 12, 31)
+
+    # Candidate holders: currently active users at a rotation position (covers
+    # legacy users with no PersonHistory) plus every user who held a rotation
+    # position at any point during the year (covers departed/future holders and
+    # users who changed position within the year, e.g. via a swap). Their leave
+    # would otherwise be missed entirely or bucketed onto their current position.
+    active_users = session.query(User).filter(User.person_id.in_(PERSON_IDS), User.is_active).all()
+    current_map = {u.id: u.person_id for u in active_users}
+    candidate_ids: set[int] = set(current_map.keys())
+
+    history_rows = (
+        session.query(PersonHistory.user_id)
+        .filter(
+            PersonHistory.person_id.in_(PERSON_IDS),
+            PersonHistory.effective_from <= year_end,
+            (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= year_start),
+        )
+        .distinct()
+        .all()
+    )
+    candidate_ids.update(uid for (uid,) in history_rows)
+
+    if not candidate_ids:
+        return per_person
+
+    users = session.query(User).filter(User.id.in_(candidate_ids)).all()
+
+    # One PersonHistory read builds a date-aware (user_id, date) -> position
+    # resolver; current_map is the fallback for legacy users without history.
+    resolve_pos = _build_user_position_resolver(session, candidate_ids, current_map)
+
+    # Week-based leave: expand each ISO week to its days and attribute per day.
+    for user in users:
+        by_year = getattr(user, week_attr, None) or {}
+        weeks_for_year = by_year.get(str(year), []) or []
+        for week in weeks_for_year:
+            for day in range(1, 8):
+                try:
+                    d = datetime.date.fromisocalendar(year, week, day)
+                except ValueError:
+                    continue
+                pos = resolve_pos(user.id, d)
+                if pos in per_person:
+                    per_person[pos].add(d)
+
+    # Day-level leave from the Absence table, attributed to the row's own date.
+    day_absences = (
+        session.query(Absence)
+        .filter(
+            Absence.user_id.in_(candidate_ids),
+            Absence.absence_type == absence_type,
+            Absence.date >= year_start,
+            Absence.date <= year_end,
+        )
+        .all()
+    )
+    for absence in day_absences:
+        pos = resolve_pos(absence.user_id, absence.date)
+        if pos in per_person:
+            per_person[pos].add(absence.date)
+
+    return per_person
+
+
 def get_vacation_dates_for_year(year: int, session=None) -> dict[int, set[datetime.date]]:
     """
     Hämtar semesterdatum för alla personer för ett år.
 
     Merges both week-based vacation (User.vacation JSON) and
-    day-level vacation (Absence records with type VACATION).
+    day-level vacation (Absence records with type VACATION). Each date is
+    attributed to the rotation position its holder actually occupied on that
+    date (via PersonHistory), so a swap or succession does not move historical
+    vacation onto the successor's column.
 
     Returns:
         Dict med person_id (rotationsposition) -> set av semesterdatum
     """
-    from app.database.database import Absence, AbsenceType, SessionLocal, User
-
-    per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
+    from app.database.database import AbsenceType, SessionLocal
 
     _owned = session is None
     db = SessionLocal() if _owned else session
     try:
-        # Query active users by rotation position, not by user.id
-        users = (
-            db.query(User)
-            .filter(
-                User.person_id.in_(PERSON_IDS),
-                User.is_active,
-            )
-            .all()
-        )
-
-        user_id_to_person_id = {u.id: u.person_id for u in users}
-
-        for user in users:
-            vac_by_year = user.vacation or {}
-            weeks_for_year = vac_by_year.get(str(year), []) or []
-
-            for week in weeks_for_year:
-                for day in range(1, 8):
-                    try:
-                        d = datetime.date.fromisocalendar(year, week, day)
-                        per_person[user.person_id].add(d)
-                    except ValueError:
-                        continue
-
-        # Merge day-level vacation from absences table
-        day_absences = (
-            db.query(Absence)
-            .filter(
-                Absence.user_id.in_(user_id_to_person_id.keys()),
-                Absence.absence_type == AbsenceType.VACATION,
-                Absence.date >= datetime.date(year, 1, 1),
-                Absence.date <= datetime.date(year, 12, 31),
-            )
-            .all()
-        )
-        for absence in day_absences:
-            person_id = user_id_to_person_id.get(absence.user_id)
-            if person_id is not None:
-                per_person[person_id].add(absence.date)
+        return _leave_dates_by_position(year, db, week_attr="vacation", absence_type=AbsenceType.VACATION)
     finally:
         if _owned:
             db.close()
-
-    return per_person
 
 
 def get_parental_dates_for_year(year: int, session=None) -> dict[int, set[datetime.date]]:
@@ -77,61 +128,22 @@ def get_parental_dates_for_year(year: int, session=None) -> dict[int, set[dateti
     Hämtar föräldraledighetsdatum för alla personer för ett år.
 
     Merges week-based parental leave (User.parental_leave JSON) and
-    day-level parental leave (Absence records with type PARENTAL).
+    day-level parental leave (Absence records with type PARENTAL). Each date is
+    attributed to the rotation position its holder actually occupied on that
+    date (via PersonHistory), matching the vacation handling.
 
     Returns:
         Dict med person_id (rotationsposition) -> set av datum
     """
-    from app.database.database import Absence, AbsenceType, SessionLocal, User
-
-    per_person: dict[int, set[datetime.date]] = {pid: set() for pid in PERSON_IDS}
+    from app.database.database import AbsenceType, SessionLocal
 
     _owned = session is None
     db = SessionLocal() if _owned else session
     try:
-        users = (
-            db.query(User)
-            .filter(
-                User.person_id.in_(PERSON_IDS),
-                User.is_active,
-            )
-            .all()
-        )
-
-        user_id_to_person_id = {u.id: u.person_id for u in users}
-
-        for user in users:
-            pl_by_year = user.parental_leave or {}
-            weeks_for_year = pl_by_year.get(str(year), []) or []
-
-            for week in weeks_for_year:
-                for day in range(1, 8):
-                    try:
-                        d = datetime.date.fromisocalendar(year, week, day)
-                        per_person[user.person_id].add(d)
-                    except ValueError:
-                        continue
-
-        # Merge day-level PARENTAL absences
-        day_absences = (
-            db.query(Absence)
-            .filter(
-                Absence.user_id.in_(user_id_to_person_id.keys()),
-                Absence.absence_type == AbsenceType.PARENTAL,
-                Absence.date >= datetime.date(year, 1, 1),
-                Absence.date <= datetime.date(year, 12, 31),
-            )
-            .all()
-        )
-        for absence in day_absences:
-            person_id = user_id_to_person_id.get(absence.user_id)
-            if person_id is not None:
-                per_person[person_id].add(absence.date)
+        return _leave_dates_by_position(year, db, week_attr="parental_leave", absence_type=AbsenceType.PARENTAL)
     finally:
         if _owned:
             db.close()
-
-    return per_person
 
 
 # ---------------------------------------------------------------------------
