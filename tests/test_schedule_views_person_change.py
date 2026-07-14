@@ -1592,6 +1592,54 @@ def test_excel_export_resolves_position_by_exported_month(month_env):
     assert probe_rows[0][2] == expected
 
 
+def test_excel_export_uses_own_wage_not_position_number_collision(month_env, monkeypatch):
+    """The Excel export's wage/pay figures must use the VIEWED user's own wage,
+    not whichever unrelated user happens to share User.id == rotation_position.
+
+    Rickard (user_id=11) holds rotation position 3. A decoy user with id=3
+    also exists in the system (an unrelated former employee, coincidentally
+    numbered the same as Rickard's position) with a very different wage.
+    Without wage_user_id threaded through generate_month_data/
+    summarize_month_for_person, the export's wage lookup falls back to
+    User.id == rotation_position - i.e. the decoy - instead of Rickard's own
+    record, exactly as show_month_for_person was fixed to avoid earlier.
+
+    The exported worksheet itself only renders hours (wage-independent), so
+    this asserts directly against the summary dict handed to
+    populate_month_sheet, which is what actually carries the computed wage.
+    """
+    import app.routes.excel_shared as excel_shared_module
+
+    client, session = month_env
+    decoy = _make_user(session, 3, "decoy1", "Decoy")
+    decoy.wage = 47000
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    rickard.wage = 35000
+    session.commit()
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=rickard.id)
+
+    captured = {}
+    original = excel_shared_module.populate_month_sheet
+
+    def _spy(ws, summary, year, month, *args, **kwargs):
+        captured["summary"] = summary
+        return original(ws, summary, year, month, *args, **kwargs)
+
+    monkeypatch.setattr(excel_shared_module, "populate_month_sheet", _spy)
+
+    token = create_access_token(data={"sub": str(rickard.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11/export-excel?year=2026&month=8")
+
+    assert resp.status_code == 200
+    assert captured.get("summary") is not None, "populate_month_sheet was not called"
+    assert captured["summary"]["base_salary"] == 35000, (
+        f"expected Rickard's own wage (35000), got {captured['summary']['base_salary']} "
+        "(the decoy user's wage leaked in via User.id == rotation_position)"
+    )
+
+
 def _ob_total(summary: dict) -> float:
     """Sum the five OB pay codes of a month summary."""
     ob_pay = summary.get("ob_pay", {}) or {}

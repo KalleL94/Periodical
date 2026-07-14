@@ -1064,18 +1064,40 @@ async def export_month_excel(
     if target_user is not None:
         from datetime import date as _date
 
+        from app.core.rates import get_user_rates
         from app.core.schedule import generate_month_data
         from app.core.schedule.period import mask_days_to_employment
         from app.core.schedule.person_history import get_employment_period
 
         emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
-        month_days = generate_month_data(year, month, rotation_position, session=db)
+
+        # Resolve rates for the actual USER whose month this is, not whoever
+        # happens to hold the rotation position, exactly as
+        # build_calendar_grid_for_month does for the month view - without
+        # this, per-day OT pay silently falls back to the generic formula
+        # instead of a custom stored OT rate.
+        _month_rates_map = None
+        _rate_user = target_user
+        if _rate_user is not None:
+            _month_rates = get_user_rates(_rate_user, session=db, effective_date=date(year, month, 1))
+            if _month_rates:
+                _month_rates_map = {rotation_position: _month_rates}
+
+        month_days = generate_month_data(year, month, rotation_position, session=db, user_rates_map=_month_rates_map)
         month_days = mask_days_to_employment(month_days, emp_start or _date.min, emp_end or _date.max)
         days_in_month = summarize_month_for_person(
-            year, month, rotation_position, session=db, year_days=month_days, payment_year=year
+            year,
+            month,
+            rotation_position,
+            session=db,
+            year_days=month_days,
+            payment_year=year,
+            wage_user_id=user_id_for_wages,
         )
     else:
-        days_in_month = summarize_month_for_person(year, month, rotation_position, session=db, payment_year=year)
+        days_in_month = summarize_month_for_person(
+            year, month, rotation_position, session=db, payment_year=year, wage_user_id=user_id_for_wages
+        )
 
     # ── Build workbook ───────────────────────────────────────────────────
     wb = openpyxl.Workbook()
