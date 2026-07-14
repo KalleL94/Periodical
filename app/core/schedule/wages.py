@@ -287,13 +287,24 @@ def get_karens_consumed_before_date(session, user_id: int, sick_date: "date") ->
     return consumed
 
 
-def _get_rotation_position(session, user_id: int) -> int:
-    """Returns rotation_person_id for a user, falling back to user_id."""
+def _get_rotation_position(session, user_id: int, on_date: date | None = None) -> int:
+    """
+    Returns the rotation position (person_id) a user held on a given date.
+
+    Resolves via PersonHistory (get_user_person_id) so a mid-period rotation swap
+    or succession does not retroactively change the position used for a date
+    before the change. Positions without any PersonHistory rows fall back to the
+    current rotation_person_id snapshot, exactly as before this resolution existed.
+    """
     if session:
+        from app.core.schedule.person_history import get_user_person_id
         from app.database.database import User
 
         user = session.query(User).filter(User.id == user_id).first()
         if user:
+            position = get_user_person_id(session, user_id, on_date=on_date)
+            if position is not None:
+                return position
             return user.rotation_person_id
     return user_id
 
@@ -304,10 +315,14 @@ def get_shift_times_for_date(
     """
     Hämtar (hours, start_dt, end_dt) för skiftet en person skulle ha jobbat.
     Returnerar (8.5, None, None) som fallback.
+
+    Resolves the shift via the rotation position the user held on absence_date
+    (not their current position), so a rotation swap after absence_date does not
+    retroactively change how it is priced.
     """
     from app.core.schedule import calculate_shift_hours, determine_shift_for_date
 
-    rotation_position = _get_rotation_position(session, user_id)
+    rotation_position = _get_rotation_position(session, user_id, on_date=absence_date)
     result = determine_shift_for_date(absence_date, start_week=rotation_position)
     if result and result[0]:
         shift, _ = result
