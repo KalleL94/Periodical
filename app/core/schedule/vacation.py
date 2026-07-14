@@ -642,3 +642,25 @@ def calculate_vacation_pay(
         "monthly_salary": monthly_salary,
         "payout_pct": vac["payout_pct"],
     }
+
+
+def fold_vacation_supplement_into_pay(brutto_pay: float, netto_pay: float, supplement: float) -> tuple[float, float]:
+    """Fold a period's vacation supplement (semestertillägg) into its gross/net pay.
+
+    The supplement is taxed like ordinary variable pay, so net is increased by the
+    supplement scaled by the period's existing net/gross ratio rather than added
+    krona-for-krona. Used so headline gross/net totals (year view's per-month rows,
+    personal month view's summary) actually include the supplement instead of only
+    showing it as a separate informational figure.
+    """
+    if not supplement:
+        return brutto_pay, netto_pay
+    brutto_before = brutto_pay or 0
+    netto_before = netto_pay or 0
+    new_brutto = brutto_before + supplement
+    if brutto_before > 0:
+        tax_ratio = netto_before / brutto_before
+        new_netto = round(netto_before + supplement * tax_ratio, 0)
+    else:
+        new_netto = netto_before
+    return new_brutto, new_netto

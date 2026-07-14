@@ -25,6 +25,7 @@ from app.core.schedule import (
 )
 from app.core.schedule.period import mask_days_to_employment
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment, swap_positions
+from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
 from app.core.utils import get_today
 from app.database.database import (
     Absence,
@@ -2426,4 +2427,114 @@ def test_month_and_year_view_agree_on_ot_and_ob_pay_for_same_month(month_env):
     assert row_start != -1, "expected a row for June"
     row_html = year_resp.text[row_start:row_end]
     assert f"{ref['ot_pay']:.0f}" in row_html, row_html
+
+
+def _seed_user_with_vacation_days(session, admin_id, *, uid=7, person_id=7, vacation_dates=()):
+    """Single-position user with a real employment start (so entitled days
+    are not pro-rated) and day-level VACATION absences, which the schedule
+    engine maps to SEM shifts. Mirrors the live bug report: a user with SEM
+    days in a month whose vacation supplement (semestertillägg) must be
+    folded into the headline gross/net wage.
+    """
+    user = _make_user(session, uid, f"user{uid}", "VacUser", person_id=person_id)
+    user.wage = 39500
+    user.employment_start_date = datetime.date(2020, 1, 1)
+    session.add(user)
+    start_employment(
+        session, user.id, person_id, "VacUser", f"user{uid}", datetime.date(2020, 1, 1), created_by=admin_id
+    )
+    for d in vacation_dates:
+        session.add(Absence(user_id=user.id, date=d, absence_type=AbsenceType.VACATION))
+    session.commit()
+    return user
+
+
+def test_month_view_gross_and_net_wage_include_vacation_supplement(month_env):
+    """The personal month view's headline Net/Gross wage must include the
+    month's vacation supplement (semestertillägg), not just show it as a
+    separate informational line.
+
+    Regression: show_month_for_person computed the vacation supplement as a
+    standalone "vacation_month" dict for display only, never folding it into
+    days_in_month's brutto_pay/netto_pay - unlike the year view, which folds
+    the same per-month supplement into its brutto_pay/netto_pay so table
+    columns add up. The month view's headline total was short by exactly the
+    supplement amount.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    vacation_dates = [datetime.date(2026, 6, d) for d in (1, 2, 3, 4, 5, 8)]
+    user = _seed_user_with_vacation_days(session, admin.id, vacation_dates=vacation_dates)
+
+    ref = summarize_month_for_person(2026, 6, 7, session=session, wage_user_id=user.id, payment_year=2026)
+    sem_count = sum(1 for d in ref["days"] if d.get("shift") and d["shift"].code == "SEM")
+    assert sem_count == len(vacation_dates)
+
+    balance = calculate_vacation_balance(user, 2026, session)
+    supplement_per_day = balance["pay"]["supplement_per_day"]
+    assert supplement_per_day > 0
+    expected_supplement = round(supplement_per_day * sem_count, 0)
+    assert expected_supplement > 0
+
+    base_brutto = ref["brutto_pay"] or 0
+    base_netto = ref["netto_pay"] or 0
+    expected_gross = base_brutto + expected_supplement
+    tax_ratio = base_netto / base_brutto if base_brutto > 0 else 0
+    expected_net = round(base_netto + expected_supplement * tax_ratio, 0)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{user.id}?year=2026&month=6")
+
+    assert resp.status_code == 200
+    # The un-folded base totals must NOT appear as the headline (they're short
+    # by the supplement) - the folded totals must.
+    assert f"{expected_gross:.0f}" in resp.text, resp.text
+    assert f"{expected_net:.0f}" in resp.text, resp.text
+
+
+def test_month_and_year_view_agree_on_net_and_gross_pay_with_vacation_days(month_env):
+    """The month view and the year view must report IDENTICAL headline
+    Net/Gross wage for the same user and month when that month includes
+    vacation (SEM) days - directly encodes the live bug report (month and
+    year views disagreed by exactly the vacation supplement for the same
+    June) as a permanent regression guard.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    vacation_dates = [datetime.date(2026, 6, d) for d in (1, 2, 3, 4, 5, 8)]
+    user = _seed_user_with_vacation_days(session, admin.id, vacation_dates=vacation_dates)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    ref = summarize_month_for_person(
+        2026, 6, user.rotation_person_id, session=session, wage_user_id=user.id, payment_year=2026
+    )
+    sem_count = sum(1 for d in ref["days"] if d.get("shift") and d["shift"].code == "SEM")
+    balance = calculate_vacation_balance(user, 2026, session)
+    supplement = round(balance["pay"]["supplement_per_day"] * sem_count, 0)
+    expected_brutto, expected_netto = fold_vacation_supplement_into_pay(
+        ref["brutto_pay"] or 0, ref["netto_pay"] or 0, supplement
+    )
+
+    month_resp = client.get(f"/month/{user.id}?year=2026&month=6")
+    year_resp = client.get(f"/year/{user.id}?year=2026")
+
+    assert month_resp.status_code == 200
+    assert year_resp.status_code == 200
+
+    link = f"/month/{user.id}?year=2026&month=6"
+    link_pos = year_resp.text.index(link)
+    row_start = year_resp.text.rfind('<tr class="shift-row', 0, link_pos)
+    row_end = year_resp.text.index("</tr>", link_pos)
+    assert row_start != -1, "expected a row for June"
+    row_html = year_resp.text[row_start:row_end]
+
+    # Both views must agree with the independently-computed folded totals -
+    # and therefore with each other - for the same user and month.
+    assert f"{expected_netto:.0f}" in month_resp.text, month_resp.text
+    assert f"{expected_brutto:.0f}" in month_resp.text, month_resp.text
+    assert f"{expected_netto:.0f}" in row_html, row_html
+    assert f"{expected_brutto:.0f}" in row_html, row_html
     assert f"{sum(ref['ob_pay'].values()):.0f}" in row_html, row_html

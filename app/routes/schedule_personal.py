@@ -49,7 +49,7 @@ from app.core.schedule import (
     persons as person_list,
 )
 from app.core.schedule.ob import apply_ob_hours_override
-from app.core.schedule.vacation import calculate_vacation_balance
+from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import (
@@ -881,11 +881,19 @@ async def show_month_for_person(
                 try:
                     balance = calculate_vacation_balance(vac_user, year, db)
                     pay = balance.get("pay", {})
+                    supplement_month = round(pay.get("supplement_per_day", 0) * sem_count, 0)
                     vacation_month = {
                         "days": sem_count,
                         "supplement_per_day": pay.get("supplement_per_day", 0),
-                        "supplement_month": round(pay.get("supplement_per_day", 0) * sem_count, 0),
+                        "supplement_month": supplement_month,
                     }
+                    # Fold the supplement into the headline gross/net totals, matching
+                    # the year view's per-month behavior, so the two views agree and
+                    # the summary actually reflects the employee's total pay.
+                    if supplement_month > 0:
+                        days_in_month["brutto_pay"], days_in_month["netto_pay"] = fold_vacation_supplement_into_pay(
+                            days_in_month.get("brutto_pay", 0), days_in_month.get("netto_pay", 0), supplement_month
+                        )
                 except Exception:
                     logger.warning(
                         "Semestertillägg kunde inte beräknas för user_id=%s", user_id_for_wages, exc_info=True
@@ -1203,13 +1211,9 @@ async def year_view(
 
                     # Include supplement in gross/net so table columns add up
                     if m["vacation_supplement"] > 0:
-                        supp = m["vacation_supplement"]
-                        brutto_before = m.get("brutto_pay", 0) or 0
-                        netto_before = m.get("netto_pay", 0) or 0
-                        m["brutto_pay"] = brutto_before + supp
-                        if brutto_before > 0:
-                            tax_ratio = netto_before / brutto_before
-                            m["netto_pay"] = round(netto_before + supp * tax_ratio, 0)
+                        m["brutto_pay"], m["netto_pay"] = fold_vacation_supplement_into_pay(
+                            m.get("brutto_pay", 0), m.get("netto_pay", 0), m["vacation_supplement"]
+                        )
 
                 # Recalculate year totals with updated brutto/netto
                 month_count = len(months) or 1
