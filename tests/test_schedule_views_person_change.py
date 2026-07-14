@@ -2586,3 +2586,144 @@ def test_month_and_year_view_agree_on_net_and_gross_pay_with_vacation_days(month
     assert f"{expected_netto:.0f}" in row_html, row_html
     assert f"{expected_brutto:.0f}" in row_html, row_html
     assert f"{sum(ref['ob_pay'].values()):.0f}" in row_html, row_html
+
+
+def test_team_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month_env, monkeypatch):
+    """The team /month view (show_month_all) must price each holder's
+    overtime with their own stored custom OT rate (RateHistory), not the
+    generic monthly-wage/OT_RATE_DIVISOR fallback.
+
+    Regression: show_month_all called generate_month_data once per position
+    with no user_rates_map, so every column's OT pay silently fell back to
+    the generic formula even when RateHistory holds a custom override for the
+    actual holder - the same "partial threading" bug fixed for the personal
+    month view in ea9ec28, but on the team column-building path. Not yet
+    user-visible (month_all.html only renders ob_pay today), so this asserts
+    against the persons list show_month_all builds internally instead of
+    scraping HTML.
+    """
+    import asyncio
+
+    import app.routes.schedule_all as schedule_all_module
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _seed_user_with_custom_ot_and_ob_rates(session, admin.id)
+
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=datetime.date(2026, 6, 5),
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    custom_rate_pay = 8.5 * 451.43
+    fallback_pay = 8.5 * (39500 / 72)
+    assert round(custom_rate_pay, 2) != round(fallback_pay, 2)
+
+    captured = {}
+
+    def _fake_render_template(templates, template_name, request, context, **kwargs):
+        captured["persons"] = context["persons"]
+
+    monkeypatch.setattr(schedule_all_module, "render_template", _fake_render_template)
+
+    asyncio.run(schedule_all_module.show_month_all(request=None, year=2026, month=6, current_user=admin, db=session))
+
+    okan_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == okan.id)
+    assert okan_summary["ot_pay"] == pytest.approx(custom_rate_pay)
+    assert okan_summary["ot_pay"] != pytest.approx(fallback_pay)
+
+
+def test_team_month_view_resolves_each_successive_holders_own_rate(month_env, monkeypatch):
+    """A position with two different holders during the same month (a
+    mid-month succession) must price EACH holder's own overtime with THEIR
+    OWN stored custom rate, not a rate resolved once for the whole position
+    (which would only be correct for one of the two holders).
+
+    Anna holds position 9 through 2026-06-14 with a custom OT rate of 300
+    kr/h; Rickard takes over on 2026-06-15 with a custom OT rate of 500 kr/h.
+    Each works one overtime shift within their own tenure at position 9.
+    """
+    import asyncio
+
+    import app.routes.schedule_all as schedule_all_module
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+
+    anna = _make_user(session, 11, "anna1", "Anna", person_id=9)
+    anna.wage = 39500
+    session.add(anna)
+    start_employment(session, anna.id, 9, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    session.add(
+        RateHistory(
+            user_id=anna.id,
+            rates={"ot": 300.0, "ob": {}},
+            effective_from=datetime.date(2026, 1, 2),
+            effective_to=None,
+        )
+    )
+
+    rickard = _make_user(session, 12, "rickard1", "Rickard", person_id=9)
+    rickard.wage = 39500
+    session.add(rickard)
+    end_employment(session, anna.id, 9, end_date=datetime.date(2026, 6, 14))
+    start_employment(session, rickard.id, 9, "Rickard", "rickard1", datetime.date(2026, 6, 15), created_by=admin.id)
+    session.add(
+        RateHistory(
+            user_id=rickard.id,
+            rates={"ot": 500.0, "ob": {}},
+            effective_from=datetime.date(2026, 6, 15),
+            effective_to=None,
+        )
+    )
+    session.commit()
+
+    session.add(
+        OvertimeShift(
+            user_id=anna.id,
+            date=datetime.date(2026, 6, 5),
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(18, 0),
+            hours=4.0,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.add(
+        OvertimeShift(
+            user_id=rickard.id,
+            date=datetime.date(2026, 6, 20),
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(18, 0),
+            hours=4.0,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    expected_anna_ot = 4.0 * 300.0
+    expected_rickard_ot = 4.0 * 500.0
+    assert expected_anna_ot != expected_rickard_ot
+
+    captured = {}
+
+    def _fake_render_template(templates, template_name, request, context, **kwargs):
+        captured["persons"] = context["persons"]
+
+    monkeypatch.setattr(schedule_all_module, "render_template", _fake_render_template)
+
+    asyncio.run(schedule_all_module.show_month_all(request=None, year=2026, month=6, current_user=admin, db=session))
+
+    anna_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == anna.id)
+    rickard_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == rickard.id)
+    assert anna_summary["ot_pay"] == pytest.approx(expected_anna_ot)
+    assert rickard_summary["ot_pay"] == pytest.approx(expected_rickard_ot)

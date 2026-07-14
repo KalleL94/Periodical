@@ -16,6 +16,7 @@ from app.core.helpers import can_see_salary, render_template, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import _get_storhelg_dates_for_year
+from app.core.rates import get_user_rates
 from app.core.schedule import (
     build_substitute_month_summaries,
     build_week_data,
@@ -332,6 +333,36 @@ def _merge_brutto_netto(summaries: list[dict]) -> tuple[float, float]:
     return merged_brutto, merged_netto
 
 
+def _resolve_month_rates_map(
+    db: Session, position_id: int, wage_user_id: int, effective_date: date
+) -> dict[int, dict] | None:
+    """Resolve a holder's effective rates (RateHistory) as of effective_date,
+    keyed by the position id used for that generate_month_data call.
+
+    Without this, per-day OT pay silently falls back to the generic
+    monthly-wage/OT_RATE_DIVISOR formula instead of a holder's actual stored
+    OT rate override - mirroring the fix already applied to the personal
+    month view's build_calendar_grid_for_month (commit ea9ec28). Rates belong
+    to the real user (RateHistory.user_id), not the rotation position, so
+    this must be resolved per holder: a position with two different holders
+    during the same month needs two separate calls, one per holder, each
+    keyed by that holder's own segment's position_id.
+
+    effective_date must be the holder's OWN segment start (clamped into the
+    viewed month), not unconditionally the first of the month: a holder whose
+    tenure begins mid-month has no RateHistory row covering the month's start
+    at all, which would otherwise resolve nothing and silently fall back to
+    the generic formula for a holder who does have a stored rate.
+    """
+    rate_user = db.query(User).filter(User.id == wage_user_id).first()
+    if rate_user is None:
+        return None
+    rates = get_user_rates(rate_user, session=db, effective_date=effective_date)
+    if not rates:
+        return None
+    return {position_id: rates}
+
+
 @router.get("/week", response_class=HTMLResponse, name="week_all")
 async def show_week_all(
     request: Request,
@@ -414,11 +445,7 @@ async def show_month_all(
     # is skipped entirely: no placeholder column.
     persons = []
     segments_by_user: dict[int, list[dict]] = {}
-    month_days_by_pid: dict[int, list[dict]] = {}
     for pid in range(1, 11):
-        # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
-        person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
-        month_days_by_pid[pid] = person_month_days
         segments = get_position_holder_segments(db, pid, month_start, month_end)
 
         if not segments:
@@ -426,6 +453,11 @@ async def show_month_all(
                 continue  # Fully vacant for the whole month: no column.
             # Legacy position with no PersonHistory at all: single column,
             # current behavior (no masking, wage resolved by position id).
+            # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
+            rates_map = _resolve_month_rates_map(db, pid, pid, month_start)
+            person_month_days = generate_month_data(
+                year, month, pid, session=db, user_wages=user_wages, user_rates_map=rates_map
+            )
             summary = summarize_month_for_person(
                 year,
                 month,
@@ -458,7 +490,17 @@ async def show_month_all(
 
         per_segment_summaries = []
         for seg in segs:
-            masked_days = mask_days_to_employment(month_days_by_pid[seg["person_id"]], seg["from_date"], seg["to_date"])
+            # Rates belong to the real user (RateHistory), not the rotation
+            # position, and each segment may be a DIFFERENT holder of the
+            # same position across the month (an ordinary succession) or the
+            # SAME user across different positions (a swap). Either way,
+            # resolve and price THIS segment with its own holder's rates,
+            # not a rate resolved once for the whole position's column.
+            rates_map = _resolve_month_rates_map(db, seg["person_id"], user_id, max(seg["from_date"], month_start))
+            segment_month_days = generate_month_data(
+                year, month, seg["person_id"], session=db, user_wages=user_wages, user_rates_map=rates_map
+            )
+            masked_days = mask_days_to_employment(segment_month_days, seg["from_date"], seg["to_date"])
             s = summarize_month_for_person(
                 year,
                 month,
