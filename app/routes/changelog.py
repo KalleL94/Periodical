@@ -16,8 +16,28 @@ router = APIRouter()
 VERSIONS = [
     {
         "version": "0.28.1",
-        "date": "2026-07-11",
+        "date": "2026-07-15",
         "entries": [
+            {
+                "type": "fix",
+                "sv": "Vid ett platsbyte visar lagvyerna nu en kolumn eller rad per person i stället för en per plats: personens kolumn följer med till den nya platsen från bytesdatumet. En plats som saknar innehavare hela den visade perioden döljs i stället för att visas som en tom Vakant-kolumn",
+                "en": "For a position swap the team views now show one column or row per person instead of one per position: the person's column follows to the new position from the effective date. A position with no holder for the whole displayed period is hidden instead of showing an empty Vacant column",
+            },
+            {
+                "type": "fix",
+                "sv": "Pass, övertid, frånvaro, semester och föräldraledighet räknas nu på den person som faktiskt hade platsen det aktuella datumet, i alla vyer. Tidigare kunde ett pass som arbetats före ett byte tillskrivas platsens nya innehavare, och semesterdagar hamna på fel person",
+                "en": "Shifts, overtime, absences, vacation and parental leave are now attributed to the person who actually held the position on each date, in every view. Previously a shift worked before a swap could be attributed to the position's new holder, and vacation days could land on the wrong person",
+            },
+            {
+                "type": "fix",
+                "sv": "Övertid prissätts nu med personens egen övertidsersättning i månadsvyn, lagets månadsvy och Excel-exporten i stället för en generell formel, och Excel-exporten använder rätt persons lön och skattetabell. Semestertillägget räknas in i månadens brutto- och nettolön, och en månad med byte mitt i räknar inte längre grundlön och frånvaro dubbelt",
+                "en": "Overtime is now priced with the person's own overtime rate in the month view, the team month view and the Excel export instead of a generic formula, and the Excel export uses the right person's wage and tax table. The vacation supplement is included in the month's gross and net wage, and a month with a mid-month change no longer counts base salary and absences twice",
+            },
+            {
+                "type": "fix",
+                "sv": "En annan persons årssida skickar nu vidare till din egen sida om du inte är administratör, och namn i årsvyn länkar bara till sidor du får se. En avgången persons personliga månads- och veckosidor skickar vidare till lagvyn när perioden ligger helt efter anställningen",
+                "en": "Another person's year page now redirects to your own page unless you are an administrator, and names in the year view only link to pages you are allowed to see. A departed person's personal month and week pages redirect to the team view when the period is entirely after their employment",
+            },
             {
                 "type": "fix",
                 "sv": "Byter två anställda rotationsplats med varandra syns bytet i schemat först från och med bytesdatumet. Deras personliga års- och månadssidor visar hela året över bytet, med rätt pass, lön och frånvaro för tiden på varje plats",
