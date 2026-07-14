@@ -74,7 +74,12 @@
                                 {{ t.schedule_vacant }}<br>
                                 <small>(#{{ p.person_id }})</small>
                             {% else %}
+                                {% set is_own = user and user.id == p.user_id %}
+                                {% if user and (user.role.value == 'admin' or is_own) %}
                                 <a href="/year/{{ p.user_id }}?year={{ year }}">{{ p.name }}</a><br>
+                                {% else %}
+                                {{ p.name }}<br>
+                                {% endif %}
                                 <small>(#{{ p.person_id }})</small>
                             {% endif %}
                         </th>
@@ -98,7 +103,8 @@
                             {% endif %}
                         </td>
                         {% for col in person_headers %}
-                            {% set person = (day.persons | selectattr('person_id', 'equalto', col.person_id) | list | first) %}
+                            {% set effective_pid = col.position_by_date[day.date.isoformat()] if col.position_by_date is defined and day.date.isoformat() in col.position_by_date else col.person_id %}
+                            {% set person = (day.persons | selectattr('person_id', 'equalto', effective_pid) | list | first) %}
                             {% if person and col.from_date <= day.date <= col.to_date %}
                             {% set orig_code = person.original_shift.code if person.original_shift else (person.shift.code if person.shift else 'OFF') %}
                             {% set orig_color = person.original_shift.color if person.original_shift else (person.shift.color if person.shift else 'transparent') %}

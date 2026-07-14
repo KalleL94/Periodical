@@ -16,6 +16,7 @@ from app.core.helpers import can_see_salary, render_template, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import _get_storhelg_dates_for_year
+from app.core.rates import get_user_rates
 from app.core.schedule import (
     build_substitute_month_summaries,
     build_week_data,
@@ -27,10 +28,11 @@ from app.core.schedule import (
     summarize_month_for_person,
 )
 from app.core.schedule.period import mask_days_to_employment
-from app.core.schedule.person_history import get_position_holder_segments, has_position_history
+from app.core.schedule.person_history import get_position_holder_segments, get_user_person_id, has_position_history
+from app.core.schedule.summary import _calculate_tax
 from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
-from app.database.database import User, UserRole, get_db
+from app.database.database import User, UserRole, WageType, get_db
 from app.routes.shared import templates
 
 logger = get_logger(__name__)
@@ -53,77 +55,82 @@ def _off_cell(cell: dict, name: str) -> dict:
 
 
 def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sunday: date) -> list[dict]:
-    """Build one week row per position holder segment.
+    """Build one week row per person holding a position during the week.
 
-    A position held by a single person yields one row. A mid-week person change
-    yields one row per holder, with days outside each holder's segment masked to
-    OFF. A fully vacated position yields a single vacant row. Substitute entries
-    (person_id outside 1-10) are appended unchanged so they keep rendering.
+    A person holding a single position throughout the week (the common case,
+    including an ordinary succession where a different person took over
+    mid-week) yields exactly one row, masked to their own tenure as before.
+    A person holding two or more DIFFERENT positions during the week (a
+    position swap) is merged into ONE row: each day's cell is pulled from
+    whichever position they actually held on that specific date. A position
+    with no holder at all during the week is skipped entirely (no vacant
+    placeholder row). Substitute entries (person_id outside 1-10) are
+    appended unchanged.
     """
+    from app.core.utils import get_today
 
     def _cell_for(day: dict, pid: int) -> dict | None:
         return next((p for p in day.get("persons", []) if p.get("person_id") == pid), None)
 
-    person_rows: list[dict] = []
+    legacy_rows: list[dict] = []
+    segments_by_user: dict[int, list[dict]] = {}
     for pid in range(1, 11):
-        base_cells = [_cell_for(day, pid) for day in days_in_week]
         segments = get_position_holder_segments(db, pid, monday, sunday)
-
-        if not segments and has_position_history(db, pid):
-            # Position vacated entirely: one placeholder row, all days OFF.
-            person_rows.append(
-                {
-                    "person_id": pid,
-                    "person_name": "",
-                    "vacant": True,
-                    "holder_user_id": None,
-                    "cells": [_off_cell(c, "") if c else None for c in base_cells],
-                }
-            )
-            continue
-
-        if len(segments) <= 1:
-            # Zero (legacy) or one holder: single row, current behavior.
-            name = (
-                segments[0]["name"]
-                if segments
-                else (base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}")
-            )
-            # Personal-view link target: the single holder's user id, or the
-            # rotation position itself for legacy positions without history.
-            holder_user_id = segments[0]["user_id"] if segments else pid
-            person_rows.append(
+        if not segments:
+            if has_position_history(db, pid):
+                continue  # Fully vacant for the whole week: no row.
+            base_cells = [_cell_for(day, pid) for day in days_in_week]
+            name = base_cells[0]["person_name"] if base_cells[0] else f"Person {pid}"
+            legacy_rows.append(
                 {
                     "person_id": pid,
                     "person_name": name,
                     "vacant": False,
-                    "holder_user_id": holder_user_id,
+                    "holder_user_id": pid,
                     "cells": base_cells,
                 }
             )
             continue
-
-        # Mid-week change: one row per holder, days masked to their tenure.
         for seg in segments:
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    real_today = get_today()
+    merged_rows: list[dict] = []
+    for user_id, segs in segments_by_user.items():
+        segs.sort(key=lambda s: s["from_date"])
+        positions_held = {s["person_id"] for s in segs}
+        name = segs[-1]["name"]
+
+        if len(positions_held) == 1:
+            pid = segs[0]["person_id"]
+            base_cells = [_cell_for(day, pid) for day in days_in_week]
             cells = []
             for day, cell in zip(days_in_week, base_cells, strict=True):
                 if cell is None:
                     cells.append(None)
-                elif seg["from_date"] <= day["date"] <= seg["to_date"]:
+                elif any(s["from_date"] <= day["date"] <= s["to_date"] for s in segs):
                     cells.append(cell)
                 else:
-                    cells.append(_off_cell(cell, seg["name"]))
-            person_rows.append(
-                {
-                    "person_id": pid,
-                    "person_name": seg["name"],
-                    "vacant": False,
-                    "holder_user_id": seg["user_id"],
-                    "cells": cells,
-                }
-            )
+                    cells.append(_off_cell(cell, name))
+        else:
+            pid = get_user_person_id(db, user_id, on_date=real_today) or segs[-1]["person_id"]
+            cells = []
+            for day in days_in_week:
+                seg_for_day = next((s for s in segs if s["from_date"] <= day["date"] <= s["to_date"]), None)
+                cells.append(_cell_for(day, seg_for_day["person_id"]) if seg_for_day else None)
 
-    # Append substitute rows (person_id outside the 1-10 rotation) unchanged.
+        merged_rows.append(
+            {
+                "person_id": pid,
+                "person_name": name,
+                "vacant": False,
+                "holder_user_id": user_id,
+                "cells": cells,
+            }
+        )
+
+    person_rows = sorted(legacy_rows + merged_rows, key=lambda r: r["person_id"])
+
     if days_in_week:
         for entry in days_in_week[0].get("persons", []):
             sub_pid = entry.get("person_id")
@@ -142,6 +149,218 @@ def _build_person_rows(db: Session, days_in_week: list[dict], monday: date, sund
             )
 
     return person_rows
+
+
+def _count_week_based_parental_days(days: list[dict]) -> int:
+    """Count week-based parental-leave days flagged on a segment's own `days` list.
+
+    This is distinct from day-level PARENTAL absence rows (see the module docstring
+    on _merge_month_summaries): mask_days_to_employment clears this flag on days
+    outside a segment's own range, so counting it per segment and summing across
+    segments is correct.
+    """
+    return sum(1 for d in days if d.get("parental_leave"))
+
+
+def _merge_month_summaries(summaries: list[dict]) -> dict:
+    """Combine date-disjoint month summaries for the same person into one.
+
+    Each input summary was built from year_days masked to one segment's own
+    date range via mask_days_to_employment (every day outside that segment is
+    already zeroed to OFF with no pay). Segments for the same person during
+    one month never overlap in time (PersonHistory allows only one open
+    record per position), so merging the `days` lists is safe: take the first
+    summary's `days` list and overlay any non-OFF day from later summaries.
+
+    The aggregate fields, however, fall into three groups that must be merged
+    differently:
+
+    1. Day-derived fields (`_SUM_FIELDS` / `_SUM_DICT_FIELDS`): accumulated in
+       summary.py's _process_day_for_summary from each segment's own masked
+       `days` list, so every segment's contribution is genuinely its own share
+       of the month. Safe to sum across segments.
+
+    2. Whole-month absence-derived fields (`_ABSENCE_ONLY_FIELDS` /
+       `_ABSENCE_ONLY_DICT_FIELDS`): summary.py's summarize_month_for_person
+       calls get_absence_deductions_for_month(session, uid_for_wages, year,
+       month, ...) (wages.py), which queries Absence rows by user_id for the
+       ENTIRE calendar month with no date-range/segment scoping at all. Since
+       every segment of a swap belongs to the SAME user_id, each segment's
+       summary independently carries the identical whole-month absence
+       figures. Summing them across N segments would multiply them by N;
+       instead take them from exactly one segment (summaries[0]) since they
+       are already identical across all segments.
+
+    3. `parental_days`: a MIX of the two. summary.py adds a day-derived
+       "week_parental_days" count (from the day-level `parental_leave` flag,
+       correctly zeroed outside each segment by mask_days_to_employment) on
+       top of the whole-month absence query's PARENTAL-type day count. Summed
+       naively it double-counts the absence component; taken from one segment
+       it drops the other segments' week-based days. It is reconstructed here
+       by subtracting summaries[0]'s own week-based count back out (to
+       recover the absence-only component) and adding the week-based counts
+       from every segment.
+
+    `brutto_pay`/`netto_pay` have their own dedicated merge in
+    _merge_brutto_netto (a similar but distinct flat-base-vs-variable-pay
+    split); this function does not touch that logic.
+    """
+    merged = dict(summaries[0])
+
+    merged_days = list(summaries[0]["days"])
+    for other in summaries[1:]:
+        for i, other_day in enumerate(other["days"]):
+            if other_day.get("shift") and other_day["shift"].code != "OFF":
+                merged_days[i] = other_day
+    merged["days"] = merged_days
+
+    # Group 1: genuinely day-derived, safe to sum across segments.
+    sum_fields = [
+        "total_hours",
+        "num_shifts",
+        "oncall_pay",
+        "oncall_hours",
+        "ot_pay",
+        "ot_hours",
+        "vacation_days",
+    ]
+    for field in sum_fields:
+        merged[field] = sum(s.get(field) or 0 for s in summaries)
+
+    # Group 2: sourced from the whole-month absence query, identical across
+    # every segment of the same user/month. Take from one segment only.
+    absence_only_fields = [
+        "absence_deduction",
+        "absence_hours",
+        "sick_days",
+        "sick_hours",
+        "sick_ob_pay",
+        "sick_total_ob",
+        "sick_ob_lost",
+        "vab_days",
+        "vab_hours",
+        "leave_days",
+        "leave_hours",
+        "off_days",
+        "off_hours",
+        "parental_hours",
+    ]
+    for field in absence_only_fields:
+        merged[field] = summaries[0].get(field) or 0
+
+    # Group 1 dict fields: per-OB-code breakdowns derived from each segment's
+    # own masked shifts. Safe to sum per key.
+    sum_dict_fields = ["ob_hours", "ob_pay"]
+    for field in sum_dict_fields:
+        combined: dict = {}
+        for s in summaries:
+            for code, value in (s.get(field) or {}).items():
+                combined[code] = combined.get(code, 0.0) + value
+        merged[field] = combined
+
+    # Group 2 dict fields: also sourced from the whole-month absence query.
+    # Take from one segment, do not sum.
+    absence_only_dict_fields = ["sick_ob_pay_by_code", "sick_ob_hours_by_code"]
+    for field in absence_only_dict_fields:
+        merged[field] = dict(summaries[0].get(field) or {})
+
+    # Group 3: parental_days mixes a whole-month absence component (constant
+    # across segments) with a day-derived week-based component (varies per
+    # segment). Recover the absence-only component from summaries[0] and add
+    # every segment's own week-based count.
+    first_week_based = _count_week_based_parental_days(summaries[0].get("days") or [])
+    absence_only_parental_days = (summaries[0].get("parental_days") or 0) - first_week_based
+    total_week_based = sum(_count_week_based_parental_days(s.get("days") or []) for s in summaries)
+    merged["parental_days"] = absence_only_parental_days + total_week_based
+
+    merged["absence_details"] = [d for s in summaries for d in s.get("absence_details", [])]
+
+    merged["brutto_pay"], merged["netto_pay"] = _merge_brutto_netto(summaries)
+
+    return merged
+
+
+def _merge_brutto_netto(summaries: list[dict]) -> tuple[float, float]:
+    """Combine brutto/netto pay across segments without double-counting whole-month components.
+
+    A monthly-wage segment's brutto_pay (see summary.py's summarize_month_for_person)
+    is built as:
+
+        base_salary + day_derived_variable_pay - absence_deduction + sick_ob_pay
+
+    where day_derived_variable_pay is OB/oncall/OT pay accumulated from the
+    segment's own masked `days` (genuinely this segment's share, safe to sum),
+    but absence_deduction and sick_ob_pay both come from
+    get_absence_deductions_for_month queried unscoped for the ENTIRE month by
+    user_id (wages.py) - identical across every segment of the same swap. When
+    a swap participant's month is split into per-position segments, each
+    segment independently resolves the SAME base_salary AND the SAME
+    absence_deduction/sick_ob_pay. Naively summing brutto_pay across segments
+    would therefore count the flat base, the absence deduction, and the
+    sick-OB addition once per segment instead of once for the whole month.
+
+    The merged gross is reconstructed from scratch: recover each segment's own
+    day-derived variable pay by removing the shared base and undoing the
+    shared absence adjustments from its brutto_pay, sum those variable parts,
+    then add back exactly one base_salary, one absence_deduction subtraction,
+    and one sick_ob_pay addition. absence_deduction/sick_ob_pay are already
+    correctly single (not summed) per the commit bb143aa fix to
+    _merge_month_summaries, so they can be read directly off summaries[0].
+
+    Hourly-wage users don't have this problem: summarize_month_for_person fully
+    replaces their brutto_pay with a worked-hours-derived figure
+    (_hourly_corrected_gross) that carries no flat base component at all and is
+    already zero for the masked-out days of every segment but their own, so
+    summing it across segments is correct as-is.
+    """
+    if len(summaries) == 1:
+        return summaries[0]["brutto_pay"], summaries[0]["netto_pay"]
+
+    if summaries[0].get("wage_type") == WageType.HOURLY:
+        merged_brutto = sum(s.get("brutto_pay") or 0 for s in summaries)
+    else:
+        base_salary = summaries[0].get("base_salary") or 0
+        absence_deduction = summaries[0].get("absence_deduction") or 0
+        sick_ob_pay = summaries[0].get("sick_ob_pay") or 0
+        variable_pay_total = sum(
+            (s.get("brutto_pay") or 0) - base_salary + absence_deduction - sick_ob_pay for s in summaries
+        )
+        merged_brutto = base_salary + variable_pay_total - absence_deduction + sick_ob_pay
+
+    tax_table = summaries[0].get("tax_table")
+    payment_year = summaries[0].get("year")
+    merged_netto = merged_brutto - _calculate_tax(merged_brutto, tax_table, payment_year=payment_year)
+    return merged_brutto, merged_netto
+
+
+def _resolve_month_rates_map(
+    db: Session, position_id: int, wage_user_id: int, effective_date: date
+) -> dict[int, dict] | None:
+    """Resolve a holder's effective rates (RateHistory) as of effective_date,
+    keyed by the position id used for that generate_month_data call.
+
+    Without this, per-day OT pay silently falls back to the generic
+    monthly-wage/OT_RATE_DIVISOR formula instead of a holder's actual stored
+    OT rate override - mirroring the fix already applied to the personal
+    month view's build_calendar_grid_for_month (commit ea9ec28). Rates belong
+    to the real user (RateHistory.user_id), not the rotation position, so
+    this must be resolved per holder: a position with two different holders
+    during the same month needs two separate calls, one per holder, each
+    keyed by that holder's own segment's position_id.
+
+    effective_date must be the holder's OWN segment start (clamped into the
+    viewed month), not unconditionally the first of the month: a holder whose
+    tenure begins mid-month has no RateHistory row covering the month's start
+    at all, which would otherwise resolve nothing and silently fall back to
+    the generic formula for a holder who does have a stored rate.
+    """
+    rate_user = db.query(User).filter(User.id == wage_user_id).first()
+    if rate_user is None:
+        return None
+    rates = get_user_rates(rate_user, session=db, effective_date=effective_date)
+    if not rates:
+        return None
+    return {position_id: rates}
 
 
 @router.get("/week", response_class=HTMLResponse, name="week_all")
@@ -218,32 +437,27 @@ async def show_month_all(
     month_start = date(year, month, 1)
     month_end = date(year, month, _calendar.monthrange(year, month)[1])
 
+    # First pass: scan every position and collect its holder segments, keyed
+    # by user_id ACROSS ALL positions (not just the position currently being
+    # scanned). A position with no history at all resolves to a legacy single
+    # column right away (there is no PersonHistory user_id to group it by). A
+    # fully vacant position (has history but no segment overlaps this month)
+    # is skipped entirely: no placeholder column.
     persons = []
+    segments_by_user: dict[int, list[dict]] = {}
     for pid in range(1, 11):
-        # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
-        person_month_days = generate_month_data(year, month, pid, session=db, user_wages=user_wages)
         segments = get_position_holder_segments(db, pid, month_start, month_end)
 
-        if not segments and has_position_history(db, pid):
-            # Position vacated entirely: one placeholder column, all days OFF
-            summary = summarize_month_for_person(
-                year,
-                month,
-                pid,
-                session=db,
-                user_wages=user_wages,
-                year_days=person_month_days,
-                fetch_tax_table=False,
-                payment_year=year,
+        if not segments:
+            if has_position_history(db, pid):
+                continue  # Fully vacant for the whole month: no column.
+            # Legacy position with no PersonHistory at all: single column,
+            # current behavior (no masking, wage resolved by position id).
+            # Generate MONTH data ONCE per person (30-31 days instead of 365 days - 12x faster!)
+            rates_map = _resolve_month_rates_map(db, pid, pid, month_start)
+            person_month_days = generate_month_data(
+                year, month, pid, session=db, user_wages=user_wages, user_rates_map=rates_map
             )
-            summary = strip_salary_data(summary)
-            summary["vacant"] = True
-            summary["holder_user_id"] = None
-            persons.append(summary)
-            continue
-
-        if len(segments) <= 1:
-            # Zero (legacy) or one holder: single column, current behavior
             summary = summarize_month_for_person(
                 year,
                 month,
@@ -254,36 +468,76 @@ async def show_month_all(
                 fetch_tax_table=is_admin,
                 payment_year=year,
             )
-            if segments:
-                summary["person_name"] = segments[0]["name"]
-            # Personal-view link target: the single holder's user id, or the
-            # rotation position itself for legacy positions without history.
-            summary["holder_user_id"] = segments[0]["user_id"] if segments else pid
+            summary["holder_user_id"] = pid
             if not can_see_salary(current_user, pid):
                 summary = strip_salary_data(summary)
             persons.append(summary)
             continue
 
-        # Mid-month change: one column per holder, days masked to their tenure
         for seg in segments:
-            masked_days = mask_days_to_employment(person_month_days, seg["from_date"], seg["to_date"])
-            summary = summarize_month_for_person(
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    # Second pass: one column per user, built from their COMPLETE segment set
+    # across every position. A user holding a single position throughout the
+    # month (the common case, including an ordinary succession where a
+    # different person took over mid-month) yields one column, masked to
+    # their own tenure. A user holding two or more DIFFERENT positions during
+    # the month (a position swap) is merged into ONE column: each day's
+    # figures are pulled from whichever position they actually held on that
+    # specific date, and the aggregate totals are summed across positions.
+    for user_id, segs in segments_by_user.items():
+        segs.sort(key=lambda s: s["from_date"])
+
+        per_segment_summaries = []
+        for seg in segs:
+            # Rates belong to the real user (RateHistory), not the rotation
+            # position, and each segment may be a DIFFERENT holder of the
+            # same position across the month (an ordinary succession) or the
+            # SAME user across different positions (a swap). Either way,
+            # resolve and price THIS segment with its own holder's rates,
+            # not a rate resolved once for the whole position's column.
+            rates_map = _resolve_month_rates_map(db, seg["person_id"], user_id, max(seg["from_date"], month_start))
+            segment_month_days = generate_month_data(
+                year, month, seg["person_id"], session=db, user_wages=user_wages, user_rates_map=rates_map
+            )
+            masked_days = mask_days_to_employment(segment_month_days, seg["from_date"], seg["to_date"])
+            s = summarize_month_for_person(
                 year,
                 month,
-                pid,
+                seg["person_id"],
                 session=db,
                 user_wages=user_wages,
                 year_days=masked_days,
                 fetch_tax_table=is_admin,
                 payment_year=year,
-                wage_user_id=seg["user_id"],
+                wage_user_id=user_id,
             )
-            summary["person_name"] = seg["name"]
-            summary["holder_user_id"] = seg["user_id"]
-            viewer_is_owner = current_user is not None and current_user.id == seg["user_id"]
-            if not (is_admin or viewer_is_owner):
-                summary = strip_salary_data(summary)
-            persons.append(summary)
+            s["person_name"] = seg["name"]
+            per_segment_summaries.append(s)
+
+        summary = (
+            per_segment_summaries[0]
+            if len(per_segment_summaries) == 1
+            else _merge_month_summaries(per_segment_summaries)
+        )
+        summary["person_name"] = segs[-1]["name"]
+        summary["holder_user_id"] = user_id
+        if len({s["person_id"] for s in segs}) > 1:
+            # Swap participant: display their CURRENT position, matching the
+            # year view's approach (get_user_person_id) instead of the
+            # earliest/pre-swap position the first segment happens to carry.
+            summary["person_id"] = get_user_person_id(db, user_id, on_date=get_today()) or summary["person_id"]
+        viewer_is_owner = current_user is not None and current_user.id == user_id
+        if not (is_admin or viewer_is_owner):
+            summary = strip_salary_data(summary)
+        persons.append(summary)
+
+    # Restore strict position-id ascending order: the two-pass split above
+    # resolves legacy/vacant columns eagerly (first pass) and per-user
+    # columns afterwards (second pass), which would otherwise group all
+    # legacy columns before any history-tracked column regardless of position
+    # number.
+    persons.sort(key=lambda p: p["person_id"])
 
     # Append substitutes (schedule only, no salary) after the regular positions
     persons.extend(build_substitute_month_summaries(year, month, db))
@@ -351,21 +605,20 @@ async def show_year_all(
     # This makes initial page load much faster (~0.5s instead of 1-3s)
     person_ob_totals = None
 
-    # Build the column list: one column per holder segment of the displayed
-    # year (like the month view), rather than a single joined-header column per
-    # position. A position that changed hands mid-year yields one column per
-    # holder in chronological order, each linking to their own personal year
-    # view. A departed holder whose last working day is already past is flagged
-    # so the template can hide their column by default. A position with only
-    # closed history and no overlap in the year is a single vacant column.
-    # Positions without any history keep one legacy column linked to the
-    # rotation position itself.
+    # Build the column list with a two-pass restructure, matching the pattern
+    # established in _build_person_rows (week view) and show_month_all (month
+    # view). First pass: scan every position and collect its holder segments,
+    # keyed by user_id ACROSS ALL positions (not just the position currently
+    # being scanned). A position with no history at all resolves to a legacy
+    # single column right away. A fully vacant position (has history but no
+    # segment overlaps this year) is skipped entirely: no placeholder column.
     from app.core.schedule.person_history import get_current_person_for_position
 
     real_today = sim_today or get_today()
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     person_headers = []
+    segments_by_user: dict[int, list[dict]] = {}
     for pid in range(1, 11):
         segments = get_position_holder_segments(db, pid, year_start, year_end)
         # Merge consecutive segments held by the same user so a single
@@ -378,45 +631,9 @@ async def show_year_all(
             else:
                 merged.append(dict(seg))
 
-        if merged:
-            for seg in merged:
-                to_date = seg["to_date"]
-                from_date = seg["from_date"]
-                past = to_date is not None and to_date < real_today
-                # A holder whose tenure begins after today is future-dated: its
-                # column stays hidden (like a past one) until its start passes.
-                # Use the raw employment start, not the window-clamped from_date,
-                # so an ongoing holder viewed in a later year is not mistaken for
-                # a future hire.
-                future = seg["effective_from"] > real_today
-                person_headers.append(
-                    {
-                        "person_id": pid,
-                        "user_id": seg["user_id"],
-                        "name": seg["name"],
-                        "vacant": False,
-                        "col_key": f"{pid}-{seg['user_id']}",
-                        "from_date": from_date,
-                        "to_date": to_date,
-                        "past": past,
-                        "future": future,
-                    }
-                )
-        elif has_position_history(db, pid):
-            person_headers.append(
-                {
-                    "person_id": pid,
-                    "user_id": None,
-                    "name": "",
-                    "vacant": True,
-                    "col_key": f"{pid}-vacant",
-                    "from_date": year_start,
-                    "to_date": year_end,
-                    "past": False,
-                    "future": False,
-                }
-            )
-        else:
+        if not merged:
+            if has_position_history(db, pid):
+                continue  # Fully vacant for the whole year: no column.
             # Legacy position without history: link target is the position itself.
             cp = get_current_person_for_position(db, pid)
             person_headers.append(
@@ -432,6 +649,80 @@ async def show_year_all(
                     "future": False,
                 }
             )
+            continue
+
+        for seg in merged:
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    # Second pass: one column per user, built from their COMPLETE segment set
+    # across every position. A user holding a single position throughout the
+    # year (the common case, including an ordinary succession where a
+    # different person took over mid-year) yields one column, unchanged in
+    # shape from before: a departed holder whose last working day is already
+    # past is flagged so the template can hide their column by default, and a
+    # holder whose tenure begins after today is future-dated (hidden until its
+    # start passes). A user holding two or more DIFFERENT positions during the
+    # year (a position swap) is merged into ONE column: each day's cell is
+    # resolved via position_by_date, a map of ISO date string -> person_id
+    # that only the template's merged-column branch consults. A swap
+    # participant's column is never flagged past or future as a whole -
+    # departures/future hires stay on separate user_ids and are unaffected.
+    for user_id, segs in segments_by_user.items():
+        segs.sort(key=lambda s: s["effective_from"])
+        positions_held = {s["person_id"] for s in segs}
+
+        if len(positions_held) == 1:
+            seg = segs[0]
+            to_date = seg["to_date"]
+            from_date = seg["from_date"]
+            past = to_date is not None and to_date < real_today
+            # Use the raw employment start, not the window-clamped from_date,
+            # so an ongoing holder viewed in a later year is not mistaken for
+            # a future hire.
+            future = seg["effective_from"] > real_today
+            person_headers.append(
+                {
+                    "person_id": seg["person_id"],
+                    "user_id": user_id,
+                    "name": seg["name"],
+                    "vacant": False,
+                    "col_key": f"{seg['person_id']}-{user_id}",
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "past": past,
+                    "future": future,
+                }
+            )
+        else:
+            current_pid = get_user_person_id(db, user_id, on_date=real_today) or segs[-1]["person_id"]
+            position_by_date: dict[str, int] = {}
+            d = min(s["from_date"] for s in segs)
+            end = max(s["to_date"] for s in segs)
+            while d <= end:
+                seg_for_day = next((s for s in segs if s["from_date"] <= d <= s["to_date"]), None)
+                if seg_for_day:
+                    position_by_date[d.isoformat()] = seg_for_day["person_id"]
+                d += timedelta(days=1)
+            person_headers.append(
+                {
+                    "person_id": current_pid,
+                    "user_id": user_id,
+                    "name": segs[-1]["name"],
+                    "vacant": False,
+                    "col_key": f"user-{user_id}",
+                    "from_date": min(s["from_date"] for s in segs),
+                    "to_date": max(s["to_date"] for s in segs),
+                    "past": False,
+                    "future": False,
+                    "position_by_date": position_by_date,
+                }
+            )
+
+    # Restore strict position-id ascending order: the two-pass split above
+    # resolves legacy/vacant columns eagerly (first pass) and per-user columns
+    # afterwards (second pass), which would otherwise group all legacy columns
+    # before any history-tracked column regardless of position number.
+    person_headers.sort(key=lambda h: h["person_id"])
 
     show_salary = current_user is not None and current_user.role == UserRole.ADMIN
 

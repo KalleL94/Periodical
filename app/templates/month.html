@@ -120,7 +120,7 @@
     {% if vacation_month %}
     <div class="alert alert--info">
         <strong>{{ t.month_vacation_days.replace('{n}', vacation_month.days|string).replace('{suffix}', 'ar' if vacation_month.days != 1 else '') }}</strong>
-        &rarr; {{ t.month_vacation_supplement }} <strong class="text-accent2">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
+        {{ t.month_vacation_supplement }} <strong class="text-accent2">{{ "{:,.0f}".format(vacation_month.supplement_month).replace(",", " ") }} kr</strong>
         <span class="text-muted">({{ "%.0f"|format(vacation_month.supplement_per_day) }} kr/dag)</span>
     </div>
     {% endif %}

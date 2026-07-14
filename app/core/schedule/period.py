@@ -90,12 +90,21 @@ def build_week_data(
 
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
+    # For a single-position personal view, also fetch rows for every other user who
+    # held that position at any point in the week (past/future holder across a swap
+    # or succession); the all-persons view already covers every active holder.
+    extra_user_ids = _range_holder_user_ids(session, person_ids, monday, sunday) if person_id is not None else None
+
     # Batch fetch absences, overtime, oncall overrides, swaps, and shift overrides for the week
-    absence_map = _batch_fetch_absences(session, person_ids, monday, sunday, rotation_to_user_id)
-    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday, rotation_to_user_id)
-    oncall_override_map = _batch_fetch_oncall_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
-    swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id)
-    shift_override_map = _batch_fetch_shift_overrides(session, person_ids, monday, sunday, rotation_to_user_id)
+    absence_map = _batch_fetch_absences(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
+    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
+    oncall_override_map = _batch_fetch_oncall_overrides(
+        session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
+    )
+    swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
+    shift_override_map = _batch_fetch_shift_overrides(
+        session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
+    )
 
     # Substitutes (vikarier) are only included in the all-persons view
     substitutes = _get_substitutes_with_shifts(session, monday, sunday) if person_id is None else []
@@ -246,18 +255,31 @@ def generate_period_data(
     # Bygg mappning rotation_position -> user_id (hanterar Peter/Rickard som har olika user_id)
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
-    # Batch fetch absences, overtime shifts, oncall overrides, swaps, and shift overrides for the entire period
-    absence_map = _batch_fetch_absences(session, person_ids, effective_start, end_date, rotation_to_user_id)
-    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, effective_start, end_date, rotation_to_user_id)
-    oncall_override_map = _batch_fetch_oncall_overrides(
-        session, person_ids, effective_start, end_date, rotation_to_user_id
+    # For a single-position personal view, also fetch rows for every other user who
+    # held that position at any point in the range (past/future holder across a swap
+    # or succession); the all-persons view already covers every active holder.
+    extra_user_ids = (
+        _range_holder_user_ids(session, person_ids, effective_start, end_date) if person_id is not None else None
     )
-    swap_map = _batch_fetch_swap_map(session, person_ids, effective_start, end_date, rotation_to_user_id)
+
+    # Batch fetch absences, overtime shifts, oncall overrides, swaps, and shift overrides for the entire period
+    absence_map = _batch_fetch_absences(
+        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    )
+    ot_shift_map = _batch_fetch_ot_shifts(
+        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    )
+    oncall_override_map = _batch_fetch_oncall_overrides(
+        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    )
+    swap_map = _batch_fetch_swap_map(
+        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    )
     shift_override_map = _batch_fetch_shift_overrides(
-        session, person_ids, effective_start, end_date, rotation_to_user_id
+        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
     day_pay_override_map = _batch_fetch_day_pay_overrides(
-        session, person_ids, effective_start, end_date, rotation_to_user_id
+        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
 
     # Generera dagdata
@@ -394,6 +416,34 @@ def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[
         if u.person_id is not None:
             result[u.person_id] = u.id
     return result
+
+
+def _range_holder_user_ids(
+    session, rotation_positions: list[int], start_date: datetime.date, end_date: datetime.date
+) -> set[int]:
+    """Return every user_id that held any of rotation_positions during a date range.
+
+    _build_rotation_to_user_map only knows each position's CURRENT holder, so the
+    batch helpers, keying off it, query just those users. For a narrow single-position
+    view whose range sits on the far side of a swap or succession, the position's
+    prior/future holder is never queried and their rows (overtime, on-call, absences,
+    etc.) are structurally excluded before any per-row date re-attribution runs.
+
+    Reading the PersonHistory segments overlapping [start_date, end_date] recovers the
+    full set of holders in range. The per-row resolver in each batch helper then still
+    buckets every fetched row onto the position its holder occupied on that row's date,
+    so rows for a position not actually held on a given day fall outside the viewed
+    position set and are harmlessly ignored.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+
+    user_ids: set[int] = set()
+    if not session:
+        return user_ids
+    for pid in rotation_positions:
+        for seg in get_position_holder_segments(session, pid, start_date, end_date):
+            user_ids.add(seg["user_id"])
+    return user_ids
 
 
 def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]):
@@ -903,6 +953,7 @@ def _batch_fetch_absences(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """
     Batch-hämtar frånvaro för flera personer och en period.
@@ -922,6 +973,12 @@ def _batch_fetch_absences(
     else:
         user_ids = person_ids
         user_id_to_rotation = {}
+
+    # Include every user who held a viewed position at any point in the range, not
+    # just its current holder, so a single-position view on the far side of a swap
+    # or succession still fetches the prior/future holder's rows.
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
 
     absences = (
         session.query(Absence)
@@ -943,6 +1000,7 @@ def _batch_fetch_ot_shifts(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """
     Batch-hämtar övertidspass för flera personer och en period.
@@ -961,6 +1019,12 @@ def _batch_fetch_ot_shifts(
     else:
         user_ids = person_ids
         user_id_to_rotation = {}
+
+    # Include every user who held a viewed position at any point in the range, not
+    # just its current holder, so a single-position view on the far side of a swap
+    # or succession still fetches the prior/future holder's rows.
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
 
     # Also fetch the day before start_date to catch OT shifts crossing midnight
     fetch_start = start_date - datetime.timedelta(days=1)
@@ -985,6 +1049,7 @@ def _batch_fetch_oncall_overrides(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """
     Batch-hämtar on-call overrides för flera personer och en period.
@@ -1003,6 +1068,12 @@ def _batch_fetch_oncall_overrides(
     else:
         user_ids = person_ids
         user_id_to_rotation = {}
+
+    # Include every user who held a viewed position at any point in the range, not
+    # just its current holder, so a single-position view on the far side of a swap
+    # or succession still fetches the prior/future holder's rows.
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
 
     overrides = (
         session.query(OnCallOverride)
@@ -1024,6 +1095,7 @@ def _batch_fetch_shift_overrides(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """Batch-fetches manual shift overrides for multiple persons and a period.
 
@@ -1041,6 +1113,12 @@ def _batch_fetch_shift_overrides(
     else:
         user_ids = person_ids
         user_id_to_rotation = {}
+
+    # Include every user who held a viewed position at any point in the range, not
+    # just its current holder, so a single-position view on the far side of a swap
+    # or succession still fetches the prior/future holder's rows.
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
 
     overrides = (
         session.query(ShiftOverride)
@@ -1062,6 +1140,7 @@ def _batch_fetch_day_pay_overrides(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
     """Batch-fetches manual pay overrides (OB/oncall) for multiple persons and a period.
 
@@ -1079,6 +1158,12 @@ def _batch_fetch_day_pay_overrides(
     else:
         user_ids = person_ids
         user_id_to_rotation = {}
+
+    # Include every user who held a viewed position at any point in the range, not
+    # just its current holder, so a single-position view on the far side of a swap
+    # or succession still fetches the prior/future holder's rows.
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
 
     overrides = (
         session.query(DayPayOverride)
@@ -1100,6 +1185,7 @@ def _batch_fetch_swap_map(
     start_date: datetime.date,
     end_date: datetime.date,
     rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], str]:
     """
     Batch-hämtar accepterade skiftbyten för flera personer och en period.
@@ -1122,6 +1208,12 @@ def _batch_fetch_swap_map(
     else:
         user_ids = person_ids
         user_id_to_rotation = {}
+
+    # Include every user who held a viewed position at any point in the range, not
+    # just its current holder, so a single-position view on the far side of a swap
+    # or succession still fetches the prior/future holder's rows.
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
 
     swaps = (
         session.query(ShiftSwap)

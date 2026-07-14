@@ -49,7 +49,7 @@ from app.core.schedule import (
     persons as person_list,
 )
 from app.core.schedule.ob import apply_ob_hours_override
-from app.core.schedule.vacation import calculate_vacation_balance
+from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import (
@@ -584,15 +584,39 @@ async def show_week_for_person(
         week_employment_start = week_emp_start
         week_employment_end = week_emp_end
 
-    days_in_week = build_week_data(
-        year,
-        week,
-        person_id=rotation_position,
-        session=db,
-        include_coworkers=True,
-        employment_start=week_employment_start,
-        employment_end=week_employment_end,
-    )
+    # Redirect ANY viewer (self, another user, or an admin) once the ENTIRE
+    # requested week falls after the resolved user's own tenure end at this
+    # position - regardless of whether a successor has since taken over.
+    if target_user is not None and week_employment_end is not None and monday > week_employment_end:
+        return RedirectResponse(url=f"/week?year={year}&week={week}", status_code=302)
+
+    # When the viewer held more than one position during this week - a swap or
+    # succession landing mid-week - stitch each held position's masked segment so
+    # the post-change days show the viewer's real shifts on their new position
+    # instead of being blanked to OFF by the single-position employment mask.
+    days_in_week = None
+    if target_user is not None:
+        from app.core.schedule.summary import stitch_user_week_days
+
+        days_in_week = stitch_user_week_days(
+            db,
+            year,
+            week,
+            target_user.id,
+            rotation_position,
+            week_employment_start,
+            week_employment_end,
+        )
+    if days_in_week is None:
+        days_in_week = build_week_data(
+            year,
+            week,
+            person_id=rotation_position,
+            session=db,
+            include_coworkers=True,
+            employment_start=week_employment_start,
+            employment_end=week_employment_end,
+        )
 
     nav = get_navigation_dates("week", monday)
 
@@ -818,6 +842,14 @@ async def show_month_for_person(
         viewer_employment_start = emp_start
         viewer_employment_end = emp_end
 
+    # Redirect ANY viewer (self, another user, or an admin) once the ENTIRE
+    # requested month falls after the resolved user's own tenure end at this
+    # position - regardless of whether a successor has since taken over.
+    if target_user is not None and viewer_employment_end is not None:
+        month_start = date(year, month, 1)
+        if month_start > viewer_employment_end:
+            return RedirectResponse(url=f"/month?year={year}&month={month}", status_code=302)
+
     calendar_data = build_calendar_grid_for_month(
         year,
         month,
@@ -827,6 +859,7 @@ async def show_month_for_person(
         employment_start=viewer_employment_start,
         employment_end=viewer_employment_end,
         viewer_user_id=target_user.id if target_user is not None else None,
+        wage_user_id=user_id_for_wages,
     )
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]
@@ -866,11 +899,19 @@ async def show_month_for_person(
                 try:
                     balance = calculate_vacation_balance(vac_user, year, db)
                     pay = balance.get("pay", {})
+                    supplement_month = round(pay.get("supplement_per_day", 0) * sem_count, 0)
                     vacation_month = {
                         "days": sem_count,
                         "supplement_per_day": pay.get("supplement_per_day", 0),
-                        "supplement_month": round(pay.get("supplement_per_day", 0) * sem_count, 0),
+                        "supplement_month": supplement_month,
                     }
+                    # Fold the supplement into the headline gross/net totals, matching
+                    # the year view's per-month behavior, so the two views agree and
+                    # the summary actually reflects the employee's total pay.
+                    if supplement_month > 0:
+                        days_in_month["brutto_pay"], days_in_month["netto_pay"] = fold_vacation_supplement_into_pay(
+                            days_in_month.get("brutto_pay", 0), days_in_month.get("netto_pay", 0), supplement_month
+                        )
                 except Exception:
                     logger.warning(
                         "Semestertillägg kunde inte beräknas för user_id=%s", user_id_for_wages, exc_info=True
@@ -1041,18 +1082,40 @@ async def export_month_excel(
     if target_user is not None:
         from datetime import date as _date
 
+        from app.core.rates import get_user_rates
         from app.core.schedule import generate_month_data
         from app.core.schedule.period import mask_days_to_employment
         from app.core.schedule.person_history import get_employment_period
 
         emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
-        month_days = generate_month_data(year, month, rotation_position, session=db)
+
+        # Resolve rates for the actual USER whose month this is, not whoever
+        # happens to hold the rotation position, exactly as
+        # build_calendar_grid_for_month does for the month view - without
+        # this, per-day OT pay silently falls back to the generic formula
+        # instead of a custom stored OT rate.
+        _month_rates_map = None
+        _rate_user = target_user
+        if _rate_user is not None:
+            _month_rates = get_user_rates(_rate_user, session=db, effective_date=date(year, month, 1))
+            if _month_rates:
+                _month_rates_map = {rotation_position: _month_rates}
+
+        month_days = generate_month_data(year, month, rotation_position, session=db, user_rates_map=_month_rates_map)
         month_days = mask_days_to_employment(month_days, emp_start or _date.min, emp_end or _date.max)
         days_in_month = summarize_month_for_person(
-            year, month, rotation_position, session=db, year_days=month_days, payment_year=year
+            year,
+            month,
+            rotation_position,
+            session=db,
+            year_days=month_days,
+            payment_year=year,
+            wage_user_id=user_id_for_wages,
         )
     else:
-        days_in_month = summarize_month_for_person(year, month, rotation_position, session=db, payment_year=year)
+        days_in_month = summarize_month_for_person(
+            year, month, rotation_position, session=db, payment_year=year, wage_user_id=user_id_for_wages
+        )
 
     # ── Build workbook ───────────────────────────────────────────────────
     wb = openpyxl.Workbook()
@@ -1105,11 +1168,14 @@ async def year_view(
         user_id_for_wages = person_id  # Same as person_id for legacy positions
         person_name = None  # Will be looked up below
 
-    if with_person_id is not None:
-        with_person_id = validate_person_id(with_person_id)
-
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
+
+    if redirect := redirect_if_not_own_data(current_user, user_id_for_wages, f"/year/{current_user.id}?year={year}"):
+        return redirect
+
+    if with_person_id is not None:
+        with_person_id = validate_person_id(with_person_id)
 
     # Get person name if not already set (for user_id > 10 case, it's set above)
     if person_name is None:
@@ -1185,13 +1251,9 @@ async def year_view(
 
                     # Include supplement in gross/net so table columns add up
                     if m["vacation_supplement"] > 0:
-                        supp = m["vacation_supplement"]
-                        brutto_before = m.get("brutto_pay", 0) or 0
-                        netto_before = m.get("netto_pay", 0) or 0
-                        m["brutto_pay"] = brutto_before + supp
-                        if brutto_before > 0:
-                            tax_ratio = netto_before / brutto_before
-                            m["netto_pay"] = round(netto_before + supp * tax_ratio, 0)
+                        m["brutto_pay"], m["netto_pay"] = fold_vacation_supplement_into_pay(
+                            m.get("brutto_pay", 0), m.get("netto_pay", 0), m["vacation_supplement"]
+                        )
 
                 # Recalculate year totals with updated brutto/netto
                 month_count = len(months) or 1

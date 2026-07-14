@@ -16,15 +16,29 @@ from sqlalchemy.orm import sessionmaker
 import app.database.database as db_module
 from app.auth.auth import create_access_token
 from app.core.schedule import (
+    build_week_data,
     clear_schedule_cache,
     generate_month_data,
+    generate_period_data,
     summarize_month_for_person,
     summarize_year_for_person,
 )
 from app.core.schedule.period import mask_days_to_employment
 from app.core.schedule.person_history import add_person_change, end_employment, start_employment, swap_positions
+from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, OvertimeShift, RotationEra, User, UserRole, WageType
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    OnCallOverride,
+    OnCallOverrideType,
+    OvertimeShift,
+    RateHistory,
+    RotationEra,
+    User,
+    UserRole,
+    WageType,
+)
 from tests.conftest import _ROTATION_ERA_PATTERN
 
 
@@ -98,6 +112,11 @@ def test_mid_month_change_shows_both_persons(month_env):
 
 
 def test_departed_person_absent_in_later_month(month_env):
+    """A position vacant for the whole displayed month shows no column at all.
+
+    Anna left with no successor; September falls entirely in the resulting
+    gap. Fully vacant positions are hidden (no placeholder column).
+    """
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
@@ -107,7 +126,7 @@ def test_departed_person_absent_in_later_month(month_env):
 
     assert resp.status_code == 200
     assert "Anna" not in resp.text
-    assert "Vakant" in resp.text or "Vacant" in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def test_mid_week_change_shows_both_rows(month_env):
@@ -137,6 +156,12 @@ def test_mid_week_change_shows_both_rows(month_env):
 
 
 def test_departed_person_absent_in_later_week(month_env):
+    """A position vacant for the whole displayed week shows no row at all.
+
+    Anna left with no successor; week 34 falls entirely in the resulting gap.
+    Fully vacant positions are hidden (no placeholder row), unlike a partial
+    gap within an otherwise-active week, which still needs the OFF cells.
+    """
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
@@ -147,7 +172,7 @@ def test_departed_person_absent_in_later_week(month_env):
 
     assert resp.status_code == 200
     assert "Anna" not in resp.text
-    assert "Vakant" in resp.text or "Vacant" in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def _year_header_ths(html: str, person_id: int) -> list[str]:
@@ -165,22 +190,44 @@ def _year_header_ths(html: str, person_id: int) -> list[str]:
     )
 
 
+def _headers_containing(html: str, name: str) -> int:
+    """Count <th class="person-header...">...</th> blocks whose content includes name.
+
+    Robust against whitespace between Jinja tags and against the name appearing
+    more than once elsewhere on the page (e.g. toggle checkboxes): only the
+    single header cell rendered once per row/column is counted, matching the
+    year view's col_key format ("<pid>-<uid>" or the merged "user-<uid>")
+    without needing to know which format applies.
+    """
+    blocks = re.findall(r'(<th class="person-header[^"]*"[^>]*>.*?</th>)', html, re.DOTALL)
+    return sum(1 for b in blocks if name in b)
+
+
+def _rows_containing(html: str, row_class: str, name: str) -> int:
+    """Count <tr class="{row_class}">...</tr> blocks whose content includes name."""
+    blocks = re.findall(rf'(<tr class="{row_class}">.*?</tr>)', html, re.DOTALL)
+    return sum(1 for b in blocks if name in b)
+
+
 def test_year_header_vacant_after_departure(month_env):
+    """A position vacant for the whole displayed year shows no column at all.
+
+    Anna held position 3 until 2026-08-04 with no successor. The 2027 view has
+    no holder overlapping that year at all, so the position-3 column is fully
+    hidden (Goal 2: no vacant placeholder), matching the week and month views.
+    """
     client, session = month_env
     anna = _make_user(session, 11, "anna1", "Anna")
     start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
-    # Anna held position 3 until 2026-08-04 with no successor. The 2027 view has
-    # no holder overlapping that year, so the position-3 column must show the
-    # vacancy label rather than the departed holder.
     end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
 
     resp = client.get("/year?year=2027")
 
     assert resp.status_code == 200
     ths = _year_header_ths(resp.text, 3)
-    assert len(ths) == 1
-    assert "Vakant" in ths[0] or "Vacant" in ths[0]
-    assert "Anna" not in ths[0]
+    assert len(ths) == 0
+    assert "Anna" not in resp.text
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
 def test_year_splits_columns_per_holder_past_hidden(month_env):
@@ -242,21 +289,39 @@ def test_year_splits_columns_per_holder_past_hidden(month_env):
     assert re.search(r'<input[^>]*data-past="1"[^>]*\bdisabled\b', resp.text)
 
 
-def test_year_future_swap_columns_hidden_until_effective(month_env):
-    """A future-dated swap hides the incoming columns until their start passes.
+def test_year_future_swap_merges_into_one_visible_column(month_env):
+    """A future-dated swap still merges into one column per person, visible now.
 
     Isak holds position 3 and Omar holds position 5; they swap on a date in the
-    future. Today the current holders' columns stay visible while the two future
-    columns (each holder at their new position) render hidden + disabled, so the
-    swap is invisible until it takes effect.
+    future. Before this refactor, a future-dated swap rendered as two separate
+    per-position columns (the incoming one hidden until effective) because each
+    position was processed independently. Now that segments are grouped by
+    user_id across positions first, Isak and Omar each get ONE merged column
+    spanning both positions (per the swap-merge design, a genuine swap
+    participant's column is never flagged past or future as a whole - unlike a
+    genuine departure/successor pair, which stays on separate user_ids and is
+    unaffected). The merged column is therefore visible immediately, not hidden
+    pending the future swap date.
+
+    Uses fixed dates plus the year view's `?simulated_date=` testing hook
+    (rather than monkeypatching get_today) to avoid flakiness: real "today"
+    would occasionally land on a probe date where positions 3 and 5 happen to
+    share a rotation code, silently weakening or spuriously failing the
+    differentiation check below.
     """
+    from app.core.schedule import determine_shift_for_date
+
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     isak = _make_user(session, 11, "isak1", "Isak")
     omar = _make_user(session, 12, "omar1", "Omar")
 
-    today = get_today()
-    swap_date = today + datetime.timedelta(days=30)
+    # Fixed dates, verified to give positions 3 and 5 different rotation codes
+    # on both probe days: 2027-06-10 (N1 vs OFF) and 2027-06-20 (N2 vs OC).
+    simulated_today = datetime.date(2027, 5, 15)
+    swap_date = datetime.date(2027, 6, 15)
+    pre_swap_day = datetime.date(2027, 6, 10)
+    post_swap_day = datetime.date(2027, 6, 20)
 
     start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
     start_employment(session, omar.id, 5, "Omar", "omar1", datetime.date(2026, 1, 2), created_by=1)
@@ -265,28 +330,53 @@ def test_year_future_swap_columns_hidden_until_effective(month_env):
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get(f"/year?year={today.year}")
+    resp = client.get(f"/year?year={simulated_today.year}&simulated_date={simulated_today.isoformat()}")
     assert resp.status_code == 200
 
-    # Position 3: Isak currently holds it (visible), Omar takes it in the future
-    # (hidden). Position 5 mirrors this.
-    ths3 = _year_header_ths(resp.text, 3)
-    assert len(ths3) == 2
-    isak3 = next(th for th in ths3 if "Isak" in th)
-    omar3 = next(th for th in ths3 if "Omar" in th)
-    assert 'data-future="0"' in isak3 and "display:none" not in isak3
-    assert 'data-future="1"' in omar3 and "display:none" in omar3
+    # One column per person, not one per position segment.
+    assert _headers_containing(resp.text, "Isak") == 1
+    assert _headers_containing(resp.text, "Omar") == 1
+    # Neither position number keys a separate header anymore: both people's
+    # segments were grouped under their own user_id across positions 3 and 5.
+    assert len(_year_header_ths(resp.text, 3)) == 0
+    assert len(_year_header_ths(resp.text, 5)) == 0
 
-    ths5 = _year_header_ths(resp.text, 5)
-    assert len(ths5) == 2
-    omar5 = next(th for th in ths5 if "Omar" in th)
-    isak5 = next(th for th in ths5 if "Isak" in th)
-    assert 'data-future="0"' in omar5 and "display:none" not in omar5
-    assert 'data-future="1"' in isak5 and "display:none" in isak5
+    blocks = re.findall(r'(<th class="person-header[^"]*"[^>]*>.*?</th>)', resp.text, re.DOTALL)
+    isak_th = next(b for b in blocks if "Isak" in b)
+    omar_th = next(b for b in blocks if "Omar" in b)
+    # Merged swap columns are visible immediately, not force-hidden pending the
+    # future swap date.
+    assert 'data-past="0"' in isak_th and 'data-future="0"' in isak_th
+    assert "display:none" not in isak_th
+    assert 'data-past="0"' in omar_th and 'data-future="0"' in omar_th
+    assert "display:none" not in omar_th
 
-    # Both future holders' filter checkboxes are disabled server-side, so they
-    # cannot be revealed individually until the swap takes effect.
-    assert len(re.findall(r'<input[^>]*data-future="1"[^>]*\bdisabled\b', resp.text)) == 2
+    # Verify per-day content: check that each person's cell shows their own real
+    # shift from whichever position they held on that specific date.
+    isak_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=3)
+    isak_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=5)
+    omar_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=5)
+    omar_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=3)
+
+    for label, link_id, day, expected in [
+        ("Isak pre-swap", isak.id, pre_swap_day, isak_pre_shift),
+        ("Isak post-swap", isak.id, post_swap_day, isak_post_shift),
+        ("Omar pre-swap", omar.id, pre_swap_day, omar_pre_shift),
+        ("Omar post-swap", omar.id, post_swap_day, omar_post_shift),
+    ]:
+        match = re.search(rf'/day/{link_id}/{day.year}/{day.month}/{day.day}".*?</td>', resp.text, re.DOTALL)
+        assert match, f"expected a calendar cell for {label} ({day.isoformat()})"
+        cell_html = match.group(0)
+        expected_code = expected.code if expected else "OFF"
+        assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+    # Sanity check: verify that positions 3 and 5 have different rotations on the
+    # test days so this assertion is meaningful (not passing by coincidence).
+    codes_pos3 = [determine_shift_for_date(d, start_week=3)[0] for d in [pre_swap_day, post_swap_day]]
+    codes_pos5 = [determine_shift_for_date(d, start_week=5)[0] for d in [pre_swap_day, post_swap_day]]
+    codes_pos3 = [c.code if c else "OFF" for c in codes_pos3]
+    codes_pos5 = [c.code if c else "OFF" for c in codes_pos5]
+    assert codes_pos3 != codes_pos5, "positions 3 and 5 must differ on the test days for a meaningful check"
 
 
 def test_year_ongoing_holder_visible_in_later_year(month_env):
@@ -312,6 +402,52 @@ def test_year_ongoing_holder_visible_in_later_year(month_env):
     assert "Nils" in ths3[0]
     assert 'data-future="0"' in ths3[0]
     assert "display:none" not in ths3[0]
+
+
+def test_year_future_succession_column_hidden_until_effective(month_env):
+    """A future-dated succession (not a swap) still hides the incoming holder.
+
+    Isak currently holds position 3; a future-dated add_person_change hands the
+    position to Bob (a different user_id, not a mutual swap). Unlike the
+    merged-swap case above, a plain succession keeps its holders on separate
+    user_ids, so Bob's column must stay hidden (data-future="1", display:none
+    and a disabled filter checkbox) until his start date passes, while Isak's
+    current column stays visible.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 11, "isak1", "Isak")
+    bob = _make_user(session, 12, "bob1", "Bob")
+
+    today = get_today()
+    succession_date = today + datetime.timedelta(days=30)
+
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=isak.id,
+        new_user_id=bob.id,
+        person_id=3,
+        new_name="Bob",
+        new_username="bob1",
+        effective_from=succession_date,
+        created_by=1,
+    )
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/year?year={today.year}")
+    assert resp.status_code == 200
+
+    ths = _year_header_ths(resp.text, 3)
+    assert len(ths) == 2
+    isak_th = next(th for th in ths if "Isak" in th)
+    bob_th = next(th for th in ths if "Bob" in th)
+
+    assert 'data-future="0"' in isak_th and "display:none" not in isak_th
+    assert 'data-future="1"' in bob_th and "display:none" in bob_th
+    assert re.search(r'<input[^>]*data-future="1"[^>]*\bdisabled\b', resp.text)
 
 
 def _out_of_tenure_cells(html: str, col_key: str) -> list[str]:
@@ -447,6 +583,61 @@ def test_year_by_user_id_shows_old_holder(month_env):
     assert '/month/10?year=2026&month=4"' not in resp.text
 
 
+def test_year_redirects_non_owner_non_admin(month_env):
+    """/year/<id> for someone else's data redirects a regular user to their own page."""
+    client, session = month_env
+    robin = _make_user(session, 10, "robin1", "Robin")
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=1)
+    viewer = _make_user(session, 13, "viewer1", "Viewer")
+    start_employment(session, viewer.id, 3, "Viewer", "viewer1", datetime.date(2026, 1, 2), created_by=1)
+
+    token = create_access_token(data={"sub": str(viewer.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year/10?year=2026", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/year/13?year=2026"
+
+
+def test_year_all_name_links_respect_viewer_role(month_env):
+    """Names in /year link to the personal view only when the viewer is allowed to see it.
+
+    Anonymous viewers get no links at all. A regular logged-in user only gets a
+    link for their own name - everyone else's name is plain text. An admin gets
+    links for every name.
+    """
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+
+    # Anonymous: no /year/<id> link for either person.
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+    assert f'href="/year/{anna.id}?' not in resp.text
+    assert f'href="/year/{bert.id}?' not in resp.text
+    assert "Anna" in resp.text
+    assert "Bert" in resp.text
+
+    # Regular user (Anna): only her own name is linked, Bert's is plain text.
+    token = create_access_token(data={"sub": str(anna.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+    assert f'href="/year/{anna.id}?' in resp.text
+    assert f'href="/year/{bert.id}?' not in resp.text
+
+    # Admin: every name is linked.
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+    assert f'href="/year/{anna.id}?' in resp.text
+    assert f'href="/year/{bert.id}?' in resp.text
+
+
 def test_team_month_links_use_holder_user_ids(month_env):
     """Team month column headers link the holder's user id, not the position.
 
@@ -500,6 +691,490 @@ def test_team_month_vacant_column_has_no_link(month_env):
     assert "/month/3?year=2026&month=9" not in resp.text
     # Vacant day cells must not emit a broken /day/None drill-down link.
     assert "/day/None" not in resp.text
+
+
+def test_month_view_merges_swap_into_one_column(month_env):
+    """A position swap landing mid-month yields ONE column per person.
+
+    Anna (user 11) and Bert (user 12) hold positions 3 and 5 respectively,
+    then swap on 2026-06-15 (mid-June). June's view must show each of them
+    exactly once, with their correct shift on each side of the swap date.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=6")
+
+    assert resp.status_code == 200
+    assert _headers_containing(resp.text, "Anna") == 1
+    assert _headers_containing(resp.text, "Bert") == 1
+
+
+def _fake_month_summary(*, brutto_pay, base_salary, wage_type=WageType.MONTHLY, year=2026, tax_table=None):
+    """Minimal fabricated summarize_month_for_person-shaped dict for merge unit tests.
+
+    Only the keys _merge_month_summaries actually reads are populated; every
+    numeric/dict field defaults to a zero-ish value via .get() in the merge
+    function except "days", which is read unconditionally.
+    """
+    return {
+        "year": year,
+        "days": [],
+        "brutto_pay": brutto_pay,
+        "netto_pay": brutto_pay,
+        "base_salary": base_salary,
+        "wage_type": wage_type,
+        "tax_table": tax_table,
+        "absence_details": [],
+    }
+
+
+def test_merge_month_summaries_monthly_wage_does_not_double_count_base(month_env):
+    """_merge_month_summaries must not sum a monthly-wage user's flat base twice.
+
+    Two segments share the same 30000 SEK monthly base: segment 1 carries 2000
+    SEK of variable pay on top (brutto_pay=32000), segment 2 carries 1500 SEK
+    (brutto_pay=31500). The correct merged gross is ONE base plus BOTH
+    variable parts (30000 + 2000 + 1500 = 33500). Naively summing the two
+    segments' brutto_pay (the pre-fix bug) would instead yield 63500, roughly
+    2x the correct value.
+    """
+    from app.core.schedule.summary import _calculate_tax
+    from app.routes.schedule_all import _merge_month_summaries
+
+    base_salary = 30000.0
+    seg1 = _fake_month_summary(brutto_pay=base_salary + 2000.0, base_salary=base_salary)
+    seg2 = _fake_month_summary(brutto_pay=base_salary + 1500.0, base_salary=base_salary)
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    naive_double_counted = seg1["brutto_pay"] + seg2["brutto_pay"]
+    assert merged["brutto_pay"] == pytest.approx(33500.0)
+    assert merged["brutto_pay"] < naive_double_counted - base_salary * 0.9
+
+    expected_netto = merged["brutto_pay"] - _calculate_tax(merged["brutto_pay"], None, payment_year=2026)
+    assert merged["netto_pay"] == pytest.approx(expected_netto)
+
+
+def test_merge_month_summaries_hourly_wage_sums_normally(month_env):
+    """An hourly-wage user's already day-derived brutto_pay is safe to sum as-is.
+
+    Hourly brutto_pay carries no flat base component (summary.py replaces it
+    entirely with a worked-hours-derived figure), so unlike the monthly case,
+    summing two segments' brutto_pay directly is correct.
+    """
+    from app.routes.schedule_all import _merge_month_summaries
+
+    seg1 = _fake_month_summary(brutto_pay=12000.0, base_salary=30000.0, wage_type=WageType.HOURLY)
+    seg2 = _fake_month_summary(brutto_pay=9000.0, base_salary=30000.0, wage_type=WageType.HOURLY)
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    assert merged["brutto_pay"] == pytest.approx(21000.0)
+
+
+def test_month_swap_merge_brutto_pay_not_double_counted(month_env):
+    """End-to-end: a real monthly-wage swap's merged brutto_pay stays sane.
+
+    Anna holds position 3 from January, swaps to position 5 mid-June. Her June
+    column is built from two per-segment summaries (masked to before/after the
+    swap) merged by _merge_month_summaries, exercising the exact code path
+    show_month_all uses. Before the fix this came out near 2x her monthly wage
+    because each segment independently resolved the same flat base salary.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+    from app.routes.schedule_all import _merge_month_summaries
+
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=1)
+
+    year, month = 2026, 6
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, 30)
+
+    segments_by_user: dict[int, list[dict]] = {}
+    for pid in (3, 5):
+        for seg in get_position_holder_segments(session, pid, month_start, month_end):
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    anna_segs = sorted(segments_by_user[anna.id], key=lambda s: s["from_date"])
+    assert len(anna_segs) == 2, "expected Anna to hold two segments (pre- and post-swap position) in June"
+
+    per_segment_summaries = []
+    for seg in anna_segs:
+        days = generate_month_data(year, month, seg["person_id"], session=session)
+        masked_days = mask_days_to_employment(days, seg["from_date"], seg["to_date"])
+        s = summarize_month_for_person(
+            year,
+            month,
+            seg["person_id"],
+            session=session,
+            year_days=masked_days,
+            fetch_tax_table=False,
+            payment_year=year,
+            wage_user_id=anna.id,
+        )
+        per_segment_summaries.append(s)
+
+    merged = _merge_month_summaries(per_segment_summaries)
+
+    naive_double_counted = sum(s["brutto_pay"] for s in per_segment_summaries)
+    # Well under 2x the base wage: the pre-fix bug summed the flat base once
+    # per segment, landing close to naive_double_counted (~2x anna.wage).
+    assert merged["brutto_pay"] < naive_double_counted - anna.wage * 0.9
+    assert merged["brutto_pay"] < 1.5 * anna.wage
+
+
+def test_merge_month_summaries_does_not_double_count_whole_month_absence_fields(month_env):
+    """_merge_month_summaries must not sum absence-derived fields across segments.
+
+    get_absence_deductions_for_month (wages.py) queries Absence rows by user_id for
+    the ENTIRE calendar month with no date-range/segment scoping, so every segment's
+    summary independently carries the SAME whole-month sick_days/absence_deduction/
+    sick_ob_pay_by_code figures. Naively summing them across two segments (the
+    pre-fix bug) doubles them; they must instead be taken from exactly one segment.
+    """
+    from app.routes.schedule_all import _merge_month_summaries
+
+    seg1 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    seg2 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    for s in (seg1, seg2):
+        s["sick_days"] = 2
+        s["sick_hours"] = 16.0
+        s["absence_deduction"] = 2400.0
+        s["absence_hours"] = 16.0
+        s["sick_ob_pay"] = 150.0
+        s["sick_total_ob"] = 200.0
+        s["sick_ob_lost"] = 50.0
+        s["sick_ob_pay_by_code"] = {"kväll": 150.0}
+        s["sick_ob_hours_by_code"] = {"kväll": 3.0}
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    naive_double_counted = seg1["sick_days"] + seg2["sick_days"]
+    assert naive_double_counted == 4, "sanity check on the fabricated scenario"
+    assert merged["sick_days"] == 2
+    assert merged["sick_hours"] == pytest.approx(16.0)
+    assert merged["absence_deduction"] == pytest.approx(2400.0)
+    assert merged["absence_hours"] == pytest.approx(16.0)
+    assert merged["sick_ob_pay"] == pytest.approx(150.0)
+    assert merged["sick_total_ob"] == pytest.approx(200.0)
+    assert merged["sick_ob_lost"] == pytest.approx(50.0)
+    assert merged["sick_ob_pay_by_code"] == {"kväll": 150.0}
+    assert merged["sick_ob_hours_by_code"] == {"kväll": 3.0}
+
+
+def test_merge_month_summaries_parental_days_mix_is_reconstructed_correctly(month_env):
+    """parental_days mixes a whole-month absence component with a per-segment
+    day-derived (week-based) component; the merge must not double the absence
+    part while still summing the week-based part from every segment.
+
+    Fabricated scenario: an identical whole-month absence-derived component of 2
+    (constant across both segments, as get_absence_deductions_for_month would
+    produce) plus 1 week-based flagged day in segment 1's own `days` list and 2
+    in segment 2's. Correct merged total: 2 (absence, once) + 1 + 2 (both
+    segments' week-based days) = 5.
+    """
+    from app.routes.schedule_all import _merge_month_summaries
+
+    seg1 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    seg2 = _fake_month_summary(brutto_pay=30000.0, base_salary=30000.0)
+    seg1["days"] = [{"parental_leave": True}, {}, {}]
+    seg2["days"] = [{}, {"parental_leave": True}, {"parental_leave": True}]
+    seg1["parental_days"] = 2 + 1  # absence-only component (2) + this segment's own week day (1)
+    seg2["parental_days"] = 2 + 2  # same absence-only component (2) + this segment's 2 week days
+
+    merged = _merge_month_summaries([seg1, seg2])
+
+    assert merged["parental_days"] == 5
+
+
+def test_month_swap_merge_sick_days_not_double_counted(month_env):
+    """End-to-end: a real swap month with sick days on BOTH sides is not double-counted.
+
+    Anna holds position 3 from January, swaps to position 5 mid-June. She has one
+    sick day before the swap (still on position 3) and one sick day after the swap
+    (now on position 5), both stored as Absence rows keyed by her user_id. Because
+    get_absence_deductions_for_month queries the whole calendar month by user_id
+    with no segment scoping, each of Anna's two per-segment summaries independently
+    reports sick_days=2 for June. Before the fix, _merge_month_summaries summed
+    that across both segments to 4; the correct merged total is 2, matching a
+    single authoritative call to get_absence_deductions_for_month for the month.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+    from app.core.schedule.wages import get_absence_deductions_for_month
+    from app.routes.schedule_all import _merge_month_summaries
+
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=1)
+
+    # One sick day before the swap (position 3) and one after (position 5).
+    session.add(Absence(user_id=anna.id, date=datetime.date(2026, 6, 8), absence_type=AbsenceType.SICK))
+    session.add(Absence(user_id=anna.id, date=datetime.date(2026, 6, 22), absence_type=AbsenceType.SICK))
+    session.commit()
+
+    year, month = 2026, 6
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, 30)
+
+    segments_by_user: dict[int, list[dict]] = {}
+    for pid in (3, 5):
+        for seg in get_position_holder_segments(session, pid, month_start, month_end):
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    anna_segs = sorted(segments_by_user[anna.id], key=lambda s: s["from_date"])
+    assert len(anna_segs) == 2, "expected Anna to hold two segments (pre- and post-swap position) in June"
+
+    per_segment_summaries = []
+    for seg in anna_segs:
+        days = generate_month_data(year, month, seg["person_id"], session=session)
+        masked_days = mask_days_to_employment(days, seg["from_date"], seg["to_date"])
+        s = summarize_month_for_person(
+            year,
+            month,
+            seg["person_id"],
+            session=session,
+            year_days=masked_days,
+            fetch_tax_table=False,
+            payment_year=year,
+            wage_user_id=anna.id,
+        )
+        per_segment_summaries.append(s)
+
+    # Sanity check on the bug: each segment independently re-queries the WHOLE
+    # month's absences and therefore already reports both sick days.
+    assert per_segment_summaries[0]["sick_days"] == 2
+    assert per_segment_summaries[1]["sick_days"] == 2
+
+    merged = _merge_month_summaries(per_segment_summaries)
+
+    authoritative = get_absence_deductions_for_month(session, anna.id, year, month, anna.wage)
+    assert merged["sick_days"] == authoritative["sick_days"] == 2
+    assert merged["absence_deduction"] == pytest.approx(authoritative["total_deduction"])
+    naive_double_counted = sum(s["sick_days"] for s in per_segment_summaries)
+    assert naive_double_counted == 4
+    assert merged["sick_days"] != naive_double_counted
+
+
+def test_month_swap_merge_brutto_pay_not_double_counted_with_absence(month_env):
+    """End-to-end: a real swap month with a paid absence deduction merges brutto_pay once.
+
+    Anna swaps positions mid-June and has one sick day during the month, which
+    produces a nonzero absence_deduction from get_absence_deductions_for_month.
+    That query is unscoped by segment (whole month, by user_id), so both of
+    Anna's per-segment summaries independently carry the SAME absence_deduction
+    (and sick_ob_pay). _merge_brutto_netto must fold the flat base_salary AND
+    these whole-month absence adjustments in exactly once each, summing only
+    each segment's own day-derived variable pay (OB/oncall/OT) on top.
+    """
+    from app.core.schedule.person_history import get_position_holder_segments
+    from app.core.schedule.summary import _calculate_tax
+    from app.core.schedule.wages import get_absence_deductions_for_month
+    from app.routes.schedule_all import _merge_brutto_netto, _merge_month_summaries
+
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=1)
+
+    # One sick day before the swap, still on position 3.
+    session.add(Absence(user_id=anna.id, date=datetime.date(2026, 6, 8), absence_type=AbsenceType.SICK))
+    session.commit()
+
+    year, month = 2026, 6
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, 30)
+
+    segments_by_user: dict[int, list[dict]] = {}
+    for pid in (3, 5):
+        for seg in get_position_holder_segments(session, pid, month_start, month_end):
+            segments_by_user.setdefault(seg["user_id"], []).append({**seg, "person_id": pid})
+
+    anna_segs = sorted(segments_by_user[anna.id], key=lambda s: s["from_date"])
+    assert len(anna_segs) == 2, "expected Anna to hold two segments (pre- and post-swap position) in June"
+
+    per_segment_summaries = []
+    for seg in anna_segs:
+        days = generate_month_data(year, month, seg["person_id"], session=session)
+        masked_days = mask_days_to_employment(days, seg["from_date"], seg["to_date"])
+        s = summarize_month_for_person(
+            year,
+            month,
+            seg["person_id"],
+            session=session,
+            year_days=masked_days,
+            fetch_tax_table=False,
+            payment_year=year,
+            wage_user_id=anna.id,
+        )
+        per_segment_summaries.append(s)
+
+    # Sanity check on the bug: both segments independently carry the SAME
+    # whole-month absence deduction (nonzero, since Anna was sick once in June).
+    authoritative = get_absence_deductions_for_month(session, anna.id, year, month, anna.wage)
+    assert authoritative["total_deduction"] > 0
+    assert per_segment_summaries[0]["absence_deduction"] == pytest.approx(authoritative["total_deduction"])
+    assert per_segment_summaries[1]["absence_deduction"] == pytest.approx(authoritative["total_deduction"])
+
+    # Independently derive the expected merged gross from the parts summary.py
+    # itself defines as genuinely per-segment (OB/oncall/OT pay from each
+    # segment's own masked days), plus exactly one base salary and one whole-
+    # month absence adjustment - NOT by re-deriving _merge_brutto_netto's formula.
+    variable_pay_total = sum(
+        sum((s.get("ob_pay") or {}).values()) + (s.get("oncall_pay") or 0) + (s.get("ot_pay") or 0)
+        for s in per_segment_summaries
+    )
+    expected_brutto = (
+        anna.wage + variable_pay_total - authoritative["total_deduction"] + authoritative.get("sick_ob_pay", 0.0)
+    )
+
+    merged_brutto, merged_netto = _merge_brutto_netto(per_segment_summaries)
+
+    naive_double_counted = per_segment_summaries[0]["brutto_pay"] + (per_segment_summaries[1]["brutto_pay"] - anna.wage)
+    assert merged_brutto == pytest.approx(expected_brutto)
+    assert merged_brutto != pytest.approx(naive_double_counted)
+
+    expected_netto = merged_brutto - _calculate_tax(merged_brutto, None, payment_year=year)
+    assert merged_netto == pytest.approx(expected_netto)
+
+    merged = _merge_month_summaries(per_segment_summaries)
+    assert merged["brutto_pay"] == pytest.approx(expected_brutto)
+
+
+def test_month_view_merge_picks_correct_shift_per_day_across_swap(month_env):
+    """The merged month column must show each holder's OWN real shift on each
+    side of the swap date, not OFF or the other holder's schedule.
+
+    Anna (position 3) and Bert (position 5) swap on 2026-06-15. Anna's column
+    must render position 3's real shift for a pre-swap day and position 5's
+    real shift for a post-swap day (and vice versa for Bert).
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=admin.id)
+
+    pre_swap_day = datetime.date(2026, 6, 10)
+    post_swap_day = datetime.date(2026, 6, 20)
+    anna_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=3)
+    anna_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=5)
+    bert_pre_shift, _ = determine_shift_for_date(pre_swap_day, start_week=5)
+    bert_post_shift, _ = determine_shift_for_date(post_swap_day, start_week=3)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=6")
+
+    assert resp.status_code == 200
+
+    for label, link_id, day, expected in [
+        ("Anna pre-swap", anna.id, pre_swap_day, anna_pre_shift),
+        ("Anna post-swap", anna.id, post_swap_day, anna_post_shift),
+        ("Bert pre-swap", bert.id, pre_swap_day, bert_pre_shift),
+        ("Bert post-swap", bert.id, post_swap_day, bert_post_shift),
+    ]:
+        match = re.search(rf'/day/{link_id}/{day.year}/{day.month}/{day.day}".*?</td>', resp.text, re.DOTALL)
+        assert match, f"expected a calendar cell for {label} ({day.isoformat()})"
+        cell_html = match.group(0)
+        expected_code = expected.code if expected else "OFF"
+        assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+
+def test_month_view_swap_participant_shows_current_position_badge(month_env):
+    """A swap participant's month-view header shows their CURRENT position.
+
+    Anna moves from position 3 to position 5 on 2026-06-15; Bert moves the
+    opposite direction. Viewed after the swap has taken effect, each header's
+    "(#N)" badge must show the position they hold NOW, matching the year
+    view's get_user_person_id-based approach, not the earliest/pre-swap
+    position the merge's first segment happens to carry.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 5, datetime.date(2026, 6, 15), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=6")
+
+    assert resp.status_code == 200
+
+    blocks = re.findall(r'(<th class="person-header"[^>]*>.*?</th>)', resp.text, re.DOTALL)
+    anna_th = next(b for b in blocks if "Anna" in b)
+    bert_th = next(b for b in blocks if "Bert" in b)
+
+    assert "(#5)" in anna_th and "(#3)" not in anna_th
+    assert "(#3)" in bert_th and "(#5)" not in bert_th
+
+
+def test_month_view_hides_fully_vacant_position(month_env):
+    """A position with no holder at all during the displayed month shows no column."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 8, 3))
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=8")  # August: Isak leaves Aug 3, rest of month vacant
+
+    assert resp.status_code == 200
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
+
+
+def test_month_view_orders_columns_by_position_id_with_mixed_legacy(month_env):
+    """Column order stays strictly pid-ascending when legacy and history-tracked
+    positions are mixed in the same month.
+
+    Position 1 is history-tracked (Alice, via start_employment). Position 5 has
+    no PersonHistory at all - a legacy position never touched by the
+    person-change admin flow. A two-pass restructure (vacant/legacy columns
+    resolved eagerly, per-user merged columns resolved afterwards) must not
+    let position 1's column drift after every legacy column: it belongs first.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    alice = _make_user(session, 11, "alice1", "Alice")
+    start_employment(session, alice.id, 1, "Alice", "alice1", datetime.date(2026, 1, 2), created_by=admin.id)
+    # Position 5 is left completely untouched: zero PersonHistory rows, so it
+    # falls into the legacy branch (no segments, no history).
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/month?year=2026&month=1")
+
+    assert resp.status_code == 200
+    headers = re.findall(r'(<th class="person-header[^"]*"[^>]*>.*?</th>)', resp.text, re.DOTALL)
+    alice_idx = next(i for i, h in enumerate(headers) if "Alice" in h)
+    legacy_idx = next(i for i, h in enumerate(headers) if "Person 5" in h)
+    assert alice_idx < legacy_idx
 
 
 def _august_total_ob(year_data: dict) -> float:
@@ -648,17 +1323,18 @@ def test_month_view_shows_real_shifts_from_mid_month_hire_despite_later_move(mon
     assert re.search(r">\s*OFF\s*<", cell_html) is None
 
 
-def test_month_view_masks_successor_schedule_after_departure(month_env):
-    """A departed user's month page must not leak a successor's real schedule.
+def test_month_view_redirects_even_when_successor_exists(month_env):
+    """Any viewer is redirected once the month is entirely past the departed
+    user's OWN tenure, even when a successor has since taken over the
+    position (so the position itself is not vacant).
 
     Anna holds position 3 Jan 2 - Mar 31, 2026; Bert takes over Apr 1
-    (open-ended, immediate succession, no vacancy gap). Viewing Anna's OWN
-    personal month page for November - long after both her departure and
-    Bert's takeover - must still show her name in the header, but the
-    calendar must render November as OFF, not Bert's real November shifts.
+    (open-ended, immediate succession, no vacancy gap). An admin requesting
+    Anna's personal month page for November - long after both her departure
+    and Bert's takeover - must be redirected to the team month view, not
+    shown a masked calendar. The redirect rule depends solely on Anna's own
+    tenure end, never on whether a successor exists.
     """
-    from app.core.schedule import determine_shift_for_date
-
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     anna = _make_user(session, 11, "anna1", "Anna")
@@ -675,25 +1351,13 @@ def test_month_view_masks_successor_schedule_after_departure(month_env):
         created_by=admin.id,
     )
 
-    probe = datetime.date(2026, 11, 16)
-    real_shift, _ = determine_shift_for_date(probe, start_week=3)
-    assert real_shift is not None and real_shift.code != "OFF"  # sanity: position 3 really works that day
-
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get(f"/month/{anna.id}?year=2026&month=11")
+    resp = client.get(f"/month/{anna.id}?year=2026&month=11", follow_redirects=False)
 
-    assert resp.status_code == 200
-    assert "Anna" in resp.text  # still Anna's own page
-
-    # Locate the probe day's calendar cell and confirm it renders OFF, not
-    # Bert's real (successor) shift.
-    match = re.search(rf'/day/{anna.id}/2026/11/16".*?</td>', resp.text, re.DOTALL)
-    assert match, "expected a calendar cell for 2026-11-16"
-    cell_html = match.group(0)
-    assert re.search(r">\s*OFF\s*<", cell_html)
-    assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", cell_html) is None
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/month?year=2026&month=11"
 
 
 def _first_working_day(dates, start_week):
@@ -766,36 +1430,219 @@ def test_month_view_shows_swap_padding_days_from_prev_month(month_env):
     assert re.search(r">\s*OFF\s*<", cell_html) is None
 
 
-def test_month_view_masks_successor_padding_after_departure(month_env):
-    """Padding days must stay OFF when they fall to an unrelated successor.
+def test_month_view_shows_midmonth_swap_both_positions(month_env):
+    """A position swap landing MID-month renders each participant's real shifts on
+    both sides of the swap in their personal month view - the pre-swap days on the
+    old position and the post-swap days on the new one - not OFF after the swap.
 
-    Anna held position 3 until 2026-03-31; Bert took over. Viewing Anna's own
-    November page, the grid's December padding days belong to Bert - outside
-    Anna's tenure entirely - and must render OFF, never Bert's real schedule.
-    This guards the 313a7df successor-leak fix against the padding-day
-    correction added for the position-swap case.
+    Anna (pos 3) and Bert (pos 5) swap on 2026-06-15. Viewing June, Anna's page
+    must show her position-3 shifts through Jun 14 and her position-5 shifts from
+    Jun 15; Bert's the mirror. The single-position month grid used to fetch one
+    position for the whole month and mask every day past the holder's tenure at
+    that position to OFF, blanking the entire post-swap half of the month.
     """
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
-    anna, _bert = _seed_departed_with_successor(session, admin.id)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_date = datetime.date(2026, 6, 15)
+    swap_positions(session, 3, 5, swap_date, created_by=admin.id)
 
-    # December padding days shown in the November grid (Dec 1-6 complete the last week).
-    padding = [datetime.date(2026, 12, d) for d in range(1, 7)]
-    probe, real_code = _first_working_day(padding, start_week=3)
-    assert probe is not None, "expected at least one working December padding day for position 3"
+    pre_days = [datetime.date(2026, 6, d) for d in range(1, 15)]
+    post_days = [datetime.date(2026, 6, d) for d in range(15, 31)]
 
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get("/month/11?year=2026&month=11")
+    # (viewer, pre-swap position, post-swap position)
+    for user, pre_pos, post_pos in [(anna, 3, 5), (bert, 5, 3)]:
+        resp = client.get(f"/month/{user.id}?year=2026&month=6")
+        assert resp.status_code == 200, f"{user.name} month load failed"
 
-    assert resp.status_code == 200
-    assert "Anna" in resp.text
-    match = re.search(rf'/day/11/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
-    assert match, f"expected a calendar cell for {probe.isoformat()}"
-    cell_html = match.group(0)
-    assert re.search(r">\s*OFF\s*<", cell_html), cell_html
-    assert re.search(rf">\s*{re.escape(real_code)}\s*<", cell_html) is None
+        pre_probe, pre_code = _first_working_day(pre_days, start_week=pre_pos)
+        post_probe, post_code = _first_working_day(post_days, start_week=post_pos)
+        assert pre_probe is not None and post_probe is not None, "need a working day on each side"
+
+        for probe, code in [(pre_probe, pre_code), (post_probe, post_code)]:
+            match = re.search(rf'/day/{user.id}/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
+            assert match, f"{user.name}: expected a calendar cell for {probe.isoformat()}"
+            cell_html = match.group(0)
+            assert re.search(rf">\s*{re.escape(code)}\s*<", cell_html), (
+                f"{user.name} {probe.isoformat()}: expected {code} in cell {cell_html}"
+            )
+            assert re.search(r">\s*OFF\s*<", cell_html) is None, (
+                f"{user.name} {probe.isoformat()}: post-swap day wrongly blanked to OFF"
+            )
+
+
+def test_month_view_summary_totals_span_midmonth_swap(month_env):
+    """The personal month view's SUMMARY totals count BOTH sides of a mid-month
+    swap, not just the pre-swap half.
+
+    Same scenario as the grid test: Anna (pos 3) and Bert (pos 5) swap on
+    2026-06-15. Each viewer's June summary (hours, shifts, OB) must equal their
+    position-3 first half plus their position-5 second half, each masked to the
+    tenure segment - exactly the stitched reconstruction the year view already
+    produces. Before the fix, build_calendar_grid_for_month masked every
+    post-swap day to OFF in the totals, so the summary silently dropped the
+    entire second half even though the grid cells (above) showed it, leaving the
+    "Total hours" / "Net wage" row inconsistent with the calendar it sits under.
+    """
+    from app.core.schedule.person_history import get_employment_period
+    from app.core.schedule.summary import build_calendar_grid_for_month
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_date = datetime.date(2026, 6, 15)
+    swap_positions(session, 3, 5, swap_date, created_by=admin.id)
+
+    month_first = datetime.date(2026, 6, 1)
+    month_last = datetime.date(2026, 6, 30)
+
+    # (viewer, pre-swap position, post-swap position)
+    for user, pre_pos, post_pos in [(anna, 3, 5), (bert, 5, 3)]:
+        # Reference halves: each held position's June, masked to its own tenure
+        # segment clamped into the month, summarized with the viewer's own wage.
+        a_start, a_end = get_employment_period(session, user.id, pre_pos)
+        b_start, b_end = get_employment_period(session, user.id, post_pos)
+        a_days = mask_days_to_employment(
+            generate_month_data(2026, 6, pre_pos, session=session),
+            max(a_start, month_first),
+            min(a_end or month_last, month_last),
+        )
+        b_days = mask_days_to_employment(
+            generate_month_data(2026, 6, post_pos, session=session),
+            max(b_start, month_first),
+            min(b_end or month_last, month_last),
+        )
+        a_sum = summarize_month_for_person(
+            2026, 6, pre_pos, session=session, year_days=a_days, wage_user_id=user.id, payment_year=2026
+        )
+        b_sum = summarize_month_for_person(
+            2026, 6, post_pos, session=session, year_days=b_days, wage_user_id=user.id, payment_year=2026
+        )
+        # Both halves must actually carry work, or the reconstruction is trivial.
+        assert a_sum["num_shifts"] > 0 and b_sum["num_shifts"] > 0, f"{user.name}: need shifts on both sides"
+
+        grid = build_calendar_grid_for_month(
+            2026,
+            6,
+            person_id=pre_pos,
+            session=session,
+            include_coworkers=False,
+            viewer_user_id=user.id,
+            wage_user_id=user.id,
+        )
+        summary = grid["summary"]
+
+        # The month view's summary reconstructs the sum of both masked halves,
+        # and counts strictly more than the pre-swap half alone (proving the
+        # post-swap segment is no longer dropped to OFF).
+        assert summary["num_shifts"] == a_sum["num_shifts"] + b_sum["num_shifts"], (
+            f"{user.name}: summary shifts {summary['num_shifts']} != {a_sum['num_shifts']} + {b_sum['num_shifts']}"
+        )
+        assert summary["num_shifts"] > a_sum["num_shifts"], f"{user.name}: post-swap shifts missing from summary"
+        assert summary["total_hours"] == pytest.approx(a_sum["total_hours"] + b_sum["total_hours"]), (
+            f"{user.name}: summary hours do not span both segments"
+        )
+        assert _ob_total(summary) == pytest.approx(_ob_total(a_sum) + _ob_total(b_sum)), (
+            f"{user.name}: summary OB does not span both segments"
+        )
+
+
+def _week_cell_code(html: str, uid: int, day: datetime.date) -> str | None:
+    """Return the shift code rendered for one day cell in a personal week view.
+
+    Recognises both the OFF badge (badge-off) and a real shift badge
+    (calendar-badge). Single-char OB marker badges (S/H) do not match the
+    2-4 char code pattern, so they never shadow the real code.
+    """
+    m = re.search(rf'/day/{uid}/{day.year}/{day.month}/{day.day}".*?</td>', html, re.DOTALL)
+    if not m:
+        return None
+    cell = m.group(0)
+    bm = re.search(r'calendar-badge"?[^>]*>\s*([A-Z0-9]{2,4})\s*<', cell)
+    return bm.group(1) if bm else None
+
+
+def test_week_view_shows_midweek_swap_both_positions(month_env):
+    """A position swap landing MID-week renders each participant's real shifts on
+    both sides of the swap in their personal week view, not OFF after the swap.
+
+    Anna (pos 3) and Bert (pos 5) swap on a Wednesday inside ISO week 30, 2026.
+    Every day of that week on each viewer's page must match the position they held
+    that day - the old position through Tuesday, the new one from Wednesday. The
+    single-position week build used to mask every day past the holder's tenure at
+    the Monday position to OFF, blanking the whole post-swap tail of the week.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+
+    iso_year, iso_week = 2026, 30
+    monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
+    swap_date = datetime.date.fromisocalendar(iso_year, iso_week, 3)  # Wednesday, mid-week
+    swap_positions(session, 3, 5, swap_date, created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    def _expected(pre_pos, post_pos, day):
+        pos = pre_pos if day < swap_date else post_pos
+        shift, _ = determine_shift_for_date(day, start_week=pos)
+        return shift.code if shift else "OFF"
+
+    # (viewer, pre-swap position, post-swap position)
+    for user, pre_pos, post_pos in [(anna, 3, 5), (bert, 5, 3)]:
+        resp = client.get(f"/week/{user.id}?year={iso_year}&week={iso_week}")
+        assert resp.status_code == 200, f"{user.name} week load failed"
+
+        # A working shift must actually appear on the post-swap side, or the test
+        # would pass trivially on an all-OFF tail (the exact symptom of the bug).
+        saw_post_swap_shift = False
+        for offset in range(7):
+            day = monday + datetime.timedelta(days=offset)
+            exp = _expected(pre_pos, post_pos, day)
+            got = _week_cell_code(resp.text, user.id, day)
+            assert got == exp, f"{user.name} {day.isoformat()}: expected {exp} got {got}"
+            if day >= swap_date and exp != "OFF":
+                saw_post_swap_shift = True
+        assert saw_post_swap_shift, f"{user.name}: no post-swap working shift to prove the fix"
+
+
+def test_month_view_redirects_for_padding_month_even_with_successor(month_env):
+    """A month whose only content would have been successor padding also redirects.
+
+    Anna held position 3 until 2026-03-31; Bert took over. November is
+    entirely past Anna's own tenure end, so any viewer (here, an admin) is
+    redirected to the team month view before the grid - and its December
+    padding days, which would otherwise belong to Bert - is ever built. This
+    supersedes the old 313a7df successor-leak fix's masking assertion for
+    this exact request: since the redirect now fires first, there is no page
+    left to leak from.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    _anna, _bert = _seed_departed_with_successor(session, admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11?year=2026&month=11", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/month?year=2026&month=11"
 
 
 def _seed_departed_with_successor(session, admin_id, *, old_end=datetime.date(2026, 3, 31)):
@@ -843,32 +1690,34 @@ def test_day_view_masks_successor_schedule_after_departure(month_env):
     assert re.search(rf">\s*{re.escape(real_shift.code)}\s*<", resp.text) is None
 
 
-def test_week_view_masks_successor_schedule_after_departure(month_env):
-    """A departed user's week page must not leak a successor's real shifts."""
-    from app.core.schedule import determine_shift_for_date
+def test_week_view_redirects_even_when_successor_exists(month_env):
+    """Any viewer is redirected once the week is entirely past the departed
+    user's OWN tenure, even when a successor has since taken over the
+    position (so the position itself is not vacant).
 
+    Anna holds position 3 Jan 2 - Mar 31, 2026; Bert takes over Apr 1
+    (open-ended, immediate succession, no vacancy gap). An admin requesting
+    Anna's personal week page for mid-November - long after both her
+    departure and Bert's takeover - must be redirected to the team week
+    view, not shown a masked week. The redirect rule depends solely on
+    Anna's own tenure end, never on whether a successor exists. This
+    supersedes the old test_week_view_masks_successor_schedule_after_departure
+    masking assertion for this exact request: since the redirect now fires
+    first, there is no page left to leak from.
+    """
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
     anna, _bert = _seed_departed_with_successor(session, admin.id)
 
     iso_year, iso_week, _ = datetime.date(2026, 11, 16).isocalendar()
-    monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
-    real_codes = set()
-    for offset in range(7):
-        shift, _ = determine_shift_for_date(monday + datetime.timedelta(days=offset), start_week=3)
-        if shift is not None and shift.code not in ("OFF",):
-            real_codes.add(shift.code)
-    assert real_codes  # sanity: at least one real work shift in this week
 
     token = create_access_token(data={"sub": str(admin.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    resp = client.get(f"/week/{anna.id}?year={iso_year}&week={iso_week}")
+    resp = client.get(f"/week/{anna.id}?year={iso_year}&week={iso_week}", follow_redirects=False)
 
-    assert resp.status_code == 200
-    assert "Anna" in resp.text
-    for code in real_codes:
-        assert re.search(rf">\s*{re.escape(code)}\s*<", resp.text) is None
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/week?year={iso_year}&week={iso_week}"
 
 
 def test_excel_export_masks_successor_schedule_after_departure(month_env):
@@ -932,6 +1781,54 @@ def test_excel_export_resolves_position_by_exported_month(month_env):
     probe_rows = [row for row in ws.iter_rows(values_only=True) if str(row[0]).startswith("2026-10-05")]
     assert probe_rows, "expected a row for 2026-10-05 in the export"
     assert probe_rows[0][2] == expected
+
+
+def test_excel_export_uses_own_wage_not_position_number_collision(month_env, monkeypatch):
+    """The Excel export's wage/pay figures must use the VIEWED user's own wage,
+    not whichever unrelated user happens to share User.id == rotation_position.
+
+    Rickard (user_id=11) holds rotation position 3. A decoy user with id=3
+    also exists in the system (an unrelated former employee, coincidentally
+    numbered the same as Rickard's position) with a very different wage.
+    Without wage_user_id threaded through generate_month_data/
+    summarize_month_for_person, the export's wage lookup falls back to
+    User.id == rotation_position - i.e. the decoy - instead of Rickard's own
+    record, exactly as show_month_for_person was fixed to avoid earlier.
+
+    The exported worksheet itself only renders hours (wage-independent), so
+    this asserts directly against the summary dict handed to
+    populate_month_sheet, which is what actually carries the computed wage.
+    """
+    import app.routes.excel_shared as excel_shared_module
+
+    client, session = month_env
+    decoy = _make_user(session, 3, "decoy1", "Decoy")
+    decoy.wage = 47000
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    rickard.wage = 35000
+    session.commit()
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=rickard.id)
+
+    captured = {}
+    original = excel_shared_module.populate_month_sheet
+
+    def _spy(ws, summary, year, month, *args, **kwargs):
+        captured["summary"] = summary
+        return original(ws, summary, year, month, *args, **kwargs)
+
+    monkeypatch.setattr(excel_shared_module, "populate_month_sheet", _spy)
+
+    token = create_access_token(data={"sub": str(rickard.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get("/month/11/export-excel?year=2026&month=8")
+
+    assert resp.status_code == 200
+    assert captured.get("summary") is not None, "populate_month_sheet was not called"
+    assert captured["summary"]["base_salary"] == 35000, (
+        f"expected Rickard's own wage (35000), got {captured['summary']['base_salary']} "
+        "(the decoy user's wage leaked in via User.id == rotation_position)"
+    )
 
 
 def _ob_total(summary: dict) -> float:
@@ -1132,6 +2029,226 @@ def test_ot_shift_stays_on_pre_swap_holder(month_env):
     assert rickard_shift is None or rickard_shift.code != "OT"
 
 
+def test_week_view_merges_swap_into_one_row(month_env):
+    """A position swap between two active people yields ONE row per person,
+    not one row per position segment.
+
+    Rickard (user 11, position 3) and Okan (user 8, position 8) swap on
+    2026-10-01. Week 40 2026 (2026-09-28 to 2026-10-04) straddles the swap.
+    Each person must appear exactly once, with their own real shifts on each
+    side of the swap date - not twice (once per position).
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/week?year=2026&week=40")
+
+    assert resp.status_code == 200
+    assert _rows_containing(resp.text, "person-row", "Rickard") == 1
+    assert _rows_containing(resp.text, "person-row", "Okan") == 1
+
+
+def test_week_view_merge_picks_correct_position_per_day_across_swap(month_env):
+    """The merged swap row pulls each day's cell from the position actually
+    held on that specific date, not from a single fixed position for the
+    whole week.
+
+    Same setup as test_week_view_merges_swap_into_one_row: Rickard (position 3)
+    and Okan (position 8) swap on 2026-10-01, and week 40 2026 (Mon 2026-09-28
+    to Sun 2026-10-04) straddles the boundary. This calls _build_person_rows
+    directly (the per-day segment lookup that is the riskiest part of the
+    merge refactor) and checks, for every day of the week, that each person's
+    cell carries the right person_id AND the right shift code: position 3's
+    rotation for Rickard / position 8's for Okan on the days before the swap,
+    and the reverse from 2026-10-01 onward.
+    """
+    from app.core.schedule import determine_shift_for_date
+    from app.routes.schedule_all import _build_person_rows
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_date = datetime.date(2026, 10, 1)
+    swap_positions(session, 3, 8, swap_date, created_by=admin.id)
+
+    monday = datetime.date.fromisocalendar(2026, 40, 1)
+    sunday = monday + datetime.timedelta(days=6)
+    days_in_week = build_week_data(2026, 40, session=session)
+    person_rows = _build_person_rows(session, days_in_week, monday, sunday)
+
+    rickard_row = next(r for r in person_rows if r["person_name"] == "Rickard")
+    okan_row = next(r for r in person_rows if r["person_name"] == "Okan")
+
+    for day, cell in zip(days_in_week, rickard_row["cells"], strict=True):
+        expected_pid = 3 if day["date"] < swap_date else 8
+        expected_shift, _ = determine_shift_for_date(day["date"], start_week=expected_pid)
+        expected_code = expected_shift.code if expected_shift else "OFF"
+        assert cell is not None, f"Rickard: missing cell for {day['date']}"
+        assert cell["person_id"] == expected_pid, f"Rickard: wrong position on {day['date']}"
+        actual_code = cell["shift"].code if cell["shift"] else "OFF"
+        assert actual_code == expected_code, f"Rickard: {day['date']} expected {expected_code} got {actual_code}"
+
+    for day, cell in zip(days_in_week, okan_row["cells"], strict=True):
+        expected_pid = 8 if day["date"] < swap_date else 3
+        expected_shift, _ = determine_shift_for_date(day["date"], start_week=expected_pid)
+        expected_code = expected_shift.code if expected_shift else "OFF"
+        assert cell is not None, f"Okan: missing cell for {day['date']}"
+        assert cell["person_id"] == expected_pid, f"Okan: wrong position on {day['date']}"
+        actual_code = cell["shift"].code if cell["shift"] else "OFF"
+        assert actual_code == expected_code, f"Okan: {day['date']} expected {expected_code} got {actual_code}"
+
+    # Sanity: the two positions must actually differ somewhere in the week for
+    # this to be a meaningful check (otherwise a wrong-position bug could pass
+    # by coincidence).
+    codes_pos3 = [(determine_shift_for_date(d["date"], start_week=3)[0] or None) for d in days_in_week]
+    codes_pos8 = [(determine_shift_for_date(d["date"], start_week=8)[0] or None) for d in days_in_week]
+    codes_pos3 = [c.code if c else "OFF" for c in codes_pos3]
+    codes_pos8 = [c.code if c else "OFF" for c in codes_pos8]
+    assert codes_pos3 != codes_pos8
+
+
+def test_week_view_orders_rows_by_position_id_with_mixed_legacy(month_env):
+    """Row order stays strictly pid-ascending when legacy and history-tracked
+    positions are mixed in the same week.
+
+    Position 1 is history-tracked (Alice, via start_employment). Position 5 has
+    no PersonHistory at all - a legacy position never touched by the
+    person-change admin flow - so it falls into the "no row" fast path... no,
+    into the legacy branch (no segments, no history) that renders straight from
+    the base rotation cells. Before this refactor, a single per-pid loop from 1
+    to 10 rendered rows in strict ascending person_id order regardless of
+    vacant/legacy/single/succession status. The merge refactor must preserve
+    that: position 1's row must render above position 5's, not after every
+    legacy row.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    alice = _make_user(session, 11, "alice1", "Alice")
+    start_employment(session, alice.id, 1, "Alice", "alice1", datetime.date(2026, 1, 2), created_by=admin.id)
+    # Position 5 is left completely untouched: no start_employment/add_person_change
+    # calls, so it has zero PersonHistory rows and falls into the legacy branch.
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/week?year=2026&week=3")
+
+    assert resp.status_code == 200
+    rows = re.findall(r'(<tr class="person-row">.*?</tr>)', resp.text, re.DOTALL)
+    alice_idx = next(i for i, r in enumerate(rows) if "Alice" in r)
+    legacy_idx = next(i for i, r in enumerate(rows) if "Person 5" in r)
+    assert alice_idx < legacy_idx
+
+
+def test_week_view_hides_fully_vacant_position(month_env):
+    """A position with no holder at all during the displayed week shows no row."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, end_date=datetime.date(2026, 8, 3))
+    # Position 5 has a real gap: Isak left 2026-08-03, nobody holds it until
+    # a successor (not seeded here) starts 2026-09-01. Week 35 falls in the gap.
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/week?year=2026&week=35")
+
+    assert resp.status_code == 200
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
+
+
+def test_year_view_merges_swap_into_one_column(month_env):
+    """A position swap between two active people yields ONE column per person
+    in the year view, with the correct shift on each side of the swap date."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+
+    assert resp.status_code == 200
+    assert _headers_containing(resp.text, "Rickard") == 1
+    assert _headers_containing(resp.text, "Okan") == 1
+
+
+def test_year_view_merge_picks_correct_position_per_day_across_swap(month_env):
+    """The merged year column pulls each day's cell from the position actually
+    held on that specific date, not from a single fixed position for the
+    whole year.
+
+    Rickard (position 3) and Okan (position 8) swap on 2026-10-01. This checks,
+    for a day before and a day after the swap, that each person's cell shows
+    their own real shift from whichever position they held that day.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2026")
+    assert resp.status_code == 200
+
+    pre_swap_day = datetime.date(2026, 9, 20)
+    post_swap_day = datetime.date(2026, 10, 10)
+    rickard_pre, _ = determine_shift_for_date(pre_swap_day, start_week=3)
+    rickard_post, _ = determine_shift_for_date(post_swap_day, start_week=8)
+    okan_pre, _ = determine_shift_for_date(pre_swap_day, start_week=8)
+    okan_post, _ = determine_shift_for_date(post_swap_day, start_week=3)
+
+    for label, link_id, day, expected in [
+        ("Rickard pre-swap", rickard.id, pre_swap_day, rickard_pre),
+        ("Rickard post-swap", rickard.id, post_swap_day, rickard_post),
+        ("Okan pre-swap", okan.id, pre_swap_day, okan_pre),
+        ("Okan post-swap", okan.id, post_swap_day, okan_post),
+    ]:
+        match = re.search(rf'/day/{link_id}/{day.year}/{day.month}/{day.day}".*?</td>', resp.text, re.DOTALL)
+        assert match, f"expected a calendar cell for {label} ({day.isoformat()})"
+        cell_html = match.group(0)
+        expected_code = expected.code if expected else "OFF"
+        assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), f"{label}: {cell_html}"
+
+
+def test_year_view_hides_fully_vacant_position(month_env):
+    """A position with no holder at all during the displayed year shows no column."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, datetime.date(2026, 1, 31))
+    # No successor at all after Isak's departure: position 5 has zero overlap
+    # with 2027, so its column is fully hidden (Goal 2: no vacant placeholder).
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get("/year?year=2027")  # Position 5 has zero overlap with 2027 at all
+
+    assert resp.status_code == 200
+    assert "Vakant" not in resp.text and "Vacant" not in resp.text
+
+
 def test_year_totals_api_rejects_foreign_user_id(month_env):
     """Non-admin totals scoping is limited to legitimate holders of the position.
 
@@ -1158,3 +2275,757 @@ def test_year_totals_api_rejects_foreign_user_id(month_env):
     allowed = client.get("/api/year/2026/totals/3?user_id=12")
     assert allowed.status_code == 200
     assert "total_ob" in allowed.json()
+
+
+def test_month_redirects_departed_user_to_team_view(month_env):
+    """A departed user's personal month view redirects to month_all once the
+    ENTIRE requested month is after their own last working day."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    robin = _make_user(session, 10, "robin1", "Robin")
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, robin.id, 10, datetime.date(2026, 3, 31))
+
+    token = create_access_token(data={"sub": str(robin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    # July is entirely after his own tenure: redirect.
+    resp = client.get("/month/10?year=2026&month=7", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/month?year=2026&month=7"
+
+    # March is his own real last month: no redirect, renders normally.
+    resp2 = client.get("/month/10?year=2026&month=3", follow_redirects=False)
+    assert resp2.status_code == 200
+
+
+def test_week_redirects_departed_user_to_team_view(month_env):
+    """A departed user's personal week view redirects to week_all once the
+    ENTIRE requested week is after their own last working day."""
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    robin = _make_user(session, 10, "robin1", "Robin")
+    start_employment(session, robin.id, 10, "Robin", "robin1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, robin.id, 10, datetime.date(2026, 3, 31))
+
+    token = create_access_token(data={"sub": str(robin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    # Week 30 (late July) is entirely after his tenure: redirect.
+    resp = client.get("/week/10?year=2026&week=30", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/week?year=2026&week=30"
+
+    # Week 1 (his own real first week) still renders normally.
+    resp2 = client.get("/week/10?year=2026&week=1", follow_redirects=False)
+    assert resp2.status_code == 200
+
+
+def _seed_okan_rickard_swap_with_pre_swap_entries(session):
+    """Rickard (pos 3) and Okan (pos 8) swap on 2026-10-01. Okan works an OT
+    shift and gets an on-call ADD override in September, while he still holds
+    position 8. Returns (admin, rickard, okan, ot_date, oc_date).
+
+    After the swap, User.person_id for Okan already reads position 3 (the swap
+    updates it immediately), so a narrow single-position view of position 8 must
+    still fetch Okan's September rows via PersonHistory, not via his current
+    position.
+    """
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    ot_date = datetime.date(2026, 9, 10)  # base N2 for position 8 -> renders OT
+    oc_date = datetime.date(2026, 9, 12)  # base OFF for position 8 -> ADD renders OC
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=ot_date,
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=2000.0,
+            is_extension=False,
+        )
+    )
+    session.add(
+        OnCallOverride(
+            user_id=okan.id,
+            date=oc_date,
+            override_type=OnCallOverrideType.ADD,
+        )
+    )
+    session.commit()
+    return admin, rickard, okan, ot_date, oc_date
+
+
+def test_single_person_month_shows_pre_swap_ot_and_oncall(month_env):
+    """Okan's personal month view of his pre-swap position must show the OT shift
+    and on-call override he registered before the position changed hands.
+
+    Regression: generate_period_data built the queried user_id set from the
+    CURRENT holder of the viewed position (Rickard), so Okan's own September rows
+    were excluded from the SQL query entirely on a single-position personal view.
+    This hits the real /month/<user_id> route (not the engine directly), so it
+    also exercises _resolve_person_param and the employment-window masking the
+    route applies around the engine call.
+    """
+    client, session = month_env
+    admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{okan.id}?year=2026&month=9")
+
+    assert resp.status_code == 200
+    for target_date, code in ((ot_date, "OT"), (oc_date, "OC")):
+        match = re.search(
+            rf'/day/{okan.id}/{target_date.year}/{target_date.month}/{target_date.day}".*?</td>',
+            resp.text,
+            re.DOTALL,
+        )
+        assert match, f"expected a calendar cell for {target_date.isoformat()}"
+        cell_html = match.group(0)
+        assert re.search(rf">\s*{code}\s*<", cell_html), cell_html
+
+
+def test_single_person_year_shows_pre_swap_ot_and_oncall(month_env):
+    """Same pre-swap OT and on-call entries must also surface on the personal
+    year view route (the user reported both month and year views empty).
+
+    Hits the real /year/<user_id> route and checks the rendered September row's
+    OT pay and on-call pay figures against an independently computed reference,
+    the same pattern test_year_summary_spans_position_swap uses.
+    """
+    client, session = month_env
+    admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    sep_ref = summarize_month_for_person(
+        2026,
+        9,
+        8,
+        session=session,
+        year_days=generate_month_data(2026, 9, 8, session=session),
+        wage_user_id=okan.id,
+        payment_year=2026,
+    )
+    assert sep_ref["ot_pay"] > 0
+    assert sep_ref["oncall_pay"] > 0
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/year/{okan.id}?year=2026")
+
+    assert resp.status_code == 200
+    # Isolate September's own <tr>...</tr> row: locate the month link, then walk
+    # backward/forward to its enclosing row tags (rather than a greedy regex,
+    # which could span multiple months' rows).
+    link = f"/month/{okan.id}?year=2026&month=9"
+    link_pos = resp.text.index(link)
+    row_start = resp.text.rfind('<tr class="shift-row', 0, link_pos)
+    row_end = resp.text.index("</tr>", link_pos)
+    assert row_start != -1, "expected a row for September"
+    row_html = resp.text[row_start:row_end]
+    assert f"{sep_ref['ot_pay']:.0f}" in row_html
+    assert f"{sep_ref['oncall_pay']:.0f}" in row_html
+
+
+def test_single_person_week_shows_pre_swap_ot_and_oncall(month_env):
+    """The personal week view route has the same single-position batch-fetch
+    path and must also surface the pre-swap OT and on-call entries."""
+    client, session = month_env
+    admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    iso = ot_date.isocalendar()
+    assert oc_date.isocalendar()[:2] == iso[:2]  # both days share one ISO week
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/week/{okan.id}?year={iso[0]}&week={iso[1]}")
+
+    assert resp.status_code == 200
+    for target_date, code in ((ot_date, "OT"), (oc_date, "OC")):
+        match = re.search(
+            rf'/day/{okan.id}/{target_date.year}/{target_date.month}/{target_date.day}".*?</td>',
+            resp.text,
+            re.DOTALL,
+        )
+        assert match, f"expected a calendar cell for {target_date.isoformat()}"
+        cell_html = match.group(0)
+        assert re.search(rf">\s*{code}\s*<", cell_html), cell_html
+
+
+def test_single_person_day_engine_shows_pre_swap_ot(month_env):
+    """generate_period_data (the shared engine), called with a fixed person_id,
+    must surface the pre-swap OT shift for the position's prior holder.
+
+    This is an engine-level guard, not a day-ROUTE regression test: the day
+    route (show_day_for_person in app/routes/schedule_personal.py) resolves the
+    viewed user's OWN overtime/on-call data directly by user_id
+    (get_overtime_shift_for_date, OnCallOverride.user_id == user_id_for_wages),
+    never through generate_period_data with a fixed person_id for that user's
+    own data - that engine call in the day route is person_id=None, used only to
+    fetch coworkers' data for the same day. So the day route itself never had
+    the bug this commit fixes for a user's own data. This test still guards the
+    underlying engine function, which the coworker-fetching path (and other
+    single-person callers like month/week/year) does rely on.
+    """
+    client, session = month_env
+    _, _, okan, ot_date, _ = _seed_okan_rickard_swap_with_pre_swap_entries(session)
+
+    days = generate_period_data(ot_date, ot_date, person_id=8, session=session)
+    assert len(days) == 1
+    assert days[0]["shift"] is not None and days[0]["shift"].code == "OT"
+
+
+def test_month_view_excludes_post_swap_entry_from_prior_holder(month_env):
+    """The widened past-holder fetch must not leak a holder's POST-swap rows
+    onto the position's column for dates after they left it.
+
+    Rickard (position 3) and Okan (position 8) swap on 2026-10-01: Rickard now
+    holds position 8, Okan holds position 3. Okan works an overtime shift on
+    2026-10-02 - after the swap, while he holds position 3, not 8.
+
+    Rickard's own October month page resolves to position 8, and October's
+    calendar grid pads back into late September (Okan's tenure at position 8),
+    so Okan is pulled into the widened extra_user_ids fetch for this query - the
+    same widening the pre-swap tests above rely on. This proves that widening
+    does not also let Okan's October row (fetched because his user_id is now in
+    scope) get attributed to position 8: the per-row resolver must still bucket
+    it under position 3, the position he actually held on 2026-10-02, so
+    position 8's October 2 cell shows Rickard's real shift, never Okan's OT.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    leak_date = datetime.date(2026, 10, 2)
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=leak_date,
+            start_time=datetime.time(18, 0),
+            end_time=datetime.time(22, 0),
+            hours=4.0,
+            ot_pay=1000.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    real_shift, _ = determine_shift_for_date(leak_date, start_week=8)
+    expected_code = real_shift.code if real_shift else "OFF"
+    assert expected_code != "OT"  # sanity: position 8's real schedule isn't itself OT
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{rickard.id}?year=2026&month=10")
+
+    assert resp.status_code == 200
+    match = re.search(rf'/day/{rickard.id}/2026/10/2".*?</td>', resp.text, re.DOTALL)
+    assert match, "expected a calendar cell for 2026-10-02"
+    cell_html = match.group(0)
+    assert re.search(r">\s*OT\s*<", cell_html) is None, cell_html
+    assert re.search(rf">\s*{re.escape(expected_code)}\s*<", cell_html), cell_html
+
+
+def _seed_user_with_custom_ot_and_ob_rates(session, admin_id):
+    """Single-position user (position 8) with a custom OT rate and custom OB
+    rates stored in RateHistory, clearly different from the generic
+    monthly-wage/OT_RATE_DIVISOR fallback. Mirrors the live bug report: Okan
+    (user_id=8), wage 39500, custom OT rate 451.43 kr/h (39500/72 = 548.61
+    kr/h, a visibly different number).
+    """
+    okan = _make_user(session, 8, "okan1", "Okan", person_id=8)
+    okan.wage = 39500
+    session.add(okan)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin_id)
+    session.add(
+        RateHistory(
+            user_id=okan.id,
+            rates={
+                "ot": 451.43,
+                "ob": {"OB1": 27.24, "OB2": 40.86, "OB3": 54.48, "OB4": 54.48, "OB5": 106.7},
+            },
+            effective_from=datetime.date(2026, 1, 2),
+            effective_to=None,
+        )
+    )
+    session.commit()
+    return okan
+
+
+def test_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month_env):
+    """Personal month view must price overtime with the user's stored custom
+    OT rate (RateHistory), not the generic monthly-wage/OT_RATE_DIVISOR
+    fallback.
+
+    Regression: build_calendar_grid_for_month (the personal month view's
+    calendar builder, used by /month/<user_id>) generated the calendar's day
+    data via generate_month_data without threading a user_rates_map through,
+    so every day's OT pay silently fell back to (monthly_wage / 72) even
+    though this user has a custom stored OT rate. The year view resolves and
+    threads the rate correctly, so the same hours priced differently on the
+    two views for the same user and month.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _seed_user_with_custom_ot_and_ob_rates(session, admin.id)
+
+    ot_date = datetime.date(2026, 6, 5)
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=ot_date,
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    custom_rate_pay = 8.5 * 451.43
+    fallback_pay = 8.5 * (39500 / 72)
+    assert round(custom_rate_pay, 2) != round(fallback_pay, 2)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{okan.id}?year=2026&month=6")
+
+    assert resp.status_code == 200
+    assert f"{custom_rate_pay:.2f}" in resp.text, resp.text
+    assert f"{fallback_pay:.2f}" not in resp.text
+
+
+def test_month_and_year_view_agree_on_ot_and_ob_pay_for_same_month(month_env):
+    """The month view and the year view must report IDENTICAL OT pay and OB
+    pay for the exact same user and month - this directly encodes the bug
+    report's own discovery method (the user noticed the two views disagreed
+    for the same month) as a permanent regression guard.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _seed_user_with_custom_ot_and_ob_rates(session, admin.id)
+
+    for ot_date in (
+        datetime.date(2026, 6, 5),
+        datetime.date(2026, 6, 9),
+        datetime.date(2026, 6, 16),
+    ):
+        session.add(
+            OvertimeShift(
+                user_id=okan.id,
+                date=ot_date,
+                start_time=datetime.time(14, 0),
+                end_time=datetime.time(22, 30),
+                hours=8.5,
+                ot_pay=0.0,
+                is_extension=False,
+            )
+        )
+    session.commit()
+
+    ref = summarize_month_for_person(
+        2026,
+        6,
+        8,
+        session=session,
+        wage_user_id=okan.id,
+        payment_year=2026,
+    )
+    assert ref["ot_pay"] > 0
+    assert sum(ref["ob_pay"].values()) > 0
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    month_resp = client.get(f"/month/{okan.id}?year=2026&month=6")
+    year_resp = client.get(f"/year/{okan.id}?year=2026")
+
+    assert month_resp.status_code == 200
+    assert year_resp.status_code == 200
+
+    assert f"{ref['ot_pay']:.2f}" in month_resp.text, month_resp.text
+    assert f"{sum(ref['ob_pay'].values()):.2f}" in month_resp.text, month_resp.text
+
+    link = f"/month/{okan.id}?year=2026&month=6"
+    link_pos = year_resp.text.index(link)
+    row_start = year_resp.text.rfind('<tr class="shift-row', 0, link_pos)
+    row_end = year_resp.text.index("</tr>", link_pos)
+    assert row_start != -1, "expected a row for June"
+    row_html = year_resp.text[row_start:row_end]
+    assert f"{ref['ot_pay']:.0f}" in row_html, row_html
+
+
+def _seed_user_with_vacation_days(session, admin_id, *, uid=7, person_id=7, vacation_dates=()):
+    """Single-position user with a real employment start (so entitled days
+    are not pro-rated) and day-level VACATION absences, which the schedule
+    engine maps to SEM shifts. Mirrors the live bug report: a user with SEM
+    days in a month whose vacation supplement (semestertillägg) must be
+    folded into the headline gross/net wage.
+    """
+    user = _make_user(session, uid, f"user{uid}", "VacUser", person_id=person_id)
+    user.wage = 39500
+    user.employment_start_date = datetime.date(2020, 1, 1)
+    session.add(user)
+    start_employment(
+        session, user.id, person_id, "VacUser", f"user{uid}", datetime.date(2020, 1, 1), created_by=admin_id
+    )
+    for d in vacation_dates:
+        session.add(Absence(user_id=user.id, date=d, absence_type=AbsenceType.VACATION))
+    session.commit()
+    return user
+
+
+def test_month_view_gross_and_net_wage_include_vacation_supplement(month_env):
+    """The personal month view's headline Net/Gross wage must include the
+    month's vacation supplement (semestertillägg), not just show it as a
+    separate informational line.
+
+    Regression: show_month_for_person computed the vacation supplement as a
+    standalone "vacation_month" dict for display only, never folding it into
+    days_in_month's brutto_pay/netto_pay - unlike the year view, which folds
+    the same per-month supplement into its brutto_pay/netto_pay so table
+    columns add up. The month view's headline total was short by exactly the
+    supplement amount.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    vacation_dates = [datetime.date(2026, 6, d) for d in (1, 2, 3, 4, 5, 8)]
+    user = _seed_user_with_vacation_days(session, admin.id, vacation_dates=vacation_dates)
+
+    ref = summarize_month_for_person(2026, 6, 7, session=session, wage_user_id=user.id, payment_year=2026)
+    sem_count = sum(1 for d in ref["days"] if d.get("shift") and d["shift"].code == "SEM")
+    assert sem_count == len(vacation_dates)
+
+    balance = calculate_vacation_balance(user, 2026, session)
+    supplement_per_day = balance["pay"]["supplement_per_day"]
+    assert supplement_per_day > 0
+    expected_supplement = round(supplement_per_day * sem_count, 0)
+    assert expected_supplement > 0
+
+    base_brutto = ref["brutto_pay"] or 0
+    base_netto = ref["netto_pay"] or 0
+    expected_gross = base_brutto + expected_supplement
+    tax_ratio = base_netto / base_brutto if base_brutto > 0 else 0
+    expected_net = round(base_netto + expected_supplement * tax_ratio, 0)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+    resp = client.get(f"/month/{user.id}?year=2026&month=6")
+
+    assert resp.status_code == 200
+    # The un-folded base totals must NOT appear as the headline (they're short
+    # by the supplement) - the folded totals must.
+    assert f"{expected_gross:.0f}" in resp.text, resp.text
+    assert f"{expected_net:.0f}" in resp.text, resp.text
+
+
+def test_month_and_year_view_agree_on_net_and_gross_pay_with_vacation_days(month_env):
+    """The month view and the year view must report IDENTICAL headline
+    Net/Gross wage for the same user and month when that month includes
+    vacation (SEM) days - directly encodes the live bug report (month and
+    year views disagreed by exactly the vacation supplement for the same
+    June) as a permanent regression guard.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    vacation_dates = [datetime.date(2026, 6, d) for d in (1, 2, 3, 4, 5, 8)]
+    user = _seed_user_with_vacation_days(session, admin.id, vacation_dates=vacation_dates)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    ref = summarize_month_for_person(
+        2026, 6, user.rotation_person_id, session=session, wage_user_id=user.id, payment_year=2026
+    )
+    sem_count = sum(1 for d in ref["days"] if d.get("shift") and d["shift"].code == "SEM")
+    balance = calculate_vacation_balance(user, 2026, session)
+    supplement = round(balance["pay"]["supplement_per_day"] * sem_count, 0)
+    expected_brutto, expected_netto = fold_vacation_supplement_into_pay(
+        ref["brutto_pay"] or 0, ref["netto_pay"] or 0, supplement
+    )
+
+    month_resp = client.get(f"/month/{user.id}?year=2026&month=6")
+    year_resp = client.get(f"/year/{user.id}?year=2026")
+
+    assert month_resp.status_code == 200
+    assert year_resp.status_code == 200
+
+    link = f"/month/{user.id}?year=2026&month=6"
+    link_pos = year_resp.text.index(link)
+    row_start = year_resp.text.rfind('<tr class="shift-row', 0, link_pos)
+    row_end = year_resp.text.index("</tr>", link_pos)
+    assert row_start != -1, "expected a row for June"
+    row_html = year_resp.text[row_start:row_end]
+
+    # Both views must agree with the independently-computed folded totals -
+    # and therefore with each other - for the same user and month.
+    assert f"{expected_netto:.0f}" in month_resp.text, month_resp.text
+    assert f"{expected_brutto:.0f}" in month_resp.text, month_resp.text
+    assert f"{expected_netto:.0f}" in row_html, row_html
+    assert f"{expected_brutto:.0f}" in row_html, row_html
+    assert f"{sum(ref['ob_pay'].values()):.0f}" in row_html, row_html
+
+
+def test_team_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month_env, monkeypatch):
+    """The team /month view (show_month_all) must price each holder's
+    overtime with their own stored custom OT rate (RateHistory), not the
+    generic monthly-wage/OT_RATE_DIVISOR fallback.
+
+    Regression: show_month_all called generate_month_data once per position
+    with no user_rates_map, so every column's OT pay silently fell back to
+    the generic formula even when RateHistory holds a custom override for the
+    actual holder - the same "partial threading" bug fixed for the personal
+    month view in ea9ec28, but on the team column-building path. Not yet
+    user-visible (month_all.html only renders ob_pay today), so this asserts
+    against the persons list show_month_all builds internally instead of
+    scraping HTML.
+    """
+    import asyncio
+
+    import app.routes.schedule_all as schedule_all_module
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _seed_user_with_custom_ot_and_ob_rates(session, admin.id)
+
+    session.add(
+        OvertimeShift(
+            user_id=okan.id,
+            date=datetime.date(2026, 6, 5),
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    custom_rate_pay = 8.5 * 451.43
+    fallback_pay = 8.5 * (39500 / 72)
+    assert round(custom_rate_pay, 2) != round(fallback_pay, 2)
+
+    captured = {}
+
+    def _fake_render_template(templates, template_name, request, context, **kwargs):
+        captured["persons"] = context["persons"]
+
+    monkeypatch.setattr(schedule_all_module, "render_template", _fake_render_template)
+
+    asyncio.run(schedule_all_module.show_month_all(request=None, year=2026, month=6, current_user=admin, db=session))
+
+    okan_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == okan.id)
+    assert okan_summary["ot_pay"] == pytest.approx(custom_rate_pay)
+    assert okan_summary["ot_pay"] != pytest.approx(fallback_pay)
+
+
+def test_team_month_view_resolves_each_successive_holders_own_rate(month_env, monkeypatch):
+    """A position with two different holders during the same month (a
+    mid-month succession) must price EACH holder's own overtime with THEIR
+    OWN stored custom rate, not a rate resolved once for the whole position
+    (which would only be correct for one of the two holders).
+
+    Anna holds position 9 through 2026-06-14 with a custom OT rate of 300
+    kr/h; Rickard takes over on 2026-06-15 with a custom OT rate of 500 kr/h.
+    Each works one overtime shift within their own tenure at position 9.
+    """
+    import asyncio
+
+    import app.routes.schedule_all as schedule_all_module
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+
+    anna = _make_user(session, 11, "anna1", "Anna", person_id=9)
+    anna.wage = 39500
+    session.add(anna)
+    start_employment(session, anna.id, 9, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    session.add(
+        RateHistory(
+            user_id=anna.id,
+            rates={"ot": 300.0, "ob": {}},
+            effective_from=datetime.date(2026, 1, 2),
+            effective_to=None,
+        )
+    )
+
+    rickard = _make_user(session, 12, "rickard1", "Rickard", person_id=9)
+    rickard.wage = 39500
+    session.add(rickard)
+    end_employment(session, anna.id, 9, end_date=datetime.date(2026, 6, 14))
+    start_employment(session, rickard.id, 9, "Rickard", "rickard1", datetime.date(2026, 6, 15), created_by=admin.id)
+    session.add(
+        RateHistory(
+            user_id=rickard.id,
+            rates={"ot": 500.0, "ob": {}},
+            effective_from=datetime.date(2026, 6, 15),
+            effective_to=None,
+        )
+    )
+    session.commit()
+
+    session.add(
+        OvertimeShift(
+            user_id=anna.id,
+            date=datetime.date(2026, 6, 5),
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(18, 0),
+            hours=4.0,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.add(
+        OvertimeShift(
+            user_id=rickard.id,
+            date=datetime.date(2026, 6, 20),
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(18, 0),
+            hours=4.0,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    expected_anna_ot = 4.0 * 300.0
+    expected_rickard_ot = 4.0 * 500.0
+    assert expected_anna_ot != expected_rickard_ot
+
+    captured = {}
+
+    def _fake_render_template(templates, template_name, request, context, **kwargs):
+        captured["persons"] = context["persons"]
+
+    monkeypatch.setattr(schedule_all_module, "render_template", _fake_render_template)
+
+    asyncio.run(schedule_all_module.show_month_all(request=None, year=2026, month=6, current_user=admin, db=session))
+
+    anna_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == anna.id)
+    rickard_summary = next(p for p in captured["persons"] if p.get("holder_user_id") == rickard.id)
+    assert anna_summary["ot_pay"] == pytest.approx(expected_anna_ot)
+    assert rickard_summary["ot_pay"] == pytest.approx(expected_rickard_ot)
+
+
+def _single_view_sem_dates(session, year, month, person_id):
+    """SEM dates shown by the single-position month view for a position."""
+    days = generate_month_data(year, month, person_id, session=session)
+    out = set()
+    for d in days:
+        shift = d.get("shift")
+        if shift is not None and shift.code == "SEM":
+            out.add(d["date"])
+    return out
+
+
+def _team_view_sem_dates(session, year, month, person_id):
+    """SEM dates shown by the all-persons team month view for a position."""
+    days = generate_month_data(year, month, None, session=session)
+    out = set()
+    for d in days:
+        for p in d.get("persons", []):
+            if p.get("person_id") == person_id:
+                shift = p.get("shift")
+                if shift is not None and shift.code == "SEM":
+                    out.add(d["date"])
+    return out
+
+
+def test_vacation_attributed_to_position_held_on_date(month_env):
+    """Week-based vacation renders on the position its holder occupied on that date.
+
+    Rickard (user 11) holds position 3 and Okan (user 8) holds position 8; they
+    swap on 2026-10-01, so afterwards Rickard's current position is 8. Rickard's
+    August vacation (ISO weeks 32-34) was accrued while he held position 3 and
+    must render as SEM on position 3, never on position 8 (Okan's August). The
+    bug bucketed it under Rickard's CURRENT position (8), silently deleting it
+    from his own August schedule and painting it onto Okan's. This must hold for
+    both the single-position view and the all-persons team view.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.core.schedule.vacation import get_vacation_dates_for_year
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 3, 8, datetime.date(2026, 10, 1), created_by=admin.id)
+    rickard.vacation = {"2026": [32, 33, 34]}
+    flag_modified(rickard, "vacation")
+    session.commit()
+    clear_schedule_cache()
+
+    # Direct attribution: every August vacation date lands on position 3, none on 8.
+    per_person = get_vacation_dates_for_year(2026, session=session)
+    aug_pos3 = {d for d in per_person[3] if d.month == 8}
+    aug_pos8 = {d for d in per_person[8] if d.month == 8}
+    assert aug_pos3, "Rickard's August vacation must attribute to position 3"
+    assert not aug_pos8, "position 8 (Okan) must carry none of Rickard's August vacation"
+
+    # Rendered SEM (only on scheduled, non-OFF rotation days) follows the split.
+    single_pos3 = _single_view_sem_dates(session, 2026, 8, 3)
+    single_pos8 = _single_view_sem_dates(session, 2026, 8, 8)
+    team_pos3 = _team_view_sem_dates(session, 2026, 8, 3)
+    team_pos8 = _team_view_sem_dates(session, 2026, 8, 8)
+
+    assert single_pos3, "position 3's single view must show Rickard's SEM in August"
+    assert not single_pos8, "position 8's single view must not show SEM (Okan took no vacation)"
+    assert team_pos3, "team view must show SEM on position 3 in August"
+    assert not team_pos8, "team view must not show SEM on position 8 in August"
+    assert single_pos3 == team_pos3, "single and team views must agree on position 3's SEM days"
+
+
+def test_vacation_week_straddling_swap_splits_per_day(month_env):
+    """A vacation week crossing a swap date splits day-by-day across positions.
+
+    Rickard holds position 3 and Okan position 8; they swap on the Thursday of
+    ISO week 40. Rickard has all of week 40 as vacation. Mon-Wed fall while he
+    still holds position 3, Thu-Sun after he has moved to position 8, so the
+    week's days must be partitioned between the two positions accordingly.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.core.schedule.vacation import get_vacation_dates_for_year
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    okan = _make_user(session, 8, "okan1", "Okan")
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+
+    week = 40
+    thursday = datetime.date.fromisocalendar(2026, week, 4)
+    swap_positions(session, 3, 8, thursday, created_by=admin.id)
+    rickard.vacation = {"2026": [week]}
+    flag_modified(rickard, "vacation")
+    session.commit()
+    clear_schedule_cache()
+
+    mon = datetime.date.fromisocalendar(2026, week, 1)
+    tue = datetime.date.fromisocalendar(2026, week, 2)
+    wed = datetime.date.fromisocalendar(2026, week, 3)
+    thu = datetime.date.fromisocalendar(2026, week, 4)
+    fri = datetime.date.fromisocalendar(2026, week, 5)
+
+    per_person = get_vacation_dates_for_year(2026, session=session)
+    assert {mon, tue, wed} <= per_person[3]
+    assert not ({thu, fri} & per_person[3])
+    assert {thu, fri} <= per_person[8]
+    assert not ({mon, tue, wed} & per_person[8])
