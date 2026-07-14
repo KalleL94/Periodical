@@ -464,12 +464,35 @@ def build_calendar_grid_for_month(
     # user_rates inside summarize_month_for_person regardless of this map).
     _rate_uid = wage_user_id if wage_user_id is not None else person_id
     _month_rates_map = None
+    _month_rates = None
     if session is not None and _rate_uid is not None:
         _rate_user = session.query(User).filter(User.id == _rate_uid).first()
         if _rate_user is not None:
             _month_rates = get_user_rates(_rate_user, session=session, effective_date=dt_date(year, month, 1))
             if _month_rates:
                 _month_rates_map = {person_id: _month_rates}
+
+    # When the viewer (a real user with PersonHistory) held more than one
+    # position during this month - a swap or succession landing mid-month - the
+    # single-position fetch+mask below would blank every day after the change to
+    # OFF, hiding the shifts the viewer actually works on their new position.
+    # Detect that case and build the month from the stitched per-segment days
+    # instead, so the summary totals (and the in-month grid days re-resolved
+    # further below) reflect the viewer's real schedule on both sides of the
+    # change. Mirrors the year view's user-scoped path.
+    stitched_month_days = None
+    if session is not None and viewer_user_id is not None:
+        from app.core.schedule.person_history import get_user_history
+
+        _emp_records = sorted(get_user_history(session, viewer_user_id), key=lambda r: r["effective_from"])
+        if _emp_records:
+            _m_first = dt_date(year, month, 1)
+            _m_last = dt_date(year, month, cal.monthrange(year, month)[1])
+            _month_segments = _records_overlapping_work_month(_emp_records, _m_first, _m_last)
+            if len(_month_segments) > 1:
+                stitched_month_days = _stitch_user_month_days(
+                    session, year, month, _month_segments, user_wages, _month_rates
+                )
 
     # Get the monthly summary for totals and day data. When the viewer's own
     # employment window is bounded (either end), generate the exact-month days
@@ -478,7 +501,18 @@ def build_calendar_grid_for_month(
     # hourly payslip breakdown) agree with the masked calendar grid below -
     # neither a predecessor's nor a successor's real hours leak into a viewer's
     # page for months outside their own tenure.
-    if employment_start is not None or employment_end is not None:
+    if stitched_month_days is not None:
+        month_summary = summarize_month_for_person(
+            year,
+            month,
+            person_id,
+            session,
+            user_wages,
+            year_days=stitched_month_days,
+            payment_year=year,
+            wage_user_id=wage_user_id,
+        )
+    elif employment_start is not None or employment_end is not None:
         month_days = generate_month_data(
             year, month, person_id, session=session, user_wages=user_wages, user_rates_map=_month_rates_map
         )
@@ -588,20 +622,21 @@ def build_calendar_grid_for_month(
 
         days_by_date[day_date] = day_data
 
-    # Correct adjacent-month padding days for a viewer whose own tenure spans a
-    # position change on the month boundary. The extended range was fetched under
-    # a single position and masked to the main month's employment window, which
-    # wrongly blanks padding days that fall in a DIFFERENT position the same
-    # viewer actually held (e.g. a swap on Sep 30 / Oct 1). Re-resolve each
-    # padding day against the viewer's PersonHistory and splice in their real
-    # schedule; days outside the viewer's own tenure entirely stay OFF.
+    # Correct any grid day - adjacent-month padding OR a day of the viewed month
+    # itself - that the viewer actually worked on a DIFFERENT position than the
+    # single one the extended range was fetched under. This covers a position
+    # change on the month boundary (padding days in the other position, e.g. a
+    # swap on Sep 30 / Oct 1) as well as one landing mid-month (in-month days
+    # after the change, which the employment-window mask would otherwise blank to
+    # OFF). Re-resolve each such day against the viewer's PersonHistory and splice
+    # in their real schedule; days outside the viewer's own tenure entirely stay
+    # OFF. In-month corrections keep the grid consistent with the stitched summary
+    # computed above.
     if viewer_user_id is not None and session is not None:
         from .person_history import get_employment_period, get_user_person_id
 
         corrections: dict[int, list] = {}
-        for pad_date, pad_data in days_by_date.items():
-            if pad_data["is_current_month"]:
-                continue
+        for pad_date in days_by_date:
             pad_position = get_user_person_id(session, viewer_user_id, on_date=pad_date)
             # A None or same-position resolution needs no correction: the main
             # fetch already produced (and correctly masked) that position's day.
@@ -905,6 +940,72 @@ def _stitch_user_month_days(
         for seg_from, seg_to, date_map in by_date:
             if seg_from <= day_date <= seg_to and day_date in date_map:
                 chosen = date_map[day_date]
+                break
+        stitched.append(chosen)
+    return stitched
+
+
+def stitch_user_week_days(
+    session,
+    year: int,
+    week: int,
+    viewer_user_id: int,
+    base_position: int,
+    employment_start,
+    employment_end,
+) -> list[dict] | None:
+    """Build a user's week across the position(s) they held, stitching a mid-week move.
+
+    Mirrors _stitch_user_month_days for the week view: each overlapping position's
+    week is built and masked to the record's clamped tenure segment, then a single
+    seven-day list is stitched by taking each date from the segment that covers it,
+    falling back to the base (single-position) build for dates no segment covers
+    (an employment gap). Returns None when the user held a single position all week,
+    so the caller keeps the plain single-position build unchanged.
+    """
+    import datetime as dt
+
+    from app.core.schedule.period import build_week_data
+    from app.core.schedule.person_history import get_user_history
+
+    records = sorted(get_user_history(session, viewer_user_id), key=lambda r: r["effective_from"])
+    if not records:
+        return None
+
+    monday = dt.date.fromisocalendar(year, week, 1)
+    sunday = monday + dt.timedelta(days=6)
+    segments = _records_overlapping_work_month(records, monday, sunday)
+    if len(segments) <= 1:
+        return None
+
+    base = build_week_data(
+        year,
+        week,
+        person_id=base_position,
+        session=session,
+        include_coworkers=True,
+        employment_start=employment_start,
+        employment_end=employment_end,
+    )
+    seg_maps = []
+    for record, seg_from, seg_to in segments:
+        seg_days = build_week_data(
+            year,
+            week,
+            person_id=record["person_id"],
+            session=session,
+            include_coworkers=True,
+            employment_start=seg_from,
+            employment_end=seg_to,
+        )
+        seg_maps.append((seg_from, seg_to, {d["date"]: d for d in seg_days}))
+
+    stitched = []
+    for day in base:
+        chosen = day
+        for seg_from, seg_to, dmap in seg_maps:
+            if seg_from <= day["date"] <= seg_to and day["date"] in dmap:
+                chosen = dmap[day["date"]]
                 break
         stitched.append(chosen)
     return stitched

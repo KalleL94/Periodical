@@ -1430,6 +1430,197 @@ def test_month_view_shows_swap_padding_days_from_prev_month(month_env):
     assert re.search(r">\s*OFF\s*<", cell_html) is None
 
 
+def test_month_view_shows_midmonth_swap_both_positions(month_env):
+    """A position swap landing MID-month renders each participant's real shifts on
+    both sides of the swap in their personal month view - the pre-swap days on the
+    old position and the post-swap days on the new one - not OFF after the swap.
+
+    Anna (pos 3) and Bert (pos 5) swap on 2026-06-15. Viewing June, Anna's page
+    must show her position-3 shifts through Jun 14 and her position-5 shifts from
+    Jun 15; Bert's the mirror. The single-position month grid used to fetch one
+    position for the whole month and mask every day past the holder's tenure at
+    that position to OFF, blanking the entire post-swap half of the month.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_date = datetime.date(2026, 6, 15)
+    swap_positions(session, 3, 5, swap_date, created_by=admin.id)
+
+    pre_days = [datetime.date(2026, 6, d) for d in range(1, 15)]
+    post_days = [datetime.date(2026, 6, d) for d in range(15, 31)]
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    # (viewer, pre-swap position, post-swap position)
+    for user, pre_pos, post_pos in [(anna, 3, 5), (bert, 5, 3)]:
+        resp = client.get(f"/month/{user.id}?year=2026&month=6")
+        assert resp.status_code == 200, f"{user.name} month load failed"
+
+        pre_probe, pre_code = _first_working_day(pre_days, start_week=pre_pos)
+        post_probe, post_code = _first_working_day(post_days, start_week=post_pos)
+        assert pre_probe is not None and post_probe is not None, "need a working day on each side"
+
+        for probe, code in [(pre_probe, pre_code), (post_probe, post_code)]:
+            match = re.search(rf'/day/{user.id}/2026/{probe.month}/{probe.day}".*?</td>', resp.text, re.DOTALL)
+            assert match, f"{user.name}: expected a calendar cell for {probe.isoformat()}"
+            cell_html = match.group(0)
+            assert re.search(rf">\s*{re.escape(code)}\s*<", cell_html), (
+                f"{user.name} {probe.isoformat()}: expected {code} in cell {cell_html}"
+            )
+            assert re.search(r">\s*OFF\s*<", cell_html) is None, (
+                f"{user.name} {probe.isoformat()}: post-swap day wrongly blanked to OFF"
+            )
+
+
+def test_month_view_summary_totals_span_midmonth_swap(month_env):
+    """The personal month view's SUMMARY totals count BOTH sides of a mid-month
+    swap, not just the pre-swap half.
+
+    Same scenario as the grid test: Anna (pos 3) and Bert (pos 5) swap on
+    2026-06-15. Each viewer's June summary (hours, shifts, OB) must equal their
+    position-3 first half plus their position-5 second half, each masked to the
+    tenure segment - exactly the stitched reconstruction the year view already
+    produces. Before the fix, build_calendar_grid_for_month masked every
+    post-swap day to OFF in the totals, so the summary silently dropped the
+    entire second half even though the grid cells (above) showed it, leaving the
+    "Total hours" / "Net wage" row inconsistent with the calendar it sits under.
+    """
+    from app.core.schedule.person_history import get_employment_period
+    from app.core.schedule.summary import build_calendar_grid_for_month
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_date = datetime.date(2026, 6, 15)
+    swap_positions(session, 3, 5, swap_date, created_by=admin.id)
+
+    month_first = datetime.date(2026, 6, 1)
+    month_last = datetime.date(2026, 6, 30)
+
+    # (viewer, pre-swap position, post-swap position)
+    for user, pre_pos, post_pos in [(anna, 3, 5), (bert, 5, 3)]:
+        # Reference halves: each held position's June, masked to its own tenure
+        # segment clamped into the month, summarized with the viewer's own wage.
+        a_start, a_end = get_employment_period(session, user.id, pre_pos)
+        b_start, b_end = get_employment_period(session, user.id, post_pos)
+        a_days = mask_days_to_employment(
+            generate_month_data(2026, 6, pre_pos, session=session),
+            max(a_start, month_first),
+            min(a_end or month_last, month_last),
+        )
+        b_days = mask_days_to_employment(
+            generate_month_data(2026, 6, post_pos, session=session),
+            max(b_start, month_first),
+            min(b_end or month_last, month_last),
+        )
+        a_sum = summarize_month_for_person(
+            2026, 6, pre_pos, session=session, year_days=a_days, wage_user_id=user.id, payment_year=2026
+        )
+        b_sum = summarize_month_for_person(
+            2026, 6, post_pos, session=session, year_days=b_days, wage_user_id=user.id, payment_year=2026
+        )
+        # Both halves must actually carry work, or the reconstruction is trivial.
+        assert a_sum["num_shifts"] > 0 and b_sum["num_shifts"] > 0, f"{user.name}: need shifts on both sides"
+
+        grid = build_calendar_grid_for_month(
+            2026,
+            6,
+            person_id=pre_pos,
+            session=session,
+            include_coworkers=False,
+            viewer_user_id=user.id,
+            wage_user_id=user.id,
+        )
+        summary = grid["summary"]
+
+        # The month view's summary reconstructs the sum of both masked halves,
+        # and counts strictly more than the pre-swap half alone (proving the
+        # post-swap segment is no longer dropped to OFF).
+        assert summary["num_shifts"] == a_sum["num_shifts"] + b_sum["num_shifts"], (
+            f"{user.name}: summary shifts {summary['num_shifts']} != {a_sum['num_shifts']} + {b_sum['num_shifts']}"
+        )
+        assert summary["num_shifts"] > a_sum["num_shifts"], f"{user.name}: post-swap shifts missing from summary"
+        assert summary["total_hours"] == pytest.approx(a_sum["total_hours"] + b_sum["total_hours"]), (
+            f"{user.name}: summary hours do not span both segments"
+        )
+        assert _ob_total(summary) == pytest.approx(_ob_total(a_sum) + _ob_total(b_sum)), (
+            f"{user.name}: summary OB does not span both segments"
+        )
+
+
+def _week_cell_code(html: str, uid: int, day: datetime.date) -> str | None:
+    """Return the shift code rendered for one day cell in a personal week view.
+
+    Recognises both the OFF badge (badge-off) and a real shift badge
+    (calendar-badge). Single-char OB marker badges (S/H) do not match the
+    2-4 char code pattern, so they never shadow the real code.
+    """
+    m = re.search(rf'/day/{uid}/{day.year}/{day.month}/{day.day}".*?</td>', html, re.DOTALL)
+    if not m:
+        return None
+    cell = m.group(0)
+    bm = re.search(r'calendar-badge"?[^>]*>\s*([A-Z0-9]{2,4})\s*<', cell)
+    return bm.group(1) if bm else None
+
+
+def test_week_view_shows_midweek_swap_both_positions(month_env):
+    """A position swap landing MID-week renders each participant's real shifts on
+    both sides of the swap in their personal week view, not OFF after the swap.
+
+    Anna (pos 3) and Bert (pos 5) swap on a Wednesday inside ISO week 30, 2026.
+    Every day of that week on each viewer's page must match the position they held
+    that day - the old position through Tuesday, the new one from Wednesday. The
+    single-position week build used to mask every day past the holder's tenure at
+    the Monday position to OFF, blanking the whole post-swap tail of the week.
+    """
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert")
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, bert.id, 5, "Bert", "bert1", datetime.date(2026, 1, 2), created_by=admin.id)
+
+    iso_year, iso_week = 2026, 30
+    monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
+    swap_date = datetime.date.fromisocalendar(iso_year, iso_week, 3)  # Wednesday, mid-week
+    swap_positions(session, 3, 5, swap_date, created_by=admin.id)
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    def _expected(pre_pos, post_pos, day):
+        pos = pre_pos if day < swap_date else post_pos
+        shift, _ = determine_shift_for_date(day, start_week=pos)
+        return shift.code if shift else "OFF"
+
+    # (viewer, pre-swap position, post-swap position)
+    for user, pre_pos, post_pos in [(anna, 3, 5), (bert, 5, 3)]:
+        resp = client.get(f"/week/{user.id}?year={iso_year}&week={iso_week}")
+        assert resp.status_code == 200, f"{user.name} week load failed"
+
+        # A working shift must actually appear on the post-swap side, or the test
+        # would pass trivially on an all-OFF tail (the exact symptom of the bug).
+        saw_post_swap_shift = False
+        for offset in range(7):
+            day = monday + datetime.timedelta(days=offset)
+            exp = _expected(pre_pos, post_pos, day)
+            got = _week_cell_code(resp.text, user.id, day)
+            assert got == exp, f"{user.name} {day.isoformat()}: expected {exp} got {got}"
+            if day >= swap_date and exp != "OFF":
+                saw_post_swap_shift = True
+        assert saw_post_swap_shift, f"{user.name}: no post-swap working shift to prove the fix"
+
+
 def test_month_view_redirects_for_padding_month_even_with_successor(month_env):
     """A month whose only content would have been successor padding also redirects.
 

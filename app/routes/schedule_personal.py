@@ -590,15 +590,33 @@ async def show_week_for_person(
     if target_user is not None and week_employment_end is not None and monday > week_employment_end:
         return RedirectResponse(url=f"/week?year={year}&week={week}", status_code=302)
 
-    days_in_week = build_week_data(
-        year,
-        week,
-        person_id=rotation_position,
-        session=db,
-        include_coworkers=True,
-        employment_start=week_employment_start,
-        employment_end=week_employment_end,
-    )
+    # When the viewer held more than one position during this week - a swap or
+    # succession landing mid-week - stitch each held position's masked segment so
+    # the post-change days show the viewer's real shifts on their new position
+    # instead of being blanked to OFF by the single-position employment mask.
+    days_in_week = None
+    if target_user is not None:
+        from app.core.schedule.summary import stitch_user_week_days
+
+        days_in_week = stitch_user_week_days(
+            db,
+            year,
+            week,
+            target_user.id,
+            rotation_position,
+            week_employment_start,
+            week_employment_end,
+        )
+    if days_in_week is None:
+        days_in_week = build_week_data(
+            year,
+            week,
+            person_id=rotation_position,
+            session=db,
+            include_coworkers=True,
+            employment_start=week_employment_start,
+            employment_end=week_employment_end,
+        )
 
     nav = get_navigation_dates("week", monday)
 
