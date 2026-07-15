@@ -17,6 +17,43 @@ def _get_persons():
     return _persons
 
 
+def _viewer_active_ranges(session, employment_user_id, position_id: int, year: int):
+    """Return the date ranges the viewed user held a position during the year.
+
+    Returns None when no employment-window masking should apply: either the
+    caller supplied no session/user, or the position has no PersonHistory at all
+    (legacy positions keep the current-holder-for-all-dates behavior). Otherwise
+    returns a list of (from_date, to_date) tuples clamped to the year, covering
+    only the segments belonging to employment_user_id. The list may be empty when
+    the user held the position in no part of the year, which masks every day.
+    """
+    if session is None or employment_user_id is None:
+        return None
+
+    from app.core.schedule.person_history import (
+        get_position_holder_segments,
+        has_position_history,
+    )
+
+    if not has_position_history(session, position_id):
+        return None
+
+    year_start = datetime.date(year, 1, 1)
+    year_end = datetime.date(year, 12, 31)
+    return [
+        (seg["from_date"], seg["to_date"])
+        for seg in get_position_holder_segments(session, position_id, year_start, year_end)
+        if seg["user_id"] == employment_user_id
+    ]
+
+
+def _date_in_ranges(day_date, ranges) -> bool:
+    """True if masking is disabled (ranges is None) or day_date falls in a range."""
+    if ranges is None:
+        return True
+    return any(lo <= day_date <= hi for lo, hi in ranges)
+
+
 def _get_person_name_from_db(person_id: int) -> str:
     """Get current person name from database (respects person_id field)."""
     from app.database.database import SessionLocal, User
@@ -37,7 +74,12 @@ def _get_person_name_from_db(person_id: int) -> str:
         db.close()
 
 
-def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
+def build_cowork_stats(
+    year: int,
+    target_person_id: int,
+    session=None,
+    employment_user_id: int | None = None,
+) -> list[dict]:
     """
     Räknar hur många pass target_person_id jobbar tillsammans
     med varje annan person, samt beräknar överlämnings- och månadsstatistik.
@@ -52,13 +94,21 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
 
     Args:
         year: År att analysera
-        target_person_id: Person att analysera
+        target_person_id: Position (rotation person_id) att analysera
+        session: Optional DB session used to scope the stats to the viewed user's
+            own employment window at target_person_id.
+        employment_user_id: Optional user id of the viewed person. When given
+            together with session, days outside that user's PersonHistory
+            segment(s) for target_person_id are treated as OFF so a successor's
+            interactions are not attributed to a departed holder. Positions
+            without any history keep the legacy whole-year behavior.
 
     Returns:
         Lista med statistik per medarbetare, sorterad på person-ID
     """
     today = datetime.date.today()
     days_in_year = generate_year_data(year, person_id=None)
+    active_ranges = _viewer_active_ranges(session, employment_user_id, target_person_id, year)
 
     total_target_work_days = 0
 
@@ -88,11 +138,20 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
 
     for day in days_in_year:
         persons_today = day.get("persons", [])
+        date_val = day["date"]
 
         # Bygg dagens skiftkarta
         current_day_shifts: dict[int, str] = {
             p["person_id"]: (p["shift"].code if p.get("shift") else "OFF") for p in persons_today
         }
+
+        # Days outside the viewed user's tenure at this position belong to a
+        # different holder. Treat the target as OFF and carry that forward so no
+        # coworking or handover is attributed to the viewed user for those days.
+        if not _date_in_ranges(date_val, active_ranges):
+            current_day_shifts[target_person_id] = "OFF"
+            prev_day_shifts = current_day_shifts
+            continue
 
         target_prev = prev_day_shifts.get(target_person_id, "OFF")
 
@@ -102,7 +161,6 @@ def build_cowork_stats(year: int, target_person_id: int) -> list[dict]:
         if target and target.get("shift"):
             target_code = target["shift"].code
 
-        date_val = day["date"]
         month = date_val.month
         weekday = date_val.weekday()
 
@@ -165,24 +223,37 @@ def build_cowork_details(
     year: int,
     target_person_id: int,
     other_person_id: int,
+    session=None,
+    employment_user_id: int | None = None,
 ) -> list[dict]:
     """
     Returnerar alla dagar då två personer jobbar samma skift.
 
     Args:
         year: År att analysera
-        target_person_id: Första personen
-        other_person_id: Andra personen
+        target_person_id: Position (rotation person_id) för första personen
+        other_person_id: Position för andra personen
+        session: Optional DB session used to scope the details to the viewed
+            user's own employment window at target_person_id.
+        employment_user_id: Optional user id of the viewed person. When given
+            together with session, days outside that user's PersonHistory
+            segment(s) for target_person_id are skipped. Positions without any
+            history keep the legacy whole-year behavior.
 
     Returns:
         Lista med dagdetaljer, sorterad på datum
     """
     days_in_year = generate_year_data(year, person_id=None)
+    active_ranges = _viewer_active_ranges(session, employment_user_id, target_person_id, year)
     details: list[dict] = []
 
     for day in days_in_year:
         persons_today = day.get("persons", [])
         if not persons_today:
+            continue
+
+        # Skip days outside the viewed user's tenure at this position.
+        if not _date_in_ranges(day["date"], active_ranges):
             continue
 
         target = _find_person_in_day(persons_today, target_person_id)
@@ -227,6 +298,8 @@ def build_handover_details(
     year: int,
     target_person_id: int,
     other_person_id: int,
+    session=None,
+    employment_user_id: int | None = None,
 ) -> list[dict]:
     """
     Returnerar alla överlämningar mellan två personer under ett år.
@@ -243,13 +316,20 @@ def build_handover_details(
 
     Args:
         year: År att analysera
-        target_person_id: "Jag"-personen
-        other_person_id: Den andra personen
+        target_person_id: Position (rotation person_id) för "Jag"-personen
+        other_person_id: Position för den andra personen
+        session: Optional DB session used to scope the handovers to the viewed
+            user's own employment window at target_person_id.
+        employment_user_id: Optional user id of the viewed person. When given
+            together with session, handovers on dates outside that user's
+            PersonHistory segment(s) for target_person_id are dropped. Positions
+            without any history keep the legacy whole-year behavior.
 
     Returns:
         Lista med överlämningar, sorterad på datum
     """
     days_in_year = generate_year_data(year, person_id=None)
+    active_ranges = _viewer_active_ranges(session, employment_user_id, target_person_id, year)
     details: list[dict] = []
 
     _HANDOVER_PAIRS = {("N1", "N2"), ("N2", "N3")}
@@ -268,6 +348,15 @@ def build_handover_details(
 
         date = day["date"]
         weekday_name = day["weekday_name"]
+
+        # Days outside the viewed user's tenure at this position belong to a
+        # different holder. Record no handover on such a date, and keep the
+        # target masked OFF in the carried-forward state so a boundary cross-day
+        # handover is not attributed across the tenure edge.
+        if not _date_in_ranges(date, active_ranges):
+            prev_target_code = "OFF"
+            prev_other_code = other_code
+            continue
 
         # Korsdag N3→N1: använder dagens datum (när N1 börjar)
         if prev_target_code == "N3" and other_code == "N1":
