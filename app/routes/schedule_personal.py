@@ -322,7 +322,11 @@ async def show_day_for_person(
 
     oncall_pay = 0.0
     oncall_details = {}
-    if is_effective_oc:
+    # An absence day carries no on-call compensation: the canonical period path
+    # (_populate_absence_day and the partial-absence branch in period.py) zeroes
+    # oncall_pay whenever an absence exists, so the day view must agree with the
+    # month summary. The on-call table still renders, with zero rows.
+    if is_effective_oc and absence is None:
         oc_result = compute_oncall_details(date_obj, year, monthly_salary, _user_rates["oncall"], ot_shift_for_oncall)
         oncall_pay = oc_result["oncall_pay"]
         oncall_details = oc_result["oncall_details"]
