@@ -90,3 +90,26 @@ def test_day_view_drops_oncall_on_full_day_sick_absence(env):
     assert max(totals) == 0.0, (
         f"day view pays {max(totals)} kr on-call on a fully sick OC day; the canonical period path pays 0"
     )
+
+
+def test_day_view_masks_week_based_vacation_to_sem(env):
+    client, session = env
+    work_date = datetime.date(2026, 3, 2)  # position 1 N2 day, ISO week 10
+    _make_user(session, 1, 1, vacation={"2026": [10]})
+
+    canonical = generate_period_data(work_date, work_date, person_id=1, session=session)[0]
+    assert canonical["shift"].code == "SEM"
+    assert canonical["hours"] == 0.0
+    assert canonical["ob"] == {}
+
+    _login(client, 1)
+    resp = client.get("/day/1/2026/3/2")
+    assert resp.status_code == 200
+
+    row = re.search(r"day-shift-row.*?</tr>", resp.text, re.S)
+    assert row is not None
+    hours_cells = re.findall(r"<td>([\d]+\.\d{2})</td>", row.group(0))
+    assert "8.50" not in hours_cells, (
+        f"day view shows worked hours {hours_cells} on a week-based vacation day; canonical path reports 0 hours (SEM)"
+    )
+    assert "0.00" in hours_cells
