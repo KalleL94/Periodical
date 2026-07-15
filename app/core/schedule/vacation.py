@@ -335,18 +335,22 @@ def get_saved_days_balance(user, target_year: int) -> dict:
     return {"total_saved": total, "breakdown": breakdown}
 
 
-def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict, db) -> dict:
+def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, db) -> dict:
     """
-    Close a vacation year by saving up to 5 days and calculating payout for the rest.
+    Close a vacation year: save up to 5 of the year's own remaining days and pay out the rest.
 
-    Semesterersättning per Handelns avtal §9.5:
+    Semesterersattning per Handelns avtal 9.5:
       4.6% of monthly salary + 0.8% of monthly salary + 0.5% of variable per day
       = 5.4% of monthly salary + 0.5% of variable per day
+
+    Days saved in earlier years are not part of the close: they stay saved (valid
+    for five years, semesterlagen paragraph 18) unless the year used more than its
+    own entitlement, in which case the overuse consumes saved days oldest year first.
 
     Args:
         user: User ORM object
         target_year: The vacation year to close
-        remaining_total: Total remaining days (entitled + saved - used)
+        remaining_own: The year's own remaining days (entitled - used); may be negative
         pay: Result dict from calculate_vacation_pay()
         db: Database session
 
@@ -362,12 +366,32 @@ def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict,
     # Vacation compensation = payout_pct base + vacation supplement
     payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
-    if remaining_total <= 0:
+    saved = dict(user.vacation_saved or {})
+
+    if remaining_own <= 0:
         days_saved = 0
         days_paid_out = 0
+        # Overuse beyond the year's own entitlement consumes previously saved
+        # days, oldest year first.
+        overuse = -remaining_own
+        if overuse > 0:
+            # Only years inside the five-year validity window count as available
+            # (matching get_saved_days_balance); expired entries are not consumed.
+            for y in sorted(
+                (k for k in saved if str(k).isdigit() and target_year - 5 <= int(k) < target_year), key=int
+            ):
+                entry = dict(saved[y])
+                available = entry.get("saved", 0)
+                take = min(available, overuse)
+                if take > 0:
+                    entry["saved"] = available - take
+                    saved[y] = entry
+                    overuse -= take
+                if overuse <= 0:
+                    break
     else:
-        days_saved = min(remaining_total, 5)
-        days_paid_out = max(remaining_total - 5, 0)
+        days_saved = min(remaining_own, 5)
+        days_paid_out = max(remaining_own - 5, 0)
 
     payout_amount = round(days_paid_out * payout_per_day, 2)
 
@@ -378,7 +402,6 @@ def close_vacation_year(user, target_year: int, remaining_total: int, pay: dict,
         "payout_per_day": payout_per_day,
     }
 
-    saved = dict(user.vacation_saved or {})
     saved[str(target_year)] = closed_data
     user.vacation_saved = saved
     flag_modified(user, "vacation_saved")
@@ -497,6 +520,9 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
 
     total_available = entitled_days + saved_from_previous
     remaining_total = total_available - used["total"]
+    # The closing year's own remaining days; saved days from earlier years are
+    # handled separately and must not be swept into a close or payout.
+    remaining_own = entitled_days - used["total"]
 
     # Auto-close past years / show projection for open years
     today = datetime.date.today()
@@ -510,7 +536,7 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
         if year_key in vacation_saved:
             closed = vacation_saved[year_key]
         else:
-            closed = close_vacation_year(user, target_year, remaining_total, pay, db)
+            closed = close_vacation_year(user, target_year, remaining_own, pay, db)
     else:
         # Year is open — show projection of what will happen at year-end
         monthly_salary = pay.get("monthly_salary", 0)
@@ -518,8 +544,8 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
         payout_pct = pay.get("payout_pct", 0.046)
         payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
-        days_to_save = min(max(remaining_total, 0), 5)
-        days_to_pay_out = max(remaining_total - 5, 0)
+        days_to_save = min(max(remaining_own, 0), 5)
+        days_to_pay_out = max(remaining_own - 5, 0)
 
         projection = {
             "days_to_save": days_to_save,

@@ -185,7 +185,7 @@ class TestCloseVacationYear:
         user = _make_user(test_db, person_id=3, vacation_saved={})
         pay = {"monthly_salary": 30000, "supplement_per_day": 100, "payout_pct": 0.046}
         # 8 remaining -> save 5, pay out 3.
-        result = close_vacation_year(user, 2025, remaining_total=8, pay=pay, db=test_db)
+        result = close_vacation_year(user, 2025, remaining_own=8, pay=pay, db=test_db)
         assert result["saved"] == 5
         assert result["paid_out"] == 3
         # payout_per_day = 30000 * 0.046 + 100 = 1480.
@@ -198,7 +198,7 @@ class TestCloseVacationYear:
     def test_negative_remaining_saves_nothing(self, test_db):
         user = _make_user(test_db, person_id=4, vacation_saved={})
         pay = {"monthly_salary": 30000, "supplement_per_day": 0, "payout_pct": 0.046}
-        result = close_vacation_year(user, 2025, remaining_total=-2, pay=pay, db=test_db)
+        result = close_vacation_year(user, 2025, remaining_own=-2, pay=pay, db=test_db)
         assert result["saved"] == 0
         assert result["paid_out"] == 0
         assert result["payout_amount"] == 0
