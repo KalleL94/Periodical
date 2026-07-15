@@ -6,6 +6,11 @@ from an earlier year existed. The script only prints; it never writes. Run it
 against a BACKUP COPY of the production database and review the output with
 the domain owner before any manual correction.
 
+This heuristic is only meaningful for data written before the fix on this
+branch: after the fix, paid_out > 0 with earlier saved days present is the
+correct state, so this script is a one-time pre-fix sweep, not a recurring
+monitor.
+
 Usage: python3 scripts/audit_vacation_saved.py [path/to/schedule.db]
 """
 
