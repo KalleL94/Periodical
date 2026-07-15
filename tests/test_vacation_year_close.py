@@ -109,3 +109,47 @@ def test_overuse_consumes_saved_days_oldest_first(db):
     saved = user.vacation_saved
     assert saved["2020"]["saved"] == 0, "oldest saved year consumed first"
     assert saved["2021"]["saved"] == 4, "remainder taken from the next year"
+
+
+def test_overuse_exceeding_available_saved_days_is_dropped_without_error(db):
+    user = _make_user(
+        db,
+        vacation_saved={
+            "2020": {"saved": 2, "paid_out": 0, "payout_amount": 0.0, "payout_per_day": 0.0},
+            "2021": {"saved": 3, "paid_out": 0, "payout_amount": 0.0, "payout_per_day": 0.0},
+        },
+    )
+    pay = {"monthly_salary": 30000, "supplement_per_day": 150.0, "payout_pct": 0.046}
+
+    # Used 10 more days than the year's own entitlement, far more than the 5
+    # days available across all in-window saved years.
+    closed = close_vacation_year(user, 2023, -10, pay, db)
+
+    assert closed["saved"] == 0
+    assert closed["paid_out"] == 0
+    assert closed["payout_amount"] == 0.0
+    saved = user.vacation_saved
+    assert saved["2020"]["saved"] == 0
+    assert saved["2021"]["saved"] == 0, "all in-window entries drained, residual overuse dropped"
+
+
+def test_expired_saved_entry_is_not_consumed_by_overuse(db):
+    # target_year 2023 -> five-year window is 2018-2022, so 2017 is expired
+    # and must not be touched even though it's numerically the oldest.
+    user = _make_user(
+        db,
+        vacation_saved={
+            "2017": {"saved": 3, "paid_out": 0, "payout_amount": 0.0, "payout_per_day": 0.0},
+            "2021": {"saved": 5, "paid_out": 0, "payout_amount": 0.0, "payout_per_day": 0.0},
+        },
+    )
+    pay = {"monthly_salary": 30000, "supplement_per_day": 150.0, "payout_pct": 0.046}
+
+    closed = close_vacation_year(user, 2023, -2, pay, db)
+
+    assert closed["saved"] == 0
+    assert closed["paid_out"] == 0
+    assert closed["payout_amount"] == 0.0
+    saved = user.vacation_saved
+    assert saved["2017"]["saved"] == 3, "expired entry outside the five-year window is untouched"
+    assert saved["2021"]["saved"] == 3, "in-window entry absorbs the overuse instead"

@@ -375,7 +375,11 @@ def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, d
         # days, oldest year first.
         overuse = -remaining_own
         if overuse > 0:
-            for y in sorted((k for k in saved if str(k).isdigit() and int(k) < target_year), key=int):
+            # Only years inside the five-year validity window count as available
+            # (matching get_saved_days_balance); expired entries are not consumed.
+            for y in sorted(
+                (k for k in saved if str(k).isdigit() and target_year - 5 <= int(k) < target_year), key=int
+            ):
                 entry = dict(saved[y])
                 available = entry.get("saved", 0)
                 take = min(available, overuse)
