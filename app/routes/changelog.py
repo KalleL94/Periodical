@@ -16,8 +16,48 @@ router = APIRouter()
 VERSIONS = [
     {
         "version": "0.28.1",
-        "date": "2026-07-11",
+        "date": "2026-07-15",
         "entries": [
+            {
+                "type": "fix",
+                "sv": "Vid ett platsbyte visar lagvyerna nu en kolumn eller rad per person i stället för en per plats: personens kolumn följer med till den nya platsen från bytesdatumet. En plats som saknar innehavare hela den visade perioden döljs i stället för att visas som en tom Vakant-kolumn",
+                "en": "For a position swap the team views now show one column or row per person instead of one per position: the person's column follows to the new position from the effective date. A position with no holder for the whole displayed period is hidden instead of showing an empty Vacant column",
+            },
+            {
+                "type": "fix",
+                "sv": "Pass, övertid, frånvaro, semester och föräldraledighet räknas nu på den person som faktiskt hade platsen det aktuella datumet, i alla vyer. Tidigare kunde ett pass som arbetats före ett byte tillskrivas platsens nya innehavare, och semesterdagar hamna på fel person",
+                "en": "Shifts, overtime, absences, vacation and parental leave are now attributed to the person who actually held the position on each date, in every view. Previously a shift worked before a swap could be attributed to the position's new holder, and vacation days could land on the wrong person",
+            },
+            {
+                "type": "fix",
+                "sv": "Övertid prissätts nu med personens egen övertidsersättning i månadsvyn, lagets månadsvy och Excel-exporten i stället för en generell formel, och Excel-exporten använder rätt persons lön och skattetabell. Semestertillägget räknas in i månadens brutto- och nettolön, och en månad med byte mitt i räknar inte längre grundlön och frånvaro dubbelt",
+                "en": "Overtime is now priced with the person's own overtime rate in the month view, the team month view and the Excel export instead of a generic formula, and the Excel export uses the right person's wage and tax table. The vacation supplement is included in the month's gross and net wage, and a month with a mid-month change no longer counts base salary and absences twice",
+            },
+            {
+                "type": "fix",
+                "sv": "En annan persons årssida skickar nu vidare till din egen sida om du inte är administratör, och namn i årsvyn länkar bara till sidor du får se. En avgången persons personliga månads- och veckosidor skickar vidare till lagvyn när perioden ligger helt efter anställningen",
+                "en": "Another person's year page now redirects to your own page unless you are an administrator, and names in the year view only link to pages you are allowed to see. A departed person's personal month and week pages redirect to the team view when the period is entirely after their employment",
+            },
+            {
+                "type": "fix",
+                "sv": "Sidan för samarbeten och överlämningar räknar nu bara dagar inom personens egen anställningstid på platsen. Tidigare kunde en efterträdares pass och överlämningar tillskrivas en person som slutat eller bytt plats",
+                "en": "The coworking and handover page now only counts days within the person's own employment period at the position. Previously a successor's shifts and handovers could be attributed to someone who had left or changed position",
+            },
+            {
+                "type": "fix",
+                "sv": "Frånvaroavdrag räknas nu på skifttiderna för den plats personen hade på frånvarodagen. Tidigare kunde en frånvaro före ett platsbyte dras av med den nya platsens skifttider, vilket gav fel timmar vid bland annat delvis frånvaro",
+                "en": "Absence deductions are now calculated from the shift times of the position the person held on the day of absence. Previously an absence before a position change could be deducted using the new position's shift times, giving wrong hours for partial-day absences among others",
+            },
+            {
+                "type": "fix",
+                "sv": "Vid stängning av ett semesterår sparas nu högst 5 av årets egna kvarvarande dagar och resten betalas ut, medan dagar som sparats tidigare år ligger kvar som sparade. Tidigare kunde redan sparade dagar felaktigt betalas ut i pengar och ändå räknas som tillgängliga senare år",
+                "en": "When a vacation year closes, at most 5 of the year's own remaining days are now saved and the rest paid out, while days saved in earlier years remain saved. Previously already-saved days could be incorrectly paid out in cash while still counting as available in later years",
+            },
+            {
+                "type": "fix",
+                "sv": "Dagvyn stämmer nu överens med månadsvyn: beredskapsersättning visas inte längre på dagar med frånvaro, och en dag i en semestervecka visas som semester med noll arbetade timmar i stället för som ett fullt arbetspass med OB-ersättning",
+                "en": "The day view now agrees with the month view: on-call compensation is no longer shown on days with an absence, and a day in a vacation week is shown as vacation with zero worked hours instead of as a fully worked shift with OB pay",
+            },
             {
                 "type": "fix",
                 "sv": "Byter två anställda rotationsplats med varandra syns bytet i schemat först från och med bytesdatumet. Deras personliga års- och månadssidor visar hela året över bytet, med rätt pass, lön och frånvaro för tiden på varje plats",
