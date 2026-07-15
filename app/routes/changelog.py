@@ -50,6 +50,16 @@ VERSIONS = [
             },
             {
                 "type": "fix",
+                "sv": "Vid stängning av ett semesterår sparas nu högst 5 av årets egna kvarvarande dagar och resten betalas ut, medan dagar som sparats tidigare år ligger kvar som sparade. Tidigare kunde redan sparade dagar felaktigt betalas ut i pengar och ändå räknas som tillgängliga senare år",
+                "en": "When a vacation year closes, at most 5 of the year's own remaining days are now saved and the rest paid out, while days saved in earlier years remain saved. Previously already-saved days could be incorrectly paid out in cash while still counting as available in later years",
+            },
+            {
+                "type": "fix",
+                "sv": "Dagvyn stämmer nu överens med månadsvyn: beredskapsersättning visas inte längre på dagar med frånvaro, och en dag i en semestervecka visas som semester med noll arbetade timmar i stället för som ett fullt arbetspass med OB-ersättning",
+                "en": "The day view now agrees with the month view: on-call compensation is no longer shown on days with an absence, and a day in a vacation week is shown as vacation with zero worked hours instead of as a fully worked shift with OB pay",
+            },
+            {
+                "type": "fix",
                 "sv": "Byter två anställda rotationsplats med varandra syns bytet i schemat först från och med bytesdatumet. Deras personliga års- och månadssidor visar hela året över bytet, med rätt pass, lön och frånvaro för tiden på varje plats",
                 "en": "When two employees trade rotation positions, the change only appears in the schedule from the effective date. Their personal year and month pages show the whole year across the change, with the correct shifts, wage and absences for the time at each position",
             },
