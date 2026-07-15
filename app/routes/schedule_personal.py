@@ -221,6 +221,29 @@ async def show_day_for_person(
         get_user_rates(_rate_user, session=db, effective_date=date_obj) if _rate_user else get_user_rates(current_user)
     )
 
+    # Week-based vacation masks a scheduled (non-OFF) rotation day to SEM with
+    # zero hours, mirroring _resolve_effective_shift in period.py where vacation
+    # has top priority over overrides and on-call. Day-level VACATION absences
+    # keep the existing absence rendering below.
+    is_week_based_vacation = False
+    if _rate_user is not None and not before_employment:
+        vac_iso_year, vac_iso_week, _ = date_obj.isocalendar()
+        vac_json = _rate_user.vacation or {}
+        if str(vac_iso_year) in vac_json and vac_iso_week in vac_json[str(vac_iso_year)]:
+            if original_shift and original_shift.code != "OFF":
+                is_week_based_vacation = True
+
+    if is_week_based_vacation:
+        from app.core.storage import load_shift_types
+
+        sem_shift = next((s for s in load_shift_types() if s.code == "SEM"), None)
+        if sem_shift:
+            shift = sem_shift
+            hours = 0.0
+            start_dt = None
+            end_dt = None
+            is_effective_oc = False
+
     # OT shifts never have OB pay, so check if this will become an OT shift
     # We need to check this before fetching the OT shift
     # OT shifts are stored per user_id
@@ -322,7 +345,11 @@ async def show_day_for_person(
 
     oncall_pay = 0.0
     oncall_details = {}
-    if is_effective_oc:
+    # An absence day carries no on-call compensation: the canonical period path
+    # (_populate_absence_day and the partial-absence branch in period.py) zeroes
+    # oncall_pay whenever an absence exists, so the day view must agree with the
+    # month summary. The on-call table still renders, with zero rows.
+    if is_effective_oc and absence is None:
         oc_result = compute_oncall_details(date_obj, year, monthly_salary, _user_rates["oncall"], ot_shift_for_oncall)
         oncall_pay = oc_result["oncall_pay"]
         oncall_details = oc_result["oncall_details"]
