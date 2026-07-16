@@ -283,10 +283,17 @@ class Substitute(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     is_active = Column(Integer, default=1, nullable=False)  # 1=active, 0=archived
+    # Optional link to a User account. When set, this substitute's pre-employment
+    # shifts render in that user's personal views and count into their pay (issue #290).
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Hourly wage in SEK, same semantics as User.wage when WageType.HOURLY. Nullable
+    # so a substitute can exist before a wage is entered; pricing skips unpriced days.
+    hourly_wage = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     creator = relationship("User", foreign_keys=[created_by])
+    user = relationship("User", foreign_keys=[user_id])
     shifts = relationship("SubstituteShift", back_populates="substitute", cascade="all, delete-orphan")
 
     def __repr__(self):
