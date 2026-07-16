@@ -462,35 +462,12 @@ def _sc_before_employment(session):
     return 1, day
 
 
-# Layers where the day route currently DIVERGES from the canonical path. These
-# are pre-existing inconsistencies uncovered by this matrix (issue #206): the day
-# route never grew shift-swap or parental handling, mishandles day-level vacation
-# and full-day absence shift masking, and computes on-call standby hours from the
-# shift instead of zeroing them for an ADD override. They are documented here as
-# xfail (non-strict, so they flip to xpass without breaking the suite once the day
-# route is unified onto generate_period_data) rather than silently "fixed" in a
-# test-only change.
-_DIVERGENT_REASONS = {
-    "_sc_oncall_add": (
-        "issue #206: day view derives 24h OC standby from the shift; the canonical "
-        "path zeroes hours for an on-call ADD override"
-    ),
-    "_sc_shift_swap": "issue #206: day view does not apply accepted shift swaps; the canonical path does",
-    "_sc_day_vacation": (
-        "issue #206: day view keeps the underlying rotation shift/hours for a day-level "
-        "VACATION absence; the canonical path renders SEM with 0 hours"
-    ),
-    "_sc_full_sick": (
-        "issue #206: day view keeps the rotation shift code for a full-day SICK absence; "
-        "the canonical path masks it to the SICK shift"
-    ),
-    "_sc_week_parental": "issue #206: day view has no week-based parental handling; the canonical path renders LEAVE",
-    "_sc_day_parental": (
-        "issue #206: day view keeps the rotation shift for a day-level PARENTAL absence; "
-        "the canonical path renders LEAVE"
-    ),
-}
-
+# Every layer is a hard guard: since the day route resolves its shift through
+# generate_period_data (issue #206), the six layers that used to diverge
+# (shift swaps and parental leave were not handled at all, day-level vacation
+# and full-day absences kept the underlying rotation shift, and an on-call ADD
+# override derived 24h standby from the shift) now follow the canonical path
+# and must stay identical to it.
 _SCENARIOS = [
     _sc_clean_work,
     _sc_clean_oncall,
@@ -514,14 +491,7 @@ _SCENARIOS = [
 ]
 
 
-def _scenario_param(fn):
-    marks = ()
-    if fn.__name__ in _DIVERGENT_REASONS:
-        marks = pytest.mark.xfail(reason=_DIVERGENT_REASONS[fn.__name__], strict=False)
-    return pytest.param(fn, marks=marks, id=fn.__name__[4:])
-
-
-@pytest.mark.parametrize("scenario", [_scenario_param(s) for s in _SCENARIOS])
+@pytest.mark.parametrize("scenario", _SCENARIOS, ids=[s.__name__[4:] for s in _SCENARIOS])
 def test_day_view_matches_canonical(env, scenario):
     client, session = env
     uid, day = scenario(session)
