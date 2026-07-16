@@ -82,8 +82,10 @@ def get_user_wage(session, user_id: int, fallback: int | None = None, effective_
         .filter(
             WageHistory.user_id == user_id,
             WageHistory.effective_from <= effective_date,
-            # Either no end date (current wage) OR end date is after effective_date
-            (WageHistory.effective_to.is_(None)) | (WageHistory.effective_to > effective_date),
+            # Either no end date (current wage) OR end date is on/after effective_date.
+            # effective_to is set by add_new_wage() as an INCLUSIVE last valid day
+            # (new_effective_from - 1 day), so this must be >= to cover that boundary day.
+            (WageHistory.effective_to.is_(None)) | (WageHistory.effective_to >= effective_date),
         )
         .order_by(WageHistory.effective_from.desc())
         .first()

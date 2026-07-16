@@ -13,8 +13,6 @@ they actually pin the arithmetic rather than just mirror it.
 import datetime
 from types import SimpleNamespace
 
-import pytest
-
 from app.core.schedule.transition import (
     calculate_consultant_vacation_days,
     calculate_consultant_vacation_payout,
@@ -405,48 +403,36 @@ class TestCalculateTransitionMonthSummary:
 
 
 class TestKnownBugWageBoundaryOnBackdatedTransition:
-    """Documents a wage-resolution boundary bug surfaced through transition.py.
+    """Regression test for a wage-resolution boundary bug surfaced through transition.py.
 
-    Root cause: app.core.schedule.wages.get_user_wage() queries WageHistory with
-    `effective_to > effective_date` (a strictly-greater comparison), while
+    Root cause (fixed): app.core.schedule.wages.get_user_wage() queried WageHistory
+    with `effective_to > effective_date` (a strictly-greater comparison), while
     add_new_wage() closes the previous record with
     `effective_to = new_effective_from - 1 day` (meant as the *last inclusive day*
-    of the old wage). Those two conventions disagree on that exact boundary day:
-    the closed record no longer matches (effective_to is not > that day), and the
-    new record doesn't match either (its effective_from is the day after). The
-    function then falls through to the `User.wage` snapshot -- which is correct
-    only if that snapshot hasn't already been bumped to the new wage.
+    of the old wage). Those two conventions disagreed on that exact boundary day:
+    the closed record no longer matched (effective_to was not > that day), and the
+    new record didn't match either (its effective_from is the day after). The
+    function then fell through to the `User.wage` snapshot -- which is only correct
+    if that snapshot hasn't already been bumped to the new wage.
 
     add_new_wage() bumps the snapshot immediately whenever effective_from <= today.
-    So the fallback silently returns the *new* wage instead of the old one whenever
-    a caller asks for the wage on the day before a raise that has already taken
-    effect (transition_date <= today) -- exactly what
+    So the fallback used to silently return the *new* wage instead of the old one
+    whenever a caller asked for the wage on the day before a raise that had already
+    taken effect (transition_date <= today) -- exactly what
     calculate_consultant_vacation_payout() and calculate_transition_month_summary()
     do for `last_consultant_day = transition.transition_date - 1 day`.
 
-    In practice this self-corrects for transitions scheduled in the future (the
-    common case -- see the tests above, which use future dates specifically to
-    avoid tripping this), but it silently pays the consultant's vacation payout
-    and trailing base salary using the *direct employer's new wage* instead of the
-    consultant's actual final wage whenever the transition is recorded on or after
-    its own effective date (e.g. entered on/after the employee's first direct day,
-    or backfilled after the fact). Root cause lives in app/core/schedule/wages.py
-    (out of this module's scope), so it is documented here rather than fixed.
+    This self-corrected for transitions scheduled in the future (the common case --
+    see the tests above, which use future dates), but it silently paid the
+    consultant's vacation payout and trailing base salary using the *direct
+    employer's new wage* instead of the consultant's actual final wage whenever the
+    transition was recorded on or after its own effective date (e.g. entered
+    on/after the employee's first direct day, or backfilled after the fact).
+
+    Fixed in app/core/schedule/wages.py by comparing `effective_to >= effective_date`
+    so the closed record's inclusive last day is matched correctly.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "get_user_wage() boundary bug (app/core/schedule/wages.py): querying the "
-            "wage for the day before a raise that has already taken effect (relative to "
-            "'today') returns the NEW wage instead of the OLD one, because the closed "
-            "WageHistory record's effective_to is excluded by a strict '>' comparison "
-            "and the fallback then reads the already-bumped User.wage snapshot. This "
-            "corrupts calculate_consultant_vacation_payout()'s monthly_salary (and thus "
-            "the whole payout) for any transition recorded on or after its own "
-            "effective date. See class docstring for the full trace."
-        ),
-    )
     def test_vacation_payout_uses_consultant_wage_not_new_direct_wage(self, test_db, monkeypatch):
         from app.core.schedule.wages import add_new_wage
 
