@@ -71,7 +71,10 @@ def get_user_rates(user, session=None, effective_date: datetime.date | None = No
             .filter(
                 RateHistory.user_id == user.id,
                 RateHistory.effective_from <= effective_date,
-                (RateHistory.effective_to.is_(None)) | (RateHistory.effective_to > effective_date),
+                # Either no end date (current rates) OR end date is on/after effective_date.
+                # effective_to is set by add_new_rates() as an INCLUSIVE last valid day
+                # (new_effective_from - 1 day), so this must be >= to cover that boundary day.
+                (RateHistory.effective_to.is_(None)) | (RateHistory.effective_to >= effective_date),
             )
             .order_by(RateHistory.effective_from.desc())
             .first()

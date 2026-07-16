@@ -114,6 +114,28 @@ class TestGetUserRates:
         # No RateHistory rows exist, so it falls back to the User snapshot.
         assert get_user_rates(user, test_db, datetime.date(2026, 6, 1))["ot"] == 99
 
+    def test_boundary_day_returns_old_rate_not_bumped_snapshot(self, test_db):
+        """Regression test mirroring the wage boundary fix in PR #286.
+
+        add_new_rates() closes the previous record with
+        effective_to = new_effective_from - 1 day, meant as the INCLUSIVE last
+        valid day of the old rates. Querying get_user_rates() for that exact
+        boundary day must still return the OLD rates via RateHistory, not fall
+        through to User.custom_rates -- which add_new_rates() has already bumped
+        to the new value because the change is effective today.
+        """
+        user = _make_user(test_db, custom_rates={"ot": 40})
+        today = get_today()
+        boundary_day = today - datetime.timedelta(days=1)
+
+        add_new_rates(test_db, user.id, {"ot": 100}, today)
+        test_db.refresh(user)
+        # Snapshot already bumped since the new rate is effective today.
+        assert user.custom_rates == {"ot": 100}
+
+        # The day before must still resolve to the OLD rate through RateHistory.
+        assert get_user_rates(user, test_db, boundary_day)["ot"] == 40
+
 
 class TestAddNewRates:
     def test_seeds_initial_history_from_existing_custom_rates(self, test_db):
