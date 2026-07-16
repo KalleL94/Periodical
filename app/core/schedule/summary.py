@@ -1375,7 +1375,11 @@ def build_month_report(year: int, month: int, session, fetch_tax_table: bool = F
         )
         rows.append(_report_row_from_summary(summary, is_substitute=False))
 
-    for sub_summary in build_substitute_month_summaries(year, month, session, include_overtime=True):
+    # exclude_linked_attributed: a linked substitute's worked/OT days already
+    # count in the linked user's row above (issue #290 double-count guard).
+    for sub_summary in build_substitute_month_summaries(
+        year, month, session, include_overtime=True, exclude_linked_attributed=True
+    ):
         rows.append(_report_row_from_summary(sub_summary, is_substitute=True))
 
     return rows

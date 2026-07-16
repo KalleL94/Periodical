@@ -14,8 +14,10 @@ from app.core.schedule import (
     get_combined_rules_for_year,
 )
 from app.core.schedule.period import get_linked_substitutes_for_user
-from app.core.schedule.summary import build_calendar_grid_for_month, summarize_month_for_person
+from app.core.schedule.summary import build_calendar_grid_for_month, build_month_report, summarize_month_for_person
 from app.database.database import (
+    Absence,
+    AbsenceType,
     OvertimeShift,
     PersonHistory,
     RotationEra,
@@ -276,3 +278,96 @@ def test_month_grid_summary_includes_substitute_days(env):
     # The grid day itself renders the substitute shift
     grid_days = [d for w in data["grid"] for d in w if d and d.get("date") == day]
     assert grid_days and grid_days[0]["shift"].code == "N2"
+
+
+# ---------------------------------------------------------------------------
+# Report double-count guard (issue #290, plan step 5)
+# ---------------------------------------------------------------------------
+
+
+def test_report_attributes_linked_substitute_once(env):
+    """A linked substitute's pre-employment worked day counts in the user's
+    report row; the fully attributed substitute row is hidden."""
+    _, session = env
+    sub = _seed_linked_user(session, uid=1)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    rows = build_month_report(2026, 3, session)
+    user_row = next(r for r in rows if r["person_id"] == 1 and not r["is_substitute"])
+    hours, _, _ = calculate_shift_hours(day, "N2")
+    assert user_row["total_hours"] == pytest.approx(round(hours, 1))
+    assert user_row["num_shifts"] == 1
+
+    sub_rows = [r for r in rows if r["is_substitute"] and r.get("substitute_id") == sub.id]
+    assert sub_rows == [], "fully attributed substitute row must be hidden from the report"
+
+
+def test_report_keeps_unlinked_substitute_row(env):
+    """Unlinked substitutes keep their own report row, unchanged."""
+    _, session = env
+    _make_user(session, 1, 1)
+    sub = Substitute(name="Extern vikarie", is_active=1)
+    session.add(sub)
+    session.commit()
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    rows = build_month_report(2026, 3, session)
+    sub_row = next(r for r in rows if r["is_substitute"] and r.get("substitute_id") == sub.id)
+    hours, _, _ = calculate_shift_hours(day, "N2")
+    assert sub_row["total_hours"] == pytest.approx(round(hours, 1))
+    assert sub_row["num_shifts"] == 1
+
+
+def test_report_partial_attribution_keeps_remaining_days(env):
+    """Attributed worked days leave the substitute row, but activity the user
+    row does not count (an absence day) stays on the substitute row."""
+    _, session = env
+    sub = _seed_linked_user(session, uid=1)
+    worked = datetime.date(2026, 3, 10)
+    sick = datetime.date(2026, 3, 12)
+    session.add(SubstituteShift(substitute_id=sub.id, date=worked, shift_code="N2"))
+    session.add(Absence(substitute_id=sub.id, date=sick, absence_type=AbsenceType.SICK))
+    session.commit()
+
+    rows = build_month_report(2026, 3, session)
+    user_row = next(r for r in rows if r["person_id"] == 1 and not r["is_substitute"])
+    hours, _, _ = calculate_shift_hours(worked, "N2")
+    assert user_row["total_hours"] == pytest.approx(round(hours, 1))
+
+    sub_row = next(r for r in rows if r["is_substitute"] and r.get("substitute_id") == sub.id)
+    assert sub_row["sick_days"] == 1
+    assert sub_row["total_hours"] == 0.0
+    assert sub_row["num_shifts"] == 0
+
+
+def test_report_ot_plus_shift_same_day_counts_once(env):
+    """OT and a scheduled shift on the same attributed date count once (as OT)
+    in the user's row, mirroring the canonical injection priority."""
+    _, session = env
+    sub = _seed_linked_user(session, uid=1)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N1"))
+    session.add(
+        OvertimeShift(
+            substitute_id=sub.id,
+            date=day,
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    rows = build_month_report(2026, 3, session)
+    user_row = next(r for r in rows if r["person_id"] == 1 and not r["is_substitute"])
+    assert user_row["ot_hours"] == pytest.approx(8.5)
+    assert user_row["total_hours"] == pytest.approx(8.5)
+
+    sub_rows = [r for r in rows if r["is_substitute"] and r.get("substitute_id") == sub.id]
+    assert sub_rows == []
