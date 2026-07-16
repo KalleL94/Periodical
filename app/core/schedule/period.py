@@ -49,6 +49,13 @@ class DayLookupContext:
     settings: object = None
     user_rates_map: dict | None = None
     day_pay_override_map: dict | None = None
+    # Linked-substitute data for the single-person view (issue #290): populated in
+    # generate_period_data when the viewed position's holder has linked substitutes,
+    # so the before-employment branch can render their pre-employment shifts.
+    linked_subs: list | None = None
+    linked_sub_shift_map: dict | None = None
+    linked_sub_absence_map: dict | None = None
+    linked_sub_ot_map: dict | None = None
 
 
 def _get_persons():
@@ -282,6 +289,26 @@ def generate_period_data(
         session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
 
+    # Linked substitutes (issue #290): for a single-person view, pre-fetch the shifts,
+    # absences and overtime of any substitutes linked to the position's holder so the
+    # before-employment branch in _populate_single_person_day can render them. Only
+    # runs when the holder actually has linked substitutes.
+    linked_subs: list | None = None
+    linked_sub_shift_map: dict | None = None
+    linked_sub_absence_map: dict | None = None
+    linked_sub_ot_map: dict | None = None
+    if person_id is not None and session:
+        holder_user_id = rotation_to_user_id.get(person_id)
+        subs = get_linked_substitutes_for_user(session, holder_user_id)
+        if subs:
+            linked_subs = subs
+            linked_sub_ids = [s.id for s in subs]
+            linked_sub_shift_map = _fetch_substitute_shifts(session, linked_sub_ids, effective_start, end_date)
+            linked_sub_absence_map = _fetch_substitute_absences_by_date(
+                session, linked_sub_ids, effective_start, end_date
+            )
+            linked_sub_ot_map = _fetch_substitute_ot_by_date(session, linked_sub_ids, effective_start, end_date)
+
     # Generera dagdata
     persons = _get_persons()
     settings = get_settings()
@@ -300,6 +327,10 @@ def generate_period_data(
         settings=settings,
         user_rates_map=user_rates_map,
         day_pay_override_map=day_pay_override_map,
+        linked_subs=linked_subs,
+        linked_sub_shift_map=linked_sub_shift_map,
+        linked_sub_absence_map=linked_sub_absence_map,
+        linked_sub_ot_map=linked_sub_ot_map,
     )
 
     days_out = []
@@ -517,6 +548,20 @@ def _get_substitutes_with_shifts(session, start_date: datetime.date, end_date: d
     )
     active_ids = {r[0] for r in rows}
     return [s for s in subs if s.id in active_ids]
+
+
+def get_linked_substitutes_for_user(session, user_id: int | None) -> list:
+    """Return every substitute linked to a user account (issue #290).
+
+    A user can in theory have been more than one substitute entity historically,
+    so all linked rows are returned. Archived substitutes are included: their
+    historical shifts still belong to the user's personal history.
+    """
+    if not session or user_id is None:
+        return []
+    from app.database.database import Substitute
+
+    return session.query(Substitute).filter(Substitute.user_id == user_id).all()
 
 
 def _fetch_substitute_shifts(
