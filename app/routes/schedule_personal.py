@@ -19,7 +19,6 @@ from app.core.oncall import (
 )
 from app.core.oncall import (
     _get_storhelg_dates_for_year,
-    apply_oncall_hours_override,
 )
 from app.core.schedule import (
     _cached_special_rules,
@@ -29,8 +28,6 @@ from app.core.schedule import (
     build_cowork_stats,
     build_handover_details,
     build_week_data,
-    calculate_ob_hours,
-    calculate_ob_pay,
     compute_day_ob_pay,
     determine_shift_for_date,
     get_effective_monthly_wage,
@@ -46,7 +43,6 @@ from app.core.schedule import (
 from app.core.schedule import (
     persons as person_list,
 )
-from app.core.schedule.ob import apply_ob_hours_override
 from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
@@ -261,11 +257,10 @@ async def show_day_for_person(
     else:
         is_effective_oc = False
 
-    # Extensions keep OB on scheduled hours; only full call-in OT removes OB
-    is_full_ot = bool(canonical.get("ot_details")) and not canonical["ot_details"].get("is_extension")
-
     # OB hours and kronor through the same gate the month/year summary uses
-    # (manual override wins; OFF/OC/OT days carry no OB)
+    # (manual override wins; OFF/OC/OT days carry no OB). Partial-day absence
+    # truncation and full-day absence zeroing are already reflected in the
+    # canonical start/end/shift, so no re-truncation happens here.
     ob_hours, ob_pay, _ = compute_day_ob_pay(canonical, combined_rules, monthly_salary, _user_rates["ob"])
 
     ob_codes = sorted(ob_hours.keys())
@@ -273,43 +268,6 @@ async def show_day_for_person(
 
     midnight = datetime.combine(date_obj, time(0, 0))
     active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
-
-    # Partial absence: truncate shift end/start and recalculate OB
-    if absence and absence.left_at and start_dt is not None and end_dt is not None:
-        left_time = datetime.strptime(absence.left_at, "%H:%M").time()
-        truncated_end = datetime.combine(date_obj, left_time)
-        if truncated_end > start_dt:
-            end_dt = truncated_end
-            hours = (end_dt - start_dt).total_seconds() / 3600.0
-            if not is_full_ot and not is_effective_oc:
-                ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                ob_pay = calculate_ob_pay(
-                    start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
-                )
-
-    if absence and absence.arrived_at and start_dt is not None and end_dt is not None:
-        arrived_time = datetime.strptime(absence.arrived_at, "%H:%M").time()
-        truncated_start = datetime.combine(date_obj, arrived_time)
-        if truncated_start < end_dt:
-            start_dt = truncated_start
-            hours = (end_dt - start_dt).total_seconds() / 3600.0
-            if not is_full_ot and not is_effective_oc:
-                ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                ob_pay = calculate_ob_pay(
-                    start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
-                )
-
-    # Full-day sick absence: zero out OB
-    if (
-        absence
-        and absence.absence_type.value == "SICK"
-        and absence.left_at is None
-        and absence.arrived_at is None
-        and not is_full_ot
-        and not is_effective_oc
-    ):
-        ob_hours = {code: 0.0 for code in ob_hours}
-        ob_pay = {code: 0.0 for code in ob_pay}
 
     # Overtime pay details come from the canonical dict (priced with the
     # user's OT rate via user_rates_map); only the raw OT row id is fetched
@@ -324,26 +282,15 @@ async def show_day_for_person(
     oncall_pay = canonical.get("oncall_pay", 0.0) or 0.0
     oncall_details = canonical.get("oncall_details") or {}
 
-    # Apply manual hour overrides if one exists for this user and date
+    # Manual hour overrides are already applied by the canonical path (OB via
+    # compute_day_ob_pay's override branch, on-call inside
+    # _populate_single_person_day); the row is fetched only to prefill the
+    # override edit form.
     day_pay_override = (
         db.query(DayPayOverride)
         .filter(DayPayOverride.user_id == user_id_for_wages, DayPayOverride.date == date_obj)
         .first()
     )
-    if day_pay_override:
-        if day_pay_override.ob_hours_override:
-            ob_hours, ob_pay = apply_ob_hours_override(
-                day_pay_override.ob_hours_override, monthly_salary, combined_rules, _user_rates["ob"]
-            )
-        if day_pay_override.oncall_hours_override:
-            _oncall_rules = _get_oncall_rules(year)
-            oncall_pay, oncall_details = apply_oncall_hours_override(
-                day_pay_override.oncall_hours_override,
-                oncall_details.get("breakdown", {}),
-                monthly_salary,
-                _oncall_rules,
-                _user_rates["oncall"],
-            )
 
     show_salary = can_see_salary(current_user, rotation_position)
 
@@ -462,29 +409,16 @@ async def show_day_for_person(
     # Use rotation_position for coworker matching (schedule-based)
     coworkers = get_coworkers_for_day(rotation_position, shift_code_for_matching, persons_today, start_dt, end_dt)
 
-    # Check if this day is a vacation day for the user
-    _vac_user = (
-        db.query(User).filter(User.id == user_id_for_wages).first()
-        if user_id_for_wages != current_user.id
-        else current_user
-    )
+    # Vacation notice flag: a week-based vacation week (also on its OFF days,
+    # which the canonical path leaves as OFF) or a day-level VACATION absence
+    # (reusing the raw absence row fetched above).
     is_vacation_day = False
-    if _vac_user:
-        _iso_year, _iso_week, _ = date_obj.isocalendar()
-        _vac_json = _vac_user.vacation or {}
-        if str(_iso_year) in _vac_json and _iso_week in _vac_json[str(_iso_year)]:
+    if _rate_user:
+        _vac_json = _rate_user.vacation or {}
+        if str(iso_year) in _vac_json and iso_week in _vac_json[str(iso_year)]:
             is_vacation_day = True
-        if not is_vacation_day:
-            is_vacation_day = (
-                db.query(Absence)
-                .filter(
-                    Absence.user_id == user_id_for_wages,
-                    Absence.date == date_obj,
-                    Absence.absence_type == AbsenceType.VACATION,
-                )
-                .first()
-                is not None
-            )
+    if not is_vacation_day:
+        is_vacation_day = absence is not None and absence.absence_type == AbsenceType.VACATION
 
     return render_template(
         templates,
