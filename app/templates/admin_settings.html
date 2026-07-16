@@ -7,6 +7,12 @@
 
 <h2 class="page-title">{{ t.admin_settings_title }}</h2>
 
+{% if error %}
+    <div class="alert alert--danger">
+        {{ error }}
+    </div>
+{% endif %}
+
 <div class="mb-3">
     <a href="/admin/rotation-eras" class="btn secondary inline-block">
         📅 {{ t.admin_settings_manage_eras }}
