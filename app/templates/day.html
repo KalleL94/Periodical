@@ -86,6 +86,9 @@
                             {% else %}
                                 <span class="badge badge-off">OFF</span>
                             {% endif %}
+                            {% if is_substitute %}
+                                <span class="badge badge-blue">{{ t.substitute_tag }}</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if is_vacation_day %}
@@ -826,6 +829,27 @@
                 </table>
             {% else %}
                 <p>{{ t.day_no_ob_pay }}</p>
+            {% endif %}
+
+            {% if is_substitute and substitute_base_pay > 0 %}
+            {# Hourly base pay for a linked substitute's shift (issue #290) #}
+            <h3>{{ t.day_substitute_pay_title }}</h3>
+            <table class="keep-table" id="substitute-pay-table">
+                <thead>
+                    <tr>
+                        <th class="th_left">{{ t.day_total_hours }}</th>
+                        <th class="th_right">{{ t.day_substitute_pay_rate }}</th>
+                        <th class="th_right">{{ t.day_substitute_pay_amount }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="num">{{ "%.2f"|format(hours) }}</td>
+                        <td class="td_right num">{{ substitute_hourly_wage }} kr/h</td>
+                        <td class="td_right num">{{ "%.2f"|format(substitute_base_pay) }} kr</td>
+                    </tr>
+                </tbody>
+            </table>
             {% endif %}
 
             <h3>{{ t.day_ob_rules_title }}</h3>

@@ -49,6 +49,13 @@ class DayLookupContext:
     settings: object = None
     user_rates_map: dict | None = None
     day_pay_override_map: dict | None = None
+    # Linked-substitute data for the single-person view (issue #290): populated in
+    # generate_period_data when the viewed position's holder has linked substitutes,
+    # so the before-employment branch can render their pre-employment shifts.
+    linked_subs: list | None = None
+    linked_sub_shift_map: dict | None = None
+    linked_sub_absence_map: dict | None = None
+    linked_sub_ot_map: dict | None = None
 
 
 def _get_persons():
@@ -115,6 +122,12 @@ def build_week_data(
     vacation_dates = _load_vacation_dates(years_week, session=session)
     parental_dates = _load_parental_dates(years_week, session=session)
 
+    # Linked substitutes (issue #290): only relevant for the single-person view,
+    # where the before-employment branch may render the linked substitute's days.
+    linked_subs, linked_sub_shift_map, linked_sub_absence_map, linked_sub_ot_map = _fetch_linked_substitute_context(
+        session, person_id, rotation_to_user_id, monday, sunday
+    )
+
     ctx = DayLookupContext(
         persons=persons,
         vacation_dates=vacation_dates,
@@ -124,6 +137,10 @@ def build_week_data(
         oncall_override_map=oncall_override_map,
         swap_map=swap_map,
         shift_override_map=shift_override_map,
+        linked_subs=linked_subs,
+        linked_sub_shift_map=linked_sub_shift_map,
+        linked_sub_absence_map=linked_sub_absence_map,
+        linked_sub_ot_map=linked_sub_ot_map,
     )
 
     days_in_week = []
@@ -282,6 +299,14 @@ def generate_period_data(
         session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
 
+    # Linked substitutes (issue #290): for a single-person view, pre-fetch the shifts,
+    # absences and overtime of any substitutes linked to the position's holder so the
+    # before-employment branch in _populate_single_person_day can render them. Only
+    # runs when the holder actually has linked substitutes.
+    linked_subs, linked_sub_shift_map, linked_sub_absence_map, linked_sub_ot_map = _fetch_linked_substitute_context(
+        session, person_id, rotation_to_user_id, effective_start, end_date
+    )
+
     # Generera dagdata
     persons = _get_persons()
     settings = get_settings()
@@ -300,6 +325,10 @@ def generate_period_data(
         settings=settings,
         user_rates_map=user_rates_map,
         day_pay_override_map=day_pay_override_map,
+        linked_subs=linked_subs,
+        linked_sub_shift_map=linked_sub_shift_map,
+        linked_sub_absence_map=linked_sub_absence_map,
+        linked_sub_ot_map=linked_sub_ot_map,
     )
 
     days_out = []
@@ -519,6 +548,158 @@ def _get_substitutes_with_shifts(session, start_date: datetime.date, end_date: d
     return [s for s in subs if s.id in active_ids]
 
 
+def get_linked_substitutes_for_user(session, user_id: int | None) -> list:
+    """Return every substitute linked to a user account (issue #290).
+
+    A user can in theory have been more than one substitute entity historically,
+    so all linked rows are returned. Archived substitutes are included: their
+    historical shifts still belong to the user's personal history.
+    """
+    if not session or user_id is None:
+        return []
+    from app.database.database import Substitute
+
+    return session.query(Substitute).filter(Substitute.user_id == user_id).all()
+
+
+def _fetch_linked_substitute_context(
+    session, person_id: int | None, rotation_to_user_id: dict[int, int], start_date, end_date
+) -> tuple[list | None, dict | None, dict | None, dict | None]:
+    """Pre-fetch (linked_subs, shift_map, absence_map, ot_map) for a single-person view.
+
+    Resolves the viewed position's current holder and their linked substitutes
+    (issue #290). Returns all-None when there is nothing to inject, so the
+    DayLookupContext fields stay None and the before-employment branches skip
+    the substitute lookup entirely.
+    """
+    if person_id is None or not session:
+        return None, None, None, None
+    holder_user_id = rotation_to_user_id.get(person_id)
+    subs = get_linked_substitutes_for_user(session, holder_user_id)
+    if not subs:
+        return None, None, None, None
+    sub_ids = [s.id for s in subs]
+    return (
+        subs,
+        _fetch_substitute_shifts(session, sub_ids, start_date, end_date),
+        _fetch_substitute_absences_by_date(session, sub_ids, start_date, end_date),
+        _fetch_substitute_ot_by_date(session, sub_ids, start_date, end_date),
+    )
+
+
+def _build_linked_substitute_day_fields(
+    current_day: datetime.date,
+    person_id: int,
+    ctx: DayLookupContext,
+    person_name: str,
+    shift_types: list,
+) -> dict | None:
+    """Day fields for a linked substitute's pre-employment activity (issue #290).
+
+    Called only from the before-employment branches (_populate_single_person_day
+    and _build_person_day_basic), so on/after employment_start the rotation and
+    override chain always wins and substitute data is never consulted. Priority
+    within the substitute data mirrors _build_substitute_day (team view):
+    absence > overtime > scheduled shift. Returns None when no linked substitute
+    has activity on the date, letting the caller keep the masked OFF day.
+    """
+    if not ctx.linked_subs:
+        return None
+
+    shift_map = ctx.linked_sub_shift_map or {}
+    absence_map = ctx.linked_sub_absence_map or {}
+    ot_map = ctx.linked_sub_ot_map or {}
+    combined_ob_rules = ctx.combined_ob_rules or []
+
+    for sub in ctx.linked_subs:
+        key = (sub.id, current_day)
+        absence = absence_map.get(key)
+        ot_entries = ot_map.get(key)
+        entry = shift_map.get(key)
+        if absence is None and not ot_entries and entry is None:
+            continue
+
+        base = {
+            "person_id": person_id,
+            "person_name": person_name,
+            "rotation_week": None,
+            "ob": {},
+            "is_substitute": True,
+            "substitute_id": sub.id,
+            "substitute_hourly_wage": sub.hourly_wage,
+        }
+
+        if absence is not None:
+            code = _substitute_absence_shift_code(absence.absence_type)
+            absence_shift = next((s for s in shift_types if s.code == code), None)
+            if absence_shift is not None:
+                return {
+                    **base,
+                    "shift": absence_shift,
+                    "original_shift": None,
+                    "hours": 0.0,
+                    "start": None,
+                    "end": None,
+                    "is_absence": True,
+                }
+
+        if ot_entries:
+            ot_entry = ot_entries[0]
+            ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+            if ot_shift_type is not None:
+                try:
+                    start, end = parse_ot_times(ot_entry, current_day)
+                except ValueError:
+                    start, end = None, None
+                ot_hours = ot_entry.hours or 0.0
+                # Overtime is priced with the HOURLY-worker pattern: the stored
+                # hourly wage IS the OT hourly rate (cf.
+                # get_ot_hourly_rate_from_stored_wage). The DB row's ot_pay stays
+                # 0.0 (the team view's "hours tracked, no pay" source of truth);
+                # only this personal integration prices the hours.
+                ot_rate = float(sub.hourly_wage) if sub.hourly_wage else 0.0
+                ot_pay = ot_hours * ot_rate
+                original_shift = next((s for s in shift_types if s.code == entry.shift_code), None) if entry else None
+                return {
+                    **base,
+                    "shift": ot_shift_type,
+                    "original_shift": original_shift,
+                    "hours": ot_hours,
+                    "start": start,
+                    "end": end,
+                    "ot_hours": ot_hours,
+                    "ot_pay": ot_pay,
+                    "ot_details": {
+                        "start_time": str(ot_entry.start_time),
+                        "end_time": str(ot_entry.end_time),
+                        "hours": ot_hours,
+                        "pay": ot_pay,
+                        "hourly_rate": ot_rate,
+                        "is_extension": False,
+                    },
+                }
+
+        if entry is not None:
+            shift = next((s for s in shift_types if s.code == entry.shift_code), None)
+            if shift is not None:
+                hours, start, end = calculate_shift_hours(current_day, shift.code)
+                ob = (
+                    calculate_ob_hours(start, end, combined_ob_rules)
+                    if (start is not None and shift.code != "OC")
+                    else {}
+                )
+                return {
+                    **base,
+                    "shift": shift,
+                    "original_shift": None,
+                    "hours": hours,
+                    "start": start,
+                    "end": end,
+                    "ob": ob,
+                }
+    return None
+
+
 def _fetch_substitute_shifts(
     session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
 ) -> dict[tuple[int, datetime.date], object]:
@@ -685,29 +866,6 @@ def _fetch_substitute_ot_by_date(
     return by_date
 
 
-def _fetch_substitute_ot_hours(
-    session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
-) -> dict[int, float]:
-    """Sum overtime hours per substitute for the range (no pay; hours only)."""
-    if not session or not sub_ids:
-        return {}
-    from app.database.database import OvertimeShift
-
-    rows = (
-        session.query(OvertimeShift)
-        .filter(
-            OvertimeShift.substitute_id.in_(sub_ids),
-            OvertimeShift.date >= start_date,
-            OvertimeShift.date <= end_date,
-        )
-        .all()
-    )
-    totals: dict[int, float] = {}
-    for r in rows:
-        totals[r.substitute_id] = totals.get(r.substitute_id, 0.0) + (r.hours or 0.0)
-    return totals
-
-
 def _fetch_substitute_absences_by_date(
     session, sub_ids: list[int], start_date: datetime.date, end_date: datetime.date
 ) -> dict[tuple[int, datetime.date], object]:
@@ -789,7 +947,12 @@ def _get_substitutes_with_activity(
     return [s for s in subs if s.id in active_ids]
 
 
-def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: datetime.date) -> list[dict]:
+def mask_days_to_employment(
+    days: list[dict],
+    seg_from: datetime.date,
+    seg_to: datetime.date,
+    keep_substitute_days: bool = False,
+) -> list[dict]:
     """
     Copy a position's generated day dicts, rendering days outside an employment
     segment as OFF (zero hours, no pay, before_employment flag) so a per-holder
@@ -801,12 +964,21 @@ def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: d
     The zeroed keys mirror the before-employment early return in
     _populate_single_person_day; identity keys (date, person_id, rotation_week,
     weekday_name, etc.) are left intact.
+
+    keep_substitute_days: with True, an injected linked-substitute day dated
+    BEFORE seg_from passes through unchanged (issue #290) - used by personal
+    views where the substitute activity belongs to the viewed user. Team views
+    keep the default (False) so the activity stays exclusively in the
+    substitute's own column. Days after seg_to are always masked.
     """
     shift_types = get_shift_types()
     off_shift = next((s for s in shift_types if s.code == "OFF"), None)
     masked: list[dict] = []
     for day in days:
         d = day.get("date")
+        if keep_substitute_days and day.get("is_substitute") and d is not None and d < seg_from:
+            masked.append(day)
+            continue
         if d is not None and (d < seg_from or d > seg_to):
             copy = dict(day)
             copy["shift"] = off_shift
@@ -833,7 +1005,9 @@ def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: d
     return masked
 
 
-def build_substitute_month_summaries(year: int, month: int, session, include_overtime: bool = False) -> list[dict]:
+def build_substitute_month_summaries(
+    year: int, month: int, session, include_overtime: bool = False, exclude_linked_attributed: bool = False
+) -> list[dict]:
     """Build per-substitute month summaries (schedule only, no salary) for the month view.
 
     Each summary mirrors the shape produced by summarize_month_for_person enough for
@@ -844,6 +1018,15 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
     Substitutes with a scheduled shift or an absence in the month are returned (an absence
     renders as a day shift). With include_overtime=True, overtime-only substitutes are also
     included so their hours appear in the report totals (used by the report).
+
+    exclude_linked_attributed (issue #290, report double-count guard): with True,
+    worked/overtime days of a LINKED substitute that the linked user's own report
+    row already counts (dates where the canonical before-employment injection
+    renders them) are excluded here, and a row left with no activity is dropped.
+    Absence days and on-call standby stay on the substitute row (the user row
+    does not count them). Team month views keep the default (False): there the
+    user's column is masked to their tenure, so the substitute column is the
+    only place the activity appears.
     """
     start_date = datetime.date(year, month, 1)
     end_date = datetime.date(year, month, calendar.monthrange(year, month)[1])
@@ -853,12 +1036,44 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
 
     sub_ids = [s.id for s in substitutes]
     shift_map = _fetch_substitute_shifts(session, sub_ids, start_date, end_date)
-    ot_hours_map = _fetch_substitute_ot_hours(session, sub_ids, start_date, end_date)
     ot_by_date = _fetch_substitute_ot_by_date(session, sub_ids, start_date, end_date)
     absence_counts = _fetch_substitute_absence_counts(session, sub_ids, start_date, end_date)
     absence_by_date = _fetch_substitute_absences_by_date(session, sub_ids, start_date, end_date)
     shift_types = get_shift_types()
     settings = get_settings()
+
+    # Report guard: collect the (substitute_id, date) days attributed to the
+    # linked user's row. The predicate mirrors the canonical injection exactly:
+    # the position's before-employment resolution (_resolve_day_person) decides
+    # whether the personal row rendered the day.
+    excluded_days: set[tuple[int, datetime.date]] = set()
+    linked_user_names: dict[int, str] = {}
+    if exclude_linked_attributed and session:
+        from app.database.database import User
+
+        persons = _get_persons()
+        for sub in substitutes:
+            if not sub.user_id:
+                continue
+            user = session.query(User).filter(User.id == sub.user_id).first()
+            if user is None:
+                continue
+            linked_user_names[sub.id] = user.name
+            position = user.rotation_person_id
+            if not (1 <= position <= len(persons)):
+                continue
+            current = start_date
+            while current <= end_date:
+                key = (sub.id, current)
+                entry = shift_map.get(key)
+                # Only days the user row counts can double-count: a worked
+                # shift or overtime, with no absence overriding it.
+                counted = key in ot_by_date or (entry is not None and entry.shift_code in ("N1", "N2", "N3"))
+                if counted and key not in absence_by_date:
+                    _, attributed = _resolve_day_person(session, position, current, persons, None)
+                    if attributed:
+                        excluded_days.add(key)
+                current += datetime.timedelta(days=1)
 
     # OB rules for the month (same rules agents use); covers any year in range.
     combined_ob_rules: list = []
@@ -870,20 +1085,32 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
         days = []
         worked_hours = 0.0
         oncall_hours = 0.0
+        month_ot_hours = 0.0
         num_shifts = 0
         ob_hours: dict[str, float] = {}
         current = start_date
         while current <= end_date:
-            day = _build_substitute_day(current, sub, shift_map, shift_types, absence_by_date, ot_by_date)
+            # A day attributed to the linked user's report row renders and counts
+            # as OFF here (empty maps); absence days are never excluded.
+            excluded = (sub.id, current) in excluded_days
+            day = _build_substitute_day(
+                current,
+                sub,
+                {} if excluded else shift_map,
+                shift_types,
+                absence_by_date,
+                {} if excluded else ot_by_date,
+            )
             days.append(day)
 
             # Counting reads raw data, not the displayed shift, so that a day shown as OT
             # is still counted by its underlying scheduled shift (e.g. OC + OT same day).
             absence = absence_by_date.get((sub.id, current))
-            entry = shift_map.get((sub.id, current))
+            entry = None if excluded else shift_map.get((sub.id, current))
             code = entry.shift_code if entry else None
-            ot_entries_today = ot_by_date.get((sub.id, current), [])
+            ot_entries_today = [] if excluded else ot_by_date.get((sub.id, current), [])
             day_ot_hours = sum(o.hours or 0.0 for o in ot_entries_today)
+            month_ot_hours += day_ot_hours
 
             # Overtime counts as a worked pass too (in addition to any scheduled shift).
             num_shifts += len(ot_entries_today)
@@ -917,13 +1144,22 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
                         ob_hours[ob_code] = ob_hours.get(ob_code, 0.0) + ob_h
             current += datetime.timedelta(days=1)
 
-        ot_hours = ot_hours_map.get(sub.id, 0.0)
+        ot_hours = month_ot_hours
         counts = absence_counts.get(sub.id, {})
+        if exclude_linked_attributed:
+            has_remaining_activity = (
+                num_shifts > 0 or worked_hours > 0 or ot_hours > 0 or oncall_hours > 0 or any(counts.values())
+            )
+            if not has_remaining_activity:
+                # Fully attributed to the linked user's row: hide the row.
+                continue
         summaries.append(
             {
                 "person_id": f"sub-{sub.id}",
                 "substitute_id": sub.id,
                 "person_name": sub.name,
+                "linked_user_id": sub.user_id,
+                "linked_user_name": linked_user_names.get(sub.id),
                 "days": days,
                 "ob_pay": {},
                 "ob_hours": ob_hours,
@@ -1294,8 +1530,13 @@ def _build_person_day_basic(
     # Get person name via PersonHistory and whether the date precedes employment.
     person_name, show_off_before_employment = _resolve_day_person(session, person_id, date, persons, employment_start)
 
-    # If date is before current person's employment, show OFF
+    # If date is before current person's employment, show OFF - unless a linked
+    # substitute has activity on the date (issue #290): same injection layer as
+    # _populate_single_person_day, reaching the week/range views.
     if show_off_before_employment:
+        sub_fields = _build_linked_substitute_day_fields(date, person_id, ctx, person_name, shift_types)
+        if sub_fields is not None:
+            return {"rotation_length": rotation_length, **sub_fields}
         off_shift = next((s for s in shift_types if s.code == "OFF"), None)
         result = determine_shift_for_date(date, person_id)
         original_shift, rotation_week = result if result else (None, None)
@@ -1901,8 +2142,23 @@ def _populate_single_person_day(
         session, person_id, current_day, persons, employment_start
     )
 
-    # If date is before current person's employment, show OFF
+    # If date is before current person's employment, show OFF - unless a linked
+    # substitute has activity on the date (issue #290), in which case the
+    # substitute day is injected here so every personal view renders it.
     if show_off_before_employment:
+        sub_fields = _build_linked_substitute_day_fields(current_day, person_id, ctx, person_name, shift_types)
+        if sub_fields is not None:
+            day_info.update(
+                {
+                    "oncall_pay": 0.0,
+                    "oncall_details": {},
+                    "ot_pay": 0.0,
+                    "ot_hours": 0.0,
+                    "ot_details": {},
+                    **sub_fields,
+                }
+            )
+            return
         off_shift = next((s for s in shift_types if s.code == "OFF"), None)
         result = determine_shift_for_date(current_day, person_id)
         original_shift, rotation_week = result if result else (None, None)

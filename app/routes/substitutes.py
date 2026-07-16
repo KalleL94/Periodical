@@ -43,9 +43,16 @@ async def admin_substitutes_page(
 ):
     """Admin: list all substitutes."""
     substitutes = db.query(Substitute).order_by(Substitute.is_active.desc(), Substitute.name).all()
+    # Names of linked user accounts, for the link-status column
+    linked_ids = [s.user_id for s in substitutes if s.user_id is not None]
+    linked_names = {}
+    if linked_ids:
+        users = db.query(User).filter(User.id.in_(linked_ids)).all()
+        by_id = {u.id: u.name for u in users}
+        linked_names = {s.id: by_id.get(s.user_id, "") for s in substitutes if s.user_id is not None}
     return render(
         "admin_substitutes.html",
-        {"request": request, "user": current_user, "substitutes": substitutes},
+        {"request": request, "user": current_user, "substitutes": substitutes, "linked_names": linked_names},
     )
 
 
@@ -135,12 +142,16 @@ async def admin_substitute_manage_page(
     next_month = month + 1 if month < 12 else 1
     next_year = year + 1 if month == 12 else year
 
+    # Users selectable for the account link (issue #290)
+    link_users = db.query(User).order_by(User.name).all()
+
     return render(
         "admin_substitute_manage.html",
         {
             "request": request,
             "user": current_user,
             "substitute": substitute,
+            "link_users": link_users,
             "weeks": weeks,
             "shift_by_date": shift_by_date,
             "overtime_shifts": overtime_shifts,
@@ -240,6 +251,51 @@ def _require_substitute(db: Session, substitute_id: int) -> Substitute:
     if not substitute:
         raise HTTPException(status_code=404, detail="Substitute not found")
     return substitute
+
+
+@router.post("/admin/substitutes/{substitute_id}/link", name="admin_substitute_link")
+async def admin_substitute_link(
+    substitute_id: int,
+    user_id: str = Form(""),
+    hourly_wage: str = Form(""),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: link/unlink a substitute to a user account and set the hourly wage.
+
+    Linking retroactively makes the substitute's pre-employment shifts render
+    and price in the linked user's personal views (issue #290). An empty user
+    selection unlinks; an empty wage clears it.
+    """
+    substitute = _require_substitute(db, substitute_id)
+
+    if user_id.strip():
+        try:
+            uid = int(user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user id") from None
+        user = db.query(User).filter(User.id == uid).first()
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        substitute.user_id = uid
+    else:
+        substitute.user_id = None
+
+    if hourly_wage.strip():
+        try:
+            wage = int(hourly_wage)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid hourly wage") from None
+        if wage <= 0:
+            raise HTTPException(status_code=400, detail="Invalid hourly wage")
+        substitute.hourly_wage = wage
+    else:
+        substitute.hourly_wage = None
+
+    db.commit()
+    clear_schedule_cache()
+
+    return RedirectResponse(url=f"/admin/substitutes/{substitute_id}", status_code=303)
 
 
 @router.post("/admin/substitutes/{substitute_id}/overtime/add", name="admin_substitute_overtime_add")

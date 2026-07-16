@@ -228,7 +228,10 @@ async def admin_report_xlsx(
         populate_month_sheet(agent_ws, summary, year, month, headers=REPORT_COL_HEADERS, split_oncall_overtime=False)
 
     # One sheet per substitute with activity in the month, same layout as the agent tabs.
-    for sub_summary in build_substitute_month_summaries(year, month, db, include_overtime=True):
+    # Linked substitutes' attributed days live on the user's own sheet (issue #290).
+    for sub_summary in build_substitute_month_summaries(
+        year, month, db, include_overtime=True, exclude_linked_attributed=True
+    ):
         title = _safe_sheet_title(sub_summary.get("person_name") or "Vikarie", used_titles)
         used_titles.add(title)
         sub_ws = wb.create_sheet(title=title)

@@ -178,6 +178,9 @@
                                     {% else %}
                                         <span class="badge badge-off calendar-badge">OFF</span>
                                     {% endif %}
+                                    {% if day_data.is_substitute %}
+                                        <span class="badge badge-blue badge-calendar-marker" title="{{ t.substitute_tag }}">{{ t.substitute_marker }}</span>
+                                    {% endif %}
                                     {% if day_data.partial_absence %}
                                         <span class="badge badge-danger badge-calendar-marker" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
                                     {% endif %}

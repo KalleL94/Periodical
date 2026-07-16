@@ -123,6 +123,9 @@
                     {% else %}
                         <span class="badge badge-off calendar-badge">OFF</span>
                     {% endif %}
+                    {% if day.is_substitute %}
+                        <span class="badge badge-blue badge-calendar-marker" title="{{ t.substitute_tag }}">{{ t.substitute_marker }}</span>
+                    {% endif %}
                     {% if num_weeks >= 9 %}<div class="range-text-stack">{% endif %}
                     {% if day.shift and day.shift.code != 'OC' %}
                         {% if day.shift.code == 'OT' and day.start and day.end %}
