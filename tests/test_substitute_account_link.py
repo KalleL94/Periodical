@@ -472,3 +472,71 @@ def test_person_change_substitute_atomic_rollback(env):
     assert session.query(User).filter(User.username == "vikarie1").first() is None
     session.expire_all()
     assert session.query(Substitute).filter(Substitute.id == sub.id).first().user_id is None
+
+
+# ---------------------------------------------------------------------------
+# Substitute admin: retroactive link + hourly wage (issue #290, plan step 7)
+# ---------------------------------------------------------------------------
+
+
+def test_admin_substitute_link_sets_user_and_wage(env):
+    client, session = env
+    _make_user(session, 99, None, role=UserRole.ADMIN)
+    _make_user(session, 1, 1)
+    sub = Substitute(name="Sommarvikarie", is_active=1)
+    session.add(sub)
+    session.commit()
+
+    _login(client, 99)
+    resp = client.post(
+        f"/admin/substitutes/{sub.id}/link",
+        data={"user_id": "1", "hourly_wage": "195"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+
+    session.expire_all()
+    linked = session.query(Substitute).filter(Substitute.id == sub.id).first()
+    assert linked.user_id == 1
+    assert linked.hourly_wage == 195
+
+
+def test_admin_substitute_unlink_clears_user(env):
+    client, session = env
+    _make_user(session, 99, None, role=UserRole.ADMIN)
+    _make_user(session, 1, 1)
+    sub = Substitute(name="Sommarvikarie", is_active=1, user_id=1, hourly_wage=180)
+    session.add(sub)
+    session.commit()
+
+    _login(client, 99)
+    resp = client.post(
+        f"/admin/substitutes/{sub.id}/link",
+        data={"user_id": "", "hourly_wage": "180"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    session.expire_all()
+    unlinked = session.query(Substitute).filter(Substitute.id == sub.id).first()
+    assert unlinked.user_id is None
+    assert unlinked.hourly_wage == 180
+
+
+def test_admin_substitute_link_rejects_unknown_user(env):
+    client, session = env
+    _make_user(session, 99, None, role=UserRole.ADMIN)
+    sub = Substitute(name="Sommarvikarie", is_active=1)
+    session.add(sub)
+    session.commit()
+
+    _login(client, 99)
+    resp = client.post(
+        f"/admin/substitutes/{sub.id}/link",
+        data={"user_id": "12345", "hourly_wage": ""},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 404
+
+    session.expire_all()
+    assert session.query(Substitute).filter(Substitute.id == sub.id).first().user_id is None

@@ -36,6 +36,8 @@
                 <thead>
                     <tr>
                         <th>{{ t.admin_substitutes_name }}</th>
+                        <th>{{ t.admin_substitutes_linked_col }}</th>
+                        <th>{{ t.admin_substitute_hourly_wage }}</th>
                         <th></th>
                         <th></th>
                     </tr>
@@ -49,6 +51,14 @@
                                 <span class="badge badge-archived">{{ t.admin_substitutes_archived }}</span>
                             {% endif %}
                         </td>
+                        <td>
+                            {% if s.user_id %}
+                                <span class="badge badge-blue">{{ linked_names.get(s.id, '') }}</span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{% if s.hourly_wage %}{{ s.hourly_wage }} kr/h{% else %}-{% endif %}</td>
                         <td class="table-action">
                             <a href="/admin/substitutes/{{ s.id }}" class="btn secondary">{{ t.admin_substitutes_manage }}</a>
                         </td>

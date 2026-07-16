@@ -21,6 +21,32 @@
 
 <p class="info-text">{{ t.admin_substitute_calendar_help }}</p>
 
+<div class="shell-760">
+    <div class="card form-card-block">
+        <h3 class="form-card-title">{{ t.admin_substitute_link_title }}</h3>
+        <form method="POST" action="/admin/substitutes/{{ substitute.id }}/link" class="form-row-inline">
+            <div class="form-group">
+                <label for="link_user_id" class="form-label">{{ t.admin_substitute_link_user }}</label>
+                <select id="link_user_id" name="user_id" class="form-input">
+                    <option value="">{{ t.admin_substitute_link_none }}</option>
+                    {% for u in link_users %}
+                    <option value="{{ u.id }}" {% if substitute.user_id == u.id %}selected{% endif %}>
+                        {{ u.name }} ({{ u.username }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="hourly_wage" class="form-label">{{ t.admin_substitute_hourly_wage }}</label>
+                <input type="number" id="hourly_wage" name="hourly_wage" min="1"
+                       value="{{ substitute.hourly_wage or '' }}" class="form-input">
+            </div>
+            <button type="submit" class="btn btn-primary">{{ t.admin_substitute_link_save }}</button>
+        </form>
+        <p class="info-text">{{ t.admin_substitute_link_help }}</p>
+    </div>
+</div>
+
 {% set weekday_names_short = t.week_day_names | from_json %}
 
 <div class="shell-760">
