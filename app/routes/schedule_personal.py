@@ -20,7 +20,6 @@ from app.core.oncall import (
 from app.core.oncall import (
     _get_storhelg_dates_for_year,
     apply_oncall_hours_override,
-    compute_oncall_details,
 )
 from app.core.schedule import (
     _cached_special_rules,
@@ -32,7 +31,7 @@ from app.core.schedule import (
     build_week_data,
     calculate_ob_hours,
     calculate_ob_pay,
-    compute_ot_details,
+    compute_day_ob_pay,
     determine_shift_for_date,
     get_effective_monthly_wage,
     get_overtime_shift_for_date,
@@ -262,21 +261,12 @@ async def show_day_for_person(
     else:
         is_effective_oc = False
 
-    # OT shifts never have OB pay, so check if this will become an OT shift
-    # We need to check this before fetching the OT shift
-    # OT shifts are stored per user_id
-    temp_ot_check = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
     # Extensions keep OB on scheduled hours; only full call-in OT removes OB
-    is_full_ot = temp_ot_check and not temp_ot_check.is_extension
+    is_full_ot = bool(canonical.get("ot_details")) and not canonical["ot_details"].get("is_extension")
 
-    # OC shifts also don't have OB - they have oncall pay instead
-    if start_dt and end_dt and not is_full_ot and not is_effective_oc:
-        ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-        ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"])
-    else:
-        # No OB for full OT shifts or OC shifts
-        ob_hours = {r.code: 0.0 for r in ob_rules}
-        ob_pay = {r.code: 0.0 for r in ob_rules}
+    # OB hours and kronor through the same gate the month/year summary uses
+    # (manual override wins; OFF/OC/OT days carry no OB)
+    ob_hours, ob_pay, _ = compute_day_ob_pay(canonical, combined_rules, monthly_salary, _user_rates["ob"])
 
     ob_codes = sorted(ob_hours.keys())
     weekday_name = weekday_names[date_obj.weekday()]
@@ -321,25 +311,18 @@ async def show_day_for_person(
         ob_hours = {code: 0.0 for code in ob_hours}
         ob_pay = {code: 0.0 for code in ob_pay}
 
-    # The shift display for a full call-in OT day already comes from the
-    # canonical dict above; only the pay details and the raw OT row (for the
-    # delete link) are resolved here.
-    ot_result = compute_ot_details(db, user_id_for_wages, date_obj, monthly_salary, _user_rates["ot"], absence=absence)
-    ot_shift = ot_result["ot_shift"]
-    ot_shift_id = ot_shift.id if ot_shift else None
-    ot_details = ot_result["ot_details"]
-    ot_shift_for_oncall = ot_result["ot_shift_for_oncall"]
+    # Overtime pay details come from the canonical dict (priced with the
+    # user's OT rate via user_rates_map); only the raw OT row id is fetched
+    # here, for the delete link in the edit form.
+    ot_details = canonical.get("ot_details") or {}
+    _ot_row = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
+    ot_shift_id = _ot_row.id if _ot_row else None
 
-    oncall_pay = 0.0
-    oncall_details = {}
-    # An absence day carries no on-call compensation: the canonical period path
-    # (_populate_absence_day and the partial-absence branch in period.py) zeroes
-    # oncall_pay whenever an absence exists, so the day view must agree with the
-    # month summary. The on-call table still renders, with zero rows.
-    if is_effective_oc and absence is None:
-        oc_result = compute_oncall_details(date_obj, year, monthly_salary, _user_rates["oncall"], ot_shift_for_oncall)
-        oncall_pay = oc_result["oncall_pay"]
-        oncall_details = oc_result["oncall_details"]
+    # On-call pay comes from the canonical dict, which already zeroes it on
+    # absence days and reduces it around overtime (including OT crossing
+    # midnight from the previous day).
+    oncall_pay = canonical.get("oncall_pay", 0.0) or 0.0
+    oncall_details = canonical.get("oncall_details") or {}
 
     # Apply manual hour overrides if one exists for this user and date
     day_pay_override = (
