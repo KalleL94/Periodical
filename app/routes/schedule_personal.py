@@ -265,7 +265,16 @@ async def show_day_for_person(
     # (manual override wins; OFF/OC/OT days carry no OB). Partial-day absence
     # truncation and full-day absence zeroing are already reflected in the
     # canonical start/end/shift, so no re-truncation happens here.
-    ob_hours, ob_pay, _ = compute_day_ob_pay(canonical, combined_rules, monthly_salary, _user_rates["ob"])
+    # A linked substitute's day (issue #290) is priced as hourly work: the OB
+    # base is the substitute's hourly wage as a monthly equivalent and the
+    # user's own rate overrides do not apply (same as the month summary).
+    if canonical.get("is_substitute"):
+        from app.core.schedule.wages import _MONTHLY_HOURS
+
+        _sub_wage = canonical.get("substitute_hourly_wage") or 0
+        ob_hours, ob_pay, _ = compute_day_ob_pay(canonical, combined_rules, int(_sub_wage * _MONTHLY_HOURS), None)
+    else:
+        ob_hours, ob_pay, _ = compute_day_ob_pay(canonical, combined_rules, monthly_salary, _user_rates["ob"])
 
     ob_codes = sorted(ob_hours.keys())
     weekday_name = weekday_names[date_obj.weekday()]
@@ -1040,8 +1049,20 @@ async def export_month_excel(
             if _month_rates:
                 _month_rates_map = {rotation_position: _month_rates}
 
-        month_days = generate_month_data(year, month, rotation_position, session=db, user_rates_map=_month_rates_map)
-        month_days = mask_days_to_employment(month_days, emp_start or _date.min, emp_end or _date.max)
+        # employment_start threading + keep_substitute_days: the export must
+        # include a linked substitute's pre-employment days (issue #290), same
+        # as build_calendar_grid_for_month.
+        month_days = generate_month_data(
+            year,
+            month,
+            rotation_position,
+            session=db,
+            user_rates_map=_month_rates_map,
+            employment_start=emp_start,
+        )
+        month_days = mask_days_to_employment(
+            month_days, emp_start or _date.min, emp_end or _date.max, keep_substitute_days=True
+        )
         days_in_month = summarize_month_for_person(
             year,
             month,

@@ -686,6 +686,29 @@ def test_day_view_renders_pre_employment_substitute_shift(env):
     assert rendered_ob_hours == round(sum(exp_ob_hours.values()), 2)
 
 
+def test_day_view_prices_substitute_ob_with_hourly_base(env):
+    """OB kronor for a substitute day must be priced with the substitute's
+    hourly wage as a monthly equivalent (hourly_wage x 173.33), exactly like
+    an HOURLY user, not with the linked user's own monthly wage."""
+    client, session = env
+    sub = _make_linked_substitute(session)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    canonical = _canonical_sub_day(session, day)
+    combined_rules = get_combined_rules_for_year(day.year)
+    hourly_base = int(_SUB_HOURLY_WAGE * 173.33)
+    exp_ob_pay = calculate_ob_pay(canonical["start"], canonical["end"], combined_rules, hourly_base)
+    assert sum(exp_ob_pay.values()) > 0
+
+    _login(client, 1)
+    resp = client.get(f"/day/1/{day.year}/{day.month}/{day.day}")
+    assert resp.status_code == 200
+    _, rendered_ob_pay = _ob_totals(resp.text)
+    assert rendered_ob_pay == round(sum(exp_ob_pay.values()), 2)
+
+
 @pytest.mark.xfail(reason="issue #285: OT overlay applied after vacation resolution", strict=False)
 def test_canonical_ot_on_vacation_week_keeps_sem(env):
     """OT overlay currently overrides a week-based vacation (SEM) day in the

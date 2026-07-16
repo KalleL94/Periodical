@@ -652,6 +652,13 @@ def _build_linked_substitute_day_fields(
                 except ValueError:
                     start, end = None, None
                 ot_hours = ot_entry.hours or 0.0
+                # Overtime is priced with the HOURLY-worker pattern: the stored
+                # hourly wage IS the OT hourly rate (cf.
+                # get_ot_hourly_rate_from_stored_wage). The DB row's ot_pay stays
+                # 0.0 (the team view's "hours tracked, no pay" source of truth);
+                # only this personal integration prices the hours.
+                ot_rate = float(sub.hourly_wage) if sub.hourly_wage else 0.0
+                ot_pay = ot_hours * ot_rate
                 original_shift = next((s for s in shift_types if s.code == entry.shift_code), None) if entry else None
                 return {
                     **base,
@@ -661,6 +668,15 @@ def _build_linked_substitute_day_fields(
                     "start": start,
                     "end": end,
                     "ot_hours": ot_hours,
+                    "ot_pay": ot_pay,
+                    "ot_details": {
+                        "start_time": str(ot_entry.start_time),
+                        "end_time": str(ot_entry.end_time),
+                        "hours": ot_hours,
+                        "pay": ot_pay,
+                        "hourly_rate": ot_rate,
+                        "is_extension": False,
+                    },
                 }
 
         if entry is not None:
@@ -954,7 +970,12 @@ def _get_substitutes_with_activity(
     return [s for s in subs if s.id in active_ids]
 
 
-def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: datetime.date) -> list[dict]:
+def mask_days_to_employment(
+    days: list[dict],
+    seg_from: datetime.date,
+    seg_to: datetime.date,
+    keep_substitute_days: bool = False,
+) -> list[dict]:
     """
     Copy a position's generated day dicts, rendering days outside an employment
     segment as OFF (zero hours, no pay, before_employment flag) so a per-holder
@@ -966,12 +987,21 @@ def mask_days_to_employment(days: list[dict], seg_from: datetime.date, seg_to: d
     The zeroed keys mirror the before-employment early return in
     _populate_single_person_day; identity keys (date, person_id, rotation_week,
     weekday_name, etc.) are left intact.
+
+    keep_substitute_days: with True, an injected linked-substitute day dated
+    BEFORE seg_from passes through unchanged (issue #290) - used by personal
+    views where the substitute activity belongs to the viewed user. Team views
+    keep the default (False) so the activity stays exclusively in the
+    substitute's own column. Days after seg_to are always masked.
     """
     shift_types = get_shift_types()
     off_shift = next((s for s in shift_types if s.code == "OFF"), None)
     masked: list[dict] = []
     for day in days:
         d = day.get("date")
+        if keep_substitute_days and day.get("is_substitute") and d is not None and d < seg_from:
+            masked.append(day)
+            continue
         if d is not None and (d < seg_from or d > seg_to):
             copy = dict(day)
             copy["shift"] = off_shift

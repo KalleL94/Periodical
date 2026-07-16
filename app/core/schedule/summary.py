@@ -7,7 +7,13 @@ from app.core.storage import load_persons, load_tax_brackets
 from .core import get_settings, weekday_names
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, generate_year_data, mask_days_to_employment
-from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage, get_user_wage
+from .wages import (
+    _MONTHLY_HOURS,
+    get_absence_deductions_for_month,
+    get_all_user_wages,
+    get_effective_monthly_wage,
+    get_user_wage,
+)
 
 _tax_brackets = None
 _persons = None
@@ -293,6 +299,8 @@ def summarize_month_for_person(
         "parental_days": 0,
         "parental_hours": 0.0,
         "vacation_days": 0,
+        "substitute_hours": 0.0,
+        "substitute_base_pay": 0.0,
     }
 
     days_out = []
@@ -351,7 +359,9 @@ def summarize_month_for_person(
             actual_hourly_rate = float(
                 get_user_wage(session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date)
             )
-            worked_hours = totals["total_hours"] - totals["ot_hours"]
+            # Substitute hours are excluded: they are priced separately with the
+            # substitute's own hourly wage (issue #290), not the user's rate.
+            worked_hours = totals["total_hours"] - totals["ot_hours"] - totals.get("substitute_hours", 0.0)
             totals["brutto_pay"] = _hourly_corrected_gross(
                 totals["brutto_pay"], base_salary, worked_hours, totals.get("absence_hours", 0.0), actual_hourly_rate
             )
@@ -395,6 +405,8 @@ def summarize_month_for_person(
         "parental_days": totals.get("parental_days", 0),
         "parental_hours": totals.get("parental_hours", 0.0),
         "vacation_days": totals.get("vacation_days", 0),
+        "substitute_hours": totals.get("substitute_hours", 0.0),
+        "substitute_base_pay": totals.get("substitute_base_pay", 0.0),
         "absence_details": absence_details,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
@@ -513,10 +525,22 @@ def build_calendar_grid_for_month(
             wage_user_id=wage_user_id,
         )
     elif employment_start is not None or employment_end is not None:
+        # employment_start is threaded so the before-employment branch can inject
+        # linked-substitute days (issue #290); the mask keeps them for the summary
+        # (they belong to the viewed user) while still zeroing everything else
+        # outside the employment window.
         month_days = generate_month_data(
-            year, month, person_id, session=session, user_wages=user_wages, user_rates_map=_month_rates_map
+            year,
+            month,
+            person_id,
+            session=session,
+            user_wages=user_wages,
+            user_rates_map=_month_rates_map,
+            employment_start=employment_start,
         )
-        month_days = mask_days_to_employment(month_days, employment_start or dt_date.min, employment_end or dt_date.max)
+        month_days = mask_days_to_employment(
+            month_days, employment_start or dt_date.min, employment_end or dt_date.max, keep_substitute_days=True
+        )
         month_summary = summarize_month_for_person(
             year,
             month,
@@ -713,8 +737,30 @@ def _process_day_for_summary(
     start = day.get("start")
     end = day.get("end")
 
+    # Linked-substitute days (issue #290) are priced as hourly work: the OB base
+    # is the substitute's hourly wage as a monthly equivalent (hourly x 173.33,
+    # the same primitive as HOURLY users) and the user's own rate overrides do
+    # not apply. The month's base_salary is never touched; the base pay for the
+    # day is added separately below.
+    is_substitute_day = bool(day.get("is_substitute"))
+    substitute_wage = day.get("substitute_hourly_wage") or 0
+
     # Calculate OB if applicable (shared gate with the personal day view, issue #206)
-    ob_hours, ob_pay, ob_hours_by_day = compute_day_ob_pay(day, combined_rules, base_salary, ob_rate_overrides)
+    if is_substitute_day:
+        ob_hours, ob_pay, ob_hours_by_day = compute_day_ob_pay(
+            day, combined_rules, int(substitute_wage * _MONTHLY_HOURS), None
+        )
+    else:
+        ob_hours, ob_pay, ob_hours_by_day = compute_day_ob_pay(day, combined_rules, base_salary, ob_rate_overrides)
+
+    # Base pay for a worked substitute shift: hours x hourly wage, on top of the
+    # (untouched) monthly base. OT substitute days are priced via ot_pay instead
+    # and OC/absence days carry no base pay.
+    if is_substitute_day and shift and shift.code in ("N1", "N2", "N3") and hours:
+        substitute_base = hours * float(substitute_wage)
+        totals["brutto_pay"] += substitute_base
+        totals["substitute_base_pay"] = totals.get("substitute_base_pay", 0.0) + substitute_base
+        totals["substitute_hours"] = totals.get("substitute_hours", 0.0) + hours
 
     # Compute midnight-crossing metadata (used for per-calendar-day OB aggregation)
     from datetime import datetime as _dt
@@ -812,6 +858,8 @@ def _process_day_for_summary(
         "start": start,
         "end": end,
         "partial_absence": day.get("partial_absence"),
+        "is_substitute": day.get("is_substitute"),
+        "substitute_hourly_wage": day.get("substitute_hourly_wage"),
     }
 
 
