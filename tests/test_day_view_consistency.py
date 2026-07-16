@@ -219,8 +219,10 @@ def _pay_section(html):
 
 def _oncall_total_kr(html):
     """On-call pay total from the pay-section. The only ' kr' suffixes inside the
-    pay-section belong to the on-call table; its tfoot total is the last one."""
-    vals = re.findall(r"([\d]+\.\d{2}) kr", _pay_section(html))
+    pay-section belong to the on-call table (the substitute base-pay table also
+    renders amounts, so it is cut off first); its tfoot total is the last one."""
+    section = _pay_section(html).split('id="substitute-pay-table"')[0]
+    vals = re.findall(r"([\d]+\.\d{2}) kr", section)
     return float(vals[-1]) if vals else None
 
 

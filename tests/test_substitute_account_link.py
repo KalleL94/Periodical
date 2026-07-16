@@ -280,9 +280,10 @@ def test_month_grid_summary_includes_substitute_days(env):
     assert ms["substitute_base_pay"] == pytest.approx(sub_hours * _SUB_WAGE)
     assert sum(ms["ob_pay"].values()) > 0
 
-    # The grid day itself renders the substitute shift
+    # The grid day itself renders the substitute shift, flagged for the badge
     grid_days = [d for w in data["grid"] for d in w if d and d.get("date") == day]
     assert grid_days and grid_days[0]["shift"].code == "N2"
+    assert grid_days[0].get("is_substitute") is True
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +473,46 @@ def test_person_change_substitute_atomic_rollback(env):
     assert session.query(User).filter(User.username == "vikarie1").first() is None
     session.expire_all()
     assert session.query(Substitute).filter(Substitute.id == sub.id).first().user_id is None
+
+
+# ---------------------------------------------------------------------------
+# View marking (issue #290, plan step 8)
+# ---------------------------------------------------------------------------
+
+
+def test_day_view_marks_substitute_day_and_shows_hourly_pay(env):
+    client, session = env
+    sub = _seed_linked_user(session, uid=1)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    _login(client, 1)
+    resp = client.get(f"/day/1/{day.year}/{day.month}/{day.day}")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Substitute badge in the shift section
+    assert "Vikarie" in html
+
+    # Hourly base pay row in the pay section: hours x hourly wage
+    hours, _, _ = calculate_shift_hours(day, "N2")
+    expected_base = f"{hours * _SUB_WAGE:.2f}"
+    assert expected_base in html, f"expected substitute base pay {expected_base} kr in the day view"
+
+
+def test_week_view_marks_substitute_day(env):
+    client, session = env
+    sub = _seed_linked_user(session, uid=1)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    iso_year, iso_week, _ = day.isocalendar()
+    _login(client, 1)
+    resp = client.get(f"/week/1?year={iso_year}&week={iso_week}")
+    assert resp.status_code == 200
+    assert "VIK" in resp.text, "week view must mark the substitute day"
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Vikarier kan kopplas till användarkonton (`substitutes.user_id`) och få en timlön (`substitutes.hourly_wage`). För en kopplad användare visas vikariepassen före anställningsstarten i de personliga vyerna (dag/vecka/månad/år/statistik), märkta som vikariepass, och räknas in i timmar, OB och lön – prissatta som timavlönade med samma beräkningar som befintliga timavlönade användare. Övertid prissätts med timlönen i personvyn medan `ot_pay` förblir 0 i databasen (lagvyns källa). Personbytesflödet har ett nytt läge "Befintlig vikarie" som skapar kontot, kopplar vikarien och startar anställningen i en transaktion, och vikarieadminsidan kan koppla retroaktivt och sätta timlön. Månadsrapporten döljer en kopplad vikaries redan attribuerade dagar så inget dubbelräknas
+
+### Deployment
+- Kör migrationen `python migrations/migrate_substitute_account_link.py <db-path>` (lägger till `user_id` och `hourly_wage` på `substitutes`, idempotent). Ta backup av produktionsdatabasen först: `sqlite3 app/database/schedule.db ".backup app/database/schedule.db.bak"`
+
 ## [0.17.0] - 2026-04-26
 
 ### Fixed

@@ -187,6 +187,13 @@ async def show_day_for_person(
         canonical = mask_days_to_employment([canonical], date.min, emp_end)[0]
     before_employment = before_employment or bool(canonical.get("before_employment"))
 
+    # A linked substitute's day (issue #290) is a real worked day: it must not
+    # render with the before-employment treatment (hidden coworkers etc.).
+    is_substitute_day = bool(canonical.get("is_substitute"))
+    substitute_hourly_wage = canonical.get("substitute_hourly_wage") or 0
+    if is_substitute_day:
+        before_employment = False
+
     shift = canonical.get("shift")
     original_shift = canonical.get("original_shift")
     rotation_week = canonical.get("rotation_week")
@@ -470,6 +477,13 @@ async def show_day_for_person(
             "sjuklon_hours_today": sjuklon_hours_today,
             "sick_ob_pay_today": sick_ob_pay_today,
             "before_employment": before_employment,
+            "is_substitute": is_substitute_day,
+            "substitute_hourly_wage": substitute_hourly_wage if show_salary else 0,
+            "substitute_base_pay": (
+                (hours * float(substitute_hourly_wage))
+                if (is_substitute_day and show_salary and shift and shift.code in ("N1", "N2", "N3"))
+                else 0.0
+            ),
             "coworkers": coworkers if not before_employment else [],
             "all_working_persons": persons_today_with_shift if not before_employment else [],
             "swap_users": db.query(User)
