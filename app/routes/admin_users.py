@@ -877,6 +877,17 @@ def _person_change_context(
         else db.query(User).order_by(User.name).all()
     )
 
+    # Active substitutes without a linked account (issue #290): selectable as
+    # successor via the "substitute" mode.
+    from app.database.database import Substitute
+
+    available_substitutes = (
+        db.query(Substitute)
+        .filter(Substitute.is_active == 1, Substitute.user_id.is_(None))
+        .order_by(Substitute.name)
+        .all()
+    )
+
     history_records = (
         db.query(PersonHistory).order_by(PersonHistory.person_id.asc(), PersonHistory.effective_from.desc()).all()
     )
@@ -898,6 +909,7 @@ def _person_change_context(
         "user": current_user,
         "positions": positions,
         "available_users": available_users,
+        "available_substitutes": available_substitutes,
         "history": history,
         "error": error,
         "form": form or {},
@@ -926,10 +938,12 @@ async def admin_person_change_submit(
     start_date: str = Form(""),
     successor_mode: str = Form(...),
     existing_user_id: str = Form(""),
+    substitute_id: str = Form(""),
     new_name: str = Form(""),
     new_username: str = Form(""),
     new_password: str = Form(""),
     new_wage: str = Form(""),
+    substitute_hourly_wage: str = Form(""),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
@@ -942,16 +956,18 @@ async def admin_person_change_submit(
         "start_date": start_date,
         "successor_mode": successor_mode,
         "existing_user_id": existing_user_id,
+        "substitute_id": substitute_id,
         "new_name": new_name,
         "new_username": new_username,
         "new_wage": new_wage,
+        "substitute_hourly_wage": substitute_hourly_wage,
     }
 
     def fail(message: str):
         ctx = _person_change_context(request, current_user, db, error=message, form=form)
         return render("admin_person_change.html", ctx, status_code=400)
 
-    if not (1 <= person_id <= 10) or successor_mode not in ("existing", "new", "none"):
+    if not (1 <= person_id <= 10) or successor_mode not in ("existing", "new", "substitute", "none"):
         return fail("Ogiltigt val.")
 
     # Resolve the current holder the same way the GET page displays it
@@ -1000,6 +1016,56 @@ async def admin_person_change_submit(
             successor = None
         if successor is None:
             return fail("Välj en efterträdare.")
+    elif successor_mode == "substitute":
+        # Successor is an existing substitute (issue #290): create their user
+        # account and link the substitute to it, all in the same transaction as
+        # the employment change below so a validation failure rolls back both.
+        from app.database.database import Substitute
+
+        try:
+            substitute = db.query(Substitute).filter(Substitute.id == int(substitute_id)).first()
+        except ValueError:
+            substitute = None
+        if substitute is None:
+            return fail("Välj en vikarie.")
+        if substitute.user_id is not None:
+            return fail("Vikarien är redan kopplad till en användare.")
+        if not new_username.strip():
+            return fail("Användarnamn krävs.")
+        if len(new_password) < 8:
+            return fail("Lösenordet måste vara minst 8 tecken.")
+        try:
+            wage_int = int(new_wage.strip())
+        except ValueError:
+            return fail("Ogiltig månadslön.")
+        if wage_int <= 0:
+            return fail("Ogiltig månadslön.")
+        hourly_wage_int = None
+        if substitute_hourly_wage.strip():
+            try:
+                hourly_wage_int = int(substitute_hourly_wage.strip())
+            except ValueError:
+                return fail("Ogiltig timlön.")
+            if hourly_wage_int <= 0:
+                return fail("Ogiltig timlön.")
+        if get_user_by_username(db, new_username.strip()):
+            return fail("Användarnamnet finns redan.")
+        successor = User(
+            username=new_username.strip(),
+            password_hash=get_password_hash(new_password),
+            name=new_name.strip() or substitute.name,
+            role=UserRole.USER,
+            wage=wage_int,
+            wage_type=WageType.MONTHLY,
+            vacation={},
+            must_change_password=1,
+            is_active=0,
+        )
+        db.add(successor)
+        db.flush()  # assign id; committed together with the swap below
+        substitute.user_id = successor.id
+        if hourly_wage_int is not None:
+            substitute.hourly_wage = hourly_wage_int
     else:
         if not new_name.strip() or not new_username.strip():
             return fail("Namn och användarnamn krävs.")

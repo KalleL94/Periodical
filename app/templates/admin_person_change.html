@@ -63,6 +63,9 @@
             <label><input type="radio" name="successor_mode" value="new"
                 {% if form.get('successor_mode') == 'new' %}checked{% endif %}>
                 {{ t.admin_person_change_mode_new }}</label>
+            <label><input type="radio" name="successor_mode" value="substitute"
+                {% if form.get('successor_mode') == 'substitute' %}checked{% endif %}>
+                {{ t.admin_person_change_mode_substitute }}</label>
             <label><input type="radio" name="successor_mode" value="none"
                 {% if form.get('successor_mode') == 'none' %}checked{% endif %}>
                 {{ t.admin_person_change_mode_none }}</label>
@@ -78,6 +81,19 @@
                 </option>
                 {% endfor %}
             </select>
+        </div>
+
+        <div class="form-group hidden" id="successor-substitute">
+            <label for="substitute_id" class="form-label">{{ t.admin_person_change_substitute_select }}</label>
+            <select id="substitute_id" name="substitute_id" class="form-input">
+                <option value=""></option>
+                {% for s in available_substitutes %}
+                <option value="{{ s.id }}" {% if form.get('substitute_id')|string == s.id|string %}selected{% endif %}>
+                    {{ s.name }}{% if s.hourly_wage %} ({{ s.hourly_wage }} kr/h){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <p class="text-muted ue-desc">{{ t.admin_person_change_substitute_hint }}</p>
         </div>
 
         <div id="successor-new" class="hidden">
@@ -100,6 +116,11 @@
                     <label for="new_wage" class="form-label">{{ t.admin_person_change_new_wage }}</label>
                     <input type="number" id="new_wage" name="new_wage" min="1"
                            value="{{ form.get('new_wage', '') }}" class="form-input">
+                </div>
+                <div class="hidden" id="substitute-hourly-wage-field">
+                    <label for="substitute_hourly_wage" class="form-label">{{ t.admin_person_change_substitute_hourly_wage }}</label>
+                    <input type="number" id="substitute_hourly_wage" name="substitute_hourly_wage" min="1"
+                           value="{{ form.get('substitute_hourly_wage', '') }}" class="form-input">
                 </div>
             </div>
         </div>
@@ -221,13 +242,21 @@
         const radios = document.querySelectorAll('input[name="successor_mode"]');
         const existing = document.getElementById('successor-existing');
         const create = document.getElementById('successor-new');
+        const substituteBlock = document.getElementById('successor-substitute');
+        const hourlyWageField = document.getElementById('substitute-hourly-wage-field');
+        const nameField = document.getElementById('new_name').parentElement;
         const lastDay = document.getElementById('last_working_day');
         const startDate = document.getElementById('start_date');
 
         function update() {
             const mode = document.querySelector('input[name="successor_mode"]:checked').value;
             existing.classList.toggle('hidden', mode !== 'existing');
-            create.classList.toggle('hidden', mode !== 'new');
+            // "substitute" reuses the account fields (name optional: defaults
+            // to the substitute's name) plus the substitute select and hourly wage.
+            create.classList.toggle('hidden', mode !== 'new' && mode !== 'substitute');
+            substituteBlock.classList.toggle('hidden', mode !== 'substitute');
+            hourlyWageField.classList.toggle('hidden', mode !== 'substitute');
+            nameField.classList.toggle('hidden', mode === 'substitute');
         }
         radios.forEach((r) => r.addEventListener('change', update));
         update();

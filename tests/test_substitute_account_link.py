@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 import app.database.database as db_module
+from app.auth.auth import create_access_token
 from app.core.schedule import (
     calculate_ob_pay,
     calculate_shift_hours,
@@ -55,13 +56,13 @@ def env(test_db, test_client, monkeypatch):
     clear_schedule_cache()
 
 
-def _make_user(session, uid, person_id, wage=30000, wage_type=WageType.MONTHLY):
+def _make_user(session, uid, person_id, wage=30000, wage_type=WageType.MONTHLY, role=UserRole.USER):
     user = User(
         id=uid,
         username=f"u{uid}",
         password_hash="x",
         name=f"User {uid}",
-        role=UserRole.USER,
+        role=role,
         wage=wage,
         wage_type=wage_type,
         vacation={},
@@ -72,6 +73,10 @@ def _make_user(session, uid, person_id, wage=30000, wage_type=WageType.MONTHLY):
     session.add(user)
     session.commit()
     return user
+
+
+def _login(client, uid):
+    client.cookies.set("access_token", create_access_token(data={"sub": str(uid)}))
 
 
 def test_get_linked_substitutes_for_user(env):
@@ -371,3 +376,99 @@ def test_report_ot_plus_shift_same_day_counts_once(env):
 
     sub_rows = [r for r in rows if r["is_substitute"] and r.get("substitute_id") == sub.id]
     assert sub_rows == []
+
+
+# ---------------------------------------------------------------------------
+# Person-change flow: successor_mode "substitute" (issue #290, plan step 6)
+# ---------------------------------------------------------------------------
+
+
+def _post_person_change_substitute(client, sub_id, position=1, **overrides):
+    form = {
+        "person_id": str(position),
+        "last_working_day": "",
+        "start_date": "2026-09-01",
+        "successor_mode": "substitute",
+        "existing_user_id": "",
+        "substitute_id": str(sub_id),
+        "new_name": "",
+        "new_username": "vikarie1",
+        "new_password": "hemligt123",
+        "new_wage": "31000",
+        "substitute_hourly_wage": "205",
+    }
+    form.update(overrides)
+    return client.post("/admin/person-change", data=form, follow_redirects=False)
+
+
+def test_person_change_substitute_creates_links_and_starts_employment(env):
+    client, session = env
+    _make_user(session, 99, None, role=UserRole.ADMIN)
+    sub = Substitute(name="Sommarvikarie", is_active=1)
+    session.add(sub)
+    session.commit()
+
+    _login(client, 99)
+    resp = _post_person_change_substitute(client, sub.id)
+    assert resp.status_code == 302, resp.text
+
+    new_user = session.query(User).filter(User.username == "vikarie1").first()
+    assert new_user is not None
+    assert new_user.name == "Sommarvikarie"  # defaults to the substitute's name
+    assert new_user.wage == 31000
+    assert new_user.wage_type == WageType.MONTHLY
+
+    session.refresh(sub)
+    assert sub.user_id == new_user.id
+    assert sub.hourly_wage == 205
+
+    record = (
+        session.query(PersonHistory).filter(PersonHistory.user_id == new_user.id, PersonHistory.person_id == 1).first()
+    )
+    assert record is not None
+    assert record.effective_from == datetime.date(2026, 9, 1)
+
+
+def test_person_change_substitute_rejects_already_linked(env):
+    client, session = env
+    _make_user(session, 99, None, role=UserRole.ADMIN)
+    _make_user(session, 2, 2)
+    sub = Substitute(name="Kopplad vikarie", is_active=1, user_id=2)
+    session.add(sub)
+    session.commit()
+
+    _login(client, 99)
+    resp = _post_person_change_substitute(client, sub.id)
+    assert resp.status_code == 400
+    assert session.query(User).filter(User.username == "vikarie1").first() is None
+
+
+def test_person_change_substitute_atomic_rollback(env):
+    """A validation failure inside the person-change transaction must leave
+    neither the new user nor the substitute link behind."""
+    client, session = env
+    _make_user(session, 99, None, role=UserRole.ADMIN)
+    holder = _make_user(session, 1, 1)
+    session.add(
+        PersonHistory(
+            user_id=holder.id,
+            person_id=1,
+            name=holder.name,
+            username=holder.username,
+            is_active=1,
+            effective_from=datetime.date(2026, 1, 2),
+        )
+    )
+    sub = Substitute(name="Sommarvikarie", is_active=1)
+    session.add(sub)
+    session.commit()
+
+    _login(client, 99)
+    # last_working_day AFTER the successor's start date: add_person_change
+    # raises ValueError after the user row and link are already flushed.
+    resp = _post_person_change_substitute(client, sub.id, last_working_day="2026-09-15")
+    assert resp.status_code == 400
+
+    assert session.query(User).filter(User.username == "vikarie1").first() is None
+    session.expire_all()
+    assert session.query(Substitute).filter(Substitute.id == sub.id).first().user_id is None
