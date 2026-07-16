@@ -214,9 +214,13 @@ async def show_day_for_person(
             color=shift.color,
         )
 
-    # Raw override/absence rows: they drive the edit forms and, for absence/OT
-    # days, the reconstruction of whether the underlying day was on-call. They
-    # are NOT used to resolve the shift; that comes from the canonical dict.
+    # INVARIANT (issue #206): the raw rows fetched below - oncall_override,
+    # shift_override, absence, day_pay_override and the OT row id - drive
+    # edit-form prefill and detail rendering ONLY. Shift, hours and pay
+    # resolution comes exclusively from generate_period_data above; do not
+    # reintroduce shadow calculations on top of these rows. A new override
+    # layer belongs in the batch fetchers and _populate_single_person_day in
+    # period.py, where it reaches every view (day/week/month/year) at once.
     oncall_override = (
         db.query(OnCallOverride)
         .filter(OnCallOverride.user_id == user_id_for_wages, OnCallOverride.date == date_obj)
