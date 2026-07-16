@@ -5,7 +5,7 @@ from typing import NamedTuple
 from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings, weekday_names
-from .ob import calculate_ob_hours, calculate_ob_hours_by_day, calculate_ob_pay, get_combined_rules_for_year
+from .ob import compute_day_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, generate_year_data, mask_days_to_employment
 from .wages import get_absence_deductions_for_month, get_all_user_wages, get_effective_monthly_wage, get_user_wage
 
@@ -713,21 +713,8 @@ def _process_day_for_summary(
     start = day.get("start")
     end = day.get("end")
 
-    # Calculate OB if applicable
-    ob_hours_override = day.get("ob_hours_override")
-    if ob_hours_override:
-        from .ob import apply_ob_hours_override
-
-        ob_hours, ob_pay = apply_ob_hours_override(ob_hours_override, base_salary, combined_rules, ob_rate_overrides)
-        ob_hours_by_day = {}
-    elif shift and shift.code not in ("OFF", "OC", "OT") and start and end:
-        ob_hours = calculate_ob_hours(start, end, combined_rules)
-        ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary, rate_overrides=ob_rate_overrides)
-        ob_hours_by_day = calculate_ob_hours_by_day(start, end, combined_rules)
-    else:
-        ob_hours = {r.code: 0.0 for r in combined_rules}
-        ob_pay = {r.code: 0.0 for r in combined_rules}
-        ob_hours_by_day = {}
+    # Calculate OB if applicable (shared gate with the personal day view, issue #206)
+    ob_hours, ob_pay, ob_hours_by_day = compute_day_ob_pay(day, combined_rules, base_salary, ob_rate_overrides)
 
     # Compute midnight-crossing metadata (used for per-calendar-day OB aggregation)
     from datetime import datetime as _dt
