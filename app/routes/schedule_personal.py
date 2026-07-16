@@ -19,8 +19,6 @@ from app.core.oncall import (
 )
 from app.core.oncall import (
     _get_storhelg_dates_for_year,
-    apply_oncall_hours_override,
-    compute_oncall_details,
 )
 from app.core.schedule import (
     _cached_special_rules,
@@ -30,10 +28,7 @@ from app.core.schedule import (
     build_cowork_stats,
     build_handover_details,
     build_week_data,
-    calculate_ob_hours,
-    calculate_ob_pay,
-    calculate_shift_hours,
-    compute_ot_details,
+    compute_day_ob_pay,
     determine_shift_for_date,
     get_effective_monthly_wage,
     get_overtime_shift_for_date,
@@ -48,7 +43,6 @@ from app.core.schedule import (
 from app.core.schedule import (
     persons as person_list,
 )
-from app.core.schedule.ob import apply_ob_hours_override
 from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
 from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
@@ -104,93 +98,26 @@ async def show_day_for_person(
     nav = get_navigation_dates("day", date_obj)
     iso_year, iso_week, _ = date_obj.isocalendar()
 
-    # Use rotation_position for schedule calculation
-    shift, rotation_week = determine_shift_for_date(date_obj, start_week=rotation_position)
-    rotation_length = get_rotation_length_for_date(date_obj)
-    original_shift = shift  # Keep track of original shift for OC calculation
-
-    # Check if date is outside the viewer's own employment window - before it
-    # started, or after it ended (departed, with or without a successor since
-    # taking over the position) - show OFF if so. Reuses the same
-    # before_employment flag/override for both edges since the treatment
-    # (mask to OFF, hide coworkers) is identical.
+    # Employment window for the viewed user at this position. It threads into
+    # the canonical fetch below (before-start masking), drives the after-end
+    # mask and the template flag; both edges render as OFF with hidden
+    # coworkers (departed with or without a successor is treated the same).
     from app.core.schedule.person_history import get_current_person_for_position, get_employment_period
 
-    before_employment = False
+    emp_start = None
+    emp_end = None
     if target_user is not None:
         emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
-        if emp_start and date_obj < emp_start:
-            before_employment = True
-        elif emp_end and date_obj > emp_end:
-            before_employment = True
     else:
         current_person = get_current_person_for_position(db, rotation_position)
         if current_person and current_person.get("effective_from"):
-            if date_obj < current_person["effective_from"]:
-                before_employment = True
+            emp_start = current_person["effective_from"]
 
-    if before_employment:
-        from app.core.storage import load_shift_types
-
-        all_shifts = load_shift_types()
-        off_shift = next((s for s in all_shifts if s.code == "OFF"), None)
-        if off_shift:
-            shift = off_shift
-
-    # Fetch oncall override EARLY to apply before hours calculation
-    # Use user_id_for_wages since oncall overrides are stored per user
-    oncall_override = (
-        db.query(OnCallOverride)
-        .filter(OnCallOverride.user_id == user_id_for_wages, OnCallOverride.date == date_obj)
-        .first()
-    )
-
-    # Determine if this person has OC in the rotation (before any overrides)
-    has_rotation_oc = original_shift and original_shift.code == "OC"
-
-    # Apply oncall override to shift
-    if oncall_override:
-        from app.core.storage import load_shift_types
-
-        all_shifts = load_shift_types()
-        if oncall_override.override_type == OnCallOverrideType.ADD:
-            # ADD override: change shift to OC
-            oc_shift = next((s for s in all_shifts if s.code == "OC"), None)
-            if oc_shift:
-                shift = oc_shift
-        elif oncall_override.override_type == OnCallOverrideType.REMOVE:
-            # REMOVE override: if shift is OC, change to OFF
-            if shift and shift.code == "OC":
-                off_shift = next((s for s in all_shifts if s.code == "OFF"), None)
-                if off_shift:
-                    shift = off_shift
-
-    # Determine if this is effectively an OC shift (considering overrides)
-    is_effective_oc = (
-        has_rotation_oc and not (oncall_override and oncall_override.override_type == OnCallOverrideType.REMOVE)
-    ) or (oncall_override and oncall_override.override_type == OnCallOverrideType.ADD)
-
-    # Fetch and apply manual shift override (N1/N2/N3 assigned by admin)
-    shift_override = (
-        db.query(ShiftOverride)
-        .filter(ShiftOverride.user_id == user_id_for_wages, ShiftOverride.date == date_obj)
-        .first()
-    )
-    if shift_override:
-        from app.core.storage import load_shift_types
-
-        all_shifts = load_shift_types()
-        override_shift = next((s for s in all_shifts if s.code == shift_override.shift_code), None)
-        if override_shift:
-            shift = override_shift
-            is_effective_oc = False  # Override takes priority over OC
-
-    hours: float = 0.0
-    start_dt: datetime | None = None
-    end_dt: datetime | None = None
-
-    if shift and shift.code != "OFF":
-        hours, start_dt, end_dt = calculate_shift_hours(date_obj, shift)
+    before_employment = False
+    if emp_start and date_obj < emp_start:
+        before_employment = True
+    elif emp_end and date_obj > emp_end:
+        before_employment = True
 
     special_rules = _cached_special_rules(year)
     combined_rules = ob_rules + special_rules
@@ -209,7 +136,8 @@ async def show_day_for_person(
     # Use user_id_for_wages for wage lookup
     monthly_salary = get_effective_monthly_wage(db, user_id_for_wages, settings.monthly_salary, effective_date=date_obj)
 
-    # Resolve per-user rates for the viewed user
+    # Resolve per-user rates for the viewed user (before the canonical fetch,
+    # so user_rates_map prices overtime with any custom stored OT rate)
     from app.core.rates import get_user_rates
 
     _rate_user = (
@@ -221,44 +149,123 @@ async def show_day_for_person(
         get_user_rates(_rate_user, session=db, effective_date=date_obj) if _rate_user else get_user_rates(current_user)
     )
 
-    # Week-based vacation masks a scheduled (non-OFF) rotation day to SEM with
-    # zero hours, mirroring _resolve_effective_shift in period.py where vacation
-    # has top priority over overrides and on-call. Day-level VACATION absences
-    # keep the existing absence rendering below.
-    is_week_based_vacation = False
-    if _rate_user is not None and not before_employment:
-        vac_iso_year, vac_iso_week, _ = date_obj.isocalendar()
-        vac_json = _rate_user.vacation or {}
-        if str(vac_iso_year) in vac_json and vac_iso_week in vac_json[str(vac_iso_year)]:
-            if original_shift and original_shift.code != "OFF":
-                is_week_based_vacation = True
+    # === Canonical shift resolution (issue #206) ===
+    # The day's shift, original shift, hours and times come from
+    # generate_period_data - the same canonical path the week, month and year
+    # views use - instead of a parallel sequence of queries and override logic.
+    from app.core.schedule import generate_period_data
+    from app.core.schedule.period import mask_days_to_employment
 
-    if is_week_based_vacation:
-        from app.core.storage import load_shift_types
-
-        sem_shift = next((s for s in load_shift_types() if s.code == "SEM"), None)
-        if sem_shift:
-            shift = sem_shift
-            hours = 0.0
-            start_dt = None
-            end_dt = None
-            is_effective_oc = False
-
-    # OT shifts never have OB pay, so check if this will become an OT shift
-    # We need to check this before fetching the OT shift
-    # OT shifts are stored per user_id
-    temp_ot_check = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
-    # Extensions keep OB on scheduled hours; only full call-in OT removes OB
-    is_full_ot = temp_ot_check and not temp_ot_check.is_extension
-
-    # OC shifts also don't have OB - they have oncall pay instead
-    if start_dt and end_dt and not is_full_ot and not is_effective_oc:
-        ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-        ob_pay = calculate_ob_pay(start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"])
+    canonical_days = generate_period_data(
+        date_obj,
+        date_obj,
+        person_id=rotation_position,
+        session=db,
+        user_rates_map={rotation_position: _user_rates} if _user_rates else None,
+        employment_start=emp_start,
+    )
+    if canonical_days:
+        canonical = canonical_days[0]
     else:
-        # No OB for full OT shifts or OC shifts
-        ob_hours = {r.code: 0.0 for r in ob_rules}
-        ob_pay = {r.code: 0.0 for r in ob_rules}
+        # Date precedes the first rotation era; mirror determine_shift_for_date
+        # returning (None, None): no shift, no hours, no pay.
+        canonical = {
+            "shift": None,
+            "original_shift": None,
+            "rotation_week": None,
+            "hours": 0.0,
+            "start": None,
+            "end": None,
+            "ob": {},
+            "oncall_pay": 0.0,
+            "oncall_details": {},
+            "ot_pay": 0.0,
+            "ot_hours": 0.0,
+            "ot_details": {},
+        }
+    if emp_end is not None and date_obj > emp_end:
+        canonical = mask_days_to_employment([canonical], date.min, emp_end)[0]
+    before_employment = before_employment or bool(canonical.get("before_employment"))
+
+    shift = canonical.get("shift")
+    original_shift = canonical.get("original_shift")
+    rotation_week = canonical.get("rotation_week")
+    rotation_length = get_rotation_length_for_date(date_obj)
+    hours = canonical.get("hours", 0.0) or 0.0
+    start_dt = canonical.get("start")
+    end_dt = canonical.get("end")
+
+    if rotation_week is None and shift is not None:
+        # The canonical vacation branch leaves rotation_week unset; the week
+        # label is purely presentational, so backfill it from the rotation.
+        _rot = determine_shift_for_date(date_obj, start_week=rotation_position)
+        rotation_week = _rot[1] if _rot else None
+
+    # A called-in OT day renders with the actual OT times, not the static OT
+    # shift type times; rebuild the display shift from the canonical OT details.
+    if shift and shift.code == "OT" and canonical.get("ot_details"):
+        from app.core.models import ShiftType
+
+        shift = ShiftType(
+            code="OT",
+            label=shift.label,
+            start_time=canonical["ot_details"]["start_time"],
+            end_time=canonical["ot_details"]["end_time"],
+            color=shift.color,
+        )
+
+    # INVARIANT (issue #206): the raw rows fetched below - oncall_override,
+    # shift_override, absence, day_pay_override and the OT row id - drive
+    # edit-form prefill and detail rendering ONLY. Shift, hours and pay
+    # resolution comes exclusively from generate_period_data above; do not
+    # reintroduce shadow calculations on top of these rows. A new override
+    # layer belongs in the batch fetchers and _populate_single_person_day in
+    # period.py, where it reaches every view (day/week/month/year) at once.
+    oncall_override = (
+        db.query(OnCallOverride)
+        .filter(OnCallOverride.user_id == user_id_for_wages, OnCallOverride.date == date_obj)
+        .first()
+    )
+    shift_override = (
+        db.query(ShiftOverride)
+        .filter(ShiftOverride.user_id == user_id_for_wages, ShiftOverride.date == date_obj)
+        .first()
+    )
+    absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
+
+    # Whether this person has OC in the rotation (before any overrides)
+    has_rotation_oc = bool(original_shift and original_shift.code == "OC")
+
+    # Effectively an on-call day? Controls which pay table renders. The
+    # canonical shift answers directly, except when an absence or a full
+    # call-in OT shift replaced it; those days keep rendering the
+    # (zeroed/reduced) on-call table when the underlying day was on-call, so
+    # reconstruct that state from the same inputs the canonical path applies
+    # (rotation + on-call override, with a manual shift override taking
+    # priority over OC).
+    if before_employment:
+        is_effective_oc = False
+    elif shift is not None and shift.code == "OC":
+        is_effective_oc = True
+    elif absence is not None or (shift is not None and shift.code == "OT"):
+        is_effective_oc = bool(
+            (
+                (
+                    has_rotation_oc
+                    and not (oncall_override and oncall_override.override_type == OnCallOverrideType.REMOVE)
+                )
+                or (oncall_override and oncall_override.override_type == OnCallOverrideType.ADD)
+            )
+            and shift_override is None
+        )
+    else:
+        is_effective_oc = False
+
+    # OB hours and kronor through the same gate the month/year summary uses
+    # (manual override wins; OFF/OC/OT days carry no OB). Partial-day absence
+    # truncation and full-day absence zeroing are already reflected in the
+    # canonical start/end/shift, so no re-truncation happens here.
+    ob_hours, ob_pay, _ = compute_day_ob_pay(canonical, combined_rules, monthly_salary, _user_rates["ob"])
 
     ob_codes = sorted(ob_hours.keys())
     weekday_name = weekday_names[date_obj.weekday()]
@@ -266,114 +273,28 @@ async def show_day_for_person(
     midnight = datetime.combine(date_obj, time(0, 0))
     active_special_rules = _select_ob_rules_for_date(midnight, special_rules)
 
-    # Fetch absence for this person and date
-    # Absences are stored per user_id
-    absence = db.query(Absence).filter(Absence.user_id == user_id_for_wages, Absence.date == date_obj).first()
+    # Overtime pay details come from the canonical dict (priced with the
+    # user's OT rate via user_rates_map); only the raw OT row id is fetched
+    # here, for the delete link in the edit form.
+    ot_details = canonical.get("ot_details") or {}
+    _ot_row = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
+    ot_shift_id = _ot_row.id if _ot_row else None
 
-    # Partial absence: truncate shift end/start and recalculate OB
-    original_end_dt = end_dt
-    if absence and absence.left_at and start_dt is not None and end_dt is not None:
-        left_time = datetime.strptime(absence.left_at, "%H:%M").time()
-        truncated_end = datetime.combine(date_obj, left_time)
-        if truncated_end > start_dt:
-            end_dt = truncated_end
-            hours = (end_dt - start_dt).total_seconds() / 3600.0
-            if not is_full_ot and not is_effective_oc:
-                ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                ob_pay = calculate_ob_pay(
-                    start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
-                )
+    # On-call pay comes from the canonical dict, which already zeroes it on
+    # absence days and reduces it around overtime (including OT crossing
+    # midnight from the previous day).
+    oncall_pay = canonical.get("oncall_pay", 0.0) or 0.0
+    oncall_details = canonical.get("oncall_details") or {}
 
-    if absence and absence.arrived_at and start_dt is not None and end_dt is not None:
-        arrived_time = datetime.strptime(absence.arrived_at, "%H:%M").time()
-        truncated_start = datetime.combine(date_obj, arrived_time)
-        if truncated_start < end_dt:
-            start_dt = truncated_start
-            hours = (end_dt - start_dt).total_seconds() / 3600.0
-            if not is_full_ot and not is_effective_oc:
-                ob_hours = calculate_ob_hours(start_dt, end_dt, combined_rules)
-                ob_pay = calculate_ob_pay(
-                    start_dt, end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
-                )
-
-    # Full-day sick absence: zero out OB
-    if (
-        absence
-        and absence.absence_type.value == "SICK"
-        and absence.left_at is None
-        and absence.arrived_at is None
-        and not is_full_ot
-        and not is_effective_oc
-    ):
-        ob_hours = {code: 0.0 for code in ob_hours}
-        ob_pay = {code: 0.0 for code in ob_pay}
-
-    ot_result = compute_ot_details(db, user_id_for_wages, date_obj, monthly_salary, _user_rates["ot"], absence=absence)
-    ot_shift = ot_result["ot_shift"]
-    ot_shift_id = ot_shift.id if ot_shift else None
-    ot_details = ot_result["ot_details"]
-    ot_shift_for_oncall = ot_result["ot_shift_for_oncall"]
-
-    if ot_shift and not absence and not ot_shift.is_extension:
-        from app.core.models import ShiftType
-        from app.core.storage import load_shift_types
-
-        ot_start_str = ot_details["start_time"]
-        ot_end_str = ot_details["end_time"]
-        all_shifts = load_shift_types()
-        ot_shift_type = next((s for s in all_shifts if s.code == "OT"), None)
-        if ot_shift_type:
-            shift = ShiftType(
-                code="OT",
-                label=ot_shift_type.label,
-                start_time=ot_start_str,
-                end_time=ot_end_str,
-                color=ot_shift_type.color,
-            )
-            hours = ot_shift.hours
-            ot_start_full = ot_start_str if len(ot_start_str.split(":")) == 3 else ot_start_str + ":00"
-            ot_end_full = ot_end_str if len(ot_end_str.split(":")) == 3 else ot_end_str + ":00"
-            try:
-                start_time_obj = datetime.strptime(ot_start_full, "%H:%M:%S").time()
-                end_time_obj = datetime.strptime(ot_end_full, "%H:%M:%S").time()
-                start_dt = datetime.combine(date_obj, start_time_obj)
-                end_dt = datetime.combine(date_obj, end_time_obj)
-                if end_dt <= start_dt:
-                    end_dt = end_dt + timedelta(days=1)
-            except ValueError:
-                pass
-
-    oncall_pay = 0.0
-    oncall_details = {}
-    # An absence day carries no on-call compensation: the canonical period path
-    # (_populate_absence_day and the partial-absence branch in period.py) zeroes
-    # oncall_pay whenever an absence exists, so the day view must agree with the
-    # month summary. The on-call table still renders, with zero rows.
-    if is_effective_oc and absence is None:
-        oc_result = compute_oncall_details(date_obj, year, monthly_salary, _user_rates["oncall"], ot_shift_for_oncall)
-        oncall_pay = oc_result["oncall_pay"]
-        oncall_details = oc_result["oncall_details"]
-
-    # Apply manual hour overrides if one exists for this user and date
+    # Manual hour overrides are already applied by the canonical path (OB via
+    # compute_day_ob_pay's override branch, on-call inside
+    # _populate_single_person_day); the row is fetched only to prefill the
+    # override edit form.
     day_pay_override = (
         db.query(DayPayOverride)
         .filter(DayPayOverride.user_id == user_id_for_wages, DayPayOverride.date == date_obj)
         .first()
     )
-    if day_pay_override:
-        if day_pay_override.ob_hours_override:
-            ob_hours, ob_pay = apply_ob_hours_override(
-                day_pay_override.ob_hours_override, monthly_salary, combined_rules, _user_rates["ob"]
-            )
-        if day_pay_override.oncall_hours_override:
-            _oncall_rules = _get_oncall_rules(year)
-            oncall_pay, oncall_details = apply_oncall_hours_override(
-                day_pay_override.oncall_hours_override,
-                oncall_details.get("breakdown", {}),
-                monthly_salary,
-                _oncall_rules,
-                _user_rates["oncall"],
-            )
 
     show_salary = can_see_salary(current_user, rotation_position)
 
@@ -427,18 +348,23 @@ async def show_day_for_person(
                 karens_remaining=karens_remaining,
             )
 
-            # OB compensation for sick absence (80% of OB on sick-pay hours)
+            # OB compensation for sick absence (80% of OB on sick-pay hours).
+            # The window runs from the worked start (the canonical start, which
+            # is arrived_at-truncated for a partial day; full shift start for a
+            # full-day absence where the canonical start is None) to the FULL
+            # scheduled shift end, matching how the month summary prices it.
+            _sick_ob_start = start_dt if start_dt is not None else shift_start_dt
             if (
                 _user_rates.get("sick", {}).get("ob_compensation")
                 and sjuklon_hours_today > 0
-                and start_dt is not None
-                and original_end_dt is not None
+                and _sick_ob_start is not None
+                and shift_end_dt is not None
                 and full_shift_hours > 0
             ):
                 from app.core.schedule.ob import calculate_ob_pay as _calc_ob_pay_sick
 
                 full_shift_ob = _calc_ob_pay_sick(
-                    start_dt, original_end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
+                    _sick_ob_start, shift_end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
                 )
                 sick_ob_pay_today = sum(full_shift_ob.values()) * (sjuklon_hours_today / full_shift_hours) * 0.8
         else:
@@ -450,7 +376,6 @@ async def show_day_for_person(
             )
 
     # Get coworkers for this day
-    from app.core.schedule import generate_period_data
     from app.core.schedule.cowork import get_coworkers_for_day
 
     # Fetch all persons' data for this single day (include substitutes so they show as coworkers)
@@ -488,29 +413,16 @@ async def show_day_for_person(
     # Use rotation_position for coworker matching (schedule-based)
     coworkers = get_coworkers_for_day(rotation_position, shift_code_for_matching, persons_today, start_dt, end_dt)
 
-    # Check if this day is a vacation day for the user
-    _vac_user = (
-        db.query(User).filter(User.id == user_id_for_wages).first()
-        if user_id_for_wages != current_user.id
-        else current_user
-    )
+    # Vacation notice flag: a week-based vacation week (also on its OFF days,
+    # which the canonical path leaves as OFF) or a day-level VACATION absence
+    # (reusing the raw absence row fetched above).
     is_vacation_day = False
-    if _vac_user:
-        _iso_year, _iso_week, _ = date_obj.isocalendar()
-        _vac_json = _vac_user.vacation or {}
-        if str(_iso_year) in _vac_json and _iso_week in _vac_json[str(_iso_year)]:
+    if _rate_user:
+        _vac_json = _rate_user.vacation or {}
+        if str(iso_year) in _vac_json and iso_week in _vac_json[str(iso_year)]:
             is_vacation_day = True
-        if not is_vacation_day:
-            is_vacation_day = (
-                db.query(Absence)
-                .filter(
-                    Absence.user_id == user_id_for_wages,
-                    Absence.date == date_obj,
-                    Absence.absence_type == AbsenceType.VACATION,
-                )
-                .first()
-                is not None
-            )
+    if not is_vacation_day:
+        is_vacation_day = absence is not None and absence.absence_type == AbsenceType.VACATION
 
     return render_template(
         templates,

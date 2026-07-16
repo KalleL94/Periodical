@@ -298,3 +298,42 @@ def apply_ob_hours_override(
             ob_pay[code] = h * (monthly_salary / float(divisor)) if divisor else 0.0
 
     return ob_hours, ob_pay
+
+
+def compute_day_ob_pay(
+    day: dict,
+    combined_rules: list[ObRule],
+    base_salary: int,
+    ob_rate_overrides: dict[str, float] | None = None,
+) -> tuple[dict[str, float], dict[str, float], dict]:
+    """Authoritative OB hours and pay for one generated day dict.
+
+    Single shared gate for turning a canonical day (from generate_period_data)
+    into rendered/summed OB kronor: a manual ob_hours_override wins outright,
+    otherwise OB is computed from start/end only for workable shifts (OFF, OC
+    and OT days carry no OB). Used by both the month/year summary
+    (_process_day_for_summary) and the personal day view so the two can never
+    diverge (issue #206).
+
+    Returns (ob_hours, ob_pay, ob_hours_by_day); ob_hours_by_day is empty for
+    the override and no-OB branches.
+    """
+    shift = day.get("shift")
+    start = day.get("start")
+    end = day.get("end")
+
+    ob_hours_override = day.get("ob_hours_override")
+    if ob_hours_override:
+        ob_hours, ob_pay = apply_ob_hours_override(ob_hours_override, base_salary, combined_rules, ob_rate_overrides)
+        return ob_hours, ob_pay, {}
+    if shift and shift.code not in ("OFF", "OC", "OT") and start and end:
+        return (
+            calculate_ob_hours(start, end, combined_rules),
+            calculate_ob_pay(start, end, combined_rules, base_salary, rate_overrides=ob_rate_overrides),
+            calculate_ob_hours_by_day(start, end, combined_rules),
+        )
+    return (
+        {r.code: 0.0 for r in combined_rules},
+        {r.code: 0.0 for r in combined_rules},
+        {},
+    )
