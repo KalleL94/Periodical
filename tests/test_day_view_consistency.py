@@ -14,6 +14,7 @@ from app.auth.auth import create_access_token
 from app.core.schedule import (
     calculate_ob_hours,
     calculate_ob_pay,
+    calculate_shift_hours,
     clear_schedule_cache,
     determine_shift_for_date,
     generate_period_data,
@@ -32,6 +33,8 @@ from app.database.database import (
     RotationEra,
     ShiftOverride,
     ShiftSwap,
+    Substitute,
+    SubstituteShift,
     SwapStatus,
     User,
     UserRole,
@@ -497,6 +500,190 @@ def test_day_view_matches_canonical(env, scenario):
     uid, day = scenario(session)
     _login(client, uid)
     _assert_day_matches_canonical(client, session, uid, day)
+
+
+# ---------------------------------------------------------------------------
+# Linked substitute, pre-employment (issue #290)
+#
+# A substitute linked to a user account must have their pre-employment shifts
+# injected by the canonical path (before-employment branch of
+# _populate_single_person_day) and rendered by the personal day view, with the
+# same priority chain as the team view (absence > OT > scheduled shift) and
+# with rotation strictly winning on/after employment_start.
+# ---------------------------------------------------------------------------
+
+_SUB_HOURLY_WAGE = 200
+_SUB_EMP_START = datetime.date(2026, 6, 1)
+
+
+def _make_linked_substitute(session, uid=1, hourly_wage=_SUB_HOURLY_WAGE):
+    """User employed from _SUB_EMP_START on position uid, plus a linked substitute."""
+    _make_user(session, uid, uid)
+    session.add(
+        PersonHistory(
+            user_id=uid,
+            person_id=uid,
+            name=f"User {uid}",
+            username=f"u{uid}",
+            is_active=1,
+            effective_from=_SUB_EMP_START,
+        )
+    )
+    sub = Substitute(name="Sommarvikarie", is_active=1, user_id=uid, hourly_wage=hourly_wage)
+    session.add(sub)
+    session.commit()
+    return sub
+
+
+def _canonical_sub_day(session, day, pid=1):
+    return generate_period_data(day, day, person_id=pid, session=session, employment_start=_SUB_EMP_START)[0]
+
+
+@pytest.mark.parametrize("code", ["N1", "N2", "N3", "OC"])
+def test_canonical_injects_pre_employment_substitute_shift(env, code):
+    _, session = env
+    sub = _make_linked_substitute(session)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code=code))
+    session.commit()
+
+    canonical = _canonical_sub_day(session, day)
+    assert canonical["shift"] is not None and canonical["shift"].code == code
+    exp_hours, exp_start, exp_end = calculate_shift_hours(day, code)
+    assert canonical["hours"] == exp_hours
+    assert canonical["start"] == exp_start
+    assert canonical["end"] == exp_end
+    assert canonical.get("is_substitute") is True
+    assert canonical.get("substitute_id") == sub.id
+    assert canonical.get("substitute_hourly_wage") == _SUB_HOURLY_WAGE
+    assert not canonical.get("before_employment")
+
+    combined_rules = get_combined_rules_for_year(day.year)
+    if code == "OC":
+        assert canonical["ob"] == {}
+    else:
+        assert canonical["ob"] == calculate_ob_hours(exp_start, exp_end, combined_rules)
+
+
+def test_canonical_substitute_absence_wins_over_shift(env):
+    _, session = env
+    sub = _make_linked_substitute(session)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.add(Absence(substitute_id=sub.id, date=day, absence_type=AbsenceType.SICK))
+    session.commit()
+
+    canonical = _canonical_sub_day(session, day)
+    assert canonical["shift"] is not None and canonical["shift"].code == "SICK"
+    assert canonical["hours"] == 0.0
+    assert canonical.get("is_substitute") is True
+
+
+def test_canonical_substitute_ot_wins_over_shift(env):
+    _, session = env
+    sub = _make_linked_substitute(session)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N1"))
+    session.add(
+        OvertimeShift(
+            substitute_id=sub.id,
+            date=day,
+            start_time=datetime.time(14, 0),
+            end_time=datetime.time(22, 30),
+            hours=8.5,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    session.commit()
+
+    canonical = _canonical_sub_day(session, day)
+    # OT takes display priority over the scheduled shift (no double counting)
+    assert canonical["shift"] is not None and canonical["shift"].code == "OT"
+    assert canonical["hours"] == 8.5
+    assert canonical["ot_hours"] == 8.5
+    assert canonical.get("is_substitute") is True
+
+
+def test_substitute_shift_never_shown_on_or_after_employment_start(env):
+    _, session = env
+    sub = _make_linked_substitute(session)
+    # A worked rotation day on/after employment_start with a (bogus) substitute
+    # shift on the same date: the rotation must win outright.
+    day = _find_rotation_date(1, lambda c: c in ("N1", "N2", "N3"), start=_SUB_EMP_START)
+    rotation_code = determine_shift_for_date(day, 1)[0].code
+    other_code = next(c for c in ("N1", "N2", "N3") if c != rotation_code)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code=other_code))
+    session.commit()
+
+    canonical = _canonical_sub_day(session, day)
+    assert canonical["shift"] is not None and canonical["shift"].code == rotation_code
+    assert not canonical.get("is_substitute")
+
+
+def test_unlinked_or_empty_days_keep_before_employment_off(env):
+    _, session = env
+    sub = _make_linked_substitute(session)
+    # Substitute worked March 10; March 11 has no substitute data and must stay
+    # a masked before-employment OFF day.
+    session.add(SubstituteShift(substitute_id=sub.id, date=datetime.date(2026, 3, 10), shift_code="N1"))
+    session.commit()
+
+    canonical = _canonical_sub_day(session, datetime.date(2026, 3, 11))
+    assert canonical["shift"] is not None and canonical["shift"].code == "OFF"
+    assert canonical.get("before_employment") is True
+    assert canonical["hours"] == 0.0
+
+
+def test_week_path_renders_pre_employment_substitute_shift(env):
+    """The week/range views resolve days via build_week_data, whose
+    before-employment branch must inject the same substitute day."""
+    from app.core.schedule.period import build_week_data
+
+    _, session = env
+    sub = _make_linked_substitute(session)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    iso_year, iso_week, _ = day.isocalendar()
+    days = build_week_data(iso_year, iso_week, person_id=1, session=session, employment_start=_SUB_EMP_START)
+    week_day = next(d for d in days if d["date"] == day)
+    exp_hours, _, _ = calculate_shift_hours(day, "N2")
+    assert week_day["shift"] is not None and week_day["shift"].code == "N2"
+    assert week_day["hours"] == exp_hours
+    assert week_day.get("is_substitute") is True
+    assert not week_day.get("before_employment")
+
+    # Other days of the week stay masked as before-employment OFF
+    other = next(d for d in days if d["date"] == day + datetime.timedelta(days=1))
+    assert other["shift"] is not None and other["shift"].code == "OFF"
+    assert other.get("before_employment") is True
+
+
+def test_day_view_renders_pre_employment_substitute_shift(env):
+    client, session = env
+    sub = _make_linked_substitute(session)
+    day = datetime.date(2026, 3, 10)
+    session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N2"))
+    session.commit()
+
+    canonical = _canonical_sub_day(session, day)
+    assert canonical.get("is_substitute") is True
+
+    _login(client, 1)
+    resp = client.get(f"/day/1/{day.year}/{day.month}/{day.day}")
+    assert resp.status_code == 200
+    row = _shift_row(resp.text)
+    badges = _row_badges(row)
+    assert "N2" in badges, f"day view badges {badges} lack the substitute shift N2"
+    assert _row_hours(row) == round(canonical["hours"], 2)
+
+    # OB hours from the canonical dict must match the rendered OB table
+    combined_rules = get_combined_rules_for_year(day.year)
+    rendered_ob_hours, _ = _ob_totals(resp.text)
+    exp_ob_hours = calculate_ob_hours(canonical["start"], canonical["end"], combined_rules)
+    assert rendered_ob_hours == round(sum(exp_ob_hours.values()), 2)
 
 
 @pytest.mark.xfail(reason="issue #285: OT overlay applied after vacation resolution", strict=False)
