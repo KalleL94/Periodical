@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Vikarier kan kopplas till användarkonton (`substitutes.user_id`) och få en timlön (`substitutes.hourly_wage`). För en kopplad användare visas vikariepassen före anställningsstarten i de personliga vyerna (dag/vecka/månad/år/statistik), märkta som vikariepass, och räknas in i timmar, OB och lön – prissatta som timavlönade med samma beräkningar som befintliga timavlönade användare. Övertid prissätts med timlönen i personvyn medan `ot_pay` förblir 0 i databasen (lagvyns källa). Personbytesflödet har ett nytt läge "Befintlig vikarie" som skapar kontot, kopplar vikarien och startar anställningen i en transaktion, och vikarieadminsidan kan koppla retroaktivt och sätta timlön. Månadsrapporten döljer en kopplad vikaries redan attribuerade dagar så inget dubbelräknas
 
+### Fixed
+- Administratörens inställningssida visar nu felmeddelandet när sparandet misslyckas, till exempel vid en ogiltig månadslön. Tidigare försvann felet tyst och sidan visade bara ett tomt formulär
+- Semesterutbetalning vid ett anställningsbyte som registrerades på eller efter sitt eget ikraftträdandedatum kunde räknas på den nya direktlönen i stället för konsultens faktiska slutlön. Gränsdagen prissätts nu alltid med den lön som faktiskt gällde den dagen
+- OB-, övertids- och beredskapsrater på exakt den dag en ratändring träder i kraft kunde räknas med de nya raterna i stället för de som gällde den dagen. Gränsdagen prissätts nu alltid med de rater som faktiskt gällde
+- Dagvyn visar nu samma sak som vecko-, månads- och årsvyn: accepterade skiftbyten syns (visades tidigare inte alls), föräldraledighet och dagsemester visas som ledighet respektive semester, en heldags sjukfrånvaro maskar passkoden, och beredskap hanteras konsekvent i alla vyer
+
 ### Deployment
 - Kör migrationen `python migrations/migrate_substitute_account_link.py <db-path>` (lägger till `user_id` och `hourly_wage` på `substitutes`, idempotent). Ta backup av produktionsdatabasen först: `sqlite3 app/database/schedule.db ".backup app/database/schedule.db.bak"`
 
