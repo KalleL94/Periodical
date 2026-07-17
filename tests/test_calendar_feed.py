@@ -184,6 +184,19 @@ class TestProfilePageRendering:
         assert "webcal://" in response.text
         assert "/calendar/feed/" in response.text
 
+    def test_profile_shows_both_webcal_and_https_urls(self, test_client, test_user, test_db):
+        _login(test_client)
+        test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+
+        response = test_client.get("/profile")
+
+        assert response.status_code == 200
+        assert 'id="calendar-feed-webcal"' in response.text
+        assert 'id="calendar-feed-https"' in response.text
+        # The https field must carry an https:// URL (Google's "From URL" needs it),
+        # never http:// or webcal://.
+        assert "https://" in response.text
+
     def test_profile_renders_without_token(self, test_client, test_user, test_db):
         _login(test_client)
 
