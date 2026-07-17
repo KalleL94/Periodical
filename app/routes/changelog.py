@@ -15,6 +15,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.30.1",
+        "date": "2026-07-17",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Kalenderprenumerationen visas nu på samma språk som du har valt på sidan, i stället för alltid svenska. Profilsidan visar dessutom både en webcal-länk för Apple Kalender och iPhone och en https-länk för Google Kalender, med en tydlig förklaring av vilken som passar var",
+                "en": "The calendar subscription is now shown in the same language you have selected on the page, instead of always Swedish. The profile page also shows both a webcal link for Apple Calendar and iPhone and an https link for Google Calendar, with a clear explanation of which one fits where",
+            },
+        ],
+    },
+    {
         "version": "0.30.0",
         "date": "2026-07-17",
         "entries": [

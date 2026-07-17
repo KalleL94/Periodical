@@ -286,11 +286,18 @@
         <h2>{{ t.profile_calendar_feed_title }}</h2>
         <div class="card">
             <p class="text-muted form-card-title">{{ t.profile_calendar_feed_desc }}</p>
+            <p class="text-muted form-card-title">{{ t.profile_calendar_feed_lang_note }}</p>
 
             {% if calendar_token_plain %}
                 {% set feed_url = request.url_for('calendar_feed', token=calendar_token_plain) %}
                 {% set webcal_url = feed_url | string | replace('https://', 'webcal://') | replace('http://', 'webcal://') %}
-                <input type="text" id="calendar-feed-url" value="{{ webcal_url }}" readonly class="profile-api-input">
+                {% set https_url = feed_url | string | replace('http://', 'https://') %}
+
+                <label class="text-muted form-card-title" for="calendar-feed-webcal">{{ t.profile_calendar_feed_webcal_label }}</label>
+                <input type="text" id="calendar-feed-webcal" value="{{ webcal_url }}" readonly class="profile-api-input">
+
+                <label class="text-muted form-card-title" for="calendar-feed-https">{{ t.profile_calendar_feed_https_label }}</label>
+                <input type="text" id="calendar-feed-https" value="{{ https_url }}" readonly class="profile-api-input">
             {% elif user.calendar_token %}
                 <p class="text-muted">{{ t.profile_calendar_feed_configured }}</p>
             {% else %}
@@ -300,8 +307,12 @@
             <div class="profile-actions">
                 {% if calendar_token_plain %}
                 <button type="button" class="btn btn-secondary"
-                        onclick="navigator.clipboard.writeText(document.getElementById('calendar-feed-url').value)">
-                    {{ t.profile_calendar_feed_copy }}
+                        onclick="navigator.clipboard.writeText(document.getElementById('calendar-feed-webcal').value)">
+                    {{ t.profile_calendar_feed_copy_webcal }}
+                </button>
+                <button type="button" class="btn btn-secondary"
+                        onclick="navigator.clipboard.writeText(document.getElementById('calendar-feed-https').value)">
+                    {{ t.profile_calendar_feed_copy_https }}
                 </button>
                 {% endif %}
                 <form method="POST" action="/profile/calendar-token/generate">

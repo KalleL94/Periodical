@@ -81,6 +81,56 @@ class TestCalendarFeedEndpoint:
         assert response.status_code == 200
 
 
+class TestCalendarFeedLanguage:
+    """The feed renders in the user's stored language, not a hardcoded one.
+
+    Rendering per language is covered by test_calendar_export; here we verify
+    the endpoint threads User.language into the generator. We spy on the
+    generator (rather than seed a rotation era) so the assertion is about the
+    wiring, independent of whether the feed window contains any shifts.
+    """
+
+    def _give_token(self, test_db, test_user, token="feed-token-lang"):
+        test_user.calendar_token = hash_api_key(token)
+        test_user.calendar_token_encrypted = encrypt_api_key(token)
+        test_db.commit()
+        return token
+
+    def _spy_lang(self, monkeypatch):
+        captured = {}
+
+        def fake_generate(user, start_date, end_date, lang="sv", session=None, as_feed=False):
+            captured["lang"] = lang
+            return "BEGIN:VCALENDAR\nEND:VCALENDAR\n"
+
+        import app.routes.calendar_feed as feed_module
+
+        monkeypatch.setattr(feed_module, "generate_ical_for_user", fake_generate)
+        return captured
+
+    def test_feed_uses_english_for_english_user(self, test_client, test_db, test_user, monkeypatch):
+        token = self._give_token(test_db, test_user)
+        test_user.language = "en"
+        test_db.commit()
+        captured = self._spy_lang(monkeypatch)
+
+        response = test_client.get(f"/calendar/feed/{token}/schema.ics")
+
+        assert response.status_code == 200
+        assert captured["lang"] == "en"
+
+    def test_feed_uses_swedish_for_swedish_user(self, test_client, test_db, test_user, monkeypatch):
+        token = self._give_token(test_db, test_user)
+        test_user.language = "sv"
+        test_db.commit()
+        captured = self._spy_lang(monkeypatch)
+
+        response = test_client.get(f"/calendar/feed/{token}/schema.ics")
+
+        assert response.status_code == 200
+        assert captured["lang"] == "sv"
+
+
 class TestCalendarTokenLifecycle:
     def test_generate_stores_hash_and_encrypted_copy(self, test_client, test_user, test_db):
         _login(test_client)
@@ -133,6 +183,19 @@ class TestProfilePageRendering:
         assert response.status_code == 200
         assert "webcal://" in response.text
         assert "/calendar/feed/" in response.text
+
+    def test_profile_shows_both_webcal_and_https_urls(self, test_client, test_user, test_db):
+        _login(test_client)
+        test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+
+        response = test_client.get("/profile")
+
+        assert response.status_code == 200
+        assert 'id="calendar-feed-webcal"' in response.text
+        assert 'id="calendar-feed-https"' in response.text
+        # The https field must carry an https:// URL (Google's "From URL" needs it),
+        # never http:// or webcal://.
+        assert "https://" in response.text
 
     def test_profile_renders_without_token(self, test_client, test_user, test_db):
         _login(test_client)

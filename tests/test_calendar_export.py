@@ -90,6 +90,14 @@ class TestBuildIcal:
 
         assert uid(build_ical(day_before, user_id=1)) == uid(build_ical(day_after, user_id=1))
 
+    def test_uid_identical_across_languages(self):
+        days = [_day(datetime.date(2026, 7, 13), SHIFT_N1)]
+
+        def uid(ical):
+            return str(next(c for c in Calendar.from_ical(ical).walk() if c.name == "VEVENT")["uid"])
+
+        assert uid(build_ical(days, user_id=3, lang="sv")) == uid(build_ical(days, user_id=3, lang="en"))
+
     def test_untimed_shift_becomes_all_day_event(self):
         days = [_day(datetime.date(2026, 7, 13), SHIFT_SEM, hours=0.0)]
         cal = Calendar.from_ical(build_ical(days, user_id=1))
