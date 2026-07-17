@@ -155,6 +155,8 @@ class User(Base):
     language = Column(String(5), default="sv", nullable=False)  # UI language: "sv" or "en"
     api_key = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256 hash, used for lookups
     api_key_encrypted = Column(Text, nullable=True)  # Fernet-encrypted plaintext, used for display only
+    calendar_token = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256 hash, feed URL lookups
+    calendar_token_encrypted = Column(Text, nullable=True)  # Fernet-encrypted plaintext, used for display only
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
