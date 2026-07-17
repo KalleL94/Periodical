@@ -1,159 +1,134 @@
+"""
+Tests for canonical iCal generation (build_ical / feed_window).
+
+build_ical is a pure function fed with canonical day dicts from
+generate_period_data, so these tests construct day dicts by hand and never
+touch the database.
+"""
+
 import datetime
 from collections import namedtuple
-from unittest.mock import patch
-from zoneinfo import ZoneInfo  # <--- YOU MISSED THIS
+from zoneinfo import ZoneInfo
 
-import pytest
 from icalendar import Calendar
 
-from app.core.calendar_export import (
-    _create_shift_event,
-    _get_shift_display_name,
-    generate_ical,
-)
+from app.core.calendar_export import add_months, build_ical, feed_window
 
-# Mock ShiftType as a namedtuple for simplicity
+SWE_TZ = ZoneInfo("Europe/Stockholm")
+
 MockShiftType = namedtuple("ShiftType", ["code", "label", "start_time", "end_time"])
 
-# Mock data for shifts
-mock_shift_n1 = MockShiftType(code="N1", label="Day Shift", start_time="08:00", end_time="16:00")
-mock_shift_off = MockShiftType(code="OFF", label="Off", start_time=None, end_time=None)
-mock_shift_sem = MockShiftType(code="SEM", label="Vacation", start_time=None, end_time=None)
+SHIFT_N1 = MockShiftType(code="N1", label="Day Shift", start_time="08:00", end_time="16:00")
+SHIFT_N2 = MockShiftType(code="N2", label="Evening Shift", start_time="16:00", end_time="00:00")
+SHIFT_OFF = MockShiftType(code="OFF", label="Off", start_time=None, end_time=None)
+SHIFT_SEM = MockShiftType(code="SEM", label="Vacation", start_time=None, end_time=None)
 
 
-@pytest.fixture
-def mock_determine_shift():
-    """Fixture to mock determine_shift_for_date."""
-
-    def mock_func(date, person_id):
-        # Return N1 for weekdays, OFF for weekends, SEM for specific date
-        if date.weekday() < 5:  # Mon-Fri
-            return mock_shift_n1, 1
-        elif date == datetime.date(2023, 1, 7):  # Example SEM day
-            return mock_shift_sem, 1
-        else:
-            return mock_shift_off, 1
-
-    return mock_func
+def _day(date, shift, hours=8.0, start=None, end=None, **extra):
+    if shift is not None and shift.start_time and start is None:
+        start = datetime.datetime.combine(date, datetime.time(8, 0), tzinfo=SWE_TZ)
+        end = start + datetime.timedelta(hours=8)
+    return {"date": date, "shift": shift, "hours": hours, "start": start, "end": end, **extra}
 
 
-@pytest.fixture
-def mock_calculate_hours():
-    """Fixture to mock calculate_shift_hours."""
-
-    def mock_func(date, shift):
-        if shift.code == "N1":
-            start_dt = datetime.datetime.combine(date, datetime.time(8, 0), tzinfo=ZoneInfo("Europe/Stockholm"))
-            end_dt = datetime.datetime.combine(date, datetime.time(16, 0), tzinfo=ZoneInfo("Europe/Stockholm"))
-            return 8.0, start_dt, end_dt
-        elif shift.code == "SEM":
-            return 0.0, None, None
-        return 0.0, None, None
-
-    return mock_func
+def event_date(event):
+    dt = event["dtstart"].dt
+    return dt.date() if isinstance(dt, datetime.datetime) else dt
 
 
-class TestCalendarExport:
-    @patch("app.core.calendar_export.determine_shift_for_date")
-    @patch("app.core.calendar_export.calculate_shift_hours")
-    def test_generate_ical_is_valid(self, mock_calc, mock_det):
-        """Test that generated iCal is valid and contains VCALENDAR and VEVENT."""
-        # Setup mocks
-        mock_det.side_effect = lambda date, pid: (mock_shift_n1, 1) if date.weekday() < 5 else (mock_shift_off, 1)
-        mock_calc.return_value = (
-            8.0,
-            datetime.datetime(2023, 1, 2, 8, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-            datetime.datetime(2023, 1, 2, 16, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-        )
+class TestAddMonths:
+    def test_forward_and_backward(self):
+        assert add_months(datetime.date(2026, 7, 17), 6) == datetime.date(2027, 1, 17)
+        assert add_months(datetime.date(2026, 7, 17), -2) == datetime.date(2026, 5, 17)
 
-        # Generate iCal for a week
-        start = datetime.date(2023, 1, 2)  # Monday
-        end = datetime.date(2023, 1, 8)  # Sunday
-        ical_str = generate_ical(1, start, end)
+    def test_backward_across_year_boundary(self):
+        assert add_months(datetime.date(2026, 1, 15), -2) == datetime.date(2025, 11, 15)
 
-        # Parse and validate
-        cal = Calendar.from_ical(ical_str)
-        assert "VCALENDAR" in str(cal)
-        events = cal.walk("VEVENT")
-        assert len(events) > 0  # Should have events for weekdays
+    def test_day_clamps_to_target_month_length(self):
+        assert add_months(datetime.date(2026, 8, 31), 6) == datetime.date(2027, 2, 28)
+        assert add_months(datetime.date(2026, 5, 31), -2) == datetime.date(2026, 3, 31)
 
-    @patch("app.core.calendar_export.determine_shift_for_date")
-    @patch("app.core.calendar_export.calculate_shift_hours")
-    def test_correct_number_of_events_for_week(self, mock_calc, mock_det):
-        """Test that correct number of events are created for a week (5 weekdays)."""
-        # Setup mocks: N1 for Mon-Fri, OFF for Sat-Sun
-        mock_det.side_effect = lambda date, pid: (mock_shift_n1, 1) if date.weekday() < 5 else (mock_shift_off, 1)
-        mock_calc.return_value = (
-            8.0,
-            datetime.datetime(2023, 1, 2, 8, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-            datetime.datetime(2023, 1, 2, 16, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-        )
 
-        start = datetime.date(2023, 1, 2)  # Monday
-        end = datetime.date(2023, 1, 8)  # Sunday
-        ical_str = generate_ical(1, start, end)
+class TestFeedWindow:
+    def test_midyear_reaches_back_to_january_first(self):
+        start, end = feed_window(datetime.date(2026, 7, 17))
+        assert start == datetime.date(2026, 1, 1)
+        assert end == datetime.date(2027, 1, 17)
 
-        cal = Calendar.from_ical(ical_str)
-        events = cal.walk("VEVENT")
-        assert len(events) == 5  # Only weekdays
+    def test_january_two_month_rule_reaches_previous_year(self):
+        start, end = feed_window(datetime.date(2026, 1, 15))
+        assert start == datetime.date(2025, 11, 15)
+        assert end == datetime.date(2026, 7, 15)
 
-    @patch("app.core.calendar_export.determine_shift_for_date")
-    def test_off_days_do_not_create_events(self, mock_det):
-        """Test that OFF days do not create events."""
-        mock_det.return_value = (mock_shift_off, 1)
 
-        start = datetime.date(2023, 1, 1)
-        end = datetime.date(2023, 1, 1)
-        ical_str = generate_ical(1, start, end)
+class TestBuildIcal:
+    def test_valid_calendar_with_events(self):
+        days = [
+            _day(datetime.date(2026, 7, 13), SHIFT_N1),
+            _day(datetime.date(2026, 7, 14), SHIFT_OFF, hours=0.0),
+            _day(datetime.date(2026, 7, 15), None, hours=0.0),
+        ]
+        cal = Calendar.from_ical(build_ical(days, user_id=1))
+        events = [c for c in cal.walk() if c.name == "VEVENT"]
 
-        cal = Calendar.from_ical(ical_str)
-        events = cal.walk("VEVENT")
-        assert len(events) == 0
+        assert len(events) == 1
+        assert str(events[0]["summary"]) == "Dagpass"
 
-    def test_shift_name_mapping(self):
-        """Test that shift names are mapped correctly."""
-        assert _get_shift_display_name(mock_shift_n1, "sv") == "Dagpass"
-        assert _get_shift_display_name(mock_shift_n1, "en") == "Day shift"
+    def test_uid_excludes_shift_code(self):
+        days = [_day(datetime.date(2026, 7, 13), SHIFT_N1)]
+        cal = Calendar.from_ical(build_ical(days, user_id=7))
+        event = next(c for c in cal.walk() if c.name == "VEVENT")
 
-    @patch("app.core.calendar_export.calculate_shift_hours")
-    def test_start_end_times_correct(self, mock_calc):
-        """Test that start and end times are set correctly in events."""
-        mock_calc.return_value = (
-            8.0,
-            datetime.datetime(2023, 1, 2, 8, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-            datetime.datetime(2023, 1, 2, 16, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-        )
+        assert str(event["uid"]) == "2026-07-13_7@periodical"
 
-        event = _create_shift_event(datetime.date(2023, 1, 2), 1, mock_shift_n1, "sv")
-        assert event["dtstart"].dt == datetime.datetime(2023, 1, 2, 8, 0, tzinfo=ZoneInfo("Europe/Stockholm"))
-        assert event["dtend"].dt == datetime.datetime(2023, 1, 2, 16, 0, tzinfo=ZoneInfo("Europe/Stockholm"))
+    def test_uid_stable_across_shift_change(self):
+        day_before = [_day(datetime.date(2026, 7, 13), SHIFT_N1)]
+        day_after = [_day(datetime.date(2026, 7, 13), SHIFT_N2)]
 
-    @patch("app.core.calendar_export.determine_shift_for_date")
-    @patch("app.core.calendar_export.calculate_shift_hours")
-    def test_uid_is_unique_per_event(self, mock_calc, mock_det):
-        """Test that UIDs are unique per event."""
+        def uid(ical):
+            return str(next(c for c in Calendar.from_ical(ical).walk() if c.name == "VEVENT")["uid"])
 
-        # Setup mocks for multiple days
-        def det_side_effect(date, pid):
-            if date == datetime.date(2023, 1, 2):
-                return mock_shift_n1, 1
-            elif date == datetime.date(2023, 1, 3):
-                return mock_shift_n1, 1
-            else:
-                return mock_shift_off, 1
+        assert uid(build_ical(day_before, user_id=1)) == uid(build_ical(day_after, user_id=1))
 
-        mock_det.side_effect = det_side_effect
-        mock_calc.return_value = (
-            8.0,
-            datetime.datetime(2023, 1, 2, 8, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-            datetime.datetime(2023, 1, 2, 16, 0, tzinfo=ZoneInfo("Europe/Stockholm")),
-        )
+    def test_untimed_shift_becomes_all_day_event(self):
+        days = [_day(datetime.date(2026, 7, 13), SHIFT_SEM, hours=0.0)]
+        cal = Calendar.from_ical(build_ical(days, user_id=1))
+        event = next(c for c in cal.walk() if c.name == "VEVENT")
 
-        start = datetime.date(2023, 1, 2)
-        end = datetime.date(2023, 1, 3)
-        ical_str = generate_ical(1, start, end)
+        assert event["dtstart"].dt == datetime.date(2026, 7, 13)
+        assert event["dtend"].dt == datetime.date(2026, 7, 14)
 
-        cal = Calendar.from_ical(ical_str)
-        events = cal.walk("VEVENT")
-        uids = [event["uid"] for event in events]
-        assert len(uids) == len(set(uids))  # All unique
+    def test_masked_employment_days_skipped(self):
+        days = [
+            _day(datetime.date(2026, 7, 13), SHIFT_N1, before_employment=True),
+            _day(datetime.date(2026, 7, 14), SHIFT_N1, after_employment=True),
+            _day(datetime.date(2026, 7, 15), SHIFT_N1),
+        ]
+        cal = Calendar.from_ical(build_ical(days, user_id=1))
+        events = [c for c in cal.walk() if c.name == "VEVENT"]
+
+        assert len(events) == 1
+        assert event_date(events[0]) == datetime.date(2026, 7, 15)
+
+    def test_english_display_names(self):
+        days = [_day(datetime.date(2026, 7, 13), SHIFT_N1)]
+        cal = Calendar.from_ical(build_ical(days, user_id=1, lang="en"))
+        event = next(c for c in cal.walk() if c.name == "VEVENT")
+
+        assert str(event["summary"]) == "Day shift"
+
+    def test_feed_properties_only_when_as_feed(self):
+        days = [_day(datetime.date(2026, 7, 13), SHIFT_N1)]
+
+        feed = build_ical(days, user_id=1, as_feed=True)
+        download = build_ical(days, user_id=1, as_feed=False)
+
+        assert "REFRESH-INTERVAL;VALUE=DURATION:PT12H" in feed
+        assert "X-PUBLISHED-TTL:PT12H" in feed
+        assert "REFRESH-INTERVAL" not in download
+
+    def test_empty_days_yield_valid_empty_calendar(self):
+        cal = Calendar.from_ical(build_ical([], user_id=1))
+
+        assert cal.name == "VCALENDAR"
+        assert not [c for c in cal.walk() if c.name == "VEVENT"]

@@ -376,11 +376,12 @@ async def revoke_api_key(
 async def export_calendar(
     current_user: User = Depends(get_current_user),
     lang: str = "sv",
+    db: Session = Depends(get_db),
 ) -> Response:
-    """Exports the user's schedule as an iCal file."""
+    """Exports the user's actual schedule as an iCal file."""
     from datetime import timedelta
 
-    from app.core.calendar_export import generate_ical
+    from app.core.calendar_export import generate_ical_for_user
 
     if lang not in ["sv", "en"]:
         raise HTTPException(status_code=400, detail="Ogiltigt språk")
@@ -388,9 +389,7 @@ async def export_calendar(
     start_date = get_today()
     end_date = start_date + timedelta(days=180)
 
-    ical_content = generate_ical(
-        person_id=current_user.rotation_person_id, start_date=start_date, end_date=end_date, lang=lang
-    )
+    ical_content = generate_ical_for_user(current_user, start_date, end_date, lang=lang, session=db)
 
     return Response(
         content=ical_content,
