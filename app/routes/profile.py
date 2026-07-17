@@ -40,6 +40,7 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
             "custom_rates": current_user.custom_rates or {},
             "rate_history": get_rate_history(db, current_user.id),
             "api_key_plain": decrypt_api_key(current_user.api_key_encrypted),
+            "calendar_token_plain": decrypt_api_key(current_user.calendar_token_encrypted),
         },
     )
 
@@ -372,15 +373,53 @@ async def revoke_api_key(
     return RedirectResponse(url="/profile", status_code=302)
 
 
+@router.post("/profile/calendar-token/generate", name="generate_calendar_token")
+async def generate_calendar_token(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate (or rotate) the current user's calendar feed token.
+
+    Feed lookups use the SHA-256 hash; an encrypted copy is stored so the
+    profile page can keep displaying the feed URL.
+    """
+    new_token = secrets.token_urlsafe(32)
+    current_user.calendar_token = hash_api_key(new_token)
+    current_user.calendar_token_encrypted = encrypt_api_key(new_token)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/calendar-token/revoke", name="revoke_calendar_token")
+async def revoke_calendar_token(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke the current user's calendar feed token."""
+    current_user.calendar_token = None
+    current_user.calendar_token_encrypted = None
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
+
+
 @router.get("/profile/calendar.ics/{lang}", response_class=Response, name="export_calendar")
 async def export_calendar(
     current_user: User = Depends(get_current_user),
     lang: str = "sv",
+    db: Session = Depends(get_db),
 ) -> Response:
-    """Exports the user's schedule as an iCal file."""
+    """Exports the user's actual schedule as an iCal file."""
     from datetime import timedelta
 
-    from app.core.calendar_export import generate_ical
+    from app.core.calendar_export import generate_ical_for_user
 
     if lang not in ["sv", "en"]:
         raise HTTPException(status_code=400, detail="Ogiltigt språk")
@@ -388,9 +427,7 @@ async def export_calendar(
     start_date = get_today()
     end_date = start_date + timedelta(days=180)
 
-    ical_content = generate_ical(
-        person_id=current_user.rotation_person_id, start_date=start_date, end_date=end_date, lang=lang
-    )
+    ical_content = generate_ical_for_user(current_user, start_date, end_date, lang=lang, session=db)
 
     return Response(
         content=ical_content,

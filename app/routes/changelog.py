@@ -15,6 +15,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.30.0",
+        "date": "2026-07-17",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Du kan nu prenumerera på ditt schema i din kalenderapp i stället för att ladda ner det på nytt varje gång. På profilsidan skapar du en personlig prenumerationslänk som du lägger in en gång i kalendern, och därefter uppdateras schemat automatiskt när det ändras, till exempel vid ett skiftbyte eller inlagd semester. Länken skyddas av en egen nyckel som kan återkallas eller bytas när som helst",
+                "en": "You can now subscribe to your schedule in your calendar app instead of downloading it again every time. On the profile page you create a personal subscription link that you add to your calendar once, and the schedule then updates automatically when it changes, for example after a shift swap or added vacation. The link is protected by its own key that can be revoked or rotated at any time",
+            },
+            {
+                "type": "fix",
+                "sv": "Kalenderexporten visar nu ditt faktiska schema med semester, skiftbyten och andra avvikelser, precis som vecko-, månads- och årsvyn. Tidigare visade exporten bara grundrotationen, så ett bytt pass eller en inlagd semester syntes inte i den nedladdade kalendern",
+                "en": "The calendar export now shows your actual schedule with vacation, shift swaps and other deviations, just like the week, month and year views. Previously the export only showed the base rotation, so a swapped shift or added vacation did not appear in the downloaded calendar",
+            },
+        ],
+    },
+    {
         "version": "0.29.0",
         "date": "2026-07-17",
         "entries": [

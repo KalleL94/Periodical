@@ -1,18 +1,22 @@
-"""iCal file generation for user schedules."""
+"""iCal generation for user schedules (download and subscription feed).
 
+Events are built from canonical day dicts produced by generate_period_data,
+so vacations, swaps and overrides are included - the same data the week,
+month and year views show.
+"""
+
+import calendar as _calendar
 import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from icalendar import Calendar, Event
+from icalendar import Calendar, Event, vDuration
 
-from app.core.schedule.core import (
-    calculate_shift_hours,
-    determine_shift_for_date,
-)
+from app.core.schedule.period import generate_period_data, mask_days_to_employment
+from app.core.schedule.person_history import get_employment_period
 
 if TYPE_CHECKING:
-    from app.core.models import ShiftType
+    from app.database.database import User
 
 # Swedish timezone
 SWE_TZ = ZoneInfo("Europe/Stockholm")
@@ -40,80 +44,97 @@ SHIFT_NAMES_EN: dict[str, str] = {
 }
 
 
-def _get_shift_display_name(shift: "ShiftType", lang: str = "sv") -> str:
+def _get_shift_display_name(shift, lang: str = "sv") -> str:
     """Returns the display name for a shift in the given language."""
     SHIFT_NAMES = SHIFT_NAMES_SV if lang == "sv" else SHIFT_NAMES_EN
     return SHIFT_NAMES.get(shift.code, shift.label)
 
 
-def generate_ical(
-    person_id: int,
+def add_months(d: datetime.date, months: int) -> datetime.date:
+    """Month arithmetic; the day clamps to the target month's length."""
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(d.day, _calendar.monthrange(year, month)[1])
+    return datetime.date(year, month, day)
+
+
+def feed_window(today: datetime.date) -> tuple[datetime.date, datetime.date]:
+    """Date range served by the subscription feed.
+
+    Reaches back to Jan 1 of the current year, but always at least two
+    months (so a January fetch still covers the end of the previous year),
+    and six months forward.
+    """
+    start = min(datetime.date(today.year, 1, 1), add_months(today, -2))
+    return start, add_months(today, 6)
+
+
+def generate_ical_for_user(
+    user: "User",
     start_date: datetime.date,
     end_date: datetime.date,
     lang: str = "sv",
+    session=None,
+    as_feed: bool = False,
 ) -> str:
-    """
-    Generates an iCal file for a person's schedule.
+    """Generates iCal for a user's actual schedule via the canonical path."""
+    position = user.rotation_person_id
+    emp_start, emp_end = get_employment_period(session, user.id, position)
+    days = generate_period_data(
+        start_date,
+        end_date,
+        person_id=position,
+        session=session,
+        employment_start=emp_start,
+    )
+    days = mask_days_to_employment(
+        days, emp_start or datetime.date.min, emp_end or datetime.date.max, keep_substitute_days=True
+    )
+    return build_ical(days, user_id=user.id, lang=lang, as_feed=as_feed)
 
-    Args:
-        person_id: Person ID (1-10)
-        start_date: First date in the range
-        end_date: Last date in the range
 
-    Returns:
-        iCal-formatted string
+def build_ical(days: list[dict], user_id: int, lang: str = "sv", as_feed: bool = False) -> str:
+    """Builds a VCALENDAR string from canonical day dicts.
+
+    Off days, empty days and days masked to outside the user's employment
+    are skipped. The UID deliberately excludes the shift code so a changed
+    shift replaces its predecessor in subscribing clients instead of
+    duplicating it.
     """
     cal = Calendar()
     cal.add("prodid", "-//Periodical Schedule//periodical.app//")
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
     cal.add("method", "PUBLISH")
-    cal.add("x-wr-calname", f"Schema Person {person_id}")
+    cal.add("x-wr-calname", "Periodical schema")
     cal.add("x-wr-timezone", "Europe/Stockholm")
+    if as_feed:
+        cal.add("refresh-interval", vDuration(datetime.timedelta(hours=12)), parameters={"VALUE": "DURATION"})
+        cal.add("x-published-ttl", "PT12H")
 
-    current_date = start_date
-    while current_date <= end_date:
-        shift, rotation_week = determine_shift_for_date(current_date, person_id)
-
-        # Skip off days
-        if shift is None or shift.code == "OFF":
-            current_date += datetime.timedelta(days=1)
+    for day in days:
+        if day.get("before_employment") or day.get("after_employment"):
             continue
-
-        event = _create_shift_event(current_date, person_id, shift, lang)
-        cal.add_component(event)
-
-        current_date += datetime.timedelta(days=1)
+        shift = day.get("shift")
+        if shift is None or shift.code == "OFF":
+            continue
+        cal.add_component(_create_shift_event(day, user_id, shift, lang))
 
     return cal.to_ical().decode("utf-8")
 
 
-def _create_shift_event(
-    date: datetime.date,
-    person_id: int,
-    shift: "ShiftType",
-    lang: str = "sv",
-) -> Event:
-    """
-    Creates a VEVENT for a shift.
-
-    Args:
-        date: Shift date
-        person_id: Person ID
-        shift: ShiftType object
-
-    Returns:
-        icalendar Event object
-    """
+def _create_shift_event(day: dict, user_id: int, shift, lang: str = "sv") -> Event:
+    """Creates a VEVENT for one canonical day dict."""
+    date = day["date"]
     event = Event()
 
-    display_name = _get_shift_display_name(shift, lang)
-    event.add("summary", display_name)
+    event.add("summary", _get_shift_display_name(shift, lang))
+    event.add("uid", f"{date.isoformat()}_{user_id}@periodical")
 
-    uid = f"{date.isoformat()}_{person_id}_{shift.code}@periodical"
-    event.add("uid", uid)
-
-    hours, start_dt, end_dt = calculate_shift_hours(date, shift)
+    start_dt = day.get("start")
+    end_dt = day.get("end")
+    hours = day.get("hours", 0.0) or 0.0
 
     if start_dt and end_dt:
         event.add("dtstart", start_dt)
@@ -130,54 +151,6 @@ def _create_shift_event(
         description_parts.append(f"Tid: {shift.start_time} - {shift.end_time}")
 
     event.add("description", "\n".join(description_parts))
-
     event.add("dtstamp", datetime.datetime.now(SWE_TZ))
 
     return event
-
-
-def generate_ical_for_month(
-    person_id: int,
-    year: int,
-    month: int,
-    lang: str = "sv",
-) -> str:
-    """
-    Generates iCal for a specific month.
-
-    Args:
-        person_id: Person ID
-        year: Year
-        month: Month (1-12)
-
-    Returns:
-        iCal-formatted string
-    """
-    import calendar
-
-    start_date = datetime.date(year, month, 1)
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime.date(year, month, last_day)
-
-    return generate_ical(person_id, start_date, end_date, lang)
-
-
-def generate_ical_for_year(
-    person_id: int,
-    year: int,
-    lang: str = "sv",
-) -> str:
-    """
-    Generates iCal for an entire year.
-
-    Args:
-        person_id: Person ID
-        year: Year
-
-    Returns:
-        iCal-formatted string
-    """
-    start_date = datetime.date(year, 1, 1)
-    end_date = datetime.date(year, 12, 31)
-
-    return generate_ical(person_id, start_date, end_date, lang)
