@@ -26,7 +26,7 @@ async def calendar_feed(token: str, db: Session = Depends(get_db)) -> Response:
         raise HTTPException(status_code=404)
 
     start_date, end_date = feed_window(get_today())
-    ical_content = generate_ical_for_user(user, start_date, end_date, lang="sv", session=db, as_feed=True)
+    ical_content = generate_ical_for_user(user, start_date, end_date, lang=user.language, session=db, as_feed=True)
 
     return Response(
         content=ical_content,
