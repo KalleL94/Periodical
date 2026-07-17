@@ -281,6 +281,42 @@
         </div>
     </section>
 
+    <!-- Kalenderprenumeration -->
+    <section class="section-mt">
+        <h2>{{ t.profile_calendar_feed_title }}</h2>
+        <div class="card">
+            <p class="text-muted form-card-title">{{ t.profile_calendar_feed_desc }}</p>
+
+            {% if calendar_token_plain %}
+                {% set feed_url = request.url_for('calendar_feed', token=calendar_token_plain) %}
+                {% set webcal_url = feed_url | string | replace('https://', 'webcal://') | replace('http://', 'webcal://') %}
+                <input type="text" id="calendar-feed-url" value="{{ webcal_url }}" readonly class="profile-api-input">
+            {% elif user.calendar_token %}
+                <p class="text-muted">{{ t.profile_calendar_feed_configured }}</p>
+            {% else %}
+                <p class="text-muted">{{ t.profile_calendar_feed_none }}</p>
+            {% endif %}
+
+            <div class="profile-actions">
+                {% if calendar_token_plain %}
+                <button type="button" class="btn btn-secondary"
+                        onclick="navigator.clipboard.writeText(document.getElementById('calendar-feed-url').value)">
+                    {{ t.profile_calendar_feed_copy }}
+                </button>
+                {% endif %}
+                <form method="POST" action="/profile/calendar-token/generate">
+                    <button type="submit" class="btn btn-primary">{{ t.profile_calendar_feed_generate }}</button>
+                </form>
+                {% if user.calendar_token %}
+                <form method="POST" action="/profile/calendar-token/revoke"
+                      onsubmit="return confirm('{{ t.profile_calendar_feed_revoke_confirm }}')">
+                    <button type="submit" class="btn btn-danger">{{ t.profile_calendar_feed_revoke }}</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
     <!-- Kalenderexport -->
     <section class="calendar-export">
         <h2>{{ t.profile_calendar_export }}</h2>

@@ -121,3 +121,23 @@ class TestCalendarTokenLifecycle:
         assert response.status_code in (302, 401)
         test_db.refresh(test_user)
         assert test_user.calendar_token is None
+
+
+class TestProfilePageRendering:
+    def test_profile_shows_webcal_url_when_token_exists(self, test_client, test_user, test_db):
+        _login(test_client)
+        test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+
+        response = test_client.get("/profile")
+
+        assert response.status_code == 200
+        assert "webcal://" in response.text
+        assert "/calendar/feed/" in response.text
+
+    def test_profile_renders_without_token(self, test_client, test_user, test_db):
+        _login(test_client)
+
+        response = test_client.get("/profile")
+
+        assert response.status_code == 200
+        assert "webcal://" not in response.text
