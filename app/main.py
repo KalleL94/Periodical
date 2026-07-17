@@ -24,6 +24,7 @@ from app.routes.admin import router as admin_router
 from app.routes.admin_users import router as admin_users_router
 from app.routes.api_v1 import create_admin_api_app, create_api_app
 from app.routes.auth_routes import router as auth_router
+from app.routes.calendar_feed import router as calendar_feed_router
 from app.routes.changelog import router as changelog_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.day_pay_override import router as day_pay_override_router
@@ -329,6 +330,7 @@ app.include_router(day_pay_override_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
+app.include_router(calendar_feed_router)
 app.include_router(reports_router)
 app.include_router(admin_users_router)
 app.include_router(admin_router)
