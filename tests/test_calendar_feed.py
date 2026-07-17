@@ -79,3 +79,45 @@ class TestCalendarFeedEndpoint:
         response = test_client.get(f"/calendar/feed/{token}/schema.ics")
 
         assert response.status_code == 200
+
+
+class TestCalendarTokenLifecycle:
+    def test_generate_stores_hash_and_encrypted_copy(self, test_client, test_user, test_db):
+        _login(test_client)
+
+        response = test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+
+        assert response.status_code == 302
+        test_db.refresh(test_user)
+        assert test_user.calendar_token is not None
+        assert len(test_user.calendar_token) == 64
+        assert test_user.calendar_token_encrypted is not None
+
+    def test_rotation_invalidates_old_token(self, test_client, test_user, test_db):
+        _login(test_client)
+        test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+        test_db.refresh(test_user)
+        old_hash = test_user.calendar_token
+
+        test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+        test_db.refresh(test_user)
+
+        assert test_user.calendar_token != old_hash
+
+    def test_revoke_clears_both_columns(self, test_client, test_user, test_db):
+        _login(test_client)
+        test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+
+        response = test_client.post("/profile/calendar-token/revoke", follow_redirects=False)
+
+        assert response.status_code == 302
+        test_db.refresh(test_user)
+        assert test_user.calendar_token is None
+        assert test_user.calendar_token_encrypted is None
+
+    def test_generate_requires_login(self, test_client, test_user, test_db):
+        response = test_client.post("/profile/calendar-token/generate", follow_redirects=False)
+
+        assert response.status_code in (302, 401)
+        test_db.refresh(test_user)
+        assert test_user.calendar_token is None

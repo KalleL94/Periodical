@@ -40,6 +40,7 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
             "custom_rates": current_user.custom_rates or {},
             "rate_history": get_rate_history(db, current_user.id),
             "api_key_plain": decrypt_api_key(current_user.api_key_encrypted),
+            "calendar_token_plain": decrypt_api_key(current_user.calendar_token_encrypted),
         },
     )
 
@@ -364,6 +365,43 @@ async def revoke_api_key(
     """Revoke the current user's API key."""
     current_user.api_key = None
     current_user.api_key_encrypted = None
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/calendar-token/generate", name="generate_calendar_token")
+async def generate_calendar_token(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate (or rotate) the current user's calendar feed token.
+
+    Feed lookups use the SHA-256 hash; an encrypted copy is stored so the
+    profile page can keep displaying the feed URL.
+    """
+    new_token = secrets.token_urlsafe(32)
+    current_user.calendar_token = hash_api_key(new_token)
+    current_user.calendar_token_encrypted = encrypt_api_key(new_token)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse(url="/profile", status_code=302)
+
+
+@router.post("/profile/calendar-token/revoke", name="revoke_calendar_token")
+async def revoke_calendar_token(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke the current user's calendar feed token."""
+    current_user.calendar_token = None
+    current_user.calendar_token_encrypted = None
     try:
         db.commit()
     except Exception:
