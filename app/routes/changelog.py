@@ -15,6 +15,32 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "0.29.0",
+        "date": "2026-07-17",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Vikarier kan nu kopplas till användarkonton och få en timlön. För en kopplad användare visas vikariens pass före anställningsstarten i alla personliga vyer, märkta som vikariepass, och räknas in i timmar, OB och lön på samma sätt som för timavlönade användare. Personbytesflödet har ett nytt läge för att koppla en befintlig vikarie direkt vid anställningsstart, och vikarieadminsidan kan koppla och sätta timlön retroaktivt",
+                "en": "Substitutes can now be linked to user accounts and given an hourly wage. For a linked user, the substitute's shifts before the employment start date appear in every personal view, marked as substitute shifts, and count into hours, OB pay and wage the same way as for hourly-wage users. The person-change flow has a new mode for linking an existing substitute directly at the start of employment, and the substitute admin page can link and set the hourly wage retroactively",
+            },
+            {
+                "type": "fix",
+                "sv": "Administratörens inställningssida visar nu felmeddelandet när sparandet misslyckas, till exempel vid en ogiltig månadslön. Tidigare försvann felet tyst och sidan visade bara ett tomt formulär",
+                "en": "The admin settings page now shows the error message when saving fails, for example an invalid monthly salary. Previously the error disappeared silently and the page just showed a blank form",
+            },
+            {
+                "type": "fix",
+                "sv": "Semesterutbetalningar och OB-, övertids- och beredskapsrater som föll på exakt den dag en lön- eller ratändring trädde i kraft kunde räknas med de nya värdena i stället för de som faktiskt gällde den dagen. Gränsdagen prissätts nu alltid korrekt",
+                "en": "Vacation payouts and OB, overtime and on-call rates falling on the exact day a wage or rate change took effect could be calculated with the new values instead of the ones actually in force that day. The boundary day is now always priced correctly",
+            },
+            {
+                "type": "fix",
+                "sv": "Dagvyn visar nu samma sak som vecko-, månads- och årsvyn: accepterade skiftbyten syns (visades tidigare inte alls), föräldraledighet och dagsemester visas som ledighet respektive semester, en heldags sjukfrånvaro maskar passkoden, och beredskap hanteras konsekvent i alla vyer",
+                "en": "The day view now shows the same thing as the week, month and year views: accepted shift swaps appear (previously not shown at all), parental leave and day-level vacation show as leave and vacation respectively, a full-day sick absence masks the shift code, and on-call is handled consistently across every view",
+            },
+        ],
+    },
+    {
         "version": "0.28.1",
         "date": "2026-07-15",
         "entries": [
