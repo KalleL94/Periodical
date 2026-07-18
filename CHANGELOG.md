@@ -34,7 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mobile UI improvements (FAB button, person dropdown)
 - Complete iCal/ICS calendar export implementation
 
-## [1.0.0] - 2025-12-18
+## Initial feature set - 2025-12-18
+
+> Originally headed `[1.0.0]`. No 1.0.0 release has ever existed: the releases of
+> this period were the `v0.0.x` series, the last being `v0.0.17` on 2025-12-10,
+> and versioning resumed at `v0.12.0` in April 2026. This section records the
+> feature set as it stood when the file was first written, not a tagged release.
+> The heading is corrected so the number stays free for an actual 1.0.0.
 
 ### Added
 - **User Authentication System**
@@ -173,7 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History Notes
 
-- **v1.0.0**: First production-ready release with complete feature set
+- **Initial feature set** (untagged): First complete feature set, shipped as the `v0.0.x` series
 - **v0.0.20**: Database migration and major refactoring
 - **v0.0.1**: Initial prototype
 
