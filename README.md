@@ -116,7 +116,7 @@ PRODUCTION=false
 # SENTRY_ENVIRONMENT=production
 
 # RELEASE_VERSION - Optional version tracking
-# RELEASE_VERSION=periodical@1.0.0
+# RELEASE_VERSION=periodical@0.30.1
 
 # Database URL (optional, defaults to SQLite)
 # DATABASE_URL=sqlite:///./app/database/schedule.db
@@ -475,7 +475,7 @@ pip install sentry-sdk[fastapi]
 # Configure in .env
 SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
 SENTRY_ENVIRONMENT=production
-RELEASE_VERSION=periodical@1.0.0
+RELEASE_VERSION=periodical@0.30.1
 ```
 
 See [docs/SENTRY.md](docs/SENTRY.md) for setup instructions.
@@ -486,7 +486,7 @@ The `/health` endpoint provides application status for monitoring:
 
 ```bash
 curl http://localhost:8000/health
-# Response: {"status":"healthy","service":"periodical","version":"1.0.0"}
+# Response: {"status":"healthy","service":"periodical","version":"0.30.1","database":"connected"}
 ```
 
 Use this endpoint with:
@@ -503,10 +503,12 @@ git tag
 git log --oneline --decorate
 ```
 
-**Current version: 1.0.0**
+The authoritative version is the first entry of `VERSIONS` in
+[app/routes/changelog.py](app/routes/changelog.py); it is what `/health` reports
+and what the in-app changelog page shows. Release notes live in
+[CHANGELOG.md](CHANGELOG.md).
 
-Major releases:
-- **v1.0.0** - Production-ready release with CI/CD, structured logging, and comprehensive documentation
+Milestones:
 - **v0.0.13** - README and auth routing improvements
 - **v0.0.12** - User profile and vacation interfaces
 - **v0.0.11** - JWT authentication and database
