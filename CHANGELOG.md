@@ -12,10 +12,16 @@ has selected. Add both when a change is worth telling users about.
 
 ## [Unreleased]
 
+### Security
+- CSRF protection on every state-changing route. Each form now submits a signed token that the server compares against a matching cookie, so another site cannot trick your logged-in browser into adding absence, changing wage data or performing other actions in your name. The API is unaffected because it authenticates with a key in the request header
+- Logging out is now a button rather than a link, because a link could be triggered by another site to log you out without asking
+- Development CORS no longer lets arbitrary sites make requests carrying your session cookie; it is restricted to loopback addresses
+
 ### Added
 - Substitutes can be linked to user accounts (`substitutes.user_id`) and given an hourly wage (`substitutes.hourly_wage`). For a linked user, substitute shifts worked before the employment start date now appear in the personal views (day/week/month/year/statistics), marked as substitute shifts, and count towards hours, OB and pay, priced as hourly employment using the same calculations as existing hourly-paid users. Overtime is priced with the hourly wage in the personal view while `ot_pay` stays 0 in the database (the team view's source). The person-change flow has a new "Existing substitute" mode that creates the account, links the substitute and starts the employment in one transaction, and the substitute admin page can link retroactively and set the hourly wage. The monthly report hides a linked substitute's already-attributed days so nothing is counted twice
 
 ### Fixed
+- Overtime booked on a vacation week replaced the vacation day (SEM) in the schedule views and was also counted as overtime pay. Vacation now takes priority over overtime, as absence and parental leave already did. The day renders as vacation again and no overtime pay is added. Day-level vacation entered as an absence was not affected
 - The admin settings page now shows the error message when saving fails, for example on an invalid monthly salary. Previously the error was dropped silently and the page rendered an empty form
 - Vacation payout for an employment change recorded on or after its own effective date could be calculated on the new direct salary instead of the consultant's actual final salary. The boundary day is now always priced with the salary that actually applied on that day
 - OB, overtime and on-call rates on the exact day a rate change takes effect could be calculated with the new rates instead of the ones in force that day. The boundary day is now always priced with the rates that actually applied

@@ -49,13 +49,16 @@
                 <td>
                     {% if swap.status.value == 'PENDING' %}
                         <form method="POST" action="/swaps/{{ swap.id }}/accept" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-swap">{{ t.swaps_accept }}</button>
                         </form>
                         <form method="POST" action="/swaps/{{ swap.id }}/reject" class="inline-form ml-1">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-danger btn-fs-sm">{{ t.swaps_reject }}</button>
                         </form>
                     {% elif swap.status.value == 'ACCEPTED' %}
                         <form method="POST" action="/swaps/{{ swap.id }}/cancel" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-danger btn-fs-sm"
                                     onclick="return confirm('{{ t.swaps_undo_confirm }}')">{{ t.swaps_undo }}</button>
                         </form>
@@ -103,6 +106,7 @@
                 <td>
                     {% if swap.status.value in ('PENDING', 'ACCEPTED') %}
                         <form method="POST" action="/swaps/{{ swap.id }}/cancel" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-danger btn-fs-sm"
                                     onclick="return confirm('{{ t.swaps_undo_confirm if swap.status.value == 'ACCEPTED' else t.swaps_cancel_confirm }}')">
                                 {{ t.swaps_undo if swap.status.value == 'ACCEPTED' else t.swaps_cancel }}

@@ -26,6 +26,7 @@
     <p class="text-muted ue-desc">{{ t.admin_person_change_desc }}</p>
 
     <form method="POST" action="/admin/person-change">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-group">
             <label for="person_id" class="form-label">{{ t.admin_person_change_position_label }}</label>
             <select id="person_id" name="person_id" required class="form-input">
@@ -134,6 +135,7 @@
     <p class="text-muted ue-desc">{{ t.admin_swap_positions_desc }}</p>
 
     <form method="POST" action="/admin/person-change/swap-positions">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-grid-2">
             <div>
                 <label for="position_a" class="form-label">{{ t.admin_swap_positions_a }}</label>
@@ -209,6 +211,7 @@
                         <details>
                             <summary class="link-button">{{ t.admin_pc_history_edit }}</summary>
                             <form method="POST" action="/admin/person-change/history/{{ h.id }}/edit" class="form-grid-2">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <div>
                                     <label class="form-label" for="from-{{ h.id }}">{{ t.admin_person_change_first_day }}</label>
                                     <input type="date" id="from-{{ h.id }}" name="effective_from"
@@ -224,6 +227,7 @@
                         </details>
                         <form method="POST" action="/admin/person-change/history/{{ h.id }}/delete"
                               onsubmit="return confirm('{{ t.admin_pc_history_delete_confirm }}');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="link-button link-button--danger">
                                 {{ t.admin_pc_history_delete }}
                             </button>

@@ -166,6 +166,7 @@
             <p class="vacation-copy">{{ t.admin_vac_user_weeks_hint }}</p>
 
             <form method="POST" action="/admin/vacation/{{ edit_user.id }}/weeks" id="vacation-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="weeks-input" value="{{ vacation_weeks | join(',') }}">
 
@@ -191,6 +192,7 @@
             <p class="vacation-copy">{{ t.vacation_parental_weeks_hint }}</p>
 
             <form method="POST" action="/admin/vacation/{{ edit_user.id }}/parental/weeks" id="parental-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="parental-weeks-input" value="{{ parental_weeks | join(',') }}">
 
@@ -222,6 +224,7 @@
             </div>
 
             <form method="POST" action="/admin/vacation/{{ edit_user.id }}/days/sync" id="days-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="dates" id="dates-input"
                     value="{% for a in day_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
@@ -245,6 +248,7 @@
         <div class="card vacation-section">
             <h3 class="vacation-section-title">{{ t.admin_vac_user_settings_title }}</h3>
             <form method="POST" action="/admin/vacation/{{ edit_user.id }}/settings">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group avu-field">
                     <label class="form-label avu-label">{{ t.admin_vac_user_employment_date }}</label>
                     <input type="date" name="employment_start_date"
@@ -278,6 +282,7 @@
                 {{ t.admin_vac_user_saved_days_desc }}
             </p>
             <form method="POST" action="/admin/vacation/{{ edit_user.id }}/saved">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 {% set saved_data = edit_user.vacation_saved or {} %}
                 {% set has_entries = false %}
                 {% for y in range(year - 5, year) %}

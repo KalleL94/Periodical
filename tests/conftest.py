@@ -28,6 +28,7 @@ import datetime
 
 import app.database.database as db_module
 from app.auth.auth import create_access_token, get_password_hash
+from app.auth.csrf import CSRF_COOKIE_NAME, CSRF_FIELD_NAME, generate_csrf_token
 from app.core.schedule import clear_schedule_cache
 from app.database.database import Base, RotationEra, User, UserRole, WageType, get_db
 from app.main import app
@@ -46,6 +47,58 @@ _ROTATION_ERA_PATTERN = {
     "9": ["N1", "N1", "OC", "OFF", "OFF", "N2", "N2"],
     "10": ["N2", "N2", "N2", "N2", "OFF", "OFF", "OFF"],
 }
+
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+
+class CSRFTestClient(TestClient):
+    """TestClient that transparently satisfies CSRFMiddleware.
+
+    Route tests exercise handler behaviour, not CSRF enforcement, so the
+    double-submit token is injected here rather than in every one of the
+    ~100 POST call sites. Enforcement itself is covered by tests/test_csrf.py,
+    which uses `raw_client` to bypass this injection.
+    """
+
+    def request(self, method, url, **kwargs):
+        if method.upper() not in _SAFE_METHODS:
+            self._add_csrf(kwargs)
+        return super().request(method, url, **kwargs)
+
+    def _add_csrf(self, kwargs: dict) -> None:
+        headers = kwargs.get("headers") or {}
+        if str(headers.get("Authorization", "")).startswith("Bearer "):
+            return  # header-authenticated requests are exempt from CSRF
+
+        token = self.cookies.get(CSRF_COOKIE_NAME)
+        if not token:
+            token = generate_csrf_token()
+            self.cookies.set(CSRF_COOKIE_NAME, token)
+
+        data = kwargs.get("data")
+        if data is None and kwargs.get("json") is None and kwargs.get("content") is None:
+            kwargs["data"] = {CSRF_FIELD_NAME: token}
+        elif isinstance(data, dict) and CSRF_FIELD_NAME not in data:
+            kwargs["data"] = {**data, CSRF_FIELD_NAME: token}
+
+
+@pytest.fixture(scope="function")
+def raw_client(test_db):
+    """A TestClient without automatic CSRF injection, for testing enforcement."""
+
+    def override_get_db():
+        yield test_db
+
+    sub_apps = [route.app for route in app.routes if isinstance(route, Mount) and isinstance(route.app, FastAPI)]
+    for target in [app, *sub_apps]:
+        target.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(app) as client:
+        yield client
+
+    for target in [app, *sub_apps]:
+        target.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="function")
@@ -111,7 +164,7 @@ def test_client(test_db):
     for target in [app, *sub_apps]:
         target.dependency_overrides[get_db] = override_get_db
 
-    with TestClient(app) as client:
+    with CSRFTestClient(app) as client:
         yield client
 
     # Clean up

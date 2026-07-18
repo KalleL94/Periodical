@@ -25,6 +25,7 @@
     <div class="card form-card-block">
         <h3 class="form-card-title">{{ t.admin_substitute_link_title }}</h3>
         <form method="POST" action="/admin/substitutes/{{ substitute.id }}/link" class="form-row-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label for="link_user_id" class="form-label">{{ t.admin_substitute_link_user }}</label>
                 <select id="link_user_id" name="user_id" class="form-input">
@@ -59,6 +60,7 @@
     </div>
 
     <form method="POST" action="/admin/substitutes/{{ substitute.id }}/save">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="year" value="{{ year }}">
         <input type="hidden" name="month" value="{{ month }}">
 
@@ -102,6 +104,7 @@
     <h3 class="section-mt">Övertid</h3>
     <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/add"
           class="sub-form-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label class="sub-field">Datum
             <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
         </label>
@@ -126,6 +129,7 @@
                         <td class="sub-td">{{ ot.hours }} h</td>
                         <td class="sub-td sub-td-right">
                             <form method="POST" action="/admin/substitutes/{{ substitute.id }}/overtime/{{ ot.id }}/delete" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn secondary btn-xs">Ta bort</button>
                             </form>
                         </td>
@@ -139,6 +143,7 @@
     <h3 class="mt-3">Frånvaro</h3>
     <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/add"
           class="sub-form-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label class="sub-field">Datum
             <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
         </label>
@@ -160,6 +165,7 @@
                         <td class="sub-td">{{ a.absence_type }}</td>
                         <td class="sub-td sub-td-right">
                             <form method="POST" action="/admin/substitutes/{{ substitute.id }}/absence/{{ a.id }}/delete" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn secondary btn-xs">Ta bort</button>
                             </form>
                         </td>

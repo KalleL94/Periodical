@@ -152,6 +152,7 @@
                                     <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                     <td>
                                         <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" class="inline-form">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                             <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_extension_confirm }}')">{{ t.day_delete }}</button>
                                         </form>
                                     </td>
@@ -182,6 +183,7 @@
                                     <td>{{ "%.2f"|format(ot_shift.pay) }} kr</td>
                                     <td>
                                         <form method="POST" action="/overtime/{{ ot_shift_id }}/delete" class="inline-form">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                             <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_ot_confirm }}')">{{ t.day_delete }}</button>
                                         </form>
                                     </td>
@@ -201,6 +203,7 @@
                 {% if shift and shift.code in ('N1', 'N2', 'N3') %}
                     <p class="info-text day-hint-tight">{{ t.day_ext_stayed.replace('{time}', shift.end_time) }}</p>
                     <form method="POST" action="/overtime/add" class="ot-form" id="ext-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         <input type="hidden" name="date" value="{{ date }}">
                         <input type="hidden" name="is_extension" value="true">
@@ -246,6 +249,7 @@
 
                 {# Fullt övertidspass (inkallning) #}
                 <form method="POST" action="/overtime/add" class="ot-form{% if shift and shift.code in ('N1', 'N2', 'N3') %} ot-form-spaced{% endif %}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
 
@@ -333,6 +337,7 @@
                                 </td>
                                 <td>
                                     <form method="POST" action="/absence/{{ absence.id }}/delete" class="inline-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_absence_confirm }}')">{{ t.day_delete }}</button>
                                     </form>
                                 </td>
@@ -416,6 +421,7 @@
                 </div>
             {% else %}
                 <form method="POST" action="/absence/add" class="absence-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
 
@@ -485,6 +491,7 @@
                                 <td>{{ oncall_override.reason or '-' }}</td>
                                 <td>
                                     <form method="POST" action="/oncall/{{ oncall_override.id }}/delete" class="inline-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_oncall_undo_confirm }}')">{{ t.day_oncall_undo }}</button>
                                     </form>
                                 </td>
@@ -503,6 +510,7 @@
                 {% if has_rotation_oc %}
                     {# Person har OC enligt rotation - visa ta bort-knapp #}
                     <form method="POST" action="/oncall/remove" class="oncall-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         <input type="hidden" name="date" value="{{ date }}">
 
@@ -524,6 +532,7 @@
                 {% else %}
                     {# Person har inte OC - visa lägg till-knapp #}
                     <form method="POST" action="/oncall/add" class="oncall-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         <input type="hidden" name="date" value="{{ date }}">
 
@@ -572,6 +581,7 @@
                 {% endif %}
 
                 <form method="POST" action="/shift-override/add">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
 
@@ -593,6 +603,7 @@
 
                 {% if shift_override %}
                     <form method="POST" action="/shift-override/{{ shift_override.id }}/delete" class="form-row--mt">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_shift_override_revert_confirm }}')">{{ t.day_shift_override_revert }}</button>
                     </form>
                 {% endif %}
@@ -627,6 +638,7 @@
         {% set is_one_way = not shift or shift.code == 'OFF' %}
         <h3 class="day-h-mt">{% if is_one_way %}{{ t.day_take_shift }}{% else %}{{ t.day_propose_swap }}{% endif %}</h3>
         <form method="POST" action="/swaps/propose" class="ot-form" id="swap-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="requester_date" value="{{ date }}">
             <div class="form-row">
                 <div class="form-group">
@@ -883,6 +895,7 @@
             {# Manual hour override - visible on both OC and OB days #}
             {% if user and (user.id == person_id or user.id == 0) %}
                 <form id="pay-override-form" method="POST" action="/day-pay-override/set">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     <input type="hidden" name="date" value="{{ date }}">
                 </form>
@@ -894,6 +907,7 @@
                             <span class="pay-view day-note-sm">{{ day_pay_override.reason }}</span>
                         {% endif %}
                         <form method="POST" action="/day-pay-override/{{ day_pay_override.id }}/delete" class="pay-view inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_pay_override_remove_confirm }}')">{{ t.day_pay_override_remove }}</button>
                         </form>
                     {% endif %}

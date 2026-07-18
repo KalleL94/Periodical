@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.csrf_middleware import CSRFMiddleware
 from app.core.logging_config import get_logger, setup_logging
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.sentry_config import init_sentry
@@ -173,17 +174,20 @@ if IS_PRODUCTION:
 
     logger.info(f"CORS configured for production with origins: {allowed_origins}")
 else:
-    # Development: Permissive CORS for easier testing.
-    # Use an origin regex rather than allow_origins=["*"]: a literal "*" is invalid with
-    # allow_credentials=True (browsers reject it), so Starlette must reflect the request
-    # origin instead for cookies/credentials to work cross-origin in dev.
-    allowed_origins = []
-    allowed_origin_regex = ".*"
+    # Development: local origins only.
+    #
+    # This branch previously reflected any origin (allow_origin_regex=".*") together
+    # with allow_credentials=True, which lets an arbitrary site issue credentialed
+    # requests carrying the user's session cookie. That undercuts both the SameSite
+    # cookie attribute and the CSRF token defence, so the regex is scoped to
+    # loopback. Additional dev origins can be supplied via CORS_ORIGINS.
+    allowed_origins = CORS_ORIGINS
+    allowed_origin_regex = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
     allow_credentials = True
     allowed_methods = ["*"]
     allowed_headers = ["*"]
 
-    logger.info("CORS configured for development (permissive)")
+    logger.info(f"CORS configured for development (loopback plus origins: {allowed_origins})")
 
 app.add_middleware(
     CORSMiddleware,
@@ -197,6 +201,9 @@ app.add_middleware(
 
 # Add request logging middleware
 app.add_middleware(RequestLoggingMiddleware)
+
+# Reject state-changing requests without a valid CSRF token (issue #156)
+app.add_middleware(CSRFMiddleware)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

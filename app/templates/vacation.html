@@ -29,6 +29,7 @@
             <p class="vacation-copy">{{ t.vacation_choose_weeks_hint }}</p>
 
             <form method="POST" action="/profile/vacation" id="vacation-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="weeks-input" value="{{ vacation_weeks | join(',') }}">
 
@@ -54,6 +55,7 @@
             <p class="vacation-copy">{{ t.vacation_parental_weeks_hint }}</p>
 
             <form method="POST" action="/profile/vacation/parental/weeks" id="parental-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="weeks" id="parental-weeks-input" value="{{ parental_weeks | join(',') }}">
 
@@ -85,6 +87,7 @@
             </div>
 
             <form method="POST" action="/profile/vacation/days/sync" id="days-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="year" value="{{ year }}">
                 <input type="hidden" name="dates" id="dates-input"
                     value="{% for a in day_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
@@ -245,6 +248,7 @@
         <div class="card">
             <h3 class="vacation-section-title">{{ t.vacation_employment_start }}</h3>
             <form method="POST" action="/profile/vacation/settings">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label class="form-label">{{ t.vacation_start_date }}</label>
                     <input type="date" name="employment_start_date"
