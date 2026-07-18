@@ -5,27 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Entries here are written in English; this file documents the project for
+developers. User-facing release notes are separate and bilingual: they live in
+`VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
+has selected. Add both when a change is worth telling users about.
+
 ## [Unreleased]
 
 ### Added
-- Vikarier kan kopplas till användarkonton (`substitutes.user_id`) och få en timlön (`substitutes.hourly_wage`). För en kopplad användare visas vikariepassen före anställningsstarten i de personliga vyerna (dag/vecka/månad/år/statistik), märkta som vikariepass, och räknas in i timmar, OB och lön – prissatta som timavlönade med samma beräkningar som befintliga timavlönade användare. Övertid prissätts med timlönen i personvyn medan `ot_pay` förblir 0 i databasen (lagvyns källa). Personbytesflödet har ett nytt läge "Befintlig vikarie" som skapar kontot, kopplar vikarien och startar anställningen i en transaktion, och vikarieadminsidan kan koppla retroaktivt och sätta timlön. Månadsrapporten döljer en kopplad vikaries redan attribuerade dagar så inget dubbelräknas
+- Substitutes can be linked to user accounts (`substitutes.user_id`) and given an hourly wage (`substitutes.hourly_wage`). For a linked user, substitute shifts worked before the employment start date now appear in the personal views (day/week/month/year/statistics), marked as substitute shifts, and count towards hours, OB and pay, priced as hourly employment using the same calculations as existing hourly-paid users. Overtime is priced with the hourly wage in the personal view while `ot_pay` stays 0 in the database (the team view's source). The person-change flow has a new "Existing substitute" mode that creates the account, links the substitute and starts the employment in one transaction, and the substitute admin page can link retroactively and set the hourly wage. The monthly report hides a linked substitute's already-attributed days so nothing is counted twice
 
 ### Fixed
-- Administratörens inställningssida visar nu felmeddelandet när sparandet misslyckas, till exempel vid en ogiltig månadslön. Tidigare försvann felet tyst och sidan visade bara ett tomt formulär
-- Semesterutbetalning vid ett anställningsbyte som registrerades på eller efter sitt eget ikraftträdandedatum kunde räknas på den nya direktlönen i stället för konsultens faktiska slutlön. Gränsdagen prissätts nu alltid med den lön som faktiskt gällde den dagen
-- OB-, övertids- och beredskapsrater på exakt den dag en ratändring träder i kraft kunde räknas med de nya raterna i stället för de som gällde den dagen. Gränsdagen prissätts nu alltid med de rater som faktiskt gällde
-- Dagvyn visar nu samma sak som vecko-, månads- och årsvyn: accepterade skiftbyten syns (visades tidigare inte alls), föräldraledighet och dagsemester visas som ledighet respektive semester, en heldags sjukfrånvaro maskar passkoden, och beredskap hanteras konsekvent i alla vyer
+- The admin settings page now shows the error message when saving fails, for example on an invalid monthly salary. Previously the error was dropped silently and the page rendered an empty form
+- Vacation payout for an employment change recorded on or after its own effective date could be calculated on the new direct salary instead of the consultant's actual final salary. The boundary day is now always priced with the salary that actually applied on that day
+- OB, overtime and on-call rates on the exact day a rate change takes effect could be calculated with the new rates instead of the ones in force that day. The boundary day is now always priced with the rates that actually applied
+- The day view now shows the same thing as the week, month and year views: accepted shift swaps are visible (previously not shown at all), parental leave and day-level vacation render as leave and vacation respectively, a full-day sick absence masks the shift code, and on-call is handled consistently across all views
 
 ### Deployment
-- Kör migrationen `python migrations/migrate_substitute_account_link.py <db-path>` (lägger till `user_id` och `hourly_wage` på `substitutes`, idempotent). Ta backup av produktionsdatabasen först: `sqlite3 app/database/schedule.db ".backup app/database/schedule.db.bak"`
+- Run the migration `python migrations/migrate_substitute_account_link.py <db-path>` (adds `user_id` and `hourly_wage` to `substitutes`, idempotent). Back up the production database first: `sqlite3 app/database/schedule.db ".backup app/database/schedule.db.bak"`
 
 ## [0.17.0] - 2026-04-26
 
 ### Fixed
-- API: `/next-shift` returnerade felaktigt dagens pass – endpointen tar nu hänsyn till klockslag och hoppar över pass vars starttid redan passerat
+- API: `/next-shift` incorrectly returned today's shift; the endpoint now takes the time of day into account and skips shifts whose start time has already passed
 
 ### Added
-- API: `/next-shift` stödjer nu valfria parametrar `?date` och `?time` för att simulera svaret för en godtycklig tidpunkt
+- API: `/next-shift` now supports optional `?date` and `?time` parameters to simulate the response for an arbitrary point in time
 
 ### Planned
 - Absence tracking (sick leave, VAB, other leave types)
