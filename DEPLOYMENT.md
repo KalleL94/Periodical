@@ -416,6 +416,11 @@ Developer → PR to main
               ↓
          PR Approved → Merge
               ↓
+         (main is not deployed on its own)
+              ↓
+         ./scripts/release.sh vX.Y.Z
+         pushes a v* tag
+              ↓
          [Deploy Pipeline]
          - SSH to prod server
          - Git pull
@@ -434,9 +439,13 @@ Developer → PR to main
    - Prevents: buggy code from being merged
 
 2. **Deploy Pipeline** (`.github/workflows/deploy.yml`)
-   - Triggered: on push/merge to `main`
+   - Triggered: by pushing a tag matching `v*`, or manually via `workflow_dispatch`
    - Runs: the deployment script over SSH
-   - Result: automatic deployment to production
+   - Result: deployment to production
+
+   Merging to `main` does **not** deploy. A release is cut with
+   `./scripts/release.sh vX.Y.Z`, which tags main and pushes the tag; the tag is
+   what triggers this workflow.
 
 ### GitHub Secrets Configuration
 

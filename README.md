@@ -296,9 +296,11 @@ Periodical includes automated CI/CD via GitHub Actions:
 - Prevents buggy code from being merged
 
 **Continuous Deployment (`.github/workflows/deploy.yml`):**
-- Triggers on push/merge to `main`
-- Automatically deploys to production via SSH
-- Runs health checks to verify deployment
+- Triggers on pushing a `v*` tag, or manually via `workflow_dispatch`
+- Merging to `main` does not deploy; cut a release with `./scripts/release.sh vX.Y.Z`,
+  which tags main and pushes the tag
+- Deploys to production over SSH
+- Runs health checks to verify the deployment
 
 **Setup GitHub Actions:**
 1. Configure secrets in GitHub repository settings:
