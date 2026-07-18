@@ -75,7 +75,10 @@
                                 <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
                                 <button type="submit" class="nav-link nav-link-button">{{ 'EN' if user.language == 'sv' else 'SV' }}</button>
                             </form>
-                            <a href="/logout" class="nav-link">{{ t.nav_logout }}</a>
+                            <form method="POST" action="/logout" class="nav-inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="nav-link nav-link-button">{{ t.nav_logout }}</button>
+                            </form>
                         </div>
                     {% else %}
                         <!-- Inloggning -->

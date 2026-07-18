@@ -174,17 +174,20 @@ if IS_PRODUCTION:
 
     logger.info(f"CORS configured for production with origins: {allowed_origins}")
 else:
-    # Development: Permissive CORS for easier testing.
-    # Use an origin regex rather than allow_origins=["*"]: a literal "*" is invalid with
-    # allow_credentials=True (browsers reject it), so Starlette must reflect the request
-    # origin instead for cookies/credentials to work cross-origin in dev.
-    allowed_origins = []
-    allowed_origin_regex = ".*"
+    # Development: local origins only.
+    #
+    # This branch previously reflected any origin (allow_origin_regex=".*") together
+    # with allow_credentials=True, which lets an arbitrary site issue credentialed
+    # requests carrying the user's session cookie. That undercuts both the SameSite
+    # cookie attribute and the CSRF token defence, so the regex is scoped to
+    # loopback. Additional dev origins can be supplied via CORS_ORIGINS.
+    allowed_origins = CORS_ORIGINS
+    allowed_origin_regex = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
     allow_credentials = True
     allowed_methods = ["*"]
     allowed_headers = ["*"]
 
-    logger.info("CORS configured for development (permissive)")
+    logger.info(f"CORS configured for development (loopback plus origins: {allowed_origins})")
 
 app.add_middleware(
     CORSMiddleware,

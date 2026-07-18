@@ -203,6 +203,26 @@ def test_bearer_authenticated_post_is_exempt(raw_client, test_user):
     assert response.status_code != 403
 
 
+# ============ Logout is state-changing, so it must not be a GET ============
+
+
+def test_logout_rejects_get(raw_client, test_user):
+    """A GET logout could be triggered by any cross-site <img> or link."""
+    _set_auth_cookie(raw_client, test_user)
+
+    response = raw_client.get("/logout", follow_redirects=False)
+
+    assert response.status_code == 405
+
+
+def test_logout_requires_csrf_token(raw_client, test_user):
+    _set_auth_cookie(raw_client, test_user)
+
+    response = raw_client.post("/logout", follow_redirects=False)
+
+    assert response.status_code == 403
+
+
 # ============ Rendered forms carry the token ============
 
 

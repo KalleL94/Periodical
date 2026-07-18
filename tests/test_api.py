@@ -91,8 +91,8 @@ class TestAuthenticationFlow:
             assert response.status_code in [200, 401, 403]
 
     def test_logout_clears_auth_cookie(self, test_client, test_user, auth_headers):
-        """GET /logout should clear authentication cookie and redirect."""
-        response = test_client.get("/logout", follow_redirects=False)
+        """POST /logout should clear authentication cookie and redirect."""
+        response = test_client.post("/logout", follow_redirects=False)
 
         # Should redirect to login or home
         assert response.status_code in [302, 303, 307]
