@@ -711,16 +711,8 @@ def test_day_view_prices_substitute_ob_with_hourly_base(env):
     assert rendered_ob_pay == round(sum(exp_ob_pay.values()), 2)
 
 
-@pytest.mark.xfail(reason="issue #285: OT overlay applied after vacation resolution", strict=False)
-def test_canonical_ot_on_vacation_week_keeps_sem(env):
-    """OT overlay currently overrides a week-based vacation (SEM) day in the
-    canonical path, so an OT shift booked on a vacation week replaces SEM. The
-    day view inherits this once unified on the canonical path. Tracked as issue
-    #285; asserts the desired behaviour (SEM wins) and is expected to fail until
-    that fix lands (behaviour changed by a separate PR, so not strict)."""
-    client, session = env
-    day = datetime.date(2026, 3, 2)  # ISO week 10, position 1 scheduled day
-    _make_user(session, 1, 1, vacation={"2026": [10]})
+def _add_ot(session, day, *, is_extension=False):
+    """Book a non-extension OT shift for user 1 on `day`."""
     session.add(
         OvertimeShift(
             user_id=1,
@@ -729,11 +721,80 @@ def test_canonical_ot_on_vacation_week_keeps_sem(env):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            is_extension=is_extension,
         )
     )
     session.commit()
 
+
+def test_canonical_ot_on_vacation_week_keeps_sem(env):
+    """Vacation outranks the OT overlay, as absence and parental leave already do.
+
+    Regression test for issue #285: the OT overlay used to replace the resolved
+    shift unconditionally, so an OT shift booked on a vacation week replaced SEM
+    in every view fed by generate_period_data.
+    """
+    client, session = env
+    day = datetime.date(2026, 3, 2)  # ISO week 10, position 1 scheduled day
+    _make_user(session, 1, 1, vacation={"2026": [10]})
+    _add_ot(session, day)
+
     canonical = generate_period_data(day, day, person_id=1, session=session)[0]
-    # Desired: vacation has priority over an OT overlay, so the day stays SEM.
+
     assert canonical["shift"].code == "SEM"
+
+
+def test_canonical_ot_on_vacation_week_adds_no_ot_pay(env):
+    """The pay impact of issue #285: a vacation day must not earn overtime pay."""
+    client, session = env
+    day = datetime.date(2026, 3, 2)
+    _make_user(session, 1, 1, vacation={"2026": [10]})
+    _add_ot(session, day)
+
+    canonical = generate_period_data(day, day, person_id=1, session=session)[0]
+
+    assert canonical["ot_pay"] == 0.0
+    assert canonical["ot_hours"] == 0.0
+
+
+def test_canonical_ot_extension_on_vacation_week_adds_no_ot_pay(env):
+    """An extension never replaced the shift, but it did still add pay."""
+    client, session = env
+    day = datetime.date(2026, 3, 2)
+    _make_user(session, 1, 1, vacation={"2026": [10]})
+    _add_ot(session, day, is_extension=True)
+
+    canonical = generate_period_data(day, day, person_id=1, session=session)[0]
+
+    assert canonical["shift"].code == "SEM"
+    assert canonical["ot_pay"] == 0.0
+
+
+def test_day_view_shows_sem_for_ot_on_vacation_week(env):
+    """The rendered day view inherits the canonical priority, not just the dict."""
+    client, session = env
+    day = datetime.date(2026, 3, 2)
+    _make_user(session, 1, 1, vacation={"2026": [10]})
+    _add_ot(session, day)
+
+    _login(client, 1)
+    resp = client.get(f"/day/1/{day.year}/{day.month}/{day.day}")
+    assert resp.status_code == 200
+
+    badges = _row_badges(_shift_row(resp.text))
+    assert "SEM" in badges, f"day view badges {badges} lost the vacation shift"
+    assert "OT" not in badges, f"day view badges {badges} show overtime on a vacation day"
+
+
+def test_canonical_ot_outside_vacation_week_still_applies(env):
+    """Guard against over-correcting: OT on a normal week is unaffected."""
+    client, session = env
+    day = datetime.date(2026, 3, 2)
+    _make_user(session, 1, 1, vacation={"2026": [11]})  # vacation is a different week
+    _add_ot(session, day)
+
+    canonical = generate_period_data(day, day, person_id=1, session=session)[0]
+
+    assert canonical["shift"].code == "OT"
+    assert canonical["ot_hours"] == 8.5
+    assert canonical["ot_pay"] > 0

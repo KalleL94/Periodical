@@ -2213,6 +2213,13 @@ def _populate_single_person_day(
         combined_ob_rules,
     )
 
+    # Week-based vacation outranks the overtime overlay below. Absence and parental
+    # leave get that priority by returning early; vacation resolves to a shift like
+    # any other, so the overlay would otherwise replace SEM and pay overtime on a
+    # vacation day (issue #285). Captured here, before the on-call override can
+    # rebind `shift`.
+    is_vacation_day = vacation_shift is not None and shift is vacation_shift
+
     # Rotationsskiftet (för coworker-matchning och "visa rotation"-toggle i alla-vyer)
     _rot = determine_shift_for_date(current_day, person_id)
     original_shift = _rot[0] if _rot else shift
@@ -2280,7 +2287,7 @@ def _populate_single_person_day(
     ot_hours = 0.0
     ot_details = {}
 
-    if ot_shift:
+    if ot_shift and not is_vacation_day:
         ot_pay, ot_hours, ot_details = _compute_overtime_pay(
             ot_shift, current_day, person_id, session, settings, _person_rates.get("ot")
         )
