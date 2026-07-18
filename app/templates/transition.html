@@ -27,6 +27,7 @@
             <h3>{{ t.transition_settings_card }}</h3>
 
             <form method="POST" action="/profile/transition">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
                 <div class="form-group">
                     <label for="transition_date" class="form-label">{{ t.transition_date_label }}</label>
@@ -141,6 +142,7 @@
             {% if transition %}
             <hr class="form-section-divider">
             <form method="POST" action="/profile/transition/delete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label class="form-label">
                         <input type="checkbox" name="cleanup_wage" value="on" checked>

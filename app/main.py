@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.csrf_middleware import CSRFMiddleware
 from app.core.logging_config import get_logger, setup_logging
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.sentry_config import init_sentry
@@ -197,6 +198,9 @@ app.add_middleware(
 
 # Add request logging middleware
 app.add_middleware(RequestLoggingMiddleware)
+
+# Reject state-changing requests without a valid CSRF token (issue #156)
+app.add_middleware(CSRFMiddleware)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

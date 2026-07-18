@@ -22,6 +22,7 @@
         {% endif %}
 
         <form method="POST" action="/admin/users/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label for="username" class="form-label">{{ t.admin_user_create_username }}</label>
                 <input type="text" id="username" name="username" required class="form-input">

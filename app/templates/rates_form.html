@@ -96,6 +96,7 @@
                         </button>
                         {% if rate_history | length > 1 %}
                             <form method="POST" action="{{ rates_delete_prefix }}{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.rates_delete_confirm }}');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn danger">{{ t.rates_delete }}</button>
                             </form>
                         {% endif %}
@@ -116,6 +117,7 @@
     </p>
 
     <form method="POST" action="{{ rates_form_action }}" class="rates-form-instance" id="rates-add-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         <!-- Från datum + timlön -->
         <div class="rates-row">

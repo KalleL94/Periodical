@@ -20,6 +20,7 @@
 </div>
 
 <form method="POST" action="/admin/settings" id="settings-form" onsubmit="return prepareFormSubmit()">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="card mb-3">
         <h3>{{ t.admin_settings_global_config }}</h3>
         <table class="table-auto">
