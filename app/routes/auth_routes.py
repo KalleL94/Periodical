@@ -130,9 +130,13 @@ async def login(
     return redirect
 
 
-@router.get("/logout", name="logout")
+@router.post("/logout", name="logout")
 async def logout(response: Response, current_user: User | None = Depends(get_current_user_from_cookie)):
-    """Log out user."""
+    """Log out user.
+
+    POST rather than GET: logging out changes state, so a GET route would let
+    any cross-site page force a logout via an <img> or link (issue #156).
+    """
     if current_user:
         log_auth_event(
             event_type="logout",

@@ -21,6 +21,7 @@
             {% endif %}
 
             <form method="POST" action="/profile" class="form-stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label class="form-label">{{ t.profile_username }}</label>
                     <input type="text" value="{{ user.username }}" disabled class="form-input">
@@ -65,6 +66,7 @@
             <h3 class="form-card-title">{{ t.profile_change_password }}</h3>
 
             <form method="POST" action="/profile/password" class="form-stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label for="current_password" class="form-label">{{ t.profile_current_pw }}</label>
                     <input type="password" id="current_password" name="current_password" required class="form-input">
@@ -143,6 +145,7 @@
                                     </button>
                                     {% if wage_history | length > 1 %}
                                         <form method="POST" action="/profile/delete-wage/{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.profile_delete_wage_confirm }}');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                             <button type="submit" class="btn danger">{{ t.profile_delete }}</button>
                                         </form>
                                     {% endif %}
@@ -167,6 +170,7 @@
             </p>
 
             <form method="POST" action="/profile/add-wage" id="profile-add-wage-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group profile-field-block" id="profile-wage-type-block">
                     <label class="form-label">{{ t.admin_wage_type_label }}</label>
                     <div class="form-options">
@@ -268,11 +272,13 @@
 
             <div class="profile-actions">
                 <form method="POST" action="/profile/api-key/generate">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-primary">{{ t.profile_api_key_generate }}</button>
                 </form>
                 {% if user.api_key %}
                 <form method="POST" action="/profile/api-key/revoke"
                       onsubmit="return confirm('{{ t.profile_api_key_revoke_confirm }}')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-danger">{{ t.profile_api_key_revoke }}</button>
                 </form>
                 <a href="/api/v1/docs" target="_blank" class="btn btn-secondary">{{ t.profile_api_key_docs }}</a>
@@ -316,11 +322,13 @@
                 </button>
                 {% endif %}
                 <form method="POST" action="/profile/calendar-token/generate">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-primary">{{ t.profile_calendar_feed_generate }}</button>
                 </form>
                 {% if user.calendar_token %}
                 <form method="POST" action="/profile/calendar-token/revoke"
                       onsubmit="return confirm('{{ t.profile_calendar_feed_revoke_confirm }}')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-danger">{{ t.profile_calendar_feed_revoke }}</button>
                 </form>
                 {% endif %}

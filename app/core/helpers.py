@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.auth.csrf import get_csrf_token
 from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 from app.database.database import User, UserRole
@@ -159,6 +160,13 @@ def render_template(
     lang = "sv"
     if user and hasattr(user, "language") and user.language:
         lang = user.language
-    ctx = {"request": request, "user": user, "now": get_today(), "t": TRANSLATIONS.get(lang, TRANSLATIONS["sv"])}
+    ctx = {
+        "request": request,
+        "user": user,
+        "now": get_today(),
+        "t": TRANSLATIONS.get(lang, TRANSLATIONS["sv"]),
+        # Every state-changing form needs the token published by CSRFMiddleware
+        "csrf_token": get_csrf_token(request),
+    }
     ctx.update(context)
     return templates.TemplateResponse(request, template_name, ctx)

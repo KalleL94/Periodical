@@ -88,7 +88,7 @@ def test_logout_works_when_pending(test_client, test_db):
     user = _make_user(test_db, must_change=1)
     _set_cookie(test_client, user)
 
-    resp = test_client.get("/logout", follow_redirects=False)
+    resp = test_client.post("/logout", follow_redirects=False)
 
     assert resp.status_code == 302
     assert resp.headers["location"] == "/login"

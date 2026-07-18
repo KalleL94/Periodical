@@ -82,6 +82,7 @@
                         </button>
                         <form method="POST" action="/admin/rotation-eras/delete/{{ era.id }}"
                               onsubmit="return confirm('{{ t.admin_eras_delete_confirm }}');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="link-button link-button--danger">
                                 {{ t.admin_eras_delete }}
                             </button>
@@ -114,6 +115,7 @@
     </p>
 
     <form method="POST" action="/admin/rotation-eras/create" id="create-era-form" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-group">
             <label for="era-start-date" class="form-label">{{ t.admin_eras_field_start }}</label>
             <input
@@ -333,6 +335,7 @@ document.addEventListener('keydown', function(e) {
             <button type="button" class="dialog-close" onclick="closeEditEra()" aria-label="{{ t.admin_eras_edit_cancel }}">&times;</button>
         </div>
         <form id="edit-era-form" method="POST" class="dialog-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" id="edit-era-id" name="era_id">
             <div class="dialog-form-grid">
                 <label for="edit-era-start-date" class="form-label">{{ t.admin_eras_field_start }}</label>

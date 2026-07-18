@@ -22,6 +22,7 @@
             </div>
         {% endif %}
         <form method="POST" action="/admin/substitutes/create" class="form-row-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label for="name" class="form-label">{{ t.admin_substitutes_name }}</label>
                 <input type="text" id="name" name="name" required class="form-input">
@@ -64,6 +65,7 @@
                         </td>
                         <td class="table-action">
                             <form method="POST" action="/admin/substitutes/{{ s.id }}/toggle" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn secondary">
                                     {% if s.is_active %}{{ t.admin_substitutes_archive }}{% else %}{{ t.admin_substitutes_restore }}{% endif %}
                                 </button>

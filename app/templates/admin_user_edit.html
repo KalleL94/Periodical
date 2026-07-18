@@ -22,6 +22,7 @@
         {% endif %}
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label class="form-label">{{ t.admin_field_id }}</label>
                 <input type="text" value="{{ edit_user.id }}" disabled class="form-input">
@@ -125,6 +126,7 @@
                                 </button>
                                 {% if wage_history | length > 1 %}
                                     <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-wage/{{ record.id }}" class="inline-form" onsubmit="return confirm('{{ t.admin_delete_wage_confirm }}');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button type="submit" class="btn danger">{{ t.profile_delete }}</button>
                                     </form>
                                 {% endif %}
@@ -147,6 +149,7 @@
         </p>
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/add-wage" id="admin-add-wage-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group ue-field-block" id="admin-wage-type-block">
                 <label class="form-label">{{ t.admin_wage_type_label }}</label>
                 <div class="form-options">
@@ -272,6 +275,7 @@
                         </td>
                         <td class="table-action">
                             <form method="POST" action="/admin/users/{{ edit_user.id }}/delete-employment/{{ record.id }}" class="inline-form" onsubmit="return confirm('Ta bort anställningsrecord för position {{ record.person_id }} ({{ record.effective_from }})?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn danger ue-icon-btn">🗑️</button>
                             </form>
                         </td>
@@ -295,6 +299,7 @@
         {% for record in person_history %}
             {% if record.is_current %}
                 <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" onsubmit="return confirm('{% if t.html_lang == "en" %}Are you sure you want to end {{ edit_user.name }}\'s employment at position {{ record.person_id }}?{% else %}Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?{% endif %}');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="person_id" value="{{ record.person_id }}">
                     <div class="form-group">
                         <label for="end_date" class="form-label">{{ t.admin_last_day }}</label>
@@ -323,6 +328,7 @@
         </p>
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/start-employment">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-grid-2">
                 <div>
                     <label for="person_id" class="form-label">{{ t.admin_position }}</label>
@@ -421,6 +427,7 @@
         {% endif %}
 
         <form method="POST" action="/admin/users/{{ edit_user.id }}/transition">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
             <div class="form-group">
                 <label for="adm_transition_date" class="form-label">{{ t.adm_transition_date_label }}</label>
@@ -515,6 +522,7 @@
         {% if edit_transition %}
         <hr class="form-section-divider">
         <form method="POST" action="/admin/users/{{ edit_user.id }}/transition/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label class="form-label">
                     <input type="checkbox" name="cleanup_wage" value="on" checked>

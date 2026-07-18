@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from app.auth.csrf import get_csrf_token
 from app.core.constants import MAX_PERSONS, PERSON_IDS
 from app.core.helpers import contrast_color
 from app.core.translations import TRANSLATIONS
@@ -44,6 +45,8 @@ def render(template_name: str, context: dict, status_code: int = 200, headers: d
         lang = user.language
     context["t"] = TRANSLATIONS.get(lang, TRANSLATIONS["sv"])
     request = context.get("request")
+    # Every state-changing form needs the CSRF token published by CSRFMiddleware
+    context.setdefault("csrf_token", get_csrf_token(request))
     return templates.TemplateResponse(request, template_name, context, status_code=status_code, headers=headers)
 
 

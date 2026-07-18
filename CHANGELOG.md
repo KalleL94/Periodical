@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- CSRF protection on every state-changing route. Each form now submits a signed token that the server compares against a matching cookie, so another site cannot trick your logged-in browser into adding absence, changing wage data or performing other actions in your name. The API is unaffected because it authenticates with a key in the request header
+- Logging out is now a button rather than a link, because a link could be triggered by another site to log you out without asking
+- Development CORS no longer lets arbitrary sites make requests carrying your session cookie; it is restricted to loopback addresses
+
 ### Added
 - Vikarier kan kopplas till användarkonton (`substitutes.user_id`) och få en timlön (`substitutes.hourly_wage`). För en kopplad användare visas vikariepassen före anställningsstarten i de personliga vyerna (dag/vecka/månad/år/statistik), märkta som vikariepass, och räknas in i timmar, OB och lön – prissatta som timavlönade med samma beräkningar som befintliga timavlönade användare. Övertid prissätts med timlönen i personvyn medan `ot_pay` förblir 0 i databasen (lagvyns källa). Personbytesflödet har ett nytt läge "Befintlig vikarie" som skapar kontot, kopplar vikarien och startar anställningen i en transaktion, och vikarieadminsidan kan koppla retroaktivt och sätta timlön. Månadsrapporten döljer en kopplad vikaries redan attribuerade dagar så inget dubbelräknas
 
