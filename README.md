@@ -40,7 +40,7 @@ Swedish employee shift scheduling and OB (inconvenient hours) pay calculation sy
 
 ### Prerequisites
 
-- **Python 3.11 or later** (project developed with Python 3.12)
+- **Python 3.11 or later** (CI and the production image run 3.14)
 - Git
 - Virtual environment (recommended)
 
@@ -63,8 +63,8 @@ pip install .
 pip install ".[dev]"
 
 # Run database migration (creates DB and default users)
-python migrate_to_db.py
-python migrate_add_password_change.py
+python migrations/migrate_to_db.py
+python migrations/migrate_add_password_change.py
 
 # Start development server
 uvicorn app.main:app --reload
@@ -76,15 +76,19 @@ Application runs at: http://localhost:8000
 
 After migration, these accounts are created:
 
-| Username | Role  | Person | Default Password | Description |
-|----------|-------|--------|------------------|-------------|
-| admin    | Admin | -      | Banan1          | Full access, can manage all users |
-| ddf412   | User  | ID 6   | London1         | Kalle |
-| ...      | User  | ID 1-10| London1         | Team members |
+| Username | Role  | Person  | Description |
+|----------|-------|---------|-------------|
+| admin    | Admin | -       | Full access, can manage all users |
+| (per-user) | User | ID 1-10 | One account per rotation position |
 
-**⚠️ Change passwords immediately after first login!**
+Every account is created with `must_change_password=1`, so the initial password
+is only usable once: the first login forces a change before anything else is
+reachable.
 
-The system will force password change on first login for security.
+The initial passwords are set in
+[migrations/migrate_to_db.py](migrations/migrate_to_db.py) (`DEFAULT_PASSWORD`
+and the admin literal). Change them there before running the migration on
+anything that is not a local development database.
 
 ## Configuration
 
@@ -189,10 +193,13 @@ Periodical/
 │   │   ├── validators.py       # Input validation
 │   │   └── helpers.py          # Utility functions
 │   ├── database/               # SQLAlchemy models (User, OvertimeShift)
-│   ├── routes/                 # FastAPI routes
-│   │   ├── public.py           # Schedule views
+│   ├── routes/                 # FastAPI routes (one module per area)
+│   │   ├── schedule_*.py       # Schedule views (personal, all-team, API)
 │   │   ├── auth_routes.py      # Login/logout/password change
-│   │   └── admin.py            # Admin settings
+│   │   ├── profile.py          # Profile, wages, vacation, API keys
+│   │   ├── admin*.py           # Admin settings and user management
+│   │   ├── api_v1.py           # Versioned JSON API (mounted sub-apps)
+│   │   └── shared.py           # Shared template rendering and helpers
 │   ├── static/                 # Static assets
 │   │   └── css/                # Modular CSS files (base, calendar, components, layout, navigation, tables)
 │   └── templates/              # Jinja2 HTML templates
@@ -417,7 +424,7 @@ mypy app/
 - [ ] Generate secure `SECRET_KEY` (use `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - [ ] Set `PRODUCTION=true` in environment variables
 - [ ] Configure `CORS_ORIGINS` with your actual domain(s)
-- [ ] Change all default passwords (admin: Banan1, users: London1)
+- [ ] Change all default passwords (set in `migrations/migrate_to_db.py`)
 - [ ] Enable HTTPS with valid SSL certificate
 - [ ] Set up file permissions using `./scripts/set_permissions.sh`
 - [ ] Configure firewall (only ports 80, 443 open)

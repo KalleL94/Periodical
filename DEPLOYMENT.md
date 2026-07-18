@@ -1,4 +1,4 @@
-# Deployment Guide - Periodical v1.0.0
+# Deployment Guide - Periodical
 
 Guide för att deploya Periodical i produktionsmiljö med HTTPS.
 
@@ -913,7 +913,7 @@ curl -I https://your-domain.com
 
 **10. Logga in och byt lösenord:**
 - Gå till `https://your-domain.com`
-- Logga in med admin / Banan1
+- Logga in som `admin` med lösenordet som sattes i `migrations/migrate_to_db.py`
 - Byt lösenord när du blir tillfrågad
 - Upprepa för alla användare
 
