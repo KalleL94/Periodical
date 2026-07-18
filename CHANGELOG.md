@@ -155,7 +155,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lazy loading for year totals
 - Efficient OB calculation caching
 
-## [0.0.20] - 2024-12-XX
+## Database migration and refactoring - 2025-12-08
+
+> Originally headed `[0.0.20] - 2024-12-XX`. No 0.0.20 release exists; the
+> `v0.0.x` series ended at `v0.0.17`. The work described here shipped across
+> `v0.0.9` to `v0.0.11`, all tagged on 2025-12-08.
 
 ### Changed
 - Migrated from file-based storage to SQLite database
@@ -167,7 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured logging system
 - Request logging middleware
 
-## [0.0.1] - 2024-01-XX
+## [0.0.1] - 2025-12-08
 
 ### Added
 - Initial project setup
@@ -180,7 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version History Notes
 
 - **Initial feature set** (untagged): First complete feature set, shipped as the `v0.0.x` series
-- **v0.0.20**: Database migration and major refactoring
+- **Database migration and refactoring** (untagged): shipped across `v0.0.9`-`v0.0.11`
 - **v0.0.1**: Initial prototype
 
 For detailed commit history, see: `git log --oneline --decorate`
