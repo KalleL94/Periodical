@@ -40,7 +40,7 @@ Swedish employee shift scheduling and OB (inconvenient hours) pay calculation sy
 
 ### Prerequisites
 
-- **Python 3.11 or later** (project developed with Python 3.12)
+- **Python 3.11 or later** (CI and the production image run 3.14)
 - Git
 - Virtual environment (recommended)
 
@@ -63,8 +63,8 @@ pip install .
 pip install ".[dev]"
 
 # Run database migration (creates DB and default users)
-python migrate_to_db.py
-python migrate_add_password_change.py
+python migrations/migrate_to_db.py
+python migrations/migrate_add_password_change.py
 
 # Start development server
 uvicorn app.main:app --reload
@@ -76,15 +76,19 @@ Application runs at: http://localhost:8000
 
 After migration, these accounts are created:
 
-| Username | Role  | Person | Default Password | Description |
-|----------|-------|--------|------------------|-------------|
-| admin    | Admin | -      | Banan1          | Full access, can manage all users |
-| ddf412   | User  | ID 6   | London1         | Kalle |
-| ...      | User  | ID 1-10| London1         | Team members |
+| Username | Role  | Person  | Description |
+|----------|-------|---------|-------------|
+| admin    | Admin | -       | Full access, can manage all users |
+| (per-user) | User | ID 1-10 | One account per rotation position |
 
-**⚠️ Change passwords immediately after first login!**
+Every account is created with `must_change_password=1`, so the initial password
+is only usable once: the first login forces a change before anything else is
+reachable.
 
-The system will force password change on first login for security.
+The initial passwords are set in
+[migrations/migrate_to_db.py](migrations/migrate_to_db.py) (`DEFAULT_PASSWORD`
+and the admin literal). Change them there before running the migration on
+anything that is not a local development database.
 
 ## Configuration
 
@@ -116,7 +120,7 @@ PRODUCTION=false
 # SENTRY_ENVIRONMENT=production
 
 # RELEASE_VERSION - Optional version tracking
-# RELEASE_VERSION=periodical@1.0.0
+# RELEASE_VERSION=periodical@0.30.1
 
 # Database URL (optional, defaults to SQLite)
 # DATABASE_URL=sqlite:///./app/database/schedule.db
@@ -189,10 +193,13 @@ Periodical/
 │   │   ├── validators.py       # Input validation
 │   │   └── helpers.py          # Utility functions
 │   ├── database/               # SQLAlchemy models (User, OvertimeShift)
-│   ├── routes/                 # FastAPI routes
-│   │   ├── public.py           # Schedule views
+│   ├── routes/                 # FastAPI routes (one module per area)
+│   │   ├── schedule_*.py       # Schedule views (personal, all-team, API)
 │   │   ├── auth_routes.py      # Login/logout/password change
-│   │   └── admin.py            # Admin settings
+│   │   ├── profile.py          # Profile, wages, vacation, API keys
+│   │   ├── admin*.py           # Admin settings and user management
+│   │   ├── api_v1.py           # Versioned JSON API (mounted sub-apps)
+│   │   └── shared.py           # Shared template rendering and helpers
 │   ├── static/                 # Static assets
 │   │   └── css/                # Modular CSS files (base, calendar, components, layout, navigation, tables)
 │   └── templates/              # Jinja2 HTML templates
@@ -289,9 +296,11 @@ Periodical includes automated CI/CD via GitHub Actions:
 - Prevents buggy code from being merged
 
 **Continuous Deployment (`.github/workflows/deploy.yml`):**
-- Triggers on push/merge to `main`
-- Automatically deploys to production via SSH
-- Runs health checks to verify deployment
+- Triggers on pushing a `v*` tag, or manually via `workflow_dispatch`
+- Merging to `main` does not deploy; cut a release with `./scripts/release.sh vX.Y.Z`,
+  which tags main and pushes the tag
+- Deploys to production over SSH
+- Runs health checks to verify the deployment
 
 **Setup GitHub Actions:**
 1. Configure secrets in GitHub repository settings:
@@ -417,7 +426,7 @@ mypy app/
 - [ ] Generate secure `SECRET_KEY` (use `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - [ ] Set `PRODUCTION=true` in environment variables
 - [ ] Configure `CORS_ORIGINS` with your actual domain(s)
-- [ ] Change all default passwords (admin: Banan1, users: London1)
+- [ ] Change all default passwords (set in `migrations/migrate_to_db.py`)
 - [ ] Enable HTTPS with valid SSL certificate
 - [ ] Set up file permissions using `./scripts/set_permissions.sh`
 - [ ] Configure firewall (only ports 80, 443 open)
@@ -475,7 +484,7 @@ pip install sentry-sdk[fastapi]
 # Configure in .env
 SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
 SENTRY_ENVIRONMENT=production
-RELEASE_VERSION=periodical@1.0.0
+RELEASE_VERSION=periodical@0.30.1
 ```
 
 See [docs/SENTRY.md](docs/SENTRY.md) for setup instructions.
@@ -486,7 +495,7 @@ The `/health` endpoint provides application status for monitoring:
 
 ```bash
 curl http://localhost:8000/health
-# Response: {"status":"healthy","service":"periodical","version":"1.0.0"}
+# Response: {"status":"healthy","service":"periodical","version":"0.30.1","database":"connected"}
 ```
 
 Use this endpoint with:
@@ -503,10 +512,12 @@ git tag
 git log --oneline --decorate
 ```
 
-**Current version: 1.0.0**
+The authoritative version is the first entry of `VERSIONS` in
+[app/routes/changelog.py](app/routes/changelog.py); it is what `/health` reports
+and what the in-app changelog page shows. Release notes live in
+[CHANGELOG.md](CHANGELOG.md).
 
-Major releases:
-- **v1.0.0** - Production-ready release with CI/CD, structured logging, and comprehensive documentation
+Milestones:
 - **v0.0.13** - README and auth routing improvements
 - **v0.0.12** - User profile and vacation interfaces
 - **v0.0.11** - JWT authentication and database

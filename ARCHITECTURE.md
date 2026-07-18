@@ -73,16 +73,15 @@ When creating new versions:
    - Focus on WHAT changed, not why
    - Examples: "Add user profile interface", "Fix OB calculation for holidays"
 
-4. **Tag the commit** with version number:
+4. **Release** with the release script, which checks out main, pulls, creates
+   the tag and pushes it. Deployment is triggered by the tag:
    ```bash
-   git tag v0.0.X
+   ./scripts/release.sh v0.31.0     # tag main and deploy
+   ./scripts/release.sh --notag     # deploy current main without a tag
    ```
    - Use semantic versioning: `vMAJOR.MINOR.PATCH`
-   - Current format: `v0.0.X` for incremental releases
-   - Tags should be annotated for production releases:
-     ```bash
-     git tag -a v1.0.0 -m "Release version 1.0.0"
-     ```
+   - Bump the version in `VERSIONS` in `app/routes/changelog.py` first; that
+     entry is the authoritative version and what `/health` reports
 
 ### Example Workflow
 
@@ -119,20 +118,17 @@ git push origin v0.0.14
 
 ### Version History
 
-Current versions in this repository:
-- `v0.0.1` - Initial FastAPI application
-- `v0.0.2` - All-team week view
-- `v0.0.3` - OB rules and expanded week views
-- `v0.0.4` - Swedish holiday calculations, person management, month/year views, test suite
-- `v0.0.5` - (No code changes)
-- `v0.0.6` - Detailed day view
-- `v0.0.7` - Improved year statistics
-- `v0.0.8` - (No code changes)
-- `v0.0.9` - Core module refactoring
-- `v0.0.10` - (No code changes)
-- `v0.0.11` - JWT authentication and database
-- `v0.0.12` - User profile and vacation interfaces
-- `v0.0.13` - README and auth routing improvements
+This section previously carried a hand-maintained list that stopped at
+`v0.0.13` and named three tags that were never created. Use the sources that
+cannot drift instead:
+
+```bash
+git tag --sort=-creatordate     # every release, newest first
+```
+
+- **Authoritative version:** the first entry of `VERSIONS` in
+  `app/routes/changelog.py` (what `/health` and the in-app changelog report)
+- **Release notes:** [CHANGELOG.md](CHANGELOG.md) and the in-app changelog page
 
 ## System Architecture
 
@@ -318,7 +314,8 @@ Edit `data/persons.json`:
 - Vacation weeks use ISO week numbers (1-53)
 - Templates expect exactly 10 persons
 - Database file (`schedule.db`) should never be committed
-- Default password from migration script is "London1" - must be changed
+- Default passwords are set in `migrations/migrate_to_db.py` and must be changed
+  there before the migration is run outside local development
 
 ## Production Deployment
 

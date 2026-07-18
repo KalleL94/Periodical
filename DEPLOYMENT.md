@@ -1,47 +1,47 @@
-# Deployment Guide - Periodical v1.0.0
+# Deployment Guide - Periodical
 
-Guide för att deploya Periodical i produktionsmiljö med HTTPS.
+Guide for deploying Periodical to a production environment with HTTPS.
 
-## Innehåll
+## Contents
 
-1. [Översikt](#översikt)
-2. [HTTPS-konfiguration](#https-konfiguration)
+1. [Overview](#overview)
+2. [HTTPS configuration](#https-configuration)
 3. [Reverse Proxy Setup](#reverse-proxy-setup)
 4. [Process Manager Setup](#process-manager-setup)
-5. [Databas-backup](#databas-backup)
+5. [Database backup](#database-backup)
 6. [Monitoring & Logging](#monitoring--logging)
-7. [CI/CD med GitHub Actions](#cicd-med-github-actions)
+7. [CI/CD with GitHub Actions](#cicd-with-github-actions)
 
 ---
 
-## Översikt
+## Overview
 
-**Rekommenderad produktionsarkitektur:**
+**Recommended production architecture:**
 
 ```
 Internet
    ↓
 [Reverse Proxy: nginx/traefik]  ← HTTPS (port 443)
-   ↓                               SSL/TLS hanteras här
+   ↓                               SSL/TLS is terminated here
 [FastAPI/Uvicorn]                ← HTTP (localhost:8000)
    ↓
 [SQLite Database]
 ```
 
-**Varför denna arkitektur?**
-- ✅ Reverse proxy hanterar SSL/TLS (enklare certifikathantering)
-- ✅ Kan köra flera applikationer på samma server
-- ✅ Statiska filer serveras effektivt
-- ✅ Load balancing möjligt
-- ✅ DDoS-skydd och rate limiting
+**Why this architecture?**
+- ✅ The reverse proxy handles SSL/TLS (simpler certificate management)
+- ✅ Several applications can run on the same server
+- ✅ Static files are served efficiently
+- ✅ Load balancing is possible
+- ✅ DDoS protection and rate limiting
 
 ---
 
-## HTTPS-konfiguration
+## HTTPS configuration
 
-### Alternativ 1: Nginx som Reverse Proxy (REKOMMENDERAT)
+### Option 1: Nginx as reverse proxy (RECOMMENDED)
 
-#### Steg 1: Installera Nginx
+#### Step 1: Install Nginx
 
 **Ubuntu/Debian:**
 ```bash
@@ -50,26 +50,26 @@ sudo apt install nginx
 ```
 
 **Windows:**
-Ladda ner från https://nginx.org/en/download.html
+Download from https://nginx.org/en/download.html
 
-#### Steg 2: Skaffa SSL-certifikat
+#### Step 2: Obtain an SSL certificate
 
-**Med Let's Encrypt (gratis):**
+**With Let's Encrypt (free):**
 ```bash
 sudo apt install certbot python3-certbot-nginx
 sudo certbot --nginx -d your-domain.com
 ```
 
-Certbot konfigurerar automatiskt nginx och sätter upp auto-förnyelse.
+Certbot configures nginx automatically and sets up auto-renewal.
 
-**Med eget certifikat:**
-Placera certifikat-filerna i `/etc/ssl/certs/` och `/etc/ssl/private/`
+**With your own certificate:**
+Place the certificate files in `/etc/ssl/certs/` and `/etc/ssl/private/`
 
-#### Steg 3: Nginx-konfiguration
+#### Step 3: Nginx configuration
 
-Se `deployment/nginx-example.conf` för fullständig konfiguration.
+See `deployment/nginx-example.conf` for the full configuration.
 
-**Viktiga inställningar:**
+**Key settings:**
 ```nginx
 # Force HTTPS
 server {
@@ -83,16 +83,16 @@ server {
     listen 443 ssl http2;
     server_name your-domain.com;
 
-    # SSL-certifikat
+    # SSL certificate
     ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
 
-    # Moderna SSL-inställningar
+    # Modern SSL settings
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
-    # Proxy till FastAPI
+    # Proxy to FastAPI
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -101,7 +101,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Statiska filer (optimering)
+    # Static files (optimisation)
     location /static {
         alias /opt/Periodical/app/static;
         expires 30d;
@@ -110,54 +110,54 @@ server {
 }
 ```
 
-#### Steg 4: Testa och starta
+#### Step 4: Test and start
 
 ```bash
-# Testa konfiguration
+# Test the configuration
 sudo nginx -t
 
-# Starta/ladda om nginx
+# Start or reload nginx
 sudo systemctl restart nginx
-sudo systemctl enable nginx  # Auto-start vid boot
+sudo systemctl enable nginx  # Auto-start on boot
 ```
 
 ---
 
-### Alternativ 2: Traefik som Reverse Proxy
+### Option 2: Traefik as reverse proxy
 
-Traefik är enklare för Docker-miljöer och har automatisk Let's Encrypt-integration.
+Traefik is simpler for Docker environments and has built-in Let's Encrypt integration.
 
-Se `deployment/traefik-example.yml` för Docker Compose-konfiguration.
+See `deployment/traefik.yml` for the Docker Compose configuration.
 
-**Fördelar med Traefik:**
-- ✅ Automatisk SSL-certifikat från Let's Encrypt
-- ✅ Automatisk service discovery
-- ✅ Inbyggd dashboard
-- ✅ Perfekt för Docker/Kubernetes
+**Advantages of Traefik:**
+- ✅ Automatic SSL certificates from Let's Encrypt
+- ✅ Automatic service discovery
+- ✅ Built-in dashboard
+- ✅ Well suited to Docker/Kubernetes
 
 ---
 
-### Alternativ 3: HTTPS direkt i Uvicorn (EJ REKOMMENDERAT)
+### Option 3: HTTPS directly in Uvicorn (NOT RECOMMENDED)
 
-Endast för testmiljö eller om du inte kan använda reverse proxy.
+For test environments only, or if you cannot use a reverse proxy.
 
 ```bash
-# Generera självsignerat certifikat (endast för test)
+# Generate a self-signed certificate (test only)
 openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 
-# Starta med SSL
+# Start with SSL
 uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile key.pem --ssl-certfile cert.pem
 ```
 
-**OBS:** Självsignerade certifikat ger säkerhetsvarningar i webbläsare!
+**Note:** Self-signed certificates produce security warnings in browsers.
 
 ---
 
 ## Reverse Proxy Setup
 
-### Environment Variables för produktion
+### Environment variables for production
 
-Skapa `.env`-fil:
+Create a `.env` file:
 ```bash
 # .env
 SECRET_KEY=your-long-random-secret-key-here-change-me
@@ -165,7 +165,7 @@ PRODUCTION=true
 DATABASE_URL=sqlite:///./app/database/schedule.db
 ```
 
-**Generera säker SECRET_KEY:**
+**Generate a secure SECRET_KEY:**
 ```bash
 # Python
 python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -174,7 +174,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 openssl rand -base64 32
 ```
 
-**Ladda environment variables:**
+**Load the environment variables:**
 ```bash
 # Linux/Mac
 export $(cat .env | xargs)
@@ -190,9 +190,9 @@ Get-Content .env | ForEach-Object {
 
 ## Process Manager Setup
 
-### Alternativ 1: Systemd (Linux)
+### Option 1: Systemd (Linux)
 
-Skapa service-fil: `/etc/systemd/system/ica-schedule.service`
+Create the service file: `/etc/systemd/system/ica-schedule.service`
 
 ```ini
 [Unit]
@@ -214,7 +214,7 @@ Environment="PYTHONUNBUFFERED=1"
 # Load additional env vars from file (optional)
 # EnvironmentFile=/opt/Periodical/.env
 
-# Start command - Använd venv för isolerad miljö
+# Start command - use the venv for an isolated environment
 ExecStart=/opt/Periodical/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 
 # Restart policy
@@ -243,16 +243,16 @@ SyslogIdentifier=ica-schedule
 WantedBy=multi-user.target
 ```
 
-**Förklaring av säkerhetsinställningar:**
-- **NoNewPrivileges**: Förhindrar att processen får nya privilegier
-- **PrivateTmp**: Isolerad /tmp-katalog för tjänsten
-- **ProtectSystem=strict**: Hela filsystemet read-only utom specificerade paths
-- **ProtectHome**: Blockerar åtkomst till användares hemkataloger
-- **ReadWritePaths**: Endast databas och logs får skrivrättigheter
-- **MemoryMax**: Begränsar minnesanvändning till 512MB
-- **LimitNOFILE**: Maximalt 4096 öppna filer
+**What the security settings do:**
+- **NoNewPrivileges**: prevents the process from gaining new privileges
+- **PrivateTmp**: isolated /tmp directory for the service
+- **ProtectSystem=strict**: the whole filesystem is read-only except the paths listed
+- **ProtectHome**: blocks access to user home directories
+- **ReadWritePaths**: only the database and logs are writable
+- **MemoryMax**: caps memory usage at 512MB
+- **LimitNOFILE**: at most 4096 open files
 
-**Hantera service:**
+**Managing the service:**
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl start ica-schedule
@@ -263,19 +263,19 @@ sudo journalctl -u ica-schedule -f  # Logs
 
 ---
 
-### Alternativ 2: Docker (ALLA PLATTFORMAR)
+### Option 2: Docker (ALL PLATFORMS)
 
-Se `deployment/Dockerfile` och `deployment/docker-compose.yml`
+See `deployment/Dockerfile` and `deployment/docker-compose.yml`
 
-**OBS:** Använd filerna i `deployment/`-mappen, inte root Dockerfile.
+**Note:** use the files in the `deployment/` directory, not the root Dockerfile.
 
-**Fördelar:**
-- ✅ Konsistent miljö
-- ✅ Enkel deployment
-- ✅ Isolering
-- ✅ Skalbart
+**Advantages:**
+- ✅ Consistent environment
+- ✅ Simple deployment
+- ✅ Isolation
+- ✅ Scalable
 
-**Starta:**
+**Start:**
 ```bash
 cd deployment
 docker-compose up -d
@@ -283,14 +283,14 @@ docker-compose up -d
 
 ---
 
-### Alternativ 3: Supervisor (Linux/Mac)
+### Option 3: Supervisor (Linux/Mac)
 
-Installera:
+Install:
 ```bash
 sudo apt install supervisor
 ```
 
-Konfig: `/etc/supervisor/conf.d/ica-schedule.conf`
+Config: `/etc/supervisor/conf.d/ica-schedule.conf`
 ```ini
 [program:ica-schedule]
 command=/opt/Periodical/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
@@ -303,7 +303,7 @@ stdout_logfile=/var/log/ica-schedule/out.log
 environment=SECRET_KEY="your-key",PRODUCTION="true"
 ```
 
-**Hantera:**
+**Manage:**
 ```bash
 sudo supervisorctl reread
 sudo supervisorctl update
@@ -312,36 +312,36 @@ sudo supervisorctl start ica-schedule
 
 ---
 
-## Databas-backup
+## Database backup
 
-### Automatisk backup-script
+### Automatic backup script
 
-Se `scripts/backup_database.sh`
+See `scripts/backup_database.sh`
 
 ```bash
 #!/bin/bash
-# Automatisk SQLite backup
+# Automatic SQLite backup
 
 BACKUP_DIR="/path/to/backups"
 DB_PATH="/opt/Periodical/app/database/schedule.db"
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/schedule_backup_$DATE.db"
 
-# Skapa backup
+# Create the backup
 sqlite3 "$DB_PATH" ".backup '$BACKUP_FILE'"
 
-# Komprimera
+# Compress
 gzip "$BACKUP_FILE"
 
-# Ta bort backups äldre än 30 dagar
+# Remove backups older than 30 days
 find "$BACKUP_DIR" -name "schedule_backup_*.db.gz" -mtime +30 -delete
 
-echo "Backup klar: ${BACKUP_FILE}.gz"
+echo "Backup complete: ${BACKUP_FILE}.gz"
 ```
 
-**Schemalägg med cron:**
+**Schedule with cron:**
 ```bash
-# Backup varje dag kl 03:00
+# Back up every day at 03:00
 0 3 * * * /path/to/backup_database.sh
 ```
 
@@ -351,15 +351,15 @@ echo "Backup klar: ${BACKUP_FILE}.gz"
 
 ### Structured Logging
 
-Se `app/core/logging_config.py` för konfiguration.
+See `app/core/logging_config.py` for the configuration.
 
-**Filbaserad logging:**
+**File-based logging:**
 ```python
-# I app/main.py
+# In app/main.py
 import logging
 from logging.handlers import RotatingFileHandler
 
-# Roterande loggfiler (max 10MB, behåll 5 filer)
+# Rotating log files (max 10MB, keep 5 files)
 handler = RotatingFileHandler(
     'logs/ica-schedule.log',
     maxBytes=10_000_000,
@@ -373,13 +373,13 @@ logging.getLogger().addHandler(handler)
 
 ### Error Tracking
 
-**Sentry-integration (rekommenderat):**
+**Sentry integration (recommended):**
 ```bash
 pip install sentry-sdk[fastapi]
 ```
 
 ```python
-# I app/main.py
+# In app/main.py
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
@@ -392,22 +392,22 @@ sentry_sdk.init(
 
 ### Health Check Endpoint
 
-Redan implementerat: `GET /health`
+Already implemented: `GET /health`
 
-**Monitoring med Uptime Robot/Better Uptime:**
-- Sätt upp extern monitoring på `https://your-domain.com/health`
-- Notifieringar vid downtime
+**Monitoring with Uptime Robot/Better Uptime:**
+- Set up external monitoring against `https://your-domain.com/health`
+- Notifications on downtime
 
 ---
 
-## CI/CD med GitHub Actions
+## CI/CD with GitHub Actions
 
-Periodical har inbyggd CI/CD-pipeline som automatiserar testning och deployment.
+Periodical has a built-in CI/CD pipeline that automates testing and deployment.
 
-### Översikt av CI/CD-flödet
+### Overview of the CI/CD flow
 
 ```
-Developer → PR till main
+Developer → PR to main
               ↓
          [CI Pipeline]
          - Syntax check
@@ -416,56 +416,65 @@ Developer → PR till main
               ↓
          PR Approved → Merge
               ↓
+         (main is not deployed on its own)
+              ↓
+         ./scripts/release.sh vX.Y.Z
+         pushes a v* tag
+              ↓
          [Deploy Pipeline]
-         - SSH till prod-server
+         - SSH to prod server
          - Git pull
          - Pip install
          - Restart systemd service
          - Health check
               ↓
-         Live på produktion ✅
+         Live in production ✅
 ```
 
-**Två workflows:**
+**Two workflows:**
 
 1. **CI Pipeline** (`.github/workflows/ci.yml`)
-   - Triggas: Vid varje Pull Request till `main`
-   - Kör: Syntax check + pytest
-   - Förhindrar: Buggy kod från att mergas
+   - Triggered: on every Pull Request to `main`
+   - Runs: syntax check + pytest
+   - Prevents: buggy code from being merged
 
 2. **Deploy Pipeline** (`.github/workflows/deploy.yml`)
-   - Triggas: Vid push/merge till `main`
-   - Kör: Deployment-script via SSH
-   - Resultat: Automatisk deployment till produktion
+   - Triggered: by pushing a tag matching `v*`, or manually via `workflow_dispatch`
+   - Runs: the deployment script over SSH
+   - Result: deployment to production
+
+   Merging to `main` does **not** deploy. A release is cut with
+   `./scripts/release.sh vX.Y.Z`, which tags main and pushes the tag; the tag is
+   what triggers this workflow.
 
 ### GitHub Secrets Configuration
 
-För att CI/CD ska fungera måste följande secrets konfigureras i GitHub:
+The following secrets must be configured in GitHub for CI/CD to work:
 
-| Secret Name | Beskrivning | Exempel |
+| Secret Name | Description | Example |
 |-------------|-------------|---------|
-| `PROD_HOST` | IP-adress eller domännamn till produktionsservern | `192.168.1.100` eller `prod.example.com` |
-| `PROD_USER` | SSH-användare på servern | `deploy` eller `www-data` |
-| `PROD_SSH_KEY` | Privat SSH-nyckel för autentisering | Innehåll av `~/.ssh/id_ed25519` |
-| `PROD_APP_PATH` | Absolut sökväg till applikationen på servern | `/opt/Periodical` |
+| `PROD_HOST` | IP address or domain name of the production server | `192.168.1.100` or `prod.example.com` |
+| `PROD_USER` | SSH user on the server | `deploy` or `www-data` |
+| `PROD_SSH_KEY` | Private SSH key for authentication | Contents of `~/.ssh/id_ed25519` |
+| `PROD_APP_PATH` | Absolute path to the application on the server | `/opt/Periodical` |
 
-### Konfigurera GitHub Secrets
+### Configuring GitHub Secrets
 
-**Steg 1: Gå till repository settings**
+**Step 1: Open the repository settings**
 
-1. Navigera till ditt GitHub repository
-2. Klicka på **Settings** (högst upp)
-3. I vänstermenyn: **Secrets and variables** → **Actions**
-4. Klicka **New repository secret**
+1. Navigate to your GitHub repository
+2. Click **Settings** (top of the page)
+3. In the left menu: **Secrets and variables** → **Actions**
+4. Click **New repository secret**
 
-**Steg 2: Lägg till secrets en i taget**
+**Step 2: Add the secrets one at a time**
 
-För varje secret ovan:
-- **Name**: Exakt namn från tabellen (t.ex. `PROD_HOST`)
-- **Value**: Motsvarande värde för din server
-- Klicka **Add secret**
+For each secret above:
+- **Name**: the exact name from the table (for example `PROD_HOST`)
+- **Value**: the corresponding value for your server
+- Click **Add secret**
 
-**Exempel:**
+**Example:**
 ```
 Name: PROD_HOST
 Value: 192.168.1.100
@@ -477,301 +486,301 @@ Name: PROD_APP_PATH
 Value: /opt/Periodical
 ```
 
-**PROD_SSH_KEY - Specialfall:**
+**PROD_SSH_KEY - special case:**
 
-SSH-nyckeln måste vara i rätt format:
+The SSH key must be in the right format:
 
 ```bash
-# På din lokala dator - kopiera hela nyckeln inklusive header/footer
+# On your local machine - copy the whole key including header/footer
 cat ~/.ssh/id_ed25519
 
-# Output (kopiera HELA detta):
+# Output (copy ALL of this):
 -----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-...många rader...
+...many lines...
 -----END OPENSSH PRIVATE KEY-----
 ```
 
-Kopiera **hela** utskriften (inklusive `-----BEGIN` och `-----END`) och klistra in som värde för `PROD_SSH_KEY`.
+Copy the **entire** output (including `-----BEGIN` and `-----END`) and paste it as the value for `PROD_SSH_KEY`.
 
-### Förbered Servern för GitHub Actions SSH
+### Preparing the server for GitHub Actions SSH
 
-GitHub Actions behöver kunna SSH:a in på servern utan lösenord.
+GitHub Actions needs to be able to SSH into the server without a password.
 
-**Steg 1: Skapa deploy-användare (rekommenderat)**
+**Step 1: Create a deploy user (recommended)**
 
 ```bash
-# Skapa dedikerad deploy-användare
+# Create a dedicated deploy user
 sudo adduser deploy
 sudo usermod -aG sudo deploy
 
-# Ge deploy-användaren rätt att starta om tjänsten UTAN lösenord
+# Allow the deploy user to restart the service WITHOUT a password
 echo "deploy ALL=(ALL) NOPASSWD: /bin/systemctl restart ica-schedule" | sudo tee /etc/sudoers.d/deploy
 echo "deploy ALL=(ALL) NOPASSWD: /bin/journalctl -u ica-schedule -n 20 --no-pager" | sudo tee -a /etc/sudoers.d/deploy
 sudo chmod 0440 /etc/sudoers.d/deploy
 ```
 
-**Steg 2: Generera SSH-nyckelpar (på din lokala dator)**
+**Step 2: Generate an SSH key pair (on your local machine)**
 
 ```bash
-# Generera ED25519-nyckel (modernare och säkrare än RSA)
+# Generate an ED25519 key (more modern and secure than RSA)
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy_key
 
-# Detta skapar:
-# - ~/.ssh/github_deploy_key      (privat nyckel - lägg i GitHub Secrets)
-# - ~/.ssh/github_deploy_key.pub  (publik nyckel - lägg på servern)
+# This creates:
+# - ~/.ssh/github_deploy_key      (private key - add to GitHub Secrets)
+# - ~/.ssh/github_deploy_key.pub  (public key - install on the server)
 ```
 
-**Steg 3: Installera publik nyckel på servern**
+**Step 3: Install the public key on the server**
 
 ```bash
-# Kopiera den publika nyckeln till servern
+# Copy the public key to the server
 ssh-copy-id -i ~/.ssh/github_deploy_key.pub deploy@your-server-ip
 
-# ELLER manuellt:
+# OR manually:
 cat ~/.ssh/github_deploy_key.pub | ssh deploy@your-server-ip "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ```
 
-**Steg 4: Testa SSH-anslutning**
+**Step 4: Test the SSH connection**
 
 ```bash
-# Testa från din lokala dator
+# Test from your local machine
 ssh -i ~/.ssh/github_deploy_key deploy@your-server-ip
 
-# Om du kommer in utan lösenord: ✅ Fungerar!
+# If you get in without a password: ✅ it works
 ```
 
-**Steg 5: Verifiera fil-rättigheter**
+**Step 5: Verify file permissions**
 
-På servern:
+On the server:
 ```bash
-# Deploy-användaren måste äga app-katalogen
+# The deploy user must own the app directory
 sudo chown -R deploy:deploy /opt/Periodical
 
-# Verifiera
+# Verify
 ls -la /opt/Periodical
-# Output ska visa: drwxr-xr-x deploy deploy
+# Output should show: drwxr-xr-x deploy deploy
 ```
 
-**Steg 6: Konfigurera systemd service (om ej redan gjort)**
+**Step 6: Configure the systemd service (if not already done)**
 
-Se till att systemd-servicen finns och är aktiverad:
+Make sure the systemd service exists and is enabled:
 
 ```bash
-# Verifiera att service-filen finns
+# Verify that the service file exists
 ls -la /etc/systemd/system/ica-schedule.service
 
-# Om den saknas, kopiera från deployment/
+# If it is missing, copy it from deployment/
 sudo cp /opt/Periodical/deployment/ica-schedule.service /etc/systemd/system/
 
-# Aktivera och starta
+# Enable and start
 sudo systemctl daemon-reload
 sudo systemctl enable ica-schedule
 sudo systemctl start ica-schedule
 sudo systemctl status ica-schedule
 ```
 
-### Verifiera CI/CD Setup
+### Verifying the CI/CD setup
 
-**Test 1: Skapa en test-PR**
+**Test 1: create a test PR**
 
 ```bash
-# Skapa en feature branch
+# Create a feature branch
 git checkout -b test-ci-pipeline
 
-# Gör en liten ändring
+# Make a small change
 echo "# Test" >> README.md
 git add README.md
 git commit -m "Test CI pipeline"
 git push origin test-ci-pipeline
 
-# Skapa PR via GitHub UI eller gh CLI:
+# Create the PR via the GitHub UI or the gh CLI:
 gh pr create --title "Test CI" --body "Testing CI pipeline"
 ```
 
-**Förväntat resultat:**
-- CI workflow startar automatiskt
-- Du ser checkmarks ✅ på PR:n när testerna passerar
-- Om något är fel: ❌ och felmeddelanden i Actions-loggen
+**Expected result:**
+- The CI workflow starts automatically
+- Checkmarks ✅ appear on the PR when the tests pass
+- If something is wrong: ❌ and error messages in the Actions log
 
-**Test 2: Test deployment (merge PR)**
+**Test 2: test deployment (merge the PR)**
 
-Efter CI passerat:
+Once CI has passed:
 ```bash
-# Merge PR (via GitHub UI eller CLI)
+# Merge the PR (via the GitHub UI or CLI)
 gh pr merge --squash
 
-# Övervaka deployment
+# Watch the deployment
 gh run watch
 ```
 
-**Förväntat resultat:**
-- Deploy workflow triggas automatiskt
-- SSH-anslutning till servern lyckas
-- `deploy.sh` körs
-- Health check returnerar 200 OK
-- Kommentar på commit: "**Deployment Successful**"
+**Expected result:**
+- The deploy workflow is triggered automatically
+- The SSH connection to the server succeeds
+- `deploy.sh` runs
+- The health check returns 200 OK
+- A comment on the commit: "**Deployment Successful**"
 
-### Manuell Deployment (om automatisk misslyckas)
+### Manual deployment (if the automatic one fails)
 
-**Alternativ 1: Via GitHub Actions UI (Re-run)**
+**Option 1: via the GitHub Actions UI (re-run)**
 
-1. Gå till **Actions** i GitHub
-2. Välj den misslyckade workflow-körningen
-3. Klicka **Re-run failed jobs** eller **Re-run all jobs**
+1. Go to **Actions** in GitHub
+2. Select the failed workflow run
+3. Click **Re-run failed jobs** or **Re-run all jobs**
 
-**Alternativ 2: Manuell SSH-deploy**
+**Option 2: manual SSH deploy**
 
 ```bash
-# SSH till servern
+# SSH to the server
 ssh deploy@your-server-ip
 
-# Kör deploy-scriptet manuellt
+# Run the deploy script manually
 cd /opt/Periodical
 bash scripts/deploy.sh /opt/Periodical
 
-# Följ output för att se eventuella fel
+# Follow the output to spot any errors
 ```
 
-**Alternativ 3: Manuell deployment steg-för-steg**
+**Option 3: manual deployment step by step**
 
-Om deploy-scriptet inte fungerar:
+If the deploy script does not work:
 
 ```bash
-# 1. SSH till servern
+# 1. SSH to the server
 ssh deploy@your-server-ip
 
-# 2. Navigera till app-katalogen
+# 2. Navigate to the app directory
 cd /opt/Periodical
 
-# 3. Backup databas (säkerhetsåtgärd)
+# 3. Back up the database (precaution)
 sqlite3 app/database/schedule.db ".backup backup_$(date +%Y%m%d_%H%M%S).db"
 
-# 4. Hämta senaste kod
+# 4. Fetch the latest code
 git pull
 
-# 5. Aktivera virtual environment
+# 5. Activate the virtual environment
 source venv/bin/activate
 
-# 6. Installera/uppdatera dependencies
+# 6. Install/update dependencies
 pip install .
 
-# 7. Kör eventuella migrations (om det finns nya)
-# python migrate_*.py
+# 7. Run any migrations (if there are new ones)
+# python migrations/migrate_*.py
 
-# 8. Starta om tjänsten
+# 8. Restart the service
 sudo systemctl restart ica-schedule
 
-# 9. Verifiera status
+# 9. Verify the status
 sudo systemctl status ica-schedule
 
-# 10. Test health endpoint
+# 10. Test the health endpoint
 curl http://127.0.0.1:8000/health
-# Förväntat: {"status":"healthy"}
+# Expected: {"status":"healthy"}
 ```
 
-### Felsökning CI/CD
+### CI/CD troubleshooting
 
-**Problem: CI-testerna failar**
+**Problem: the CI tests fail**
 
 ```bash
-# Kör testerna lokalt först
+# Run the tests locally first
 pytest
 
-# Om de fungerar lokalt men inte i CI:
-# - Kontrollera Python-version (CI använder 3.12)
-# - Kontrollera att alla dependencies finns i pyproject.toml
+# If they pass locally but not in CI:
+# - Check the Python version (CI uses 3.14)
+# - Check that all dependencies are listed in pyproject.toml
 ```
 
-**Problem: SSH-anslutning misslyckas**
+**Problem: the SSH connection fails**
 
-**Symptom:** `Permission denied (publickey)` eller timeout
+**Symptom:** `Permission denied (publickey)` or a timeout
 
-**Lösning:**
+**Fix:**
 ```bash
-# Verifiera att PROD_SSH_KEY är korrekt kopierad (inga extra spaces/newlines)
-# Testa SSH manuellt med samma nyckel:
+# Verify that PROD_SSH_KEY was copied correctly (no extra spaces/newlines)
+# Test SSH manually with the same key:
 ssh -i ~/.ssh/github_deploy_key deploy@your-server-ip
 
-# Kontrollera SSH-konfiguration på servern:
+# Check the SSH configuration on the server:
 sudo cat /home/deploy/.ssh/authorized_keys
-# Ska innehålla din publika nyckel
+# Should contain your public key
 
-# Verifiera permissions:
+# Verify permissions:
 ls -la /home/deploy/.ssh
-# authorized_keys ska vara 600, .ssh ska vara 700
+# authorized_keys should be 600, .ssh should be 700
 ```
 
-**Problem: Health check misslyckas**
+**Problem: the health check fails**
 
-**Symptom:** `❌ Health check misslyckades med status: 000`
+**Symptom:** `❌ Health check failed with status: 000`
 
-**Lösning:**
+**Fix:**
 ```bash
-# 1. Kontrollera att tjänsten körs
+# 1. Check that the service is running
 sudo systemctl status ica-schedule
 
-# 2. Läs senaste loggarna
+# 2. Read the most recent logs
 sudo journalctl -u ica-schedule -n 50
 
-# 3. Vanliga orsaker:
-# - Port 8000 redan upptagen (ändra port i systemd-filen)
-# - Virtual environment hittas inte (kontrollera sökväg i systemd)
-# - SECRET_KEY saknas (lägg till i systemd Environment=)
-# - Databas-migrations behövs (kör manuellt)
+# 3. Common causes:
+# - Port 8000 already in use (change the port in the systemd file)
+# - Virtual environment not found (check the path in systemd)
+# - SECRET_KEY missing (add it to systemd Environment=)
+# - Database migrations needed (run them manually)
 ```
 
-**Problem: Deploy-scriptet fastnar**
+**Problem: the deploy script hangs**
 
-**Symptom:** Workflow timeoutar efter 10+ minuter
+**Symptom:** the workflow times out after 10+ minutes
 
-**Lösning:**
+**Fix:**
 ```bash
-# Kontrollera att deploy.sh är körbar:
+# Check that deploy.sh is executable:
 ssh deploy@your-server-ip "ls -la /opt/Periodical/scripts/deploy.sh"
-# Ska visa: -rwxr-xr-x
+# Should show: -rwxr-xr-x
 
-# Om inte, gör den körbar:
+# If not, make it executable:
 ssh deploy@your-server-ip "chmod +x /opt/Periodical/scripts/deploy.sh"
 ```
 
 ### Best Practices
 
-**1. Testa alltid lokalt först:**
+**1. Always test locally first:**
 ```bash
-# Kör tester innan du pushar
+# Run the tests before pushing
 pytest
 
 # Syntax check
 python -m py_compile app/main.py
 ```
 
-**2. Använd feature branches:**
+**2. Use feature branches:**
 ```bash
 git checkout -b feature/my-feature
-# ... gör ändringar ...
+# ... make changes ...
 git push origin feature/my-feature
-# Skapa PR → CI testas automatiskt
+# Create a PR → CI runs automatically
 ```
 
-**3. Backup före deployment:**
+**3. Back up before deploying:**
 
-Deploy-scriptet backar inte upp automatiskt. Överväg att lägga till:
+The deploy script does not back up automatically. Consider adding:
 ```bash
-# I scripts/deploy.sh, före git pull:
+# In scripts/deploy.sh, before git pull:
 sqlite3 app/database/schedule.db ".backup backup_$(date +%Y%m%d_%H%M%S).db"
 ```
 
-**4. Övervaka deployments:**
+**4. Monitor deployments:**
 ```bash
-# Sätt upp notifieringar
+# Set up notifications
 # - GitHub: Settings → Notifications → Actions
-# - Email alerts vid failed deployments
+# - Email alerts on failed deployments
 ```
 
-**5. Staging environment (rekommenderat för större projekt):**
+**5. Staging environment (recommended for larger projects):**
 
-För kritiska produktionsmiljöer, lägg till staging:
+For critical production environments, add a staging step:
 ```yaml
 # .github/workflows/deploy-staging.yml
 on:
@@ -782,84 +791,84 @@ on:
 
 ---
 
-## Säkerhetschecklista
+## Security checklist
 
-- [ ] SECRET_KEY satt via environment variable (ej default)
-- [ ] PRODUCTION=true i environment variables
-- [ ] HTTPS aktiverat (SSL-certifikat installerat)
-- [ ] HTTP-till-HTTPS redirect konfigurerad
-- [ ] Firewall konfigurerad (endast port 80, 443 öppna)
-- [ ] Databas-backup schemalagd
-- [ ] Process manager konfigurerad (auto-restart)
-- [ ] Logging konfigurerad (filbaserad)
-- [ ] Error tracking aktiverat (Sentry)
-- [ ] Alla användare har bytt från standardlösenord
-- [ ] File permissions korrekta (databas läs/skriv endast för app-user)
-- [ ] Rate limiting konfigurerad (i nginx/traefik)
-- [ ] CORS-inställningar restriktiva (se docs/CORS.md)
-- [ ] Security headers konfigurerade (X-Frame-Options, CSP, etc.)
+- [ ] SECRET_KEY set via an environment variable (not the default)
+- [ ] PRODUCTION=true in the environment variables
+- [ ] HTTPS enabled (SSL certificate installed)
+- [ ] HTTP-to-HTTPS redirect configured
+- [ ] Firewall configured (only ports 80 and 443 open)
+- [ ] Database backup scheduled
+- [ ] Process manager configured (auto-restart)
+- [ ] Logging configured (file-based)
+- [ ] Error tracking enabled (Sentry)
+- [ ] All users have changed from the default password
+- [ ] File permissions correct (database read/write for the app user only)
+- [ ] Rate limiting configured (in nginx/traefik)
+- [ ] CORS settings restrictive (see docs/CORS.md)
+- [ ] Security headers configured (X-Frame-Options, CSP, etc.)
 
 ### CORS Configuration
 
-Periodical har automatisk CORS-konfiguration baserat på miljö:
+Periodical configures CORS automatically based on the environment:
 
 **Development (PRODUCTION=false):**
-- Tillåter alla origins för enkel testning
-- Alla metoder och headers tillåtna
+- Loopback origins allowed for local testing
+- All methods and headers allowed
 
 **Production (PRODUCTION=true):**
-- Endast specificerade origins tillåtna
-- Endast GET och POST metoder
-- Säker konfiguration
+- Only the specified origins are allowed
+- Only the GET and POST methods
+- Restrictive configuration
 
-**Konfigurera CORS för produktion:**
+**Configuring CORS for production:**
 
 ```bash
-# Om du använder separerad frontend
+# If you use a separate frontend
 CORS_ORIGINS=https://your-frontend-domain.com,https://www.your-frontend-domain.com
 
-# För server-rendered app (default - mest säkert)
-# Ingen CORS_ORIGINS behövs - all trafik är same-origin
+# For the server-rendered app (default - most secure)
+# No CORS_ORIGINS needed - all traffic is same-origin
 ```
 
-Se `docs/CORS.md` för fullständig guide.
+See `docs/CORS.md` for the full guide.
 
 ---
 
-## Snabbstart - Produktionsdeploy
+## Quick start - production deploy
 
-**1. Förbered servern:**
+**1. Prepare the server:**
 ```bash
-# Uppdatera system
+# Update the system
 sudo apt update && sudo apt upgrade -y
 
-# Verifiera Python-version (projektet använder Python 3.12)
-python3 --version  # Ska visa Python 3.12.x
+# Verify the Python version (CI and the production image use Python 3.14)
+python3 --version
 
-# Installera dependencies
+# Install dependencies
 sudo apt install python3 python3-pip python3-venv nginx certbot python3-certbot-nginx git sqlite3
 ```
 
-**2. Klona/kopiera applikationen:**
+**2. Clone/copy the application:**
 ```bash
 cd /opt
 sudo git clone /path/to/repo Periodical
 cd Periodical
 
-# Skapa virtual environment (rekommenderat)
+# Create a virtual environment (recommended)
 python3 -m venv venv
 source venv/bin/activate
 
-# Installera från pyproject.toml
+# Install from pyproject.toml
 pip install .
 ```
 
-**3. Sätt environment variables:**
+**3. Set the environment variables:**
 ```bash
-# Generera secret key
+# Generate a secret key
 python3 -c "import secrets; print(secrets.token_urlsafe(32))" > /tmp/secret.txt
 
-# Skapa .env
+# Create .env
 sudo tee .env > /dev/null <<EOF
 SECRET_KEY=$(cat /tmp/secret.txt)
 PRODUCTION=true
@@ -868,25 +877,25 @@ EOF
 rm /tmp/secret.txt
 ```
 
-**4. Kör migrations:**
+**4. Run the migrations:**
 ```bash
-python3 migrate_to_db.py
-python3 migrate_add_password_change.py
+python3 migrations/migrate_to_db.py
+python3 migrations/migrate_add_password_change.py
 ```
 
-**5. Konfigurera nginx:**
+**5. Configure nginx:**
 ```bash
 sudo cp deployment/nginx-example.conf /etc/nginx/sites-available/ica-schedule
 sudo ln -s /etc/nginx/sites-available/ica-schedule /etc/nginx/sites-enabled/
 sudo nginx -t
 ```
 
-**6. Skaffa SSL-certifikat:**
+**6. Obtain an SSL certificate:**
 ```bash
 sudo certbot --nginx -d your-domain.com
 ```
 
-**7. Starta applikation:**
+**7. Start the application:**
 ```bash
 sudo cp deployment/ica-schedule.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -894,14 +903,14 @@ sudo systemctl start ica-schedule
 sudo systemctl enable ica-schedule
 ```
 
-**8. Starta nginx:**
+**8. Start nginx:**
 ```bash
 sudo systemctl restart nginx
 ```
 
-**9. Verifiera:**
+**9. Verify:**
 ```bash
-# Check app status
+# Check the app status
 sudo systemctl status ica-schedule
 
 # Check nginx
@@ -911,73 +920,73 @@ sudo systemctl status nginx
 curl -I https://your-domain.com
 ```
 
-**10. Logga in och byt lösenord:**
-- Gå till `https://your-domain.com`
-- Logga in med admin / Banan1
-- Byt lösenord när du blir tillfrågad
-- Upprepa för alla användare
+**10. Log in and change the password:**
+- Go to `https://your-domain.com`
+- Log in as `admin` with the password set in `migrations/migrate_to_db.py`
+- Change the password when prompted
+- Repeat for all users
 
-**Klart!** 🎉
+**Done.** 🎉
 
 ---
 
-## Felsökning
+## Troubleshooting
 
 ### Problem: 502 Bad Gateway
 
-**Orsak:** Uvicorn/FastAPI körs inte.
+**Cause:** Uvicorn/FastAPI is not running.
 
-**Lösning:**
+**Fix:**
 ```bash
 sudo systemctl status ica-schedule
 sudo journalctl -u ica-schedule -n 50
 ```
 
-### Problem: Certifikat-fel
+### Problem: certificate errors
 
-**Orsak:** Certifikat inte installerat korrekt.
+**Cause:** the certificate is not installed correctly.
 
-**Lösning:**
+**Fix:**
 ```bash
 sudo certbot renew --dry-run
 sudo nginx -t
 ```
 
-### Problem: Database locked
+### Problem: database locked
 
-**Orsak:** SQLite kan ha låsningsproblem vid många samtidiga skrivningar.
+**Cause:** SQLite can hit locking problems with many concurrent writes.
 
-**Lösning:**
-- Använd `--workers 1` för uvicorn (endast en worker)
-- Eller migrera till PostgreSQL för bättre concurrency
+**Fix:**
+- Use `--workers 1` for uvicorn (a single worker)
+- Or migrate to PostgreSQL for better concurrency
 
-### Problem: Static files fungerar inte
+### Problem: static files do not work
 
-**Orsak:** Nginx hittar inte filerna.
+**Cause:** nginx cannot find the files.
 
-**Lösning:**
+**Fix:**
 ```bash
-# Verifiera path i nginx config
+# Verify the path in the nginx config
 ls -la /opt/Periodical/app/static/
 ```
 
 ---
 
-## Support och Uppdateringar
+## Support and updates
 
-**Loggar:**
+**Logs:**
 - Application: `sudo journalctl -u ica-schedule -f`
 - Nginx: `sudo tail -f /var/log/nginx/error.log`
 - Access: `sudo tail -f /var/log/nginx/access.log`
 
-**Uppdatera applikation:**
+**Update the application:**
 ```bash
 cd /opt/Periodical
 git pull
 sudo systemctl restart ica-schedule
 ```
 
-**Backup innan uppdatering:**
+**Back up before updating:**
 ```bash
 sqlite3 app/database/schedule.db ".backup backup_$(date +%Y%m%d).db"
 ```
