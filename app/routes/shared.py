@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.auth.csrf import get_csrf_token
 from app.core.constants import MAX_PERSONS, PERSON_IDS
 from app.core.helpers import contrast_color
+from app.core.news import has_unseen_news
 from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 
@@ -47,6 +48,11 @@ def render(template_name: str, context: dict, status_code: int = 200, headers: d
     request = context.get("request")
     # Every state-changing form needs the CSRF token published by CSRFMiddleware
     context.setdefault("csrf_token", get_csrf_token(request))
+    # Drives the "what's new" nav entry, which is rendered only when unread
+    # release notes exist. Kept in sync with core.helpers.render_template():
+    # base.html reads has_news on every page, so both render paths must supply
+    # it or the nav entry silently disappears on whichever path forgets.
+    context.setdefault("has_news", has_unseen_news(user))
     return templates.TemplateResponse(request, template_name, context, status_code=status_code, headers=headers)
 
 

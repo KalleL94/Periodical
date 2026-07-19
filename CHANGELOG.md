@@ -18,6 +18,7 @@ has selected. Add both when a change is worth telling users about.
 - Development CORS no longer lets arbitrary sites make requests carrying your session cookie; it is restricted to loopback addresses
 
 ### Added
+- The app now tells you when it has changed. While there are release notes you have not read, a "What's New" entry appears in the navigation with a small marker; opening it takes you to the changelog page and the entry disappears until the next release. It is not a permanent navigation item: it renders only while something is unread. What you have read is stored on your account (`users.seen_release`), so reading the notes on your phone also clears them on your desktop. Users who have never opened the page are treated as having unread notes, so everyone is pointed at the notes once after this ships
 - Substitutes can be linked to user accounts (`substitutes.user_id`) and given an hourly wage (`substitutes.hourly_wage`). For a linked user, substitute shifts worked before the employment start date now appear in the personal views (day/week/month/year/statistics), marked as substitute shifts, and count towards hours, OB and pay, priced as hourly employment using the same calculations as existing hourly-paid users. Overtime is priced with the hourly wage in the personal view while `ot_pay` stays 0 in the database (the team view's source). The person-change flow has a new "Existing substitute" mode that creates the account, links the substitute and starts the employment in one transaction, and the substitute admin page can link retroactively and set the hourly wage. The monthly report hides a linked substitute's already-attributed days so nothing is counted twice
 
 ### Fixed
@@ -28,6 +29,7 @@ has selected. Add both when a change is worth telling users about.
 - The day view now shows the same thing as the week, month and year views: accepted shift swaps are visible (previously not shown at all), parental leave and day-level vacation render as leave and vacation respectively, a full-day sick absence masks the shift code, and on-call is handled consistently across all views
 
 ### Deployment
+- Run the migration `python migrations/migrate_user_seen_release.py <db-path>` (adds `seen_release` to `users`, idempotent). Existing rows stay NULL on purpose, which is what shows every user the release notes once
 - Run the migration `python migrations/migrate_substitute_account_link.py <db-path>` (adds `user_id` and `hourly_wage` to `substitutes`, idempotent). Back up the production database first: `sqlite3 app/database/schedule.db ".backup app/database/schedule.db.bak"`
 
 ## [0.17.0] - 2026-04-26

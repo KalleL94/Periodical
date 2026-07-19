@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
+from app.core.news import mark_seen
 from app.database.database import get_db
 from app.routes.shared import render
 
@@ -1068,6 +1069,9 @@ async def changelog_page(
     from app.core.utils import get_today
 
     user = await get_current_user_optional(request, db)
+    # Opening the page is the acknowledgement. Recorded before rendering so the
+    # nav entry is already gone from this response onwards.
+    mark_seen(db, user)
     return render(
         "changelog.html",
         {
@@ -1076,5 +1080,7 @@ async def changelog_page(
             "now": get_today(),
             "versions": VERSIONS,
             "current_version": VERSIONS[0]["version"],
+            # This page IS the news, so never point at itself from its own nav
+            "has_news": False,
         },
     )

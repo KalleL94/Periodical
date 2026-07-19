@@ -153,6 +153,7 @@ class User(Base):
     )  # Saved vacation days per year: {"2025": {"saved": 3, "paid_out": 2, "payout_amount": 3404.0}}
     custom_rates = Column(JSON, default=dict)  # Per-user rate overrides (OB, OT, oncall, vacation)
     language = Column(String(5), default="sv", nullable=False)  # UI language: "sv" or "en"
+    seen_release = Column(String(20), nullable=True)  # Last changelog version acknowledged; NULL = never opened
     api_key = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256 hash, used for lookups
     api_key_encrypted = Column(Text, nullable=True)  # Fernet-encrypted plaintext, used for display only
     calendar_token = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256 hash, feed URL lookups
