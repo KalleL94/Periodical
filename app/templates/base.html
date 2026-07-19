@@ -69,6 +69,14 @@
                                 <a href="/profile" class="nav-link {% if path == '/profile' or path.startswith('/profile/') and not path.startswith('/profile/vacation') %}nav-link--active{% endif %}" {% if path == '/profile' %}aria-current="page"{% endif %}>{{ user.name }}</a>
                                 <a href="/profile/vacation" class="nav-link {% if path.startswith('/profile/vacation') %}nav-link--active{% endif %}" {% if path.startswith('/profile/vacation') %}aria-current="page"{% endif %}>{{ t.nav_vacation }}</a>
                             {% endif %}
+                            {# Appears only while unread release notes exist, then removes
+                               itself once /changelog has been visited. Deliberately not a
+                               permanent nav entry. #}
+                            {% if has_news %}
+                                <a href="/changelog" class="nav-link nav-link--news">
+                                    <span class="news-dot" aria-hidden="true"></span>{{ t.nav_changelog }}
+                                </a>
+                            {% endif %}
                             <form method="POST" action="/profile/language" class="nav-inline-form">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="lang" value="{{ 'en' if user.language == 'sv' else 'sv' }}">

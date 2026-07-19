@@ -35,6 +35,25 @@
   border-color: rgb(var(--accent-rgb) / 0.3);
 }
 
+/* Unread release notes. Rendered only while unseen, so it reads as accent
+   rather than muted: it is the one nav entry asking to be clicked. Static by
+   design, no pulse -- the accent is chrome, and blinking chrome is the
+   dashboard idiom this app deliberately avoids. */
+.nav-link--news {
+  color: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.news-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
 /* Hamburger menu */
 .hamburger {
   display: none;

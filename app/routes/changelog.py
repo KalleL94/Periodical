@@ -8,12 +8,24 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
+from app.core.news import mark_seen
 from app.database.database import get_db
 from app.routes.shared import render
 
 router = APIRouter()
 
 VERSIONS = [
+    {
+        "version": "1.0.0",
+        "date": "2026-07-19",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Appen säger nu till när den har ändrat sig. Så länge det finns nyheter du inte har läst visas en Nyheter-länk i menyn med en liten markering; öppnar du den hamnar du här och markeringen försvinner till nästa version. Det är ingen permanent menypost, den syns bara när något är oläst. Vad du har läst sparas på ditt konto, så läser du nyheterna i telefonen är de lästa på datorn också",
+                "en": "The app now tells you when it has changed. While there are release notes you have not read, a What's New link appears in the menu with a small marker; opening it brings you here and the marker disappears until the next version. It is not a permanent menu item, it only shows while something is unread. What you have read is stored on your account, so reading the notes on your phone marks them read on your desktop too",
+            },
+        ],
+    },
     {
         "version": "0.30.1",
         "date": "2026-07-17",
@@ -1068,6 +1080,9 @@ async def changelog_page(
     from app.core.utils import get_today
 
     user = await get_current_user_optional(request, db)
+    # Opening the page is the acknowledgement. Recorded before rendering so the
+    # nav entry is already gone from this response onwards.
+    mark_seen(db, user)
     return render(
         "changelog.html",
         {
@@ -1076,5 +1091,7 @@ async def changelog_page(
             "now": get_today(),
             "versions": VERSIONS,
             "current_version": VERSIONS[0]["version"],
+            # This page IS the news, so never point at itself from its own nav
+            "has_news": False,
         },
     )

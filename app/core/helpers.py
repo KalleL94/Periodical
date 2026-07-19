@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.auth.csrf import get_csrf_token
+from app.core.news import has_unseen_news
 from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 from app.database.database import User, UserRole
@@ -167,6 +168,10 @@ def render_template(
         "t": TRANSLATIONS.get(lang, TRANSLATIONS["sv"]),
         # Every state-changing form needs the token published by CSRFMiddleware
         "csrf_token": get_csrf_token(request),
+        # Kept in sync with routes.shared.render(): base.html reads has_news on
+        # every page, so both render paths must supply it or the nav entry
+        # silently disappears on whichever path forgets.
+        "has_news": has_unseen_news(user),
     }
     ctx.update(context)
     return templates.TemplateResponse(request, template_name, ctx)
