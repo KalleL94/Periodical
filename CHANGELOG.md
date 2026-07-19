@@ -10,7 +10,12 @@ developers. User-facing release notes are separate and bilingual: they live in
 `VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
 has selected. Add both when a change is worth telling users about.
 
-## [Unreleased]
+## [1.0.0] - 2026-07-19
+
+The first 1.0.0. The version number is earned by the security work and the pay
+corrections below rather than by a headline feature: this is the release where
+the app stops miscalculating people's money and stops being open to actions
+performed in their name.
 
 ### Security
 - CSRF protection on every state-changing route. Each form now submits a signed token that the server compares against a matching cookie, so another site cannot trick your logged-in browser into adding absence, changing wage data or performing other actions in your name. The API is unaffected because it authenticates with a key in the request header

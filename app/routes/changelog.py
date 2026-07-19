@@ -16,6 +16,22 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.0.0",
+        "date": "2026-07-19",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Appen säger nu till när den har ändrat sig. Så länge det finns nyheter du inte har läst visas en Nyheter-länk i menyn med en liten markering; öppnar du den hamnar du här och markeringen försvinner till nästa version. Det är ingen permanent menypost, den syns bara när något är oläst. Vad du har läst sparas på ditt konto, så läser du nyheterna i telefonen är de lästa på datorn också",
+                "en": "The app now tells you when it has changed. While there are release notes you have not read, a What's New link appears in the menu with a small marker; opening it brings you here and the marker disappears until the next version. It is not a permanent menu item, it only shows while something is unread. What you have read is stored on your account, so reading the notes on your phone marks them read on your desktop too",
+            },
+            {
+                "type": "förbättring",
+                "sv": "Alla formulär i appen är nu skyddade mot att en annan webbplats utför åtgärder i ditt namn medan du är inloggad. Tidigare kunde en sida du hade öppen i en annan flik i teorin få din inloggade webbläsare att lägga in frånvaro, ändra löneuppgifter eller logga ut dig utan att du märkte det. Varje formulär skickar nu med en signerad nyckel som servern kontrollerar, och utloggning sker med en knapp i stället för en länk av samma skäl. API:et påverkas inte eftersom det autentiserar med en nyckel i anropet",
+                "en": "Every form in the app is now protected against another website performing actions in your name while you are logged in. Previously a page open in another tab could in theory make your logged-in browser add absence, change wage data or log you out without you noticing. Each form now submits a signed key that the server verifies, and logging out is a button rather than a link for the same reason. The API is unaffected because it authenticates with a key in the request",
+            },
+        ],
+    },
+    {
         "version": "0.30.1",
         "date": "2026-07-17",
         "entries": [
