@@ -11,8 +11,14 @@ env/
 .env
 
 # Database
+# The .bak patterns matter: *.db alone does not match names like
+# schedule.db.bak-pre290, which is how full database dumps (names, password
+# hashes, wages) previously ended up tracked in the repo.
 *.db
+*.db.*
 *.sqlite3
+*.bak
+*.bak-*
 *shm
 *wal
 
