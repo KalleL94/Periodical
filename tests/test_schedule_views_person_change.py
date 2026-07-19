@@ -2820,10 +2820,10 @@ def test_team_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month
 
     captured = {}
 
-    def _fake_render_template(templates, template_name, request, context, **kwargs):
+    def _fake_render(template_name, context, **kwargs):
         captured["persons"] = context["persons"]
 
-    monkeypatch.setattr(schedule_all_module, "render_template", _fake_render_template)
+    monkeypatch.setattr(schedule_all_module, "render", _fake_render)
 
     asyncio.run(schedule_all_module.show_month_all(request=None, year=2026, month=6, current_user=admin, db=session))
 
@@ -2907,10 +2907,10 @@ def test_team_month_view_resolves_each_successive_holders_own_rate(month_env, mo
 
     captured = {}
 
-    def _fake_render_template(templates, template_name, request, context, **kwargs):
+    def _fake_render(template_name, context, **kwargs):
         captured["persons"] = context["persons"]
 
-    monkeypatch.setattr(schedule_all_module, "render_template", _fake_render_template)
+    monkeypatch.setattr(schedule_all_module, "render", _fake_render)
 
     asyncio.run(schedule_all_module.show_month_all(request=None, year=2026, month=6, current_user=admin, db=session))
 

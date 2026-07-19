@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.constants import WEEKDAY_NAMES
-from app.core.helpers import can_see_salary, render_template, strip_salary_data
+from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import _get_storhelg_dates_for_year
@@ -33,7 +33,7 @@ from app.core.schedule.summary import _calculate_tax
 from app.core.utils import get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, WageType, get_db
-from app.routes.shared import templates
+from app.routes.shared import render
 
 logger = get_logger(__name__)
 
@@ -392,11 +392,11 @@ async def show_week_all(
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
-    return render_template(
-        templates,
+    return render(
         "week_all.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "week": week,
             "days": days_in_week,
@@ -406,7 +406,6 @@ async def show_week_all(
             "holiday_dates": holiday_dates,
             **nav,
         },
-        user=current_user,
     )
 
 
@@ -555,11 +554,11 @@ async def show_month_all(
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
-    return render_template(
-        templates,
+    return render(
         "month_all.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "month": month,
             "persons": persons,
@@ -568,7 +567,6 @@ async def show_month_all(
             "holiday_dates": holiday_dates,
             "today": get_today(),
         },
-        user=current_user,
     )
 
 
@@ -738,11 +736,11 @@ async def show_year_all(
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
-    return render_template(
-        templates,
+    return render(
         "year_all.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "days": days_in_year,
             "person_ob_totals": person_ob_totals,
@@ -752,7 +750,6 @@ async def show_year_all(
             "holiday_dates": holiday_dates,
             "today": real_today,
         },
-        user=current_user,
     )
 
 
@@ -806,11 +803,11 @@ async def show_handover(
                 else:
                     code_to_group["N1"]["persons"].append(name)
 
-    return render_template(
-        templates,
+    return render(
         "handover.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "date": target_date,
             "weekday_name": WEEKDAY_NAMES[target_date.weekday()],
             "shift_groups": shift_groups,
@@ -818,5 +815,4 @@ async def show_handover(
             "next_date": target_date + timedelta(days=1),
             "today": today,
         },
-        user=current_user,
     )

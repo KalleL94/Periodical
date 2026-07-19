@@ -81,21 +81,16 @@ def logged_in_client(test_client, test_user):
     return test_client
 
 
-# The app renders through two independent paths that each build their own
-# template context: routes.shared.render() and core.helpers.render_template().
-# base.html reads has_news on every page, so both must supply it. Testing only
-# one of them is what let the indicator ship broken on every schedule view.
-@pytest.mark.parametrize(
-    ("path", "render_path"),
-    [
-        ("/profile", "routes.shared.render"),
-        ("/", "core.helpers.render_template"),
-    ],
-)
-def test_nav_shows_indicator_on_both_render_paths(logged_in_client, path, render_path):
+# These two pages were once served by separate render paths, each building its
+# own context, and the indicator shipped missing from the second because only
+# the first was tested. The paths have since been merged into
+# routes.shared.render(), so this now guards the merge rather than the split:
+# both pages must still get the flag.
+@pytest.mark.parametrize("path", ["/profile", "/"])
+def test_nav_shows_indicator_on_pages_from_both_former_render_paths(logged_in_client, path):
     response = logged_in_client.get(path)
     assert response.status_code == 200, f"{path} did not render"
-    assert "nav-link--news" in response.text, f"indicator missing on the {render_path} path"
+    assert "nav-link--news" in response.text, f"indicator missing on {path}"
 
 
 def test_visiting_the_changelog_clears_the_indicator(logged_in_client, test_db, test_user):

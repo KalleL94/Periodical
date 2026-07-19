@@ -29,17 +29,23 @@ templates.env.filters["time_format"] = lambda v: v.strftime("%H:%M") if v else "
 # JSON parse filter – use {{ t.some_json_key | from_json }} in templates
 templates.env.filters["from_json"] = _json.loads
 
-# Add now (today's date) as a global for templates
-# Note: This is set once at module load. For dynamic "today", use get_today() in routes.
-templates.env.globals["now"] = get_today()
-
 # Expose person/rotation constants so templates don't need to hardcode range(1, 11)
 templates.env.globals["person_ids"] = PERSON_IDS
 templates.env.globals["max_persons"] = MAX_PERSONS
 
 
 def render(template_name: str, context: dict, status_code: int = 200, headers: dict | None = None):
-    """Render a template, injecting the correct translation dict based on user.language."""
+    """Render a template, adding the context every page needs.
+
+    This is the only place shared template context is assembled. It used to be
+    two places: this function and core.helpers.render_template(), each building
+    its own dict for the same base.html. Anything base.html read had to be added
+    to both by hand, and forgetting one failed silently, because Jinja renders an
+    undefined name as falsy without warning. Add new shared context here, and
+    nowhere else.
+
+    The caller may override any of these by putting the key in `context`.
+    """
     user = context.get("user")
     lang = "sv"
     if user and hasattr(user, "language") and user.language:
@@ -48,11 +54,12 @@ def render(template_name: str, context: dict, status_code: int = 200, headers: d
     request = context.get("request")
     # Every state-changing form needs the CSRF token published by CSRFMiddleware
     context.setdefault("csrf_token", get_csrf_token(request))
-    # Drives the "what's new" nav entry, which is rendered only when unread
-    # release notes exist. Kept in sync with core.helpers.render_template():
-    # base.html reads has_news on every page, so both render paths must supply
-    # it or the nav entry silently disappears on whichever path forgets.
+    # Drives the "what's new" nav entry, rendered only when release notes are unread
     context.setdefault("has_news", has_unseen_news(user))
+    # Resolved per request, not once at import: base.html builds the "My day"
+    # link from it, and a module-level value freezes at process start, leaving
+    # the link pointing at the day the server booted.
+    context.setdefault("now", get_today())
     return templates.TemplateResponse(request, template_name, context, status_code=status_code, headers=headers)
 
 
