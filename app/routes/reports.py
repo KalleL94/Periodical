@@ -17,12 +17,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
-from app.core.helpers import render_template
 from app.core.schedule import build_month_report, rotation_start_date
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, get_db
-from app.routes.shared import templates
+from app.routes.shared import render
 
 router = APIRouter(tags=["reports"])
 
@@ -123,11 +122,11 @@ async def admin_report(
     is_admin = current_user is not None and current_user.role == UserRole.ADMIN
     share_token = REPORT_TOKEN if is_admin else ""
 
-    return render_template(
-        templates,
+    return render(
         "admin_report.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "month": month,
             "month_name": MONTH_NAMES_SV[month - 1],
@@ -142,7 +141,6 @@ async def admin_report(
             "share_token": share_token,
             "is_admin": is_admin,
         },
-        user=current_user,
     )
 
 

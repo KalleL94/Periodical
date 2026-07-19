@@ -9,12 +9,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.helpers import render_template
 from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache
 from app.core.schedule.core import determine_shift_for_date
 from app.core.utils import get_today
 from app.database.database import ShiftSwap, SwapStatus, User, get_db, utcnow
-from app.routes.shared import templates
+from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
 
@@ -376,12 +375,15 @@ async def list_swaps(
 
     pending_count = sum(1 for s in received if s.status == SwapStatus.PENDING)
 
-    return render_template(
-        templates,
+    return render(
         "shift_swaps.html",
-        request,
-        {"sent_swaps": sent, "received_swaps": received, "pending_count": pending_count},
-        user=current_user,
+        {
+            "request": request,
+            "user": current_user,
+            "sent_swaps": sent,
+            "received_swaps": received,
+            "pending_count": pending_count,
+        },
     )
 
 

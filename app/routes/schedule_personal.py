@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
-from app.core.helpers import can_see_salary, render_template, strip_salary_data
+from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
 from app.core.oncall import (
@@ -57,7 +57,7 @@ from app.database.database import (
     UserRole,
     get_db,
 )
-from app.routes.shared import _resolve_person_param, build_position_nav, redirect_if_not_own_data, templates
+from app.routes.shared import _resolve_person_param, build_position_nav, redirect_if_not_own_data, render
 
 logger = get_logger(__name__)
 
@@ -440,11 +440,11 @@ async def show_day_for_person(
     if not is_vacation_day:
         is_vacation_day = absence is not None and absence.absence_type == AbsenceType.VACATION
 
-    return render_template(
-        templates,
+    return render(
         "day.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "person_id": person_id,
             "person_name": person_name,
             "person_nav": build_position_nav(db) if current_user.role == UserRole.ADMIN else None,
@@ -498,7 +498,6 @@ async def show_day_for_person(
             "all_oncall_types": all_oncall_types,
             **nav,
         },
-        user=current_user,
     )
 
 
@@ -587,11 +586,11 @@ async def show_week_for_person(
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
-    return render_template(
-        templates,
+    return render(
         "week.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "week": week,
             "days": days_in_week,
@@ -603,7 +602,6 @@ async def show_week_for_person(
             "holiday_dates": holiday_dates,
             **nav,
         },
-        user=current_user,
     )
 
 
@@ -704,11 +702,11 @@ async def show_range_for_person(
         storhelg_dates |= _get_storhelg_dates_for_year(yr)
         holiday_dates |= get_holiday_dates_for_year(yr)
 
-    return render_template(
-        templates,
+    return render(
         "range.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "person_id": person_id,
             "person_name": person_name,
             "start_date": start,
@@ -724,7 +722,6 @@ async def show_range_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
         },
-        user=current_user,
     )
 
 
@@ -972,11 +969,11 @@ async def show_month_for_person(
                 **_sjuklon_info,
             }
 
-    return render_template(
-        templates,
+    return render(
         "month.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "month": month,
             "person_id": person_id,
@@ -991,7 +988,6 @@ async def show_month_for_person(
             "hourly_breakdown": hourly_breakdown,
             "today": get_today(),
         },
-        user=current_user,
     )
 
 
@@ -1330,11 +1326,11 @@ async def year_view(
         },
     )
 
-    return render_template(
-        templates,
+    return render(
         "year.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "person_id": person_id,
             "person_name": person_name,
@@ -1348,7 +1344,6 @@ async def year_view(
             "ob_rules": combined_rules,  # All OB rules for label lookup
             "vacation_pay": vacation_pay,
         },
-        user=current_user,
     )
 
 
@@ -1418,11 +1413,11 @@ async def cowork_view(
             year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
         )
 
-    return render_template(
-        templates,
+    return render(
         "cowork.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "person_id": person_id,
             "person_name": person_name,
@@ -1433,5 +1428,4 @@ async def cowork_view(
             "selected_other_name": selected_other_name,
             "selected_cowork_row": selected_cowork_row,
         },
-        user=current_user,
     )

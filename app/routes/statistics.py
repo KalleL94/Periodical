@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
-from app.core.helpers import can_see_salary, render_template, strip_salary_data
+from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.schedule import (
     _cached_special_rules,
     ob_rules,
@@ -16,7 +16,7 @@ from app.core.schedule import persons as person_list
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_safe_today
 from app.database.database import User, UserRole, get_db
-from app.routes.shared import _resolve_person_param, templates
+from app.routes.shared import _resolve_person_param, render
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 
@@ -180,11 +180,11 @@ async def statistics_view(
     if current_user.role == UserRole.ADMIN:
         all_persons = db.query(User).filter(User.is_active == 1, User.role != UserRole.ADMIN).order_by(User.name).all()
 
-    return render_template(
-        templates,
+    return render(
         "statistics.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "year": year,
             "person_id": person_id,
             "person_name": person_name,
@@ -201,5 +201,4 @@ async def statistics_view(
             "absence_data": absence_data,
             "all_persons": all_persons,
         },
-        user=current_user,
     )

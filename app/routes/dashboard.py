@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
-from app.core.helpers import can_see_salary, render_template
+from app.core.helpers import can_see_salary
 from app.core.logging_config import get_logger
 from app.core.oncall import _cached_oncall_rules, calculate_oncall_pay
 from app.core.rates import get_user_rates
@@ -39,7 +39,7 @@ from app.core.schedule.wages import (
 )
 from app.core.utils import get_safe_today, get_today
 from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftSwap, SwapStatus, User, get_db
-from app.routes.shared import templates
+from app.routes.shared import render
 
 router = APIRouter(tags=["dashboard"])
 logger = get_logger(__name__)
@@ -463,11 +463,11 @@ async def read_root(
         .count()
     )
 
-    return render_template(
-        templates,
+    return render(
         "dashboard.html",
-        request,
         {
+            "request": request,
+            "user": current_user,
             "next_shift": next_shift,
             "next_oncall_shift": next_oncall_shift,
             "week_summary": week_summary,
@@ -485,5 +485,4 @@ async def read_root(
             "view_iso_week": view_iso_week,
             "view_iso_year_w": view_iso_year_w,
         },
-        user=current_user,
     )
