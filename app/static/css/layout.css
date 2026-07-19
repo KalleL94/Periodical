@@ -73,6 +73,13 @@ footer {
 .app-header-row { justify-content: space-between; }
 .app-brand { flex: none; }
 .app-title { margin: 0; font-size: 1.375rem; }
+/* The wordmark links home. Inherit rather than take the global accent link
+   colour: the title is chrome, and a teal heading would read as the page's
+   one chromatic event, which belongs to the shift pills. Accent on hover only,
+   matching how .nav-link signals interactivity. */
+.app-title-link { color: inherit; text-decoration: none; }
+.app-title-link:hover { color: var(--accent); }
+.app-title-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
 .app-subtitle { color: var(--muted); font-size: 0.8125rem; margin-top: 2px; }
 .app-footer {
   display: flex;
