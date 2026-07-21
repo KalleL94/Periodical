@@ -276,3 +276,10 @@ def clear_schedule_cache() -> None:
         ob.get_special_rules_for_year.cache_clear()
     except (ImportError, AttributeError):
         pass
+
+    try:
+        from app.core.oncall import clear_oncall_cache
+
+        clear_oncall_cache()
+    except (ImportError, AttributeError):
+        pass

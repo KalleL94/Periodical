@@ -213,9 +213,6 @@ button.secondary:hover, .btn.secondary:hover, .btn-secondary:hover {
 .btn-danger:hover, .btn.danger:hover { background-color: var(--danger-hover); }
 
 /* Person Toggle Buttons */
-.day-button-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
-.day-button-row .btn { margin: 0; }
-.day-button-row.person-select { margin-top: 0.625rem; }
 .day-buttons-bar {
   display: flex;
   justify-content: space-between;
@@ -283,7 +280,6 @@ input, select {
 .section-mt { margin-top: 2rem; }
 .split-cols { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
 .split-col { flex: 1; min-width: 300px; }
-.input-mono { font-family: var(--font-mono); }
 .cell-strong { font-weight: 500; }
 .text-italic-muted { color: var(--muted); font-style: italic; }
 .status-pos { color: var(--success); font-weight: 500; }
@@ -589,7 +585,6 @@ textarea {
 .vacation-metric { text-align: center; min-width: 0; }
 .vacation-metric-label { color: var(--muted); font-size: 0.7rem; margin-bottom: 0.25rem; }
 .vacation-metric-value { font-size: 1.2rem; font-weight: 700; overflow-wrap: anywhere; }
-.vacation-muted { color: var(--muted); }
 .vacation-small-note { margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); text-align: center; }
 .vacation-summary-text { color: var(--muted); overflow-wrap: anywhere; }
 
@@ -843,7 +838,6 @@ textarea {
 .summary-item { text-align: center; }
 .summary-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .summary-value { font-size: 24px; font-weight: 600; color: var(--text); }
-.summary-value .ob-pct { font-size: 14px; color: var(--success); }
 
 .vacation-alert { background: var(--info-bg); border-color: var(--info); }
 
@@ -964,12 +958,6 @@ textarea {
 }
 
 /* Dashboard Buttons */
-.button-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px;
-}
-
 .button {
   display: inline-block;
   padding: 10px 16px;
@@ -983,8 +971,6 @@ textarea {
 }
 
 .button:hover { background: var(--primary-dark); }
-.button-admin { background: var(--muted); }
-.button-admin:hover { background: var(--text); }
 
 @media (max-width: 768px) {
   .dashboard-container { grid-template-columns: 1fr; }
@@ -1020,7 +1006,6 @@ textarea {
 .form-group { margin-bottom: 1rem; }
 .form-label { display: block; margin-bottom: 0.375rem; color: var(--muted); font-size: 0.9rem; }
 .form-input { width: 100%; box-sizing: border-box; }
-.form-input--disabled { opacity: 0.6; }
 .form-hint { display: block; margin-top: 0.25rem; font-size: 0.8rem; color: var(--muted); }
 .form-section-divider { border: none; border-top: 1px solid var(--table-border); margin: 1.25rem 0; }
 .form-section-title {

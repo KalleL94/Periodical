@@ -2,7 +2,6 @@
 
 .main-nav { display: flex; flex-direction: column; gap: 0.5rem; }
 .nav-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.nav-personal { padding-left: 0.75rem; border-left: 2px solid var(--accent); font-size: 0.85rem; }
 .nav-divider { border-left: 1px solid var(--table-border); height: 20px; margin: 0 0.5rem; }
 
 .nav-inline-form { display: inline; }
@@ -126,13 +125,6 @@
     width: 100%;
     border-bottom: 1px solid var(--table-border);
     padding: 4px 0;
-  }
-
-  .main-nav .nav-personal {
-    border-left: none;
-    padding-left: 0;
-    border-top: 1px solid var(--accent);
-    padding-top: 4px;
   }
 }
 

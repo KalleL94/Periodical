@@ -18,7 +18,6 @@ from app.core.schedule.wages import (
     add_new_wage,
     calculate_absence_deduction,
     get_absent_hours_for_absence,
-    get_absent_hours_from_left_at,
     get_all_user_wages,
     get_current_wage_record,
     get_effective_monthly_wage,
@@ -85,23 +84,6 @@ class TestCalculateAbsenceDeduction:
         # Only 3 absent hours on a VAB day, regardless of the 8.5h shift.
         result = calculate_absence_deduction(30000, "VAB", 8.5, absent_hours=3.0)
         assert result == pytest.approx(HOURLY_WAGE * 3.0)
-
-
-class TestGetAbsentHoursFromLeftAt:
-    def test_leaving_early_counts_missed_tail(self):
-        end = datetime.datetime(2026, 1, 1, 22, 0)
-        assert get_absent_hours_from_left_at("18:00", end, 8.5) == 4.0
-
-    def test_leaving_at_or_after_end_is_zero(self):
-        end = datetime.datetime(2026, 1, 1, 22, 0)
-        assert get_absent_hours_from_left_at("23:00", end, 8.5) == 0.0
-
-    def test_missing_end_time_falls_back_to_shift_hours(self):
-        assert get_absent_hours_from_left_at("18:00", None, 8.5) == 8.5
-
-    def test_unparseable_left_at_falls_back(self):
-        end = datetime.datetime(2026, 1, 1, 22, 0)
-        assert get_absent_hours_from_left_at("nonsense", end, 8.5) == 8.5
 
 
 class TestGetAbsentHoursForAbsence:

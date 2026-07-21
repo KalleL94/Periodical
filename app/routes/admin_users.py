@@ -182,23 +182,23 @@ async def admin_update_user(
     if not edit_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Validate before mutating so the error path re-renders the untouched user.
+    if new_password and len(new_password) < 8:
+        return render(
+            "admin_user_edit.html",
+            {
+                **_build_user_edit_context(request, current_user, edit_user, db),
+                "error": "Nytt lösenord måste vara minst 8 tecken",
+            },
+            status_code=400,
+        )
+
     edit_user.name = name
     edit_user.role = UserRole(role)
     edit_user.person_id = person_id
     edit_user.tax_table = tax_table if tax_table else None
 
     if new_password:
-        if len(new_password) < 8:
-            return render(
-                "admin_user_edit.html",
-                {
-                    "request": request,
-                    "user": current_user,
-                    "edit_user": edit_user,
-                    "error": "Nytt lösenord måste vara minst 8 tecken",
-                },
-                status_code=400,
-            )
         edit_user.password_hash = get_password_hash(new_password)
         edit_user.must_change_password = 1
 
@@ -207,6 +207,9 @@ async def admin_update_user(
     except Exception:
         db.rollback()
         raise
+
+    # person_id decides which rotation the user follows, so cached periods go stale.
+    clear_schedule_cache()
 
     return RedirectResponse(url="/admin/users", status_code=302)
 
@@ -675,30 +678,6 @@ async def admin_transition_save(
 
     salary_type = ConsultantSalaryType(consultant_salary_type)
 
-    if consultant_vacation_days.strip():
-        try:
-            parsed_vacation_days = float(consultant_vacation_days.strip())
-        except ValueError:
-            parsed_vacation_days = 0.0
-    else:
-        from types import SimpleNamespace
-
-        from app.core.schedule.transition import calculate_consultant_vacation_days
-
-        temp = SimpleNamespace(
-            transition_date=t_date,
-            earning_year_start=None,
-            earning_year_end=None,
-        )
-        parsed_vacation_days = float(calculate_consultant_vacation_days(edit_user, temp, session=db) or 0)
-
-    variable_override: float | None = None
-    if variable_avg_daily_override.strip():
-        try:
-            variable_override = float(variable_avg_daily_override.strip())
-        except ValueError:
-            pass
-
     earning_start: _dt.date | None = None
     earning_end: _dt.date | None = None
     if earning_year_start.strip():
@@ -709,6 +688,31 @@ async def admin_transition_save(
     if earning_year_end.strip():
         try:
             earning_end = _dt.date.fromisoformat(earning_year_end.strip())
+        except ValueError:
+            pass
+
+    if consultant_vacation_days.strip():
+        try:
+            parsed_vacation_days = float(consultant_vacation_days.strip())
+        except ValueError:
+            parsed_vacation_days = 0.0
+    else:
+        from types import SimpleNamespace
+
+        from app.core.schedule.transition import calculate_consultant_vacation_days
+
+        # Must mirror the self-service route: the earning year drives the day count.
+        temp = SimpleNamespace(
+            transition_date=t_date,
+            earning_year_start=earning_start,
+            earning_year_end=earning_end,
+        )
+        parsed_vacation_days = float(calculate_consultant_vacation_days(edit_user, temp, session=db) or 0)
+
+    variable_override: float | None = None
+    if variable_avg_daily_override.strip():
+        try:
+            variable_override = float(variable_avg_daily_override.strip())
         except ValueError:
             pass
 

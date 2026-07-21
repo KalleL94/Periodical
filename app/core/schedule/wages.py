@@ -335,34 +335,6 @@ def get_shift_times_for_date(
     return 8.5, None, None
 
 
-def get_shift_hours_for_date(session, user_id: int, absence_date: date) -> float:
-    """
-    Hämtar antal timmar för det skift som skulle ha jobbats på given dag.
-    Default 8.5 om inget skift hittas.
-    """
-    hours, _, _ = get_shift_times_for_date(session, user_id, absence_date)
-    return hours
-
-
-def get_absent_hours_from_left_at(left_at: str, shift_end_dt: datetime.datetime | None, shift_hours: float) -> float:
-    """
-    Beräknar antal frånvarotimmar utifrån left_at ("HH:MM") och skiftets sluttid.
-    Returnerar shift_hours som fallback om sluttid saknas.
-    """
-    if not left_at or shift_end_dt is None:
-        return shift_hours
-    try:
-        left_time = datetime.datetime.strptime(left_at, "%H:%M").time()
-        left_dt = datetime.datetime.combine(shift_end_dt.date(), left_time)
-        # Hantera fall där left_at är nästa dag (t.ex. nattskift)
-        if left_dt >= shift_end_dt:
-            return 0.0
-        absent = (shift_end_dt - left_dt).total_seconds() / 3600.0
-        return max(0.0, absent)
-    except ValueError:
-        return shift_hours
-
-
 def get_absent_hours_for_absence(
     absence,
     shift_start_dt: datetime.datetime | None,

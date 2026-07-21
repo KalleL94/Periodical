@@ -6,7 +6,7 @@ from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings, weekday_names
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
-from .period import generate_month_data, generate_period_data, generate_year_data, mask_days_to_employment
+from .period import generate_month_data, generate_period_data, mask_days_to_employment
 from .wages import (
     _MONTHLY_HOURS,
     get_absence_deductions_for_month,
@@ -61,31 +61,6 @@ def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: in
 
     # Fallback to legacy tax-bracket system
     return calculate_tax_bracket(brutto, _get_tax_brackets())
-
-
-def summarize_year_by_month(year: int, person_id: int) -> dict[int, dict]:
-    """
-    Grov årsöversikt per månad för en person.
-
-    Returns:
-        Dict med månad -> {'total_hours': float, 'num_shifts': int}
-    """
-    days = generate_year_data(year, person_id)
-
-    summary = {}
-    for day in days:
-        month = day["date"].month
-        shift = day.get("shift")
-
-        if month not in summary:
-            summary[month] = {"total_hours": 0.0, "num_shifts": 0}
-
-        summary[month]["total_hours"] += day.get("hours", 0.0)
-
-        if shift and shift.code != "OFF":
-            summary[month]["num_shifts"] += 1
-
-    return summary
 
 
 def _attach_calendar_day_breakdown(days_out: list[dict]) -> None:
