@@ -696,19 +696,42 @@
         }
     }
 
+    // CSV columns: label, source cell indices in the breakdown table (summed when
+    // several). Wage codes follow the Excel export (excel_shared.py REPORT_COL_HEADERS),
+    // where OB3 and OB4 both belong to code 152.
+    var CSV_COLS = [
+        ['Datum', [0]],
+        ['Start', [3]],
+        ['Slut', [4]],
+        ['Vanliga timmar', [5]],
+        ['Kväll 150', [6]],
+        ['Natt 151', [7]],
+        ['Helg 152', [8, 9]],
+        ['Storhelg 153', [10]],
+        ['Beredskap Vardag 75', [11]],
+        ['Beredskap Helg 97', [12]],
+        ['Beredskap Helgdag 112', [13]],
+        ['Beredskap Storhelg 192', [14]],
+        ['Övertid', [15]]
+    ];
+
     // Export exactly the rows currently visible, so the CSV always matches the
     // per-shift / per-calendar-day mode shown on screen.
     function exportBreakdownCsv() {
         var section = document.getElementById('breakdown-section');
         var btn = document.getElementById('breakdown-csv');
         var mode = section.classList.contains('ob-by-day') ? 'kalenderdag' : 'pass';
-        var lines = [];
-        section.querySelectorAll('table.breakdown-table tr').forEach(function (tr) {
-            if (tr.offsetParent === null) return;  // hidden by the mode class
-            var cells = Array.prototype.map.call(tr.cells, function (td) {
-                var v = td.textContent.trim().replace(/\s+/g, ' ');
-                if (/^-?\d+\.\d+$/.test(v)) v = v.replace('.', ',');  // sv decimal comma
-                return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        var lines = [CSV_COLS.map(function (c) { return c[0]; }).join(';')];
+        section.querySelectorAll('table.breakdown-table tbody tr').forEach(function (tr) {
+            if (tr.offsetParent === null || tr.cells.length < 16) return;  // hidden or empty-state row
+            var cells = CSV_COLS.map(function (col) {
+                var texts = col[1].map(function (i) { return tr.cells[i].textContent.trim(); });
+                if (col[1][0] < 5) {  // date and times are plain text
+                    var v = texts[0].replace(/\s+/g, ' ');
+                    return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+                }
+                var sum = texts.reduce(function (acc, t) { return acc + (parseFloat(t) || 0); }, 0);
+                return sum ? sum.toFixed(1).replace('.', ',') : '';  // sv decimal comma
             });
             lines.push(cells.join(';'));
         });
