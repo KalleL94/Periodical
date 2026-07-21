@@ -10,6 +10,11 @@ developers. User-facing release notes are separate and bilingual: they live in
 `VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
 has selected. Add both when a change is worth telling users about.
 
+## [1.1.0] - 2026-07-21
+
+### Added
+- CSV export of the detailed breakdown in the personal month view, available to everyone who can see their own pay data (the Excel export for positions 6 and 8 is unchanged). The export is produced in the browser from the rows currently visible, so it always matches the per-shift / per-calendar-day mode on screen and cannot drift from the view. Column labels reuse the wage codes of the Excel export (`REPORT_COL_HEADERS` in `app/routes/excel_shared.py`), including its mapping of OB3 and OB4 onto code 152. Weekday, shift type and the total row are omitted as display aids; calendar-day mode additionally drops start, end and normal hours, which belong to the shift and are always blank there. Comma separated with decimal points (RFC 4180) and a UTF-8 BOM
+
 ## [1.0.0] - 2026-07-19
 
 The first 1.0.0. The version number is earned by the security work and the pay

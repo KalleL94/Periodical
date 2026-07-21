@@ -16,6 +16,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.1.0",
+        "date": "2026-07-21",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Den detaljerade sammanställningen i månadsvyn kan nu laddas ner som en CSV-fil, så du slipper skriva av siffrorna för hand. Filen innehåller exakt de rader du ser: växlar du mellan OB per pass och OB per kalenderdag följer exporten med. Kolumnerna heter samma sak som lönekoderna (150, 151, 152, 153 och beredskapskoderna), och filen kan öppnas i Excel eller Google Kalkylark",
+                "en": "The detailed breakdown in the month view can now be downloaded as a CSV file, so you no longer have to copy the numbers by hand. The file contains exactly the rows you see: switching between OB per shift and OB per calendar day changes the export with it. The columns are named after the wage codes (150, 151, 152, 153 and the on-call codes), and the file opens in Excel or Google Sheets",
+            },
+        ],
+    },
+    {
         "version": "1.0.0",
         "date": "2026-07-19",
         "entries": [
