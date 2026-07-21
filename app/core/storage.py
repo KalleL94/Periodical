@@ -44,124 +44,68 @@ def _load_json(file_path: Path) -> list[Any] | dict[str, Any]:
         raise StorageError(f"Invalid JSON in file {file_path}: {e}") from e
 
 
-def load_shift_types() -> list[ShiftType]:
-    """
-    Load shift type definitions from data file.
-    Returns:
-        List of shift types
+def _load_list(filename: str, model, what: str) -> list:
+    """Load a JSON array from data/ and validate each item against a model.
+
     Raises:
-        StorageError: If file cannot be loaded or parsed
+        StorageError: If the file cannot be loaded, is not an array, or fails validation
     """
-    file_path = Path("data/shift_types.json")
+    file_path = Path("data") / filename
     data = _load_json(file_path)
     try:
         if not isinstance(data, list):
-            raise TypeError("Expected list of shift types")
-        shift_types = [ShiftType(**item) for item in data]
+            raise TypeError(f"Expected list of {what}")
+        return [model(**item) for item in data]
     except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse shift types from %s", file_path)
-        raise StorageError(f"Could not parse shift types from {file_path}: {e}") from e
-    return shift_types
+        logger.exception("Failed to parse %s from %s", what, file_path)
+        raise StorageError(f"Could not parse {what} from {file_path}: {e}") from e
+
+
+def _load_obj(filename: str, model, what: str):
+    """Load a JSON object from data/ and validate it against a model.
+
+    Raises:
+        StorageError: If the file cannot be loaded, is not an object, or fails validation
+    """
+    file_path = Path("data") / filename
+    data = _load_json(file_path)
+    try:
+        if not isinstance(data, dict):
+            raise TypeError(f"Expected {what} dict")
+        return model(**data)
+    except (TypeError, ValidationError) as e:
+        logger.exception("Failed to parse %s from %s", what, file_path)
+        raise StorageError(f"Could not parse {what} from {file_path}: {e}") from e
+
+
+def load_shift_types() -> list[ShiftType]:
+    """Load shift type definitions from data file."""
+    return _load_list("shift_types.json", ShiftType, "shift types")
 
 
 def load_rotation() -> Rotation:
-    """
-    Load rotation configuration from data file.
-    Returns:
-        Rotation configuration
-    Raises:
-        StorageError: If file cannot be loaded or parsed
-    """
-    file_path = Path("data/rotation.json")
-    data = _load_json(file_path)
-    try:
-        if not isinstance(data, dict):
-            raise TypeError("Expected rotation configuration dict")
-        rotation = Rotation(**data)
-    except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse rotation from %s", file_path)
-        raise StorageError(f"Could not parse rotation from {file_path}: {e}") from e
-    return rotation
+    """Load rotation configuration from data file."""
+    return _load_obj("rotation.json", Rotation, "rotation")
 
 
 def load_settings() -> Settings:
-    """
-    Load application settings from data file.
-    Returns:
-        Application settings
-    Raises:
-        StorageError: If file cannot be loaded or parsed
-    """
-    file_path = Path("data/settings.json")
-    data = _load_json(file_path)
-    try:
-        if not isinstance(data, dict):
-            raise TypeError("Expected settings dict")
-        settings = Settings(**data)
-    except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse settings from %s", file_path)
-        raise StorageError(f"Could not parse settings from {file_path}: {e}") from e
-    return settings
+    """Load application settings from data file."""
+    return _load_obj("settings.json", Settings, "settings")
 
 
 def load_ob_rules() -> list[ObRule]:
-    """
-    Load OB (unsocial hours) rules from data file.
-    Returns:
-        List of OB rules
-    Raises:
-        StorageError: If file cannot be loaded or parsed
-    """
-    file_path = Path("data/ob_rules.json")
-    data = _load_json(file_path)
-    try:
-        if not isinstance(data, list):
-            raise TypeError("Expected list of OB rules")
-        ob_rules = [ObRule(**item) for item in data]
-    except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse OB rules from %s", file_path)
-        raise StorageError(f"Could not parse OB rules from {file_path}: {e}") from e
-    return ob_rules
+    """Load OB (unsocial hours) rules from data file."""
+    return _load_list("ob_rules.json", ObRule, "OB rules")
 
 
 def load_oncall_rules() -> list[OnCallRule]:
-    """
-    Load on-call compensation rules from data file.
-    Returns:
-        List of on-call rules
-    Raises:
-        StorageError: If file cannot be loaded or parsed
-    """
-    file_path = Path("data/oncall_rules.json")
-    data = _load_json(file_path)
-    try:
-        if not isinstance(data, list):
-            raise TypeError("Expected list of on-call rules")
-        oncall_rules = [OnCallRule(**item) for item in data]
-    except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse on-call rules from %s", file_path)
-        raise StorageError(f"Could not parse on-call rules from {file_path}: {e}") from e
-    return oncall_rules
+    """Load on-call compensation rules from data file."""
+    return _load_list("oncall_rules.json", OnCallRule, "on-call rules")
 
 
 def load_tax_brackets() -> list[TaxBracket]:
-    """
-    Load tax bracket definitions from data file.
-    Returns:
-        List of tax brackets
-    Raises:
-        StorageError: If file cannot be loaded or parsed
-    """
-    file_path = Path("data/tax_brackets.json")
-    data = _load_json(file_path)
-    try:
-        if not isinstance(data, list):
-            raise TypeError("Expected list of tax brackets")
-        tax_brackets = [TaxBracket(**item) for item in data]
-    except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse tax brackets from %s", file_path)
-        raise StorageError(f"Could not parse tax brackets from {file_path}: {e}") from e
-    return tax_brackets
+    """Load tax bracket definitions from data file."""
+    return _load_list("tax_brackets.json", TaxBracket, "tax brackets")
 
 
 def calculate_tax_bracket(income: float, tax_brackets: list[TaxBracket]) -> float:
@@ -180,23 +124,8 @@ def calculate_tax_bracket(income: float, tax_brackets: list[TaxBracket]) -> floa
 
 
 def load_persons() -> list[Person]:
-    """
-    Load person definitions from data file.
-    Returns:
-        List of persons
-    Raises:
-        StorageError: If file cannot be loaded or parsed
-    """
-    file_path = Path("data/persons.json")
-    data = _load_json(file_path)
-    try:
-        if not isinstance(data, list):
-            raise TypeError("Expected list of persons")
-        persons = [Person(**item) for item in data]
-    except (TypeError, ValidationError) as e:
-        logger.exception("Failed to parse persons from %s", file_path)
-        raise StorageError(f"Could not parse persons from {file_path}: {e}") from e
-    return persons
+    """Load person definitions from data file."""
+    return _load_list("persons.json", Person, "persons")
 
 
 # Cache for tax table data - now per year

@@ -6,7 +6,7 @@ relies on:
 - _select_oncall_rules_for_date: weekday and specific-date matching
 - _get_rule_intervals_for_shift: clipping a rule onto a shift, incl. rules that
   span midnight or end at 24:00
-- _subtract_covered_oncall: time not already claimed by higher-priority rules
+- subtract_covered: time not already claimed by higher-priority rules (shared with OB)
 """
 
 import datetime
@@ -16,8 +16,8 @@ from app.core.oncall import (
     _get_rule_intervals_for_shift,
     _parse_time,
     _select_oncall_rules_for_date,
-    _subtract_covered_oncall,
 )
+from app.core.time_utils import subtract_covered
 
 
 def _dt(day, hour, minute=0):
@@ -93,28 +93,28 @@ class TestGetRuleIntervalsForShift:
         assert _get_rule_intervals_for_shift(rule, _dt(5, 0), _dt(6, 0)) == []
 
 
-class TestSubtractCoveredOncall:
+class TestSubtractCovered:
     def test_no_coverage_returns_whole_interval(self):
-        assert _subtract_covered_oncall(_dt(1, 0), _dt(1, 10), []) == [(_dt(1, 0), _dt(1, 10))]
+        assert subtract_covered(_dt(1, 0), _dt(1, 10), []) == [(_dt(1, 0), _dt(1, 10))]
 
     def test_middle_coverage_splits_into_two_gaps(self):
         covered = [(_dt(1, 2), _dt(1, 4))]
-        result = _subtract_covered_oncall(_dt(1, 0), _dt(1, 10), covered)
+        result = subtract_covered(_dt(1, 0), _dt(1, 10), covered)
         assert result == [(_dt(1, 0), _dt(1, 2)), (_dt(1, 4), _dt(1, 10))]
 
     def test_full_coverage_returns_empty(self):
-        assert _subtract_covered_oncall(_dt(1, 0), _dt(1, 10), [(_dt(1, 0), _dt(1, 10))]) == []
+        assert subtract_covered(_dt(1, 0), _dt(1, 10), [(_dt(1, 0), _dt(1, 10))]) == []
 
     def test_leading_coverage_leaves_tail(self):
         covered = [(_dt(1, 0), _dt(1, 6))]
-        assert _subtract_covered_oncall(_dt(1, 0), _dt(1, 10), covered) == [(_dt(1, 6), _dt(1, 10))]
+        assert subtract_covered(_dt(1, 0), _dt(1, 10), covered) == [(_dt(1, 6), _dt(1, 10))]
 
     def test_unsorted_and_overlapping_coverage_is_merged(self):
         # Out-of-order, overlapping covers should still leave only the true gaps.
         covered = [(_dt(1, 6), _dt(1, 8)), (_dt(1, 1), _dt(1, 3)), (_dt(1, 2), _dt(1, 4))]
-        result = _subtract_covered_oncall(_dt(1, 0), _dt(1, 10), covered)
+        result = subtract_covered(_dt(1, 0), _dt(1, 10), covered)
         assert result == [(_dt(1, 0), _dt(1, 1)), (_dt(1, 4), _dt(1, 6)), (_dt(1, 8), _dt(1, 10))]
 
     def test_coverage_outside_interval_is_ignored(self):
         covered = [(_dt(2, 0), _dt(2, 5))]  # entirely after the interval
-        assert _subtract_covered_oncall(_dt(1, 0), _dt(1, 10), covered) == [(_dt(1, 0), _dt(1, 10))]
+        assert subtract_covered(_dt(1, 0), _dt(1, 10), covered) == [(_dt(1, 0), _dt(1, 10))]

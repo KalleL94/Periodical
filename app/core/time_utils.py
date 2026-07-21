@@ -61,3 +61,30 @@ def parse_ot_times(ot_shift: Any, date: datetime.date) -> tuple[datetime.datetim
         end_dt += datetime.timedelta(days=1)
 
     return start_dt, end_dt
+
+
+def subtract_covered(
+    start: datetime.datetime,
+    end: datetime.datetime,
+    covered: list[tuple[datetime.datetime, datetime.datetime]],
+) -> list[tuple[datetime.datetime, datetime.datetime]]:
+    """Return the parts of [start, end) not already claimed by a higher priority rule.
+
+    Both OB and on-call resolve overlapping rules by priority: the highest priority rule
+    claims an interval and lower ones only apply to what is left over. Shared by
+    app.core.schedule.ob and app.core.oncall so the two cannot drift apart.
+    """
+    result = []
+    cursor = start
+
+    for cov_start, cov_end in sorted(covered):
+        if cov_end <= cursor or cov_start >= end:
+            continue
+        if cov_start > cursor:
+            result.append((cursor, min(cov_start, end)))
+        cursor = max(cursor, cov_end)
+
+    if cursor < end:
+        result.append((cursor, end))
+
+    return result
