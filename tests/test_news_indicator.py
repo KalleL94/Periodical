@@ -24,6 +24,15 @@ def test_latest_version_is_the_first_changelog_entry():
     assert get_latest_version() == LATEST
 
 
+def test_pyproject_version_matches_the_changelog():
+    """pyproject.toml only claims to mirror VERSIONS[0]; this makes the claim enforceable."""
+    import tomllib
+    from pathlib import Path
+
+    pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
+    assert pyproject["project"]["version"] == LATEST
+
+
 def test_empty_changelog_reports_no_news(test_user):
     """A changelog with no releases must not render an indicator pointing at nothing."""
     with patch("app.routes.changelog.VERSIONS", []):

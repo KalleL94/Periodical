@@ -48,7 +48,6 @@ from .summary import (
     build_calendar_grid_for_month,
     build_month_report,
     summarize_month_for_person,
-    summarize_year_by_month,
     summarize_year_for_person,
 )
 from .vacation import get_vacation_dates_for_year
@@ -125,7 +124,6 @@ __all__ = [
     "build_calendar_grid_for_month",
     "summarize_month_for_person",
     "summarize_year_for_person",
-    "summarize_year_by_month",
     # cowork
     "build_cowork_stats",
     "build_cowork_details",
