@@ -225,11 +225,18 @@
     <div id="breakdown-section" class="ob-by-shift" hidden>
         <div class="flex-between">
             <h3 class="title-inline">{{ t.month_breakdown_title }}</h3>
-            <button class="btn secondary btn-sm" id="ob-day-toggle" onclick="toggleObDayMode()"
-                data-label-shift="{{ t.month_ob_per_shift }}"
-                data-label-calendar="{{ t.month_ob_per_calendar_day }}">
-                {{ t.month_ob_per_calendar_day }}
-            </button>
+            <div class="flex-row-gap">
+                <button class="btn secondary btn-sm" id="ob-day-toggle" onclick="toggleObDayMode()"
+                    data-label-shift="{{ t.month_ob_per_shift }}"
+                    data-label-calendar="{{ t.month_ob_per_calendar_day }}">
+                    {{ t.month_ob_per_calendar_day }}
+                </button>
+                <button class="btn secondary btn-sm" id="breakdown-csv"
+                    onclick="exportBreakdownCsv()"
+                    data-filename="{{ (person_name or ('person-' ~ person_id)) | replace(' ', '_') }}_{{ year }}-{{ '%02d'|format(month) }}">
+                    {{ t.month_export_csv }}
+                </button>
+            </div>
         </div>
         <div class="scroll-x">
             <table class="breakdown-table">
@@ -653,6 +660,7 @@
     <style>
     /* Per-shift mode (default): show shift rows, hide day rows */
     #breakdown-section { margin-top: 1rem; }
+    #breakdown-section .flex-row-gap { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     #breakdown-section.ob-by-shift .ob-row-day  { display: none; }
     /* Per-calendar-day mode: show day rows, hide shift rows */
     #breakdown-section.ob-by-day   .ob-row-shift { display: none; }
@@ -686,6 +694,31 @@
             section.classList.add('ob-by-shift');
             btn.textContent = btn.dataset.labelCalendar;
         }
+    }
+
+    // Export exactly the rows currently visible, so the CSV always matches the
+    // per-shift / per-calendar-day mode shown on screen.
+    function exportBreakdownCsv() {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('breakdown-csv');
+        var mode = section.classList.contains('ob-by-day') ? 'kalenderdag' : 'pass';
+        var lines = [];
+        section.querySelectorAll('table.breakdown-table tr').forEach(function (tr) {
+            if (tr.offsetParent === null) return;  // hidden by the mode class
+            var cells = Array.prototype.map.call(tr.cells, function (td) {
+                var v = td.textContent.trim().replace(/\s+/g, ' ');
+                if (/^-?\d+\.\d+$/.test(v)) v = v.replace('.', ',');  // sv decimal comma
+                return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+            });
+            lines.push(cells.join(';'));
+        });
+        // BOM so Excel picks up UTF-8
+        var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'ob_' + btn.dataset.filename + '_' + mode + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
     }
 
     if (window.location.hash === '#breakdown') {
