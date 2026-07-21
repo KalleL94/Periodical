@@ -3,7 +3,7 @@
 On-call override management routes - add and remove on-call shifts.
 """
 
-from datetime import datetime
+from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/oncall", tags=["oncall"])
 @router.post("/add")
 async def add_oncall_override(
     user_id: int = Form(...),
-    date: str = Form(...),
+    date: date_cls = Form(...),
     reason: str = Form(None),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -34,8 +34,7 @@ async def add_oncall_override(
     """
     require_own_or_admin(current_user, user_id, "Not authorized to add on-call for other users")
 
-    # Parse date
-    oc_date = datetime.strptime(date, "%Y-%m-%d").date()
+    oc_date = date
 
     # Check if override already exists for this date
     existing = (
@@ -69,7 +68,7 @@ async def add_oncall_override(
 @router.post("/remove")
 async def remove_oncall_override(
     user_id: int = Form(...),
-    date: str = Form(...),
+    date: date_cls = Form(...),
     reason: str = Form(None),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -84,8 +83,7 @@ async def remove_oncall_override(
     # Permission check
     require_own_or_admin(current_user, user_id, "Not authorized to remove on-call for other users")
 
-    # Parse date
-    oc_date = datetime.strptime(date, "%Y-%m-%d").date()
+    oc_date = date
 
     # Check if override already exists for this date
     existing = (

@@ -1,9 +1,9 @@
 # app/routes/day_pay_override.py
 """Routes for manual OB and on-call hour overrides on a specific day."""
 
-from datetime import datetime
+from datetime import date as date_cls
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -18,17 +18,17 @@ router = APIRouter(prefix="/day-pay-override", tags=["day_pay_override"])
 @router.post("/set")
 async def set_day_pay_override(
     request: Request,
+    user_id: int = Form(...),
+    override_date: date_cls = Form(..., alias="date"),
+    reason: str = Form(default=""),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # The request is still read raw below because ob_hours_*/oc_hours_* keys are dynamic.
     form = await request.form()
-    user_id = int(form["user_id"])
-    date_str = str(form["date"])
-    reason = str(form.get("reason", "")).strip() or None
+    reason_text = reason.strip() or None
 
     require_own_or_admin(current_user, user_id, "Du kan bara ange overrides for dig sjalv")
-
-    override_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
     # Collect ob_hours_* and oc_hours_* fields from the form
     ob_hours: dict[str, float] = {}
@@ -64,7 +64,7 @@ async def set_day_pay_override(
     if existing:
         existing.ob_hours_override = ob_json
         existing.oncall_hours_override = oncall_json
-        existing.reason = reason
+        existing.reason = reason_text
         existing.created_by = current_user.id
     else:
         session.add(
@@ -73,7 +73,7 @@ async def set_day_pay_override(
                 date=override_date,
                 ob_hours_override=ob_json,
                 oncall_hours_override=oncall_json,
-                reason=reason,
+                reason=reason_text,
                 created_by=current_user.id,
             )
         )

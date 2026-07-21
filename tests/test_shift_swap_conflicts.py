@@ -56,8 +56,8 @@ async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user,
     with pytest.raises(HTTPException) as exc:
         await propose_swap(
             target_id=admin_user.id,
-            requester_date=day_a.isoformat(),
-            target_date=day_c.isoformat(),
+            requester_date=day_a,
+            target_date=day_c,
             message=None,
             current_user=test_user,
             db=test_db,

@@ -8,6 +8,7 @@ all-person schedules.
 
 import calendar as _calendar
 from datetime import date as date_cls
+from datetime import time as time_cls
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -28,7 +29,9 @@ from app.database.database import (
 )
 from app.routes.shared import render
 
-router = APIRouter(tags=["substitutes"])
+# All routes here live under /admin/substitutes, so the admin gate lives on the router
+# and cannot be forgotten on a new route. Handlers keep the parameter only when they read it.
+router = APIRouter(tags=["substitutes"], dependencies=[Depends(get_admin_user)])
 
 _ALLOWED_CODES = {"N1", "N2", "N3", "OC"}
 # Absence types selectable for substitutes (we only track days, no pay).
@@ -171,7 +174,6 @@ async def admin_substitute_manage_page(
 @router.post("/admin/substitutes/{substitute_id}/toggle", name="admin_substitute_toggle")
 async def admin_substitute_toggle(
     substitute_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: archive/restore a substitute (archived substitutes are hidden from schedules)."""
@@ -258,7 +260,6 @@ async def admin_substitute_link(
     substitute_id: int,
     user_id: str = Form(""),
     hourly_wage: str = Form(""),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: link/unlink a substitute to a user account and set the hourly wage.
@@ -301,9 +302,9 @@ async def admin_substitute_link(
 @router.post("/admin/substitutes/{substitute_id}/overtime/add", name="admin_substitute_overtime_add")
 async def admin_substitute_overtime_add(
     substitute_id: int,
-    date: str = Form(...),
-    start_time: str = Form(...),
-    end_time: str = Form(...),
+    date: date_cls = Form(...),
+    start_time: time_cls = Form(...),
+    end_time: time_cls = Form(...),
     hours: float = Form(...),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
@@ -311,11 +312,9 @@ async def admin_substitute_overtime_add(
     """Add an overtime entry for a substitute (hours only; ot_pay is always 0)."""
     _require_substitute(db, substitute_id)
 
-    from datetime import datetime as _dt
-
-    ot_date = _dt.strptime(date, "%Y-%m-%d").date()
-    start_t = _dt.strptime(start_time, "%H:%M").time()
-    end_t = _dt.strptime(end_time, "%H:%M").time()
+    ot_date = date
+    start_t = start_time
+    end_t = end_time
 
     db.add(
         OvertimeShift(
@@ -341,7 +340,6 @@ async def admin_substitute_overtime_add(
 async def admin_substitute_overtime_delete(
     substitute_id: int,
     ot_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Delete an overtime entry belonging to a substitute."""
@@ -359,9 +357,8 @@ async def admin_substitute_overtime_delete(
 @router.post("/admin/substitutes/{substitute_id}/absence/add", name="admin_substitute_absence_add")
 async def admin_substitute_absence_add(
     substitute_id: int,
-    date: str = Form(...),
+    date: date_cls = Form(...),
     absence_type: str = Form(...),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Add an absence day for a substitute (day tracking only, no deduction)."""
@@ -370,9 +367,7 @@ async def admin_substitute_absence_add(
     if absence_type not in _ABSENCE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid absence type")
 
-    from datetime import datetime as _dt
-
-    abs_date = _dt.strptime(date, "%Y-%m-%d").date()
+    abs_date = date
 
     existing = db.query(Absence).filter(Absence.substitute_id == substitute_id, Absence.date == abs_date).first()
     if existing:
@@ -397,7 +392,6 @@ async def admin_substitute_absence_add(
 async def admin_substitute_absence_delete(
     substitute_id: int,
     absence_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Delete an absence day belonging to a substitute."""

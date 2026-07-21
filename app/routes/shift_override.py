@@ -1,7 +1,7 @@
 # app/routes/shift_override.py
 """Routes for manual shift overrides (adding/removing a regular shift for a day)."""
 
-from datetime import datetime
+from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
@@ -20,7 +20,7 @@ _ALLOWED_CODES = {"N1", "N2", "N3"}
 @router.post("/add")
 async def add_shift_override(
     user_id: int = Form(...),
-    date: str = Form(...),
+    date: date_cls = Form(...),
     shift_code: str = Form(...),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -30,7 +30,7 @@ async def add_shift_override(
     if shift_code not in _ALLOWED_CODES:
         raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3")
 
-    override_date = datetime.strptime(date, "%Y-%m-%d").date()
+    override_date = date
 
     existing = (
         session.query(ShiftOverride)
