@@ -720,11 +720,15 @@
     function exportBreakdownCsv() {
         var section = document.getElementById('breakdown-section');
         var btn = document.getElementById('breakdown-csv');
-        var mode = section.classList.contains('ob-by-day') ? 'kalenderdag' : 'pass';
-        var lines = [CSV_COLS.map(function (c) { return c[0]; }).join(',')];
+        var byDay = section.classList.contains('ob-by-day');
+        var mode = byDay ? 'kalenderdag' : 'pass';
+        // Start, end and normal hours belong to the shift, so the calendar-day rows
+        // leave them empty. Drop those columns rather than export three blank ones.
+        var cols = byDay ? CSV_COLS.filter(function (c) { return c[1][0] > 5 || c[1][0] === 0; }) : CSV_COLS;
+        var lines = [cols.map(function (c) { return c[0]; }).join(',')];
         section.querySelectorAll('table.breakdown-table tbody tr').forEach(function (tr) {
             if (tr.offsetParent === null || tr.cells.length < 16) return;  // hidden or empty-state row
-            var cells = CSV_COLS.map(function (col) {
+            var cells = cols.map(function (col) {
                 var texts = col[1].map(function (i) { return tr.cells[i].textContent.trim(); });
                 if (col[1][0] < 5) {  // date and times are plain text
                     var v = texts[0].replace(/\s+/g, ' ');
