@@ -10,6 +10,12 @@ developers. User-facing release notes are separate and bilingual: they live in
 `VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
 has selected. Add both when a change is worth telling users about.
 
+A version is a release, not a pull request. While the topmost version here has
+no git tag yet, add your entry to it instead of starting a new one; the version
+number is bumped by the pull request that follows a release, not by every
+change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
+`VERSIONS` disagree.
+
 ## [1.2.0] - 2026-07-22
 
 ### Added
