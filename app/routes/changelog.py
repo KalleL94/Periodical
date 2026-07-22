@@ -16,17 +16,6 @@ router = APIRouter()
 
 VERSIONS = [
     {
-        "version": "1.3.0",
-        "date": "2026-07-22",
-        "entries": [
-            {
-                "type": "nyhet",
-                "sv": "Den detaljerade sammanställningen visar nu en kronrad längst ner, under timsummorna. Varje ersättningskolumn får sitt belopp: OB-kolumnerna visar tillägget precis som lönekoderna på lönespecen, beredskaps- och övertidskolumnerna hela beloppet. Beloppen räknas per dag, så en löneändring mitt i perioden prissätts med den lön som faktiskt gällde den dagen",
-                "en": "The detailed breakdown now shows an amount row at the bottom, below the hour totals. Every compensation column gets its amount: the OB columns show the supplement, exactly like the wage codes on your payslip, while the on-call and overtime columns show the full amount. Amounts are computed per day, so a rate change mid-period is priced with the rate that actually applied on each day",
-            },
-        ],
-    },
-    {
         "version": "1.2.0",
         "date": "2026-07-22",
         "entries": [
@@ -34,6 +23,11 @@ VERSIONS = [
                 "type": "nyhet",
                 "sv": "Den detaljerade sammanställningen finns nu även i intervallvyn, inte bara i månadsvyn. Väljer du till exempel tre veckor från ett valfritt datum får du samma tabell med OB, beredskap och övertid per dag, med samma växling mellan OB per pass och OB per kalenderdag. Praktiskt när perioden du vill stämma av inte följer månadsgränserna",
                 "en": "The detailed breakdown is now available in the range view too, not only in the month view. Pick for example three weeks from any date and you get the same table of OB, on-call and overtime per day, with the same toggle between OB per shift and OB per calendar day. Useful when the period you want to check does not follow month boundaries",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Den detaljerade sammanställningen visar nu en kronrad längst ner, under timsummorna. Varje ersättningskolumn får sitt belopp: OB-kolumnerna visar tillägget precis som lönekoderna på lönespecen, beredskaps- och övertidskolumnerna hela beloppet. Beloppen räknas per dag, så en löneändring mitt i perioden prissätts med den lön som faktiskt gällde den dagen",
+                "en": "The detailed breakdown now shows an amount row at the bottom, below the hour totals. Every compensation column gets its amount: the OB columns show the supplement, exactly like the wage codes on your payslip, while the on-call and overtime columns show the full amount. Amounts are computed per day, so a rate change mid-period is priced with the rate that actually applied on each day",
             },
         ],
     },
