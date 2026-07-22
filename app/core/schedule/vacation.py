@@ -702,3 +702,228 @@ def fold_vacation_supplement_into_pay(brutto_pay: float, netto_pay: float, suppl
     else:
         new_netto = netto_before
     return new_brutto, new_netto
+
+
+# ---------------------------------------------------------------------------
+# Vacation editing (shared by /profile/vacation and /admin/vacation/{user_id})
+#
+# The self-service and admin route sets perform identical edits, differing only
+# in which user they target and where they redirect afterwards. The behaviour
+# lives here, taking the target user explicitly, so the two cannot drift apart.
+# ---------------------------------------------------------------------------
+
+
+def parse_week_list(raw: str) -> list[int]:
+    """Parse a comma-separated week string into sorted, deduped weeks 1-53."""
+    if not raw.strip():
+        return []
+    weeks = [int(w.strip()) for w in raw.split(",") if w.strip().isdigit()]
+    return sorted({w for w in weeks if 1 <= w <= 53})
+
+
+def parse_date_list(raw: str) -> set[datetime.date]:
+    """Parse a comma-separated ISO date string, silently dropping bad entries."""
+    result: set[datetime.date] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            result.add(datetime.date.fromisoformat(part))
+        except ValueError:
+            continue
+    return result
+
+
+def is_valid_vacation_year(year: int) -> bool:
+    return 2020 <= year <= 2100
+
+
+def _commit(db) -> None:
+    from app.core.schedule import clear_schedule_cache
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    clear_schedule_cache()
+
+
+def build_vacation_page_context(db, user, year: int) -> dict:
+    """Build the shared template context for a user's vacation year.
+
+    Walks the calendar year once to collect the user's OFF days (which the
+    balance calculation needs) and per-day shift colours for the calendar.
+    """
+    from app.core.schedule.core import determine_shift_for_date
+    from app.database.database import Absence, AbsenceType
+
+    off_days: set[datetime.date] = set()
+    day_colors: dict[str, str] = {}
+    day = datetime.date(year, 1, 1)
+    year_end = datetime.date(year, 12, 31)
+    while day <= year_end:
+        shift, _ = determine_shift_for_date(day, user.rotation_person_id)
+        if shift:
+            if shift.code == "OFF":
+                off_days.add(day)
+            if shift.color:
+                day_colors[day.isoformat()] = shift.color
+        day += datetime.timedelta(days=1)
+
+    def _absences(absence_type):
+        return (
+            db.query(Absence)
+            .filter(
+                Absence.user_id == user.id,
+                Absence.absence_type == absence_type,
+                Absence.date >= datetime.date(year, 1, 1),
+                Absence.date <= datetime.date(year, 12, 31),
+            )
+            .order_by(Absence.date)
+            .all()
+        )
+
+    return {
+        "vacation_weeks": sorted((user.vacation or {}).get(str(year), [])),
+        "balance": calculate_vacation_balance(user, year, db, off_dates=off_days),
+        "day_absences": _absences(AbsenceType.VACATION),
+        "parental_absences": _absences(AbsenceType.PARENTAL),
+        "parental_weeks": sorted((user.parental_leave or {}).get(str(year), [])),
+        "off_days_list": sorted(d.isoformat() for d in off_days),
+        "day_colors": day_colors,
+    }
+
+
+def _set_week_json(db, user, attr: str, year: int, weeks_raw: str) -> bool:
+    """Store parsed weeks under `year` in a JSON week column. False if year invalid."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    if not is_valid_vacation_year(year):
+        return False
+
+    weeks = dict(getattr(user, attr) or {})
+    weeks[str(year)] = parse_week_list(weeks_raw)
+    setattr(user, attr, weeks)
+    flag_modified(user, attr)
+    _commit(db)
+    return True
+
+
+def set_vacation_weeks(db, user, year: int, weeks_raw: str) -> bool:
+    """Set week-based vacation for a year. Returns False if the year is invalid."""
+    return _set_week_json(db, user, "vacation", year, weeks_raw)
+
+
+def set_parental_weeks(db, user, year: int, weeks_raw: str) -> bool:
+    """Set week-based parental leave for a year. Returns False if the year is invalid."""
+    return _set_week_json(db, user, "parental_leave", year, weeks_raw)
+
+
+def add_vacation_day(db, user, vacation_date: str) -> datetime.date | None:
+    """Mark a single date as vacation. Returns the date, or None if unparseable.
+
+    An absence already on that date is converted to VACATION rather than duplicated.
+    """
+    from app.database.database import Absence, AbsenceType
+
+    try:
+        day = datetime.date.fromisoformat(vacation_date)
+    except ValueError:
+        return None
+
+    existing = db.query(Absence).filter(Absence.user_id == user.id, Absence.date == day).first()
+    if existing:
+        existing.absence_type = AbsenceType.VACATION
+    else:
+        db.add(Absence(user_id=user.id, date=day, absence_type=AbsenceType.VACATION))
+
+    _commit(db)
+    return day
+
+
+def sync_vacation_days(db, user, year: int, dates: str, parental_dates: str) -> tuple[int, int]:
+    """Replace the year's day-level vacation and parental leave with the given dates.
+
+    Returns (added, removed) counts across both absence types. Absences outside
+    the year, and of other types, are left alone.
+    """
+    from app.database.database import Absence, AbsenceType
+
+    added = removed = 0
+    for raw, absence_type in ((dates, AbsenceType.VACATION), (parental_dates, AbsenceType.PARENTAL)):
+        new_dates = parse_date_list(raw)
+        existing = {
+            a.date: a
+            for a in db.query(Absence)
+            .filter(
+                Absence.user_id == user.id,
+                Absence.absence_type == absence_type,
+                Absence.date >= datetime.date(year, 1, 1),
+                Absence.date <= datetime.date(year, 12, 31),
+            )
+            .all()
+        }
+        for day in new_dates - set(existing):
+            db.add(Absence(user_id=user.id, date=day, absence_type=absence_type))
+            added += 1
+        for day in set(existing) - new_dates:
+            db.delete(existing[day])
+            removed += 1
+
+    _commit(db)
+    return added, removed
+
+
+def delete_vacation_day(db, user, absence_id: int) -> int:
+    """Delete one of the user's VACATION absences. Returns the year to return to."""
+    from app.core.utils import get_today
+    from app.database.database import Absence, AbsenceType
+
+    absence = (
+        db.query(Absence)
+        .filter(
+            Absence.id == absence_id,
+            Absence.user_id == user.id,
+            Absence.absence_type == AbsenceType.VACATION,
+        )
+        .first()
+    )
+    if not absence:
+        return get_today().year
+
+    year = absence.date.year
+    db.delete(absence)
+    _commit(db)
+    return year
+
+
+def set_vacation_settings(
+    db,
+    user,
+    employment_start_date: str,
+    year_start_month: int | None = None,
+    days_per_year: int | None = None,
+) -> None:
+    """Update vacation settings. Out-of-range values are ignored, as is a
+    malformed date; an empty date string clears the employment start date.
+
+    Only the admin form exposes the break month and days per year, so those stay
+    optional rather than being reset when self-service saves.
+    """
+    if employment_start_date.strip():
+        try:
+            user.employment_start_date = datetime.date.fromisoformat(employment_start_date)
+        except ValueError:
+            pass
+    else:
+        user.employment_start_date = None
+
+    if year_start_month is not None and 1 <= year_start_month <= 12:
+        user.vacation_year_start_month = year_start_month
+
+    if days_per_year is not None and 0 <= days_per_year <= 40:
+        user.vacation_days_per_year = days_per_year
+
+    _commit(db)
