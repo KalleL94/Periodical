@@ -58,41 +58,5 @@
         "priority": 2,
         "spans_to_next_day": false,
         "generated": false
-    },
-    {
-        "code": "OC_HOLIDAY_EVE",
-        "label": "Beredskap helgdagsafton",
-        "description": "Afton före röd dag (från 18:00)",
-        "specific_dates": [],
-        "start_time": "18:00",
-        "end_time": "07:00",
-        "fixed_hourly_rate": 97,
-        "priority": 3,
-        "spans_to_next_day": true,
-        "generated": true
-    },
-    {
-        "code": "OC_HOLIDAY",
-        "label": "Beredskap röd dag",
-        "description": "Röd dag (helgdag)",
-        "specific_dates": [],
-        "start_time": "00:00",
-        "end_time": "24:00",
-        "fixed_hourly_rate": 112,
-        "priority": 4,
-        "spans_to_next_day": false,
-        "generated": true
-    },
-    {
-        "code": "OC_SPECIAL",
-        "label": "Beredskap storhelg",
-        "description": "Storhelg (jul, nyår, påsk, midsommar) - fram till första vardagen",
-        "specific_dates": [],
-        "start_time": "00:00",
-        "end_time": "24:00",
-        "fixed_hourly_rate": 192,
-        "priority": 5,
-        "spans_to_next_day": false,
-        "generated": true
     }
 ]

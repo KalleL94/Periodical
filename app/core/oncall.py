@@ -14,8 +14,12 @@ REPLACEMENT (On-call system):
     - Only ONE rule applies to each time segment
     - Higher priority rules REPLACE lower priority rules completely
     - Priority order: OC_NATIONALDAGEN (6) > OC_SPECIAL (5) > OC_HOLIDAY (4) >
-                      OC_HOLIDAY_EVE (3) > OC_WEEKEND (2) > OC_WEEKDAY (1)
+                      OC_WEEKEND (2) > OC_WEEKDAY (1)
     - Result: each hour of an on-call shift is compensated at exactly one rate
+
+The eve of a holiday is not a separate rule: the generated OC_HOLIDAY (or
+OC_NATIONALDAGEN) rule for a holiday starts at 17:00 the day before, which is
+what the agreement specifies.
 
 Example:
     A 24-hour on-call shift on Christmas Day, which is a Friday:
@@ -24,6 +28,7 @@ Example:
 """
 
 import datetime
+import logging
 from functools import lru_cache
 
 from .holidays import (
@@ -46,13 +51,15 @@ from .models import OnCallRule
 from .storage import load_oncall_rules
 from .time_utils import subtract_covered
 
-# Load base rules from JSON config
+logger = logging.getLogger(__name__)
+
+# Load base rules from JSON config. These are the weekday and weekend rules only;
+# holiday and storhelg rules are generated per year below, because they depend on
+# dates that move.
 oncall_rules_base = load_oncall_rules()
 
-# Fixed hourly compensation in SEK. data/oncall_rules.json carries the same numbers
-# on its OC_HOLIDAY and OC_SPECIAL entries, but those entries have no days and no
-# specific_dates, so they never match anything: the rules generated below are what
-# actually pays out, and these constants are what they pay.
+# Fixed hourly compensation in SEK for the generated holiday rules. Change them
+# here: the JSON file no longer carries holiday entries to edit by mistake.
 RATE_STORHELG = 192
 RATE_RED_DAY = 112
 
@@ -702,6 +709,13 @@ def apply_oncall_hours_override(
             # Look up rate from rules
             rule = next((r for r in oncall_rules if r.code == code), None)
             if rule is None:
+                # A stored override naming a code no rule defines would otherwise be
+                # dropped without a trace, silently reducing the day's pay.
+                logger.warning(
+                    "Ignoring on-call override for unknown code %s (%s h): no rule defines it",
+                    code,
+                    h,
+                )
                 continue
             override_val = overrides.get(code)
             if override_val is not None:
