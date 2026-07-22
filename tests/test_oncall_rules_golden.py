@@ -69,9 +69,6 @@ weekdays[4]          OC_WEEKEND        17:00-07:00 rate=None fixed=97 prio=2 spa
 weekdays[5]          OC_WEEKEND_SAT    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[6]          OC_WEEKEND_SUN    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[0]          OC_WEEKEND_MON    00:00-07:00 rate=None fixed=97 prio=2 spans=False gen=False
-weekdays[]           OC_HOLIDAY_EVE    18:00-07:00 rate=None fixed=97 prio=3 spans=True gen=True
-weekdays[]           OC_HOLIDAY        00:00-24:00 rate=None fixed=112 prio=4 spans=False gen=True
-weekdays[]           OC_SPECIAL        00:00-24:00 rate=None fixed=192 prio=5 spans=False gen=True
 2026-06-05 Fri  OC_NATIONALDAGEN  17:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2026-06-06 Sat  OC_NATIONALDAGEN  00:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2026-06-07 Sun  OC_NATIONALDAGEN  00:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
@@ -121,9 +118,6 @@ weekdays[4]          OC_WEEKEND        17:00-07:00 rate=None fixed=97 prio=2 spa
 weekdays[5]          OC_WEEKEND_SAT    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[6]          OC_WEEKEND_SUN    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[0]          OC_WEEKEND_MON    00:00-07:00 rate=None fixed=97 prio=2 spans=False gen=False
-weekdays[]           OC_HOLIDAY_EVE    18:00-07:00 rate=None fixed=97 prio=3 spans=True gen=True
-weekdays[]           OC_HOLIDAY        00:00-24:00 rate=None fixed=112 prio=4 spans=False gen=True
-weekdays[]           OC_SPECIAL        00:00-24:00 rate=None fixed=192 prio=5 spans=False gen=True
 2027-06-05 Sat  OC_NATIONALDAGEN  17:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2027-06-06 Sun  OC_NATIONALDAGEN  00:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2027-06-07 Mon  OC_NATIONALDAGEN  00:00-07:00 rate=None fixed=112 prio=6 spans=False gen=True
@@ -171,9 +165,6 @@ weekdays[4]          OC_WEEKEND        17:00-07:00 rate=None fixed=97 prio=2 spa
 weekdays[5]          OC_WEEKEND_SAT    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[6]          OC_WEEKEND_SUN    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[0]          OC_WEEKEND_MON    00:00-07:00 rate=None fixed=97 prio=2 spans=False gen=False
-weekdays[]           OC_HOLIDAY_EVE    18:00-07:00 rate=None fixed=97 prio=3 spans=True gen=True
-weekdays[]           OC_HOLIDAY        00:00-24:00 rate=None fixed=112 prio=4 spans=False gen=True
-weekdays[]           OC_SPECIAL        00:00-24:00 rate=None fixed=192 prio=5 spans=False gen=True
 2028-06-05 Mon  OC_NATIONALDAGEN  17:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2028-06-06 Tue  OC_NATIONALDAGEN  00:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2028-06-07 Wed  OC_NATIONALDAGEN  00:00-07:00 rate=None fixed=112 prio=6 spans=False gen=True
@@ -218,9 +209,6 @@ weekdays[4]          OC_WEEKEND        17:00-07:00 rate=None fixed=97 prio=2 spa
 weekdays[5]          OC_WEEKEND_SAT    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[6]          OC_WEEKEND_SUN    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[0]          OC_WEEKEND_MON    00:00-07:00 rate=None fixed=97 prio=2 spans=False gen=False
-weekdays[]           OC_HOLIDAY_EVE    18:00-07:00 rate=None fixed=97 prio=3 spans=True gen=True
-weekdays[]           OC_HOLIDAY        00:00-24:00 rate=None fixed=112 prio=4 spans=False gen=True
-weekdays[]           OC_SPECIAL        00:00-24:00 rate=None fixed=192 prio=5 spans=False gen=True
 2035-06-05 Tue  OC_NATIONALDAGEN  17:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2035-06-06 Wed  OC_NATIONALDAGEN  00:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2035-06-07 Thu  OC_NATIONALDAGEN  00:00-07:00 rate=None fixed=112 prio=6 spans=False gen=True
@@ -265,9 +253,6 @@ weekdays[4]          OC_WEEKEND        17:00-07:00 rate=None fixed=97 prio=2 spa
 weekdays[5]          OC_WEEKEND_SAT    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[6]          OC_WEEKEND_SUN    00:00-24:00 rate=None fixed=97 prio=2 spans=False gen=False
 weekdays[0]          OC_WEEKEND_MON    00:00-07:00 rate=None fixed=97 prio=2 spans=False gen=False
-weekdays[]           OC_HOLIDAY_EVE    18:00-07:00 rate=None fixed=97 prio=3 spans=True gen=True
-weekdays[]           OC_HOLIDAY        00:00-24:00 rate=None fixed=112 prio=4 spans=False gen=True
-weekdays[]           OC_SPECIAL        00:00-24:00 rate=None fixed=192 prio=5 spans=False gen=True
 2038-06-05 Sat  OC_NATIONALDAGEN  17:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2038-06-06 Sun  OC_NATIONALDAGEN  00:00-00:00 rate=None fixed=112 prio=6 spans=False gen=True
 2038-06-07 Mon  OC_NATIONALDAGEN  00:00-07:00 rate=None fixed=112 prio=6 spans=False gen=True
@@ -317,16 +302,17 @@ def test_golden_master_matches():
     assert _dump_all() == GOLDEN.splitlines()
 
 
-def test_inert_base_rules_are_exactly_the_known_three():
+def test_no_inert_rules():
     """A rule with neither days nor specific_dates matches nothing and can never pay out.
 
-    Three entries in data/oncall_rules.json are templates rather than live rules: they
-    ship with empty specific_dates, and the generator emits its own rules with the rate
-    hardcoded instead of reading these. Editing their fixed_hourly_rate in the JSON
-    therefore changes nothing. Pinned here so the situation cannot quietly grow.
+    data/oncall_rules.json used to carry three such templates (OC_HOLIDAY_EVE,
+    OC_HOLIDAY, OC_SPECIAL). They were a trap: they held a fixed_hourly_rate, which is
+    exactly where someone would go to change a holiday rate, and editing it did nothing
+    because the generator hardcodes its own. They are gone; this keeps them gone.
     """
-    inert = [r.code for r in build_oncall_rules_for_year(2026) if not r.days and not r.specific_dates]
-    assert inert == ["OC_HOLIDAY_EVE", "OC_HOLIDAY", "OC_SPECIAL"], inert
+    for year in GOLDEN_YEARS:
+        inert = [r.code for r in build_oncall_rules_for_year(year) if not r.days and not r.specific_dates]
+        assert inert == [], f"{year}: {inert}"
 
 
 def test_label_is_a_function_of_code():
@@ -341,11 +327,36 @@ def test_label_is_a_function_of_code():
         "OC_WEEKEND_SAT": "Beredskap helg l\u00f6rdag",
         "OC_WEEKEND_SUN": "Beredskap helg s\u00f6ndag",
         "OC_WEEKEND_MON": "Beredskap helg m\u00e5ndag",
-        "OC_HOLIDAY_EVE": "Beredskap helgdagsafton",
         "OC_HOLIDAY": "Beredskap r\u00f6d dag",
         "OC_SPECIAL": "Beredskap storhelg",
         "OC_NATIONALDAGEN": "Beredskap Nationaldagen",
     }
+
+
+def test_holiday_codes_survive_without_their_base_rules():
+    """The day view's manual override form is built from these codes, and
+    apply_oncall_hours_override looks a code's rate up in the same list.
+
+    Removing the inert OC_HOLIDAY and OC_SPECIAL base rules is only safe because the
+    generator emits both codes every year regardless. If a year ever produced neither,
+    the override field would vanish and a stored value would be dropped.
+    """
+    for year in GOLDEN_YEARS:
+        codes = {r.code for r in build_oncall_rules_for_year(year)}
+        assert {"OC_HOLIDAY", "OC_SPECIAL", "OC_NATIONALDAGEN"} <= codes, f"{year}: {sorted(codes)}"
+
+
+def test_holiday_eves_are_covered_by_the_holiday_rule():
+    """OC_HOLIDAY_EVE was removed, not replaced: the agreement runs a holiday from
+    17:00 the day before, and the generated rule already starts there."""
+    rules = build_oncall_rules_for_year(2026)
+    by_date = {r.specific_dates[0]: r for r in rules if r.specific_dates}
+    # Trettondagsafton, Valborg, Alla helgons afton, Kristi himmelsfards afton.
+    for eve in ("2026-01-05", "2026-04-30", "2026-10-30", "2026-05-13"):
+        rule = by_date[eve]
+        assert rule.code == "OC_HOLIDAY", (eve, rule.code)
+        assert rule.start_time == "17:00", (eve, rule.start_time)
+        assert rule.fixed_hourly_rate == 112, (eve, rule.fixed_hourly_rate)
 
 
 if __name__ == "__main__":
