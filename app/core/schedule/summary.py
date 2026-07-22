@@ -91,6 +91,48 @@ def _attach_calendar_day_breakdown(days_out: list[dict]) -> None:
         day_data["ot_hours_calendar_day"] = calendar_day_ot.get(day_data["date"], 0.0)
 
 
+def build_range_breakdown_days(
+    start_date,
+    end_date,
+    person_id: int,
+    session=None,
+    wage_user_id: int | None = None,
+    employment_start=None,
+    employment_end=None,
+) -> list[dict]:
+    """Per-day OB/on-call/OT rows for an arbitrary date range (the month view's breakdown table)."""
+    import datetime as _dt_mod
+
+    settings = get_settings()
+    uid_for_wages = wage_user_id if wage_user_id is not None else person_id
+    ctx = _resolve_month_wage_context(session, uid_for_wages, settings, start_date, False, None)
+    rates_map = {person_id: ctx.user_rates} if ctx.user_rates else None
+
+    days = generate_period_data(
+        start_date,
+        end_date,
+        person_id,
+        session=session,
+        user_rates_map=rates_map,
+        employment_start=employment_start,
+    )
+    if employment_end is not None:
+        days = mask_days_to_employment(days, _dt_mod.date.min, employment_end)
+
+    ob_overrides = ctx.user_rates.get("ob") if ctx.user_rates else None
+    throwaway = {"total_hours": 0.0, "num_shifts": 0, "ob_hours": {}, "ob_pay": {}, "brutto_pay": 0.0}
+    throwaway.update({k: 0.0 for k in ("oncall_pay", "oncall_hours", "ot_pay", "ot_hours")})
+
+    days_out = [
+        _process_day_for_summary(
+            day, get_combined_rules_for_year(day["date"].year), ctx.base_salary, throwaway, ob_overrides
+        )
+        for day in days
+    ]
+    _attach_calendar_day_breakdown(days_out)
+    return days_out
+
+
 def _resolve_person_name(session, person_id: int, on_date, persons) -> str:
     """Resolve the display name for a rotation position on a date via the history system."""
     if session:

@@ -1,0 +1,346 @@
+{# Shared detailed OB / on-call / OT breakdown table.
+   Expects: bd_days (list of day dicts), optional bd_csv_filename for the CSV button. #}
+<div id="breakdown-section" class="ob-by-shift" hidden>
+        <div class="flex-between">
+            <h3 class="title-inline">{{ t.month_breakdown_title }}</h3>
+            <div class="flex-row-gap">
+                <button class="btn secondary btn-sm" id="ob-day-toggle" onclick="toggleObDayMode()"
+                    data-label-shift="{{ t.month_ob_per_shift }}"
+                    data-label-calendar="{{ t.month_ob_per_calendar_day }}">
+                    {{ t.month_ob_per_calendar_day }}
+                </button>
+                {% if bd_csv_filename %}<button class="btn secondary btn-sm" id="breakdown-csv"
+                    onclick="exportBreakdownCsv()"
+                    data-filename="{{ bd_csv_filename }}">
+                    {{ t.month_export_csv }}
+                </button>{% endif %}
+            </div>
+        </div>
+        <div class="scroll-x">
+            <table class="breakdown-table">
+                <thead>
+                    <tr>
+                        <th class="th_left">{{ t.month_col_date }}</th>
+                        <th class="th_left">{{ t.month_col_day }}</th>
+                        <th class="th_left">{{ t.month_col_type }}</th>
+                        <th class="th_right">{{ t.month_col_start }}</th>
+                        <th class="th_right">{{ t.month_col_end }}</th>
+                        <th class="th_right">{{ t.month_col_norm }}</th>
+                        <th class="th_right">OB1(x1,12)</th>
+                        <th class="th_right">OB2(x1,18)</th>
+                        <th class="th_right">OB3(x1,24)</th>
+                        <th class="th_right">OB4(x1,24)</th>
+                        <th class="th_right">OB5(x1,47)</th>
+                        <th class="th_right">B.Vardag(75)</th>
+                        <th class="th_right">B.Helg(97)</th>
+                        <th class="th_right">B.Helgdag(112)</th>
+                        <th class="th_right">B.Storhelg(192)</th>
+                        <th class="th_right">{{ t.month_col_ot }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set ns = namespace(
+                        tot_norm=0, tot_ob1=0, tot_ob2=0, tot_ob3=0, tot_ob4=0, tot_ob5=0,
+                        tot_vardag=0, tot_helg=0, tot_helgdag=0, tot_storhelg=0, tot_ot=0,
+                        has_rows=false
+                    ) %}
+
+                    {% for d in bd_days %}
+                        {% set ob1 = d.ob_hours.get('OB1', 0) or 0 %}
+                        {% set ob2 = d.ob_hours.get('OB2', 0) or 0 %}
+                        {% set ob3 = d.ob_hours.get('OB3', 0) or 0 %}
+                        {% set ob4 = d.ob_hours.get('OB4', 0) or 0 %}
+                        {% set ob5 = d.ob_hours.get('OB5', 0) or 0 %}
+                        {% set ob_sum = ob1 + ob2 + ob3 + ob4 + ob5 %}
+
+                        {# Non-OB hours: shift hours minus OB hours (only for regular work shifts) #}
+                        {% set is_work_shift = d.shift and d.shift.code not in ('OFF', 'OC', 'OT') %}
+                        {% set norm = (d.hours - ob_sum) if is_work_shift and d.hours else 0 %}
+                        {% if norm < 0 %}{% set norm = 0 %}{% endif %}
+
+                        {% set oc_bd = d.oncall_details.get('breakdown', {}) if d.oncall_details else {} %}
+                        {% set oc_vardag = (oc_bd.get('OC_WEEKDAY', {}).get('hours', 0) or 0) %}
+                        {% set oc_helg = (oc_bd.get('OC_WEEKEND', {}).get('hours', 0) or 0)
+                                       + (oc_bd.get('OC_WEEKEND_SAT', {}).get('hours', 0) or 0)
+                                       + (oc_bd.get('OC_WEEKEND_SUN', {}).get('hours', 0) or 0)
+                                       + (oc_bd.get('OC_WEEKEND_MON', {}).get('hours', 0) or 0) %}
+                        {% set oc_helgdag = (oc_bd.get('OC_HOLIDAY', {}).get('hours', 0) or 0)
+                                          + (oc_bd.get('OC_HOLIDAY_EVE', {}).get('hours', 0) or 0)
+                                          + (oc_bd.get('OC_NATIONALDAGEN', {}).get('hours', 0) or 0) %}
+                        {% set oc_storhelg = (oc_bd.get('OC_SPECIAL', {}).get('hours', 0) or 0) %}
+
+                        {% set ot = d.ot_hours or 0 %}
+
+                        {% set row_total = norm + ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + ot %}
+
+                        {# Per-calendar-day OB and OT: aggregated across all shifts touching this day #}
+                        {% set cd_ob = d.ob_hours_calendar_day if d.ob_hours_calendar_day is defined else {} %}
+                        {% set cd_ob1 = cd_ob.get('OB1', 0) or 0 %}
+                        {% set cd_ob2 = cd_ob.get('OB2', 0) or 0 %}
+                        {% set cd_ob3 = cd_ob.get('OB3', 0) or 0 %}
+                        {% set cd_ob4 = cd_ob.get('OB4', 0) or 0 %}
+                        {% set cd_ob5 = cd_ob.get('OB5', 0) or 0 %}
+                        {% set cd_ob_sum = cd_ob1 + cd_ob2 + cd_ob3 + cd_ob4 + cd_ob5 %}
+                        {% set cd_ot = d.ot_hours_calendar_day if d.ot_hours_calendar_day is defined else 0 %}
+                        {% set cd_row_total = cd_ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + cd_ot %}
+
+                        {# Shift label (needed in both modes) #}
+                        {% set shift_label = d.shift.label if d.shift and d.shift.label else (d.shift.code if d.shift and d.shift.code != 'OFF' else '') %}
+
+                        {% if row_total > 0 or cd_row_total > 0 %}
+                            {% if row_total > 0 or cd_row_total > 0 %}{% set ns.has_rows = true %}{% endif %}
+
+                            {% if row_total > 0 %}
+                                {% set ns.tot_norm = ns.tot_norm + norm %}
+                                {% set ns.tot_ob1 = ns.tot_ob1 + ob1 %}
+                                {% set ns.tot_ob2 = ns.tot_ob2 + ob2 %}
+                                {% set ns.tot_ob3 = ns.tot_ob3 + ob3 %}
+                                {% set ns.tot_ob4 = ns.tot_ob4 + ob4 %}
+                                {% set ns.tot_ob5 = ns.tot_ob5 + ob5 %}
+                                {% set ns.tot_vardag = ns.tot_vardag + oc_vardag %}
+                                {% set ns.tot_helg = ns.tot_helg + oc_helg %}
+                                {% set ns.tot_helgdag = ns.tot_helgdag + oc_helgdag %}
+                                {% set ns.tot_storhelg = ns.tot_storhelg + oc_storhelg %}
+                                {% set ns.tot_ot = ns.tot_ot + ot %}
+
+                                {# Shift start/end times #}
+                                {% if d.start and d.end %}
+                                    {% set t_start = d.start | time_format %}
+                                    {% set t_end = d.end | time_format %}
+                                {% elif d.shift and d.shift.start_time %}
+                                    {% set t_start = d.shift.start_time %}
+                                    {% set t_end = d.shift.end_time %}
+                                {% else %}
+                                    {% set t_start = '' %}
+                                    {% set t_end = '' %}
+                                {% endif %}
+                                {# For extensions: show actual end time from OT data #}
+                                {% if d.ot_details and d.ot_details.get('is_extension') %}
+                                    {% set t_end = d.ot_details.end_time[:5] %}
+                                {% endif %}
+
+                                {% set has_oncall = (oc_vardag + oc_helg + oc_helgdag + oc_storhelg) > 0 %}
+                                {% set has_ot = ot > 0 %}
+
+                                {# ── Per-shift mode (default) ── #}
+                                {% if has_oncall and has_ot %}
+                                    {# Split into two rows: on-call and overtime separately #}
+                                    <tr class="ob-row-shift">
+                                        <td class="td_left num">{{ d.date }}</td>
+                                        <td class="td_left">{{ d.weekday_name }}</td>
+                                        <td class="td_left">{{ t.month_payslip_oncall_row }}</td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                        <td class="td_right num"></td>
+                                    </tr>
+                                    <tr class="ob-row-shift">
+                                        <td class="td_left num">{{ d.date }}</td>
+                                        <td class="td_left">{{ d.weekday_name }}</td>
+                                        <td class="td_left">{{ shift_label }}</td>
+                                        <td class="td_right num">{{ t_start }}</td>
+                                        <td class="td_right num">{{ t_end }}</td>
+                                        <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num"></td>
+                                        <td class="td_right num">{{ "%.1f"|format(ot) }}</td>
+                                    </tr>
+                                {% else %}
+                                    <tr class="ob-row-shift">
+                                        <td class="td_left num">{{ d.date }}</td>
+                                        <td class="td_left">{{ d.weekday_name }}</td>
+                                        <td class="td_left">{{ shift_label }}</td>
+                                        <td class="td_right num">{{ t_start }}</td>
+                                        <td class="td_right num">{{ t_end }}</td>
+                                        <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ob5 %}{{ "%.1f"|format(ob5) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                        <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                        <td class="td_right num">{% if ot %}{{ "%.1f"|format(ot) }}{% endif %}</td>
+                                    </tr>
+                                {% endif %}
+                            {% endif %}
+
+                            {# ── Per-calendar-day mode ── #}
+                            {# One row per calendar day with OB and OT aggregated from all
+                               shifts touching that day. Night shifts and overtime crossing
+                               midnight contribute to both their start day and the next. #}
+                            {% if cd_row_total > 0 %}
+                            <tr class="ob-row-day">
+                                <td class="td_left num">{{ d.date }}</td>
+                                <td class="td_left">{{ d.weekday_name }}</td>
+                                <td class="td_left">{{ shift_label }}</td>
+                                <td class="td_right num"></td>
+                                <td class="td_right num"></td>
+                                <td class="td_right num"></td>
+                                <td class="td_right num">{% if cd_ob1 %}{{ "%.1f"|format(cd_ob1) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob2 %}{{ "%.1f"|format(cd_ob2) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob3 %}{{ "%.1f"|format(cd_ob3) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob4 %}{{ "%.1f"|format(cd_ob4) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ob5 %}{{ "%.1f"|format(cd_ob5) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
+                                <td class="td_right num">{% if oc_storhelg %}{{ "%.1f"|format(oc_storhelg) }}{% endif %}</td>
+                                <td class="td_right num">{% if cd_ot %}{{ "%.1f"|format(cd_ot) }}{% endif %}</td>
+                            </tr>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if not ns.has_rows %}
+                        <tr>
+                            <td colspan="16" class="table-empty">
+                                {{ t.month_no_ob }}
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+                {% if ns.has_rows %}
+                <tfoot>
+                    <tr>
+                        <td class="td_left" colspan="1"><strong>{{ t.month_col_total }}</strong></td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                        <td class="td_right num"><strong>{% if ns.tot_norm %}{{ "%.1f"|format(ns.tot_norm) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob1 %}{{ "%.1f"|format(ns.tot_ob1) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob2 %}{{ "%.1f"|format(ns.tot_ob2) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob3 %}{{ "%.1f"|format(ns.tot_ob3) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob4 %}{{ "%.1f"|format(ns.tot_ob4) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ob5 %}{{ "%.1f"|format(ns.tot_ob5) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_vardag %}{{ "%.1f"|format(ns.tot_vardag) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_helg %}{{ "%.1f"|format(ns.tot_helg) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_helgdag %}{{ "%.1f"|format(ns.tot_helgdag) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_storhelg %}{{ "%.1f"|format(ns.tot_storhelg) }}{% endif %}</strong></td>
+                        <td class="td_right num"><strong>{% if ns.tot_ot %}{{ "%.1f"|format(ns.tot_ot) }}{% endif %}</strong></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <style>
+    /* Per-shift mode (default): show shift rows, hide day rows */
+    #breakdown-section { margin-top: 1rem; }
+    #breakdown-section .flex-row-gap { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    #breakdown-section.ob-by-shift .ob-row-day  { display: none; }
+    /* Per-calendar-day mode: show day rows, hide shift rows */
+    #breakdown-section.ob-by-day   .ob-row-shift { display: none; }
+    </style>
+
+    <script>
+    function toggleBreakdown() {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('breakdown-toggle');
+        if (section.hidden) {
+            section.hidden = false;
+            btn.textContent = '{{ t.month_hide_breakdown }}';
+            history.replaceState(null, '', window.location.pathname + window.location.search + '#breakdown');
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+            section.hidden = true;
+            btn.textContent = '{{ t.month_show_breakdown }}';
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+    }
+
+    function toggleObDayMode() {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('ob-day-toggle');
+        if (section.classList.contains('ob-by-shift')) {
+            section.classList.remove('ob-by-shift');
+            section.classList.add('ob-by-day');
+            btn.textContent = btn.dataset.labelShift;
+        } else {
+            section.classList.remove('ob-by-day');
+            section.classList.add('ob-by-shift');
+            btn.textContent = btn.dataset.labelCalendar;
+        }
+    }
+
+    // CSV columns: label, source cell indices in the breakdown table (summed when
+    // several). Wage codes follow the Excel export (excel_shared.py REPORT_COL_HEADERS),
+    // where OB3 and OB4 both belong to code 152.
+    var CSV_COLS = [
+        ['Datum', [0]],
+        ['Start', [3]],
+        ['Slut', [4]],
+        ['Vanliga timmar', [5]],
+        ['Kväll 150', [6]],
+        ['Natt 151', [7]],
+        ['Helg 152', [8, 9]],
+        ['Storhelg 153', [10]],
+        ['Beredskap Vardag 75', [11]],
+        ['Beredskap Helg 97', [12]],
+        ['Beredskap Helgdag 112', [13]],
+        ['Beredskap Storhelg 192', [14]],
+        ['Övertid', [15]]
+    ];
+
+    // Export exactly the rows currently visible, so the CSV always matches the
+    // per-shift / per-calendar-day mode shown on screen.
+    function exportBreakdownCsv() {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('breakdown-csv');
+        var byDay = section.classList.contains('ob-by-day');
+        var mode = byDay ? 'kalenderdag' : 'pass';
+        // Start, end and normal hours belong to the shift, so the calendar-day rows
+        // leave them empty. Drop those columns rather than export three blank ones.
+        var cols = byDay ? CSV_COLS.filter(function (c) { return c[1][0] > 5 || c[1][0] === 0; }) : CSV_COLS;
+        var lines = [cols.map(function (c) { return c[0]; }).join(',')];
+        section.querySelectorAll('table.breakdown-table tbody tr').forEach(function (tr) {
+            if (tr.offsetParent === null || tr.cells.length < 16) return;  // hidden or empty-state row
+            var cells = cols.map(function (col) {
+                var texts = col[1].map(function (i) { return tr.cells[i].textContent.trim(); });
+                if (col[1][0] < 5) {  // date and times are plain text
+                    var v = texts[0].replace(/\s+/g, ' ');
+                    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+                }
+                var sum = texts.reduce(function (acc, t) { return acc + (parseFloat(t) || 0); }, 0);
+                // Decimal point, since the comma is the separator (RFC 4180).
+                return sum ? sum.toFixed(1) : '';
+            });
+            lines.push(cells.join(','));
+        });
+        // BOM so Excel picks up UTF-8
+        var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'ob_' + btn.dataset.filename + '_' + mode + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    if (window.location.hash === '#breakdown') {
+        var section = document.getElementById('breakdown-section');
+        var btn = document.getElementById('breakdown-toggle');
+        section.hidden = false;
+        btn.textContent = '{{ t.month_hide_breakdown }}';
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    </script>
