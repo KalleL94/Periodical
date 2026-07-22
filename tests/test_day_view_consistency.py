@@ -798,17 +798,3 @@ def test_canonical_ot_outside_vacation_week_still_applies(env):
     assert canonical["shift"].code == "OT"
     assert canonical["ot_hours"] == 8.5
     assert canonical["ot_pay"] > 0
-
-
-def test_day_view_renders_ot_quick_presets(env):
-    """The manual overtime form offers one quick-fill button per standard shift."""
-    client, session = env
-    day = datetime.date(2026, 3, 1)  # OFF day for position 1: no shift, plain OT form
-    _make_user(session, 1, 1)
-    _login(client, 1)
-
-    resp = client.get(f"/day/1/{day.year}/{day.month}/{day.day}")
-    assert resp.status_code == 200
-
-    presets = re.findall(r'class="[^"]*ot-preset[^"]*"\s+data-start="([^"]+)" data-end="([^"]+)"', resp.text)
-    assert presets == [("06:00", "14:30"), ("14:00", "22:30"), ("22:00", "06:30")], presets

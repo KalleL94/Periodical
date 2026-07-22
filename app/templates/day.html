@@ -258,9 +258,7 @@
                         <div class="ot-presets">
                             {% for s in standard_shifts %}
                             <button type="button" class="btn btn-secondary btn-sm ot-preset"
-                                    data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">{{ s.label }}
-                                <span class="ot-preset-time">{{ s.start_time }}-{{ s.end_time }}</span>
-                            </button>
+                                    data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">{{ s.label }}</button>
                             {% endfor %}
                         </div>
                         <div class="form-row form-row--mt">
