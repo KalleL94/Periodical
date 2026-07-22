@@ -4,8 +4,9 @@
 
 set -e  # Exit on error
 
-# Configuration
-APP_DIR="/opt/ICA v0.0.20"
+# Configuration. Override APP_DIR to back up a checkout somewhere else:
+#   APP_DIR=. ./scripts/backup_database.sh
+APP_DIR="${APP_DIR:-/opt/Periodical}"
 DB_PATH="$APP_DIR/app/database/schedule.db"
 BACKUP_DIR="$APP_DIR/backups"
 DATE=$(date +%Y%m%d_%H%M%S)

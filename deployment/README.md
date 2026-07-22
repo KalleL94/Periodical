@@ -104,7 +104,7 @@ Before deploying, update these values:
 ### In `nginx-example.conf`:
 - [ ] `server_name your-domain.com` → your actual domain
 - [ ] SSL certificate paths (if not using Certbot)
-- [ ] `/opt/ICA v0.0.20` → actual application path
+- [ ] `/opt/Periodical` → actual application path, if you deploy elsewhere
 
 ### In `ica-schedule.service`:
 - [ ] `WorkingDirectory` → actual application path
@@ -306,8 +306,8 @@ sudo journalctl -u ica-schedule -n 50
 
 **Solution:**
 ```bash
-sudo chown -R www-data:www-data /opt/ICA\ v0.0.20
-chmod 644 /opt/ICA\ v0.0.20/app/database/*.db
+sudo chown -R www-data:www-data /opt/Periodical
+chmod 644 /opt/Periodical/app/database/*.db
 ```
 
 ### SSL Certificate Errors
