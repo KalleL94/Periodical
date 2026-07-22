@@ -696,6 +696,20 @@ async def show_range_for_person(
                     days_in_range.append(d)
         current_monday += timedelta(days=7)
 
+    breakdown_days = None
+    if can_see_salary(current_user, rotation_position):
+        from app.core.schedule.summary import build_range_breakdown_days
+
+        breakdown_days = build_range_breakdown_days(
+            start,
+            end,
+            rotation_position,
+            session=db,
+            wage_user_id=user_id_for_wages,
+            employment_start=range_employment_start,
+            employment_end=range_employment_end,
+        )
+
     years_in_range = {d["date"].year for d in days_in_range}
     storhelg_dates: set = set()
     holiday_dates: set = set()
@@ -722,6 +736,7 @@ async def show_range_for_person(
             "today": real_today,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
+            "breakdown_days": breakdown_days,
         },
     )
 

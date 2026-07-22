@@ -152,6 +152,17 @@
 </table>
 {% endif %}
 
+{% if breakdown_days %}
+<div class="month-actions">
+    <button class="btn secondary" id="breakdown-toggle" onclick="toggleBreakdown()">
+        {{ t.month_show_breakdown }}
+    </button>
+</div>
+{% with bd_days = breakdown_days %}
+    {% include "breakdown_table.html" with context %}
+{% endwith %}
+{% endif %}
+
 <script>
 function toggleRangeDatePanel(button) {
     const panel = document.getElementById(button.getAttribute('aria-controls'));
