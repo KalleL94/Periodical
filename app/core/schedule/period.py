@@ -630,7 +630,7 @@ def _build_linked_substitute_day_fields(
         }
 
         if absence is not None:
-            code = _substitute_absence_shift_code(absence.absence_type)
+            code = _absence_shift_code(absence.absence_type)
             absence_shift = next((s for s in shift_types if s.code == code), None)
             if absence_shift is not None:
                 return {
@@ -720,10 +720,10 @@ def _fetch_substitute_shifts(
     return {(r.substitute_id, r.date): r for r in rows}
 
 
-def _substitute_absence_shift_code(absence_type) -> str:
-    """Map a substitute's absence type to the shift code used to render it.
+def _absence_shift_code(absence_type) -> str:
+    """Map an absence type to the shift code used to render it.
 
-    Mirrors the agent mapping: VACATION shows as SEM, PARENTAL falls back to LEAVE,
+    Shared by agents and substitutes: VACATION shows as SEM, PARENTAL falls back to LEAVE,
     everything else uses the absence type's own code (SICK, VAB, LEAVE, OFF).
     """
     from app.database.database import AbsenceType
@@ -758,7 +758,7 @@ def _build_substitute_day(
 
     absence = absence_map.get((sub.id, date)) if absence_map else None
     if absence is not None:
-        code = _substitute_absence_shift_code(absence.absence_type)
+        code = _absence_shift_code(absence.absence_type)
         absence_shift = next((s for s in shift_types if s.code == code), None)
         if absence_shift:
             return {
@@ -1183,6 +1183,68 @@ def build_substitute_month_summaries(
     return summaries
 
 
+def _resolve_fetch_user_ids(
+    person_ids: list[int],
+    rotation_to_user_id: dict[int, int] | None,
+    extra_user_ids: set[int] | None,
+) -> tuple[list[int], dict[int, int]]:
+    """Resolve the user_ids to query for a set of rotation positions.
+
+    Returns (user_ids, user_id_to_rotation). Actual user_ids may differ from the rotation
+    position. extra_user_ids adds every user who held a viewed position at any point in the
+    range, not just its current holder, so a single-position view on the far side of a swap
+    or succession still fetches the prior/future holder's rows.
+    """
+    if rotation_to_user_id:
+        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
+        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
+    else:
+        user_ids = person_ids
+        user_id_to_rotation = {}
+
+    if extra_user_ids:
+        user_ids = list(set(user_ids) | set(extra_user_ids))
+
+    return user_ids, user_id_to_rotation
+
+
+def _batch_fetch_by_date(
+    session,
+    model,
+    person_ids: list[int],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    rotation_to_user_id: dict[int, int] | None = None,
+    extra_user_ids: set[int] | None = None,
+    days_before: int = 0,
+) -> dict[tuple[int, datetime.date], object]:
+    """Batch-fetch rows of a user_id/date model for several persons and a period.
+
+    days_before extends the query that many days before start_date (used for overtime
+    shifts, where the previous day's row can cross midnight into the period).
+
+    Returns:
+        Dict with (rotation_position, date) -> row
+    """
+    if not session:
+        return {}
+
+    user_ids, user_id_to_rotation = _resolve_fetch_user_ids(person_ids, rotation_to_user_id, extra_user_ids)
+
+    rows = (
+        session.query(model)
+        .filter(
+            model.user_id.in_(user_ids),
+            model.date >= start_date - datetime.timedelta(days=days_before),
+            model.date <= end_date,
+        )
+        .all()
+    )
+
+    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
+    return {(resolve_pos(r.user_id, r.date), r.date): r for r in rows}
+
+
 def _batch_fetch_absences(
     session,
     person_ids: list[int],
@@ -1191,43 +1253,10 @@ def _batch_fetch_absences(
     rotation_to_user_id: dict[int, int] | None = None,
     extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
-    """
-    Batch-hämtar frånvaro för flera personer och en period.
-
-    Returns:
-        Dict med (rotation_position, date) -> Absence
-    """
-    if not session:
-        return {}
-
+    """Batch-hämtar frånvaro för flera personer och en period."""
     from app.database.database import Absence
 
-    # Resolve actual user_ids (may differ from rotation position)
-    if rotation_to_user_id:
-        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
-        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
-    else:
-        user_ids = person_ids
-        user_id_to_rotation = {}
-
-    # Include every user who held a viewed position at any point in the range, not
-    # just its current holder, so a single-position view on the far side of a swap
-    # or succession still fetches the prior/future holder's rows.
-    if extra_user_ids:
-        user_ids = list(set(user_ids) | set(extra_user_ids))
-
-    absences = (
-        session.query(Absence)
-        .filter(
-            Absence.user_id.in_(user_ids),
-            Absence.date >= start_date,
-            Absence.date <= end_date,
-        )
-        .all()
-    )
-
-    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
-    return {(resolve_pos(a.user_id, a.date), a.date): a for a in absences}
+    return _batch_fetch_by_date(session, Absence, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids)
 
 
 def _batch_fetch_ot_shifts(
@@ -1238,45 +1267,22 @@ def _batch_fetch_ot_shifts(
     rotation_to_user_id: dict[int, int] | None = None,
     extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
-    """
-    Batch-hämtar övertidspass för flera personer och en period.
+    """Batch-hämtar övertidspass för flera personer och en period.
 
-    Returns:
-        Dict med (rotation_position, date) -> OvertimeShift
+    Fetches one extra day before start_date to catch OT shifts crossing midnight.
     """
-    if not session:
-        return {}
-
     from app.database.database import OvertimeShift
 
-    if rotation_to_user_id:
-        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
-        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
-    else:
-        user_ids = person_ids
-        user_id_to_rotation = {}
-
-    # Include every user who held a viewed position at any point in the range, not
-    # just its current holder, so a single-position view on the far side of a swap
-    # or succession still fetches the prior/future holder's rows.
-    if extra_user_ids:
-        user_ids = list(set(user_ids) | set(extra_user_ids))
-
-    # Also fetch the day before start_date to catch OT shifts crossing midnight
-    fetch_start = start_date - datetime.timedelta(days=1)
-
-    ot_shifts = (
-        session.query(OvertimeShift)
-        .filter(
-            OvertimeShift.user_id.in_(user_ids),
-            OvertimeShift.date >= fetch_start,
-            OvertimeShift.date <= end_date,
-        )
-        .all()
+    return _batch_fetch_by_date(
+        session,
+        OvertimeShift,
+        person_ids,
+        start_date,
+        end_date,
+        rotation_to_user_id,
+        extra_user_ids,
+        days_before=1,
     )
-
-    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
-    return {(resolve_pos(s.user_id, s.date), s.date): s for s in ot_shifts}
 
 
 def _batch_fetch_oncall_overrides(
@@ -1287,42 +1293,12 @@ def _batch_fetch_oncall_overrides(
     rotation_to_user_id: dict[int, int] | None = None,
     extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
-    """
-    Batch-hämtar on-call overrides för flera personer och en period.
-
-    Returns:
-        Dict med (rotation_position, date) -> OnCallOverride
-    """
-    if not session:
-        return {}
-
+    """Batch-hämtar on-call overrides för flera personer och en period."""
     from app.database.database import OnCallOverride
 
-    if rotation_to_user_id:
-        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
-        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
-    else:
-        user_ids = person_ids
-        user_id_to_rotation = {}
-
-    # Include every user who held a viewed position at any point in the range, not
-    # just its current holder, so a single-position view on the far side of a swap
-    # or succession still fetches the prior/future holder's rows.
-    if extra_user_ids:
-        user_ids = list(set(user_ids) | set(extra_user_ids))
-
-    overrides = (
-        session.query(OnCallOverride)
-        .filter(
-            OnCallOverride.user_id.in_(user_ids),
-            OnCallOverride.date >= start_date,
-            OnCallOverride.date <= end_date,
-        )
-        .all()
+    return _batch_fetch_by_date(
+        session, OnCallOverride, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids
     )
-
-    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
-    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_shift_overrides(
@@ -1333,41 +1309,12 @@ def _batch_fetch_shift_overrides(
     rotation_to_user_id: dict[int, int] | None = None,
     extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
-    """Batch-fetches manual shift overrides for multiple persons and a period.
-
-    Returns:
-        Dict med (rotation_position, date) -> ShiftOverride
-    """
-    if not session:
-        return {}
-
+    """Batch-fetches manual shift overrides for multiple persons and a period."""
     from app.database.database import ShiftOverride
 
-    if rotation_to_user_id:
-        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
-        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
-    else:
-        user_ids = person_ids
-        user_id_to_rotation = {}
-
-    # Include every user who held a viewed position at any point in the range, not
-    # just its current holder, so a single-position view on the far side of a swap
-    # or succession still fetches the prior/future holder's rows.
-    if extra_user_ids:
-        user_ids = list(set(user_ids) | set(extra_user_ids))
-
-    overrides = (
-        session.query(ShiftOverride)
-        .filter(
-            ShiftOverride.user_id.in_(user_ids),
-            ShiftOverride.date >= start_date,
-            ShiftOverride.date <= end_date,
-        )
-        .all()
+    return _batch_fetch_by_date(
+        session, ShiftOverride, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids
     )
-
-    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
-    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_day_pay_overrides(
@@ -1378,41 +1325,12 @@ def _batch_fetch_day_pay_overrides(
     rotation_to_user_id: dict[int, int] | None = None,
     extra_user_ids: set[int] | None = None,
 ) -> dict[tuple[int, datetime.date], object]:
-    """Batch-fetches manual pay overrides (OB/oncall) for multiple persons and a period.
-
-    Returns:
-        Dict with (rotation_position, date) -> DayPayOverride
-    """
-    if not session:
-        return {}
-
+    """Batch-fetches manual pay overrides (OB/oncall) for multiple persons and a period."""
     from app.database.database import DayPayOverride
 
-    if rotation_to_user_id:
-        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
-        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
-    else:
-        user_ids = person_ids
-        user_id_to_rotation = {}
-
-    # Include every user who held a viewed position at any point in the range, not
-    # just its current holder, so a single-position view on the far side of a swap
-    # or succession still fetches the prior/future holder's rows.
-    if extra_user_ids:
-        user_ids = list(set(user_ids) | set(extra_user_ids))
-
-    overrides = (
-        session.query(DayPayOverride)
-        .filter(
-            DayPayOverride.user_id.in_(user_ids),
-            DayPayOverride.date >= start_date,
-            DayPayOverride.date <= end_date,
-        )
-        .all()
+    return _batch_fetch_by_date(
+        session, DayPayOverride, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids
     )
-
-    resolve_pos = _build_user_position_resolver(session, user_ids, user_id_to_rotation)
-    return {(resolve_pos(o.user_id, o.date), o.date): o for o in overrides}
 
 
 def _batch_fetch_swap_map(
@@ -1438,18 +1356,7 @@ def _batch_fetch_swap_map(
 
     from app.database.database import ShiftSwap, SwapStatus, User
 
-    if rotation_to_user_id:
-        user_ids = list({rotation_to_user_id.get(p, p) for p in person_ids})
-        user_id_to_rotation = {v: k for k, v in rotation_to_user_id.items()}
-    else:
-        user_ids = person_ids
-        user_id_to_rotation = {}
-
-    # Include every user who held a viewed position at any point in the range, not
-    # just its current holder, so a single-position view on the far side of a swap
-    # or succession still fetches the prior/future holder's rows.
-    if extra_user_ids:
-        user_ids = list(set(user_ids) | set(extra_user_ids))
+    user_ids, user_id_to_rotation = _resolve_fetch_user_ids(person_ids, rotation_to_user_id, extra_user_ids)
 
     swaps = (
         session.query(ShiftSwap)
@@ -1598,14 +1505,10 @@ def _build_person_day_basic(
                     "partial_absence": absence,
                 }
 
-        # VACATION absences use the SEM shift (same as week-based vacation)
-        # PARENTAL falls back to LEAVE shift since no dedicated shift type exists
-        if absence.absence_type == AbsenceType.VACATION:
-            absence_shift = vacation_shift
-        elif absence.absence_type == AbsenceType.PARENTAL:
-            absence_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
-        else:
-            absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+        # VACATION renders as the SEM shift (same object as week-based vacation), the rest
+        # resolve by code (see _absence_shift_code).
+        code = _absence_shift_code(absence.absence_type)
+        absence_shift = vacation_shift if code == "SEM" else next((s for s in shift_types if s.code == code), None)
         if absence_shift:
             result = determine_shift_for_date(date, person_id)
             original_shift, rotation_week = result if result else (None, None)
@@ -1907,14 +1810,10 @@ def _populate_absence_day(
             )
             return True
 
-    # VACATION absences use the SEM shift (same as week-based vacation)
-    # PARENTAL falls back to LEAVE shift since no dedicated shift type exists
-    if absence.absence_type == AbsenceType.VACATION:
-        absence_shift = vacation_shift
-    elif absence.absence_type == AbsenceType.PARENTAL:
-        absence_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
-    else:
-        absence_shift = next((s for s in shift_types if s.code == absence.absence_type.value), None)
+    # VACATION renders as the SEM shift (same object as week-based vacation), the rest
+    # resolve by code (see _absence_shift_code).
+    code = _absence_shift_code(absence.absence_type)
+    absence_shift = vacation_shift if code == "SEM" else next((s for s in shift_types if s.code == code), None)
     if absence_shift:
         # Get original shift for coworker matching
         result = determine_shift_for_date(current_day, person_id)

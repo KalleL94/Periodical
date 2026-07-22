@@ -15,7 +15,9 @@ from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, RotationEra, User, get_db
 from app.routes.shared import render
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+# Every route on this router is admin-only, so the gate lives here and cannot be
+# forgotten on a new route. Handlers keep the parameter only when they read it.
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(get_admin_user)])
 
 
 def write_json_safely(file_path: Path, data: dict | list) -> None:
@@ -574,7 +576,6 @@ async def admin_update_vacation_weeks(
     user_id: int,
     year: int = Form(...),
     weeks: str = Form(""),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: update week-based vacation for a user."""
@@ -614,7 +615,6 @@ async def admin_update_parental_weeks(
     user_id: int,
     year: int = Form(...),
     weeks: str = Form(""),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: update parental leave weeks for a user (stored in User.parental_leave JSON)."""
@@ -650,7 +650,6 @@ async def admin_update_parental_weeks(
 async def admin_add_vacation_day(
     user_id: int,
     vacation_date: str = Form(...),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: add a day-level vacation (VACATION absence)."""
@@ -699,7 +698,6 @@ async def admin_sync_vacation_days(
     year: int = Form(...),
     dates: str = Form(""),
     parental_dates: str = Form(""),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: sync day-level vacation and parental leave for a year."""
@@ -761,7 +759,6 @@ async def admin_sync_vacation_days(
 async def admin_delete_vacation_day(
     user_id: int,
     absence_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: remove a day-level vacation."""
@@ -792,7 +789,6 @@ async def admin_delete_vacation_day(
 async def admin_update_saved_days(
     request: Request,
     user_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: manually update saved vacation days for closed years."""
@@ -842,7 +838,6 @@ async def admin_update_vacation_settings(
     employment_start_date: str = Form(""),
     vacation_year_start_month: int = Form(4),
     vacation_days_per_year: int = Form(25),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: update vacation settings for a user."""

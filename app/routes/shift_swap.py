@@ -1,6 +1,7 @@
 # app/routes/shift_swap.py
 """Shift swap management routes - propose, accept, reject, cancel swaps."""
 
+from datetime import date as date_cls
 from datetime import datetime, timedelta
 from datetime import time as dt_time
 
@@ -194,7 +195,7 @@ def _raise_if_swap_conflicts(
 async def get_user_shifts(
     user_id: int,
     offering: str = None,
-    ref_date: str = None,
+    ref_date: date_cls | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -207,7 +208,7 @@ async def get_user_shifts(
         return JSONResponse(content={"shifts": []})
 
     today = get_today()
-    center = datetime.strptime(ref_date, "%Y-%m-%d").date() if ref_date else today
+    center = ref_date or today
     target_pid = target.rotation_person_id
     my_pid = current_user.rotation_person_id
 
@@ -390,8 +391,8 @@ async def list_swaps(
 @router.post("/propose")
 async def propose_swap(
     target_id: int = Form(...),
-    requester_date: str = Form(...),
-    target_date: str = Form(...),
+    requester_date: date_cls = Form(...),
+    target_date: date_cls = Form(...),
     message: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -400,8 +401,8 @@ async def propose_swap(
     if target_id == current_user.id:
         raise HTTPException(status_code=400, detail="Kan inte byta pass med dig själv")
 
-    req_date = datetime.strptime(requester_date, "%Y-%m-%d").date()
-    tgt_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    req_date = requester_date
+    tgt_date = target_date
     today = get_today()
 
     if req_date <= today or tgt_date <= today:

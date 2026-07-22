@@ -3,7 +3,8 @@
 Overtime shift management routes - add and delete overtime shifts.
 """
 
-from datetime import datetime
+from datetime import date as date_cls
+from datetime import time as time_cls
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
@@ -25,9 +26,9 @@ router = APIRouter(prefix="/overtime", tags=["overtime"])
 @router.post("/add")
 async def add_overtime_shift(
     user_id: int = Form(...),
-    date: str = Form(...),
-    start_time: str = Form(...),
-    end_time: str = Form(...),
+    date: date_cls = Form(...),
+    start_time: time_cls = Form(...),
+    end_time: time_cls = Form(...),
     hours: float = Form(8.5),
     is_extension: bool = Form(False),
     session: Session = Depends(get_db),
@@ -42,8 +43,8 @@ async def add_overtime_shift(
     """
     require_own_or_admin(current_user, user_id, "Not authorized to add overtime for other users")
 
-    # Parse date first (needed for wage lookup)
-    ot_date = datetime.strptime(date, "%Y-%m-%d").date()
+    # Needed for the wage lookup below
+    ot_date = date
 
     # Get user's wage and rates for the specific date (temporal query)
     raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
@@ -62,8 +63,8 @@ async def add_overtime_shift(
     ot_pay = calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=_ot_rate)
 
     # Parse times
-    start_t = datetime.strptime(start_time, "%H:%M").time()
-    end_t = datetime.strptime(end_time, "%H:%M").time()
+    start_t = start_time
+    end_t = end_time
 
     existing_shifts = (
         session.query(OvertimeShift)

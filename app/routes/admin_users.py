@@ -19,7 +19,9 @@ from app.routes.shared import _parse_rates_form, render
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["admin"])
+# All routes here live under /admin/, so the admin gate lives on the router and
+# cannot be forgotten on a new route. Handlers keep the parameter only when they read it.
+router = APIRouter(tags=["admin"], dependencies=[Depends(get_admin_user)])
 
 
 @router.get("/admin/users", response_class=HTMLResponse, name="admin_users")
@@ -254,7 +256,6 @@ async def admin_reset_password(
 async def admin_set_wage_type(
     user_id: int,
     wage_type: str = Form(...),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: change whether a user is on hourly or monthly wage."""
@@ -311,7 +312,6 @@ async def admin_edit_wage(
     user_id: int,
     wage_id: int,
     new_wage: int = Form(...),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: update the amount on an existing wage history entry for a user (dates unchanged)."""
@@ -334,7 +334,6 @@ async def admin_delete_wage(
     request: Request,
     user_id: int,
     wage_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: delete a wage history entry for any user."""
@@ -421,7 +420,6 @@ async def admin_edit_rate(
     request: Request,
     user_id: int,
     rate_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: update the rate values on an existing rate history entry (dates unchanged)."""
@@ -446,7 +444,6 @@ async def admin_edit_rate(
 async def admin_delete_rate(
     user_id: int,
     rate_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: delete a rate history entry for a user."""
@@ -623,7 +620,6 @@ async def admin_delete_employment(
     request: Request,
     user_id: int,
     history_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: delete a person history entry."""
@@ -786,7 +782,6 @@ async def admin_transition_delete(
     user_id: int,
     cleanup_wage: str = Form(""),
     cleanup_rates: str = Form(""),
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: delete employment transition for a user."""
@@ -1204,7 +1199,6 @@ async def admin_person_change_history_edit(
 @router.post("/admin/person-change/history/{history_id}/delete", name="admin_person_change_history_delete")
 async def admin_person_change_history_delete(
     history_id: int,
-    current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """Admin: delete an employment record from the person change page. PRG redirect."""

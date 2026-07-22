@@ -6,6 +6,7 @@ from functools import lru_cache
 from app.core.constants import OB_PRIORITY_BY_CODE, OB_PRIORITY_DEFAULT
 from app.core.models import ObRule
 from app.core.storage import load_ob_rules
+from app.core.time_utils import subtract_covered
 
 _ob_rules: list[ObRule] | None = None
 
@@ -77,7 +78,7 @@ def calculate_ob_hours(
             if overlap_end <= overlap_start:
                 continue
 
-            uncovered = _subtract_covered(overlap_start, overlap_end, covered)
+            uncovered = subtract_covered(overlap_start, overlap_end, covered)
 
             for ustart, uend in uncovered:
                 hours = (uend - ustart).total_seconds() / 3600.0
@@ -136,7 +137,7 @@ def calculate_ob_hours_by_day(
             if overlap_end <= overlap_start:
                 continue
 
-            uncovered = _subtract_covered(overlap_start, overlap_end, covered)
+            uncovered = subtract_covered(overlap_start, overlap_end, covered)
             for ustart, uend in uncovered:
                 hours = (uend - ustart).total_seconds() / 3600.0
                 ob_totals[rule.code] += hours
@@ -244,28 +245,6 @@ def _rule_interval_for_day(
         ob_end = datetime.datetime(base_date.year, base_date.month, base_date.day, end_h, end_m)
 
     return ob_start, ob_end
-
-
-def _subtract_covered(
-    start: datetime.datetime,
-    end: datetime.datetime,
-    covered: list[tuple[datetime.datetime, datetime.datetime]],
-) -> list[tuple[datetime.datetime, datetime.datetime]]:
-    """Returns uncovered intervals after subtracting already-covered ones."""
-    result = []
-    cursor = start
-
-    for cov_start, cov_end in sorted(covered):
-        if cov_end <= cursor or cov_start >= end:
-            continue
-        if cov_start > cursor:
-            result.append((cursor, min(cov_start, end)))
-        cursor = max(cursor, cov_end)
-
-    if cursor < end:
-        result.append((cursor, end))
-
-    return result
 
 
 def apply_ob_hours_override(

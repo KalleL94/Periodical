@@ -10,9 +10,9 @@ from app.routes.overtime import add_overtime_shift
 async def test_add_overtime_creates_shift(test_db, test_user):
     response = await add_overtime_shift(
         user_id=test_user.id,
-        date="2026-01-15",
-        start_time="06:00",
-        end_time="14:00",
+        date=datetime.date(2026, 1, 15),
+        start_time=datetime.time(6, 0),
+        end_time=datetime.time(14, 0),
         hours=8.0,
         is_extension=False,
         session=test_db,
@@ -34,9 +34,9 @@ async def test_add_overtime_creates_shift(test_db, test_user):
 async def test_add_overtime_updates_existing_shift_for_same_user_and_date(test_db, test_user):
     await add_overtime_shift(
         user_id=test_user.id,
-        date="2026-01-15",
-        start_time="06:00",
-        end_time="14:00",
+        date=datetime.date(2026, 1, 15),
+        start_time=datetime.time(6, 0),
+        end_time=datetime.time(14, 0),
         hours=8.0,
         is_extension=False,
         session=test_db,
@@ -48,9 +48,9 @@ async def test_add_overtime_updates_existing_shift_for_same_user_and_date(test_d
 
     await add_overtime_shift(
         user_id=test_user.id,
-        date="2026-01-15",
-        start_time="14:00",
-        end_time="22:00",
+        date=datetime.date(2026, 1, 15),
+        start_time=datetime.time(14, 0),
+        end_time=datetime.time(22, 0),
         hours=7.5,
         is_extension=True,
         session=test_db,
@@ -71,9 +71,9 @@ async def test_add_overtime_updates_existing_shift_for_same_user_and_date(test_d
 async def test_add_overtime_keeps_different_dates_separate(test_db, test_user):
     await add_overtime_shift(
         user_id=test_user.id,
-        date="2026-01-15",
-        start_time="06:00",
-        end_time="14:00",
+        date=datetime.date(2026, 1, 15),
+        start_time=datetime.time(6, 0),
+        end_time=datetime.time(14, 0),
         hours=8.0,
         is_extension=False,
         session=test_db,
@@ -81,9 +81,9 @@ async def test_add_overtime_keeps_different_dates_separate(test_db, test_user):
     )
     await add_overtime_shift(
         user_id=test_user.id,
-        date="2026-01-16",
-        start_time="14:00",
-        end_time="22:00",
+        date=datetime.date(2026, 1, 16),
+        start_time=datetime.time(14, 0),
+        end_time=datetime.time(22, 0),
         hours=8.0,
         is_extension=False,
         session=test_db,
@@ -122,9 +122,9 @@ async def test_add_overtime_cleans_up_legacy_duplicates(test_db, test_user):
 
     await add_overtime_shift(
         user_id=test_user.id,
-        date="2026-01-15",
-        start_time="22:00",
-        end_time="06:00",
+        date=datetime.date(2026, 1, 15),
+        start_time=datetime.time(22, 0),
+        end_time=datetime.time(6, 0),
         hours=8.5,
         is_extension=False,
         session=test_db,

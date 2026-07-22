@@ -45,6 +45,7 @@ from .holidays import (
 )
 from .models import OnCallRule
 from .storage import load_oncall_rules
+from .time_utils import subtract_covered
 
 # Load base rules from JSON config
 oncall_rules_base = load_oncall_rules()
@@ -609,56 +610,6 @@ def _get_rule_intervals_for_shift(
     return intervals
 
 
-def _subtract_covered_oncall(
-    start: datetime.datetime,
-    end: datetime.datetime,
-    covered: list[tuple[datetime.datetime, datetime.datetime]],
-) -> list[tuple[datetime.datetime, datetime.datetime]]:
-    """
-    Find time segments NOT covered by higher priority rules.
-
-    This implements the REPLACEMENT logic: if a higher priority rule
-    covers a time segment, lower priority rules don't apply there.
-
-    Args:
-        start: Start of interval to check
-        end: End of interval to check
-        covered: List of (start, end) tuples already claimed by higher priority
-
-    Returns:
-        List of (start, end) tuples representing uncovered time
-    """
-    if not covered:
-        return [(start, end)]
-
-    # Sort covered intervals by start time
-    sorted_covered = sorted(covered, key=lambda x: x[0])
-
-    uncovered = []
-    cursor = start
-
-    for cov_start, cov_end in sorted_covered:
-        # Skip intervals that don't overlap
-        if cov_end <= cursor or cov_start >= end:
-            continue
-
-        # Add gap before this covered interval
-        if cov_start > cursor:
-            uncovered.append((cursor, min(cov_start, end)))
-
-        # Move cursor past this covered interval
-        cursor = max(cursor, cov_end)
-
-        if cursor >= end:
-            break
-
-    # Add remaining time after all covered intervals
-    if cursor < end:
-        uncovered.append((cursor, end))
-
-    return uncovered
-
-
 def calculate_oncall_pay(
     date: datetime.date,
     monthly_salary: int,
@@ -709,7 +660,7 @@ def calculate_oncall_pay(
 
         for interval_start, interval_end in intervals:
             # Find uncovered portions of this interval
-            uncovered = _subtract_covered_oncall(interval_start, interval_end, covered)
+            uncovered = subtract_covered(interval_start, interval_end, covered)
 
             for unc_start, unc_end in uncovered:
                 hours = (unc_end - unc_start).total_seconds() / 3600.0
@@ -849,7 +800,7 @@ def calculate_oncall_pay_for_period(
                 continue
 
             # Calculate uncovered portions
-            uncovered = _subtract_covered_oncall(interval_start, interval_end, covered_intervals)
+            uncovered = subtract_covered(interval_start, interval_end, covered_intervals)
 
             for uncov_start, uncov_end in uncovered:
                 # Calculate hours and pay for this segment
