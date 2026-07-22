@@ -42,6 +42,8 @@
                     {% set ns = namespace(
                         tot_norm=0, tot_ob1=0, tot_ob2=0, tot_ob3=0, tot_ob4=0, tot_ob5=0,
                         tot_vardag=0, tot_helg=0, tot_helgdag=0, tot_storhelg=0, tot_ot=0,
+                        pay_ob1=0, pay_ob2=0, pay_ob3=0, pay_ob4=0, pay_ob5=0,
+                        pay_vardag=0, pay_helg=0, pay_helgdag=0, pay_storhelg=0, pay_ot=0,
                         has_rows=false
                     ) %}
 
@@ -102,6 +104,24 @@
                                 {% set ns.tot_helgdag = ns.tot_helgdag + oc_helgdag %}
                                 {% set ns.tot_storhelg = ns.tot_storhelg + oc_storhelg %}
                                 {% set ns.tot_ot = ns.tot_ot + ot %}
+
+                                {# Amounts: the pay already computed per day, so a rate change
+                                   mid-period is priced with the rate in force on each day. #}
+                                {% set ns.pay_ob1 = ns.pay_ob1 + (d.ob_pay.get('OB1', 0) or 0) %}
+                                {% set ns.pay_ob2 = ns.pay_ob2 + (d.ob_pay.get('OB2', 0) or 0) %}
+                                {% set ns.pay_ob3 = ns.pay_ob3 + (d.ob_pay.get('OB3', 0) or 0) %}
+                                {% set ns.pay_ob4 = ns.pay_ob4 + (d.ob_pay.get('OB4', 0) or 0) %}
+                                {% set ns.pay_ob5 = ns.pay_ob5 + (d.ob_pay.get('OB5', 0) or 0) %}
+                                {% set ns.pay_vardag = ns.pay_vardag + (oc_bd.get('OC_WEEKDAY', {}).get('pay', 0) or 0) %}
+                                {% set ns.pay_helg = ns.pay_helg + (oc_bd.get('OC_WEEKEND', {}).get('pay', 0) or 0)
+                                                                 + (oc_bd.get('OC_WEEKEND_SAT', {}).get('pay', 0) or 0)
+                                                                 + (oc_bd.get('OC_WEEKEND_SUN', {}).get('pay', 0) or 0)
+                                                                 + (oc_bd.get('OC_WEEKEND_MON', {}).get('pay', 0) or 0) %}
+                                {% set ns.pay_helgdag = ns.pay_helgdag + (oc_bd.get('OC_HOLIDAY', {}).get('pay', 0) or 0)
+                                                                       + (oc_bd.get('OC_HOLIDAY_EVE', {}).get('pay', 0) or 0)
+                                                                       + (oc_bd.get('OC_NATIONALDAGEN', {}).get('pay', 0) or 0) %}
+                                {% set ns.pay_storhelg = ns.pay_storhelg + (oc_bd.get('OC_SPECIAL', {}).get('pay', 0) or 0) %}
+                                {% set ns.pay_ot = ns.pay_ot + (d.ot_pay or 0) %}
 
                                 {# Shift start/end times #}
                                 {% if d.start and d.end %}
@@ -237,6 +257,27 @@
                         <td class="td_right num"><strong>{% if ns.tot_helgdag %}{{ "%.1f"|format(ns.tot_helgdag) }}{% endif %}</strong></td>
                         <td class="td_right num"><strong>{% if ns.tot_storhelg %}{{ "%.1f"|format(ns.tot_storhelg) }}{% endif %}</strong></td>
                         <td class="td_right num"><strong>{% if ns.tot_ot %}{{ "%.1f"|format(ns.tot_ot) }}{% endif %}</strong></td>
+                    </tr>
+                    {# Amount per compensation column: the OB columns are the supplement only
+                       (the wage code amount), on-call and overtime are the full amount. #}
+                    {% macro kr(v) %}{% if v %}{{ "{:,.0f}".format(v).replace(",", " ") }}{% endif %}{% endmacro %}
+                    <tr class="breakdown-pay-row">
+                        <td class="td_left" colspan="1"><strong>{{ t.month_col_total_pay }}</strong></td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_ob1) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_ob2) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_ob3) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_ob4) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_ob5) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_vardag) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_helg) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_helgdag) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_storhelg) }}</strong></td>
+                        <td class="td_right num"><strong>{{ kr(ns.pay_ot) }}</strong></td>
                     </tr>
                 </tfoot>
                 {% endif %}

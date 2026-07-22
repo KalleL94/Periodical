@@ -667,6 +667,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "month_col_end": "Slut",
         "month_col_norm": "Norm",
         "month_col_total": "Total",
+        "month_col_total_pay": "Kronor",
         "month_col_ot": "ÖT(x2)",
         # ── OB code labels (used in year breakdown table) ──────────
         "ob_code_labels": {
@@ -1666,6 +1667,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "month_col_end": "End",
         "month_col_norm": "Norm",
         "month_col_total": "Total",
+        "month_col_total_pay": "Amount",
         "month_col_ot": "OT(x2)",
         # ── OB code labels (used in year breakdown table) ──────────
         "ob_code_labels": {

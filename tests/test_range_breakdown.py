@@ -36,3 +36,58 @@ def test_range_breakdown_matches_month_breakdown(test_db):
 
     key = lambda d: (d["date"], d["hours"], sorted(d["ob_hours"].items()), d["ot_hours"])  # noqa: E731
     assert [key(d) for d in rng] == [key(d) for d in month["days"]]
+
+
+def _pay_row_cells(html):
+    import re
+
+    row = re.search(r'<tr class="breakdown-pay-row">(.*?)</tr>', html, re.S).group(1)
+    return [re.sub(r"<[^>]+>|\s", "", c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+
+
+def test_breakdown_shows_amount_per_compensation_column(test_client, admin_user, test_db):
+    """The amount row sums the pay already computed per day, per wage code."""
+    import datetime
+
+    from app.core.schedule import clear_schedule_cache
+    from app.core.schedule.summary import summarize_month_for_person
+    from app.database.database import OvertimeShift
+
+    # Own the schedule this asserts on rather than relying on where the rotation
+    # happens to land: a Saturday night shift guarantees both OB and overtime pay.
+    test_db.add(
+        OvertimeShift(
+            user_id=1,
+            date=datetime.date(2026, 7, 4),
+            start_time=datetime.time(22, 0),
+            end_time=datetime.time(2, 0),
+            hours=4.0,
+            ot_pay=0.0,
+            is_extension=False,
+        )
+    )
+    test_db.commit()
+    clear_schedule_cache()
+
+    _login(test_client, admin_user)
+    r = test_client.get("/month/1?year=2026&month=7")
+    assert r.status_code == 200
+
+    month = summarize_month_for_person(2026, 7, 1, session=test_db, fetch_tax_table=False)
+    cells = _pay_row_cells(r.text)
+
+    # The overtime shift above is this test's own doing, so this assertion has
+    # something to bite on wherever the rotation happens to land.
+    assert round(month["ot_pay"]) > 0
+    assert int(cells[15]) == round(month["ot_pay"])
+
+    # The OB columns must agree with the pay the summary computed, whatever the
+    # rest of the month contains.
+    ob_cells = dict(zip(["OB1", "OB2", "OB3", "OB4", "OB5"], cells[6:11], strict=True))
+    assert {c: int(v) for c, v in ob_cells.items() if v} == {
+        code: round(pay) for code, pay in month["ob_pay"].items() if round(pay)
+    }
+
+    # ...and the same row renders in the range view
+    r2 = test_client.get("/range/1?weeks=3&from=2026-07-01")
+    assert 'class="breakdown-pay-row"' in r2.text
