@@ -24,6 +24,11 @@ VERSIONS = [
                 "sv": "När du lägger till inkallad övertid i dagvyn finns nu en knapp för varje ordinarie pass: Dagpass, Kvällspass och Nattpass. Ett klick fyller i starttid, sluttid och antal timmar åt dig, så du slipper skriva dem för hand. Blev passet längre eller kortare ändrar du bara i fälten efteråt",
                 "en": "When you add called-in overtime in the day view there is now a button for each regular shift: day, evening and night. One click fills in the start time, end time and number of hours for you, so you no longer have to type them by hand. If the shift ran longer or shorter, just edit the fields afterwards",
             },
+            {
+                "type": "fix",
+                "sv": "Stannade du kvar över midnatt efter ett kvällspass gick förlängningen inte att spara: antalet timmar räknades ut som ett negativt tal, fältet blev kvar på noll och knappen gjorde ingenting utan att förklara varför. Nu räknas timmarna rätt över dygnsgränsen, så 22:30 till 00:30 ger 2 timmar",
+                "en": "Staying past midnight after an evening shift made the extension impossible to save: the number of hours came out negative, the field stayed at zero, and the button did nothing without saying why. Hours now count correctly across midnight, so 22:30 to 00:30 gives 2 hours",
+            },
         ],
     },
     {

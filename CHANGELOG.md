@@ -21,6 +21,9 @@ change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 ### Added
 - The manual overtime form in the personal day view has one quick-fill button per standard shift (N1, N2, N3). Clicking one sets start time, end time and hours; all three fields stay editable afterwards. The times come from `get_shift_types()` rather than the template, so they follow `data/shift_types.json`, and the hours are computed client-side with a midnight wrap so the night shift yields 8.5 rather than a negative number
 
+### Fixed
+- The extension form in the day view computed hours as end minus start with no midnight wrap, so staying past midnight after an evening shift (22:30, home 00:30) gave a negative difference that the guard discarded. The hours field stayed at 0 and `min="0.01"` then blocked submission with nothing on screen explaining why. A negative difference now wraps by 24h; an unchanged end time still yields 0 rather than a full day. Server side is unaffected: `POST /overtime/add` prices from the submitted hours, not from the times
+
 ## [1.2.0] - 2026-07-22
 
 ### Added
