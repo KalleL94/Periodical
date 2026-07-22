@@ -10,6 +10,14 @@ developers. User-facing release notes are separate and bilingual: they live in
 `VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
 has selected. Add both when a change is worth telling users about.
 
+## [1.2.0] - 2026-07-22
+
+### Added
+- The detailed OB / on-call / overtime breakdown now renders in the personal range view (`/range/<id>`), for any interval the view supports, with the same per-shift / per-calendar-day toggle as the month view. Export stays a month-view feature: neither the CSV nor the Excel button appears in the range view
+
+### Changed
+- The breakdown table, its styles and its toggle scripts moved out of `month.html` into the shared partial `app/templates/breakdown_table.html`, included by both views. The rows are built by `build_range_breakdown_days()` in `app/core/schedule/summary.py`, which reuses `generate_period_data` and `_process_day_for_summary` and resolves OB rules per day's year, so a range crossing new year uses the right rules for each side of it
+
 ## [1.1.0] - 2026-07-21
 
 ### Added
