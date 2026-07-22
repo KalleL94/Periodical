@@ -53,6 +53,17 @@ oncall_rules_base = load_oncall_rules()
 # on its OC_HOLIDAY and OC_SPECIAL entries, but those entries have no days and no
 # specific_dates, so they never match anything: the rules generated below are what
 # actually pays out, and these constants are what they pay.
+#
+# The on-call agreement (reported via TICA) defines four bands:
+#   403  weekday Mon-Fri outside ordinary hours
+#   404  Friday 17:00 to Monday 07:00
+#   405  minor holiday (Trettondagen, 1 May, Kristi himmelsfardsdag, Alla helgons
+#        dag, Nationaldagen), from 17:00 the day before to 07:00 the next weekday
+#   406  major holiday (Easter, Midsummer, Christmas, New Year), same 17:00 to 07:00
+# The 17:00 and 07:00 boundaries below come straight from that text. Note the
+# agreement raises these rates from 2026-05-01 (78 / 100 / 116 / 198); applying that
+# needs date-dependent rates, not a new constant, or earlier months get recalculated
+# at the new rate. Deliberately not done here.
 RATE_STORHELG = 192
 RATE_RED_DAY = 112
 
