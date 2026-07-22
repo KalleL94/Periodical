@@ -261,12 +261,11 @@ def test_builders_agree_when_vacation_and_parental_overlap(agree_session):
 
 
 def test_oncall_add_on_a_vacation_day(agree_session):
-    """A manual on-call ADD on a scheduled day inside a vacation week.
+    """A manual on-call ADD on a scheduled day inside a vacation week renders OC in both.
 
-    Third known disagreement: the canonical path lets the override replace SEM with OC
-    (and pays on-call for the day), while the week path renders SEM because vacation
-    returns before the override is applied. Pinned here with figures; the unification
-    resolves it toward the canonical answer, so display matches the money.
+    The canonical path lets the override replace SEM with OC and pays on-call for the day;
+    the week path used to render SEM because vacation returned before the override was
+    applied. Both now answer OC, so the display matches the money.
     """
     user = agree_session.query(User).filter(User.id == 1).first()
     user.vacation = {"2026": [11]}
@@ -279,7 +278,7 @@ def test_oncall_add_on_a_vacation_day(agree_session):
 
     assert canonical["shift"].code == "OC"
     assert canonical["oncall_pay"] > 0
-    assert basic["shift"].code == "SEM"
+    assert basic["shift"].code == "OC"
 
 
 def test_fixtures_actually_exercise_the_chain(agree_session):
