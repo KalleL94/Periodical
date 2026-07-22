@@ -10,6 +10,11 @@ developers. User-facing release notes are separate and bilingual: they live in
 `VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
 has selected. Add both when a change is worth telling users about.
 
+## [1.3.0] - 2026-07-22
+
+### Added
+- The detailed breakdown (month and range view) has a second footer row with the amount per compensation column. It sums the pay already computed per day (`ob_pay` per code, the on-call breakdown's `pay`, and `ot_pay`) rather than multiplying total hours by a current rate, so a wage or rate change mid-period is priced per day. The OB columns carry the supplement only, matching wage codes 150-153 on the payslip; on-call and overtime carry the full amount. The normal-hours column is left blank: it has no separate compensation. The CSV export is unaffected, it reads `tbody` rows only
+
 ## [1.2.0] - 2026-07-22
 
 ### Added

@@ -16,6 +16,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.3.0",
+        "date": "2026-07-22",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Den detaljerade sammanställningen visar nu en kronrad längst ner, under timsummorna. Varje ersättningskolumn får sitt belopp: OB-kolumnerna visar tillägget precis som lönekoderna på lönespecen, beredskaps- och övertidskolumnerna hela beloppet. Beloppen räknas per dag, så en löneändring mitt i perioden prissätts med den lön som faktiskt gällde den dagen",
+                "en": "The detailed breakdown now shows an amount row at the bottom, below the hour totals. Every compensation column gets its amount: the OB columns show the supplement, exactly like the wage codes on your payslip, while the on-call and overtime columns show the full amount. Amounts are computed per day, so a rate change mid-period is priced with the rate that actually applied on each day",
+            },
+        ],
+    },
+    {
         "version": "1.2.0",
         "date": "2026-07-22",
         "entries": [
