@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_user
 from app.core.schedule import clear_schedule_cache, settings, tax_brackets
+from app.core.schedule import vacation as vacation_core
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, RotationEra, User, get_db
@@ -496,60 +497,12 @@ async def admin_vacation_user(
     db: Session = Depends(get_db),
 ):
     """Admin: edit vacation for a specific user."""
-    from app.core.schedule.core import determine_shift_for_date
-
     if year is None:
         year = get_today().year
 
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
-
-    vacation_weeks = (edit_user.vacation or {}).get(str(year), [])
-
-    # Compute shift colors and OFF days for this user's rotation
-    off_days: set[datetime.date] = set()
-    day_colors: dict[str, str] = {}
-    d = datetime.date(year, 1, 1)
-    year_end = datetime.date(year, 12, 31)
-    while d <= year_end:
-        shift, _ = determine_shift_for_date(d, edit_user.rotation_person_id)
-        if shift:
-            if shift.code == "OFF":
-                off_days.add(d)
-            if shift.color:
-                day_colors[d.isoformat()] = shift.color
-        d += datetime.timedelta(days=1)
-
-    off_days_list = sorted(day.isoformat() for day in off_days)
-    balance = calculate_vacation_balance(edit_user, year, db, off_dates=off_days)
-
-    # Get day-level vacation for this year
-    day_absences = (
-        db.query(Absence)
-        .filter(
-            Absence.user_id == user_id,
-            Absence.absence_type == AbsenceType.VACATION,
-            Absence.date >= datetime.date(year, 1, 1),
-            Absence.date <= datetime.date(year, 12, 31),
-        )
-        .order_by(Absence.date)
-        .all()
-    )
-
-    parental_absences = (
-        db.query(Absence)
-        .filter(
-            Absence.user_id == user_id,
-            Absence.absence_type == AbsenceType.PARENTAL,
-            Absence.date >= datetime.date(year, 1, 1),
-            Absence.date <= datetime.date(year, 12, 31),
-        )
-        .order_by(Absence.date)
-        .all()
-    )
-
-    parental_weeks = sorted((edit_user.parental_leave or {}).get(str(year), []))
 
     return render(
         "admin_vacation_user.html",
@@ -558,15 +511,9 @@ async def admin_vacation_user(
             "user": current_user,
             "edit_user": edit_user,
             "year": year,
-            "vacation_weeks": sorted(vacation_weeks),
-            "balance": balance,
-            "day_absences": day_absences,
-            "parental_absences": parental_absences,
-            "parental_weeks": parental_weeks,
-            "off_days_list": off_days_list,
-            "day_colors": day_colors,
             "success": success,
             "month_names": MONTH_NAMES_SV,
+            **vacation_core.build_vacation_page_context(db, edit_user, year),
         },
     )
 
@@ -579,30 +526,12 @@ async def admin_update_vacation_weeks(
     db: Session = Depends(get_db),
 ):
     """Admin: update week-based vacation for a user."""
-    from sqlalchemy.orm.attributes import flag_modified
-
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    # Validate year
-    if not (2020 <= year <= 2100):
+    if not vacation_core.set_vacation_weeks(db, edit_user, year, weeks):
         return RedirectResponse(url=f"/admin/vacation/{user_id}?year={year}", status_code=302)
-
-    # Parse and validate weeks
-    week_list = []
-    if weeks.strip():
-        week_list = [int(w.strip()) for w in weeks.split(",") if w.strip().isdigit()]
-        week_list = sorted(set(w for w in week_list if 1 <= w <= 53))
-
-    # Update vacation JSON
-    vacation = edit_user.vacation or {}
-    vacation[str(year)] = week_list
-    edit_user.vacation = vacation
-    flag_modified(edit_user, "vacation")
-    db.commit()
-
-    clear_schedule_cache()
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?year={year}&success=Semesterveckor+uppdaterade",
@@ -618,27 +547,12 @@ async def admin_update_parental_weeks(
     db: Session = Depends(get_db),
 ):
     """Admin: update parental leave weeks for a user (stored in User.parental_leave JSON)."""
-    from sqlalchemy.orm.attributes import flag_modified
-
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    if not (2020 <= year <= 2100):
+    if not vacation_core.set_parental_weeks(db, edit_user, year, weeks):
         return RedirectResponse(url=f"/admin/vacation/{user_id}?year={year}", status_code=302)
-
-    week_list = []
-    if weeks.strip():
-        week_list = [int(w.strip()) for w in weeks.split(",") if w.strip().isdigit()]
-    week_list = sorted(set(w for w in week_list if 1 <= w <= 53))
-
-    parental_leave = edit_user.parental_leave or {}
-    parental_leave[str(year)] = week_list
-    edit_user.parental_leave = parental_leave
-    flag_modified(edit_user, "parental_leave")
-    db.commit()
-
-    clear_schedule_cache()
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?year={year}&success=Föräldraledigveckor+uppdaterade",
@@ -657,37 +571,12 @@ async def admin_add_vacation_day(
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    try:
-        d = datetime.date.fromisoformat(vacation_date)
-    except ValueError:
+    day = vacation_core.add_vacation_day(db, edit_user, vacation_date)
+    if day is None:
         return RedirectResponse(url=f"/admin/vacation/{user_id}", status_code=302)
 
-    # Check if absence already exists for this date
-    existing = (
-        db.query(Absence)
-        .filter(
-            Absence.user_id == user_id,
-            Absence.date == d,
-        )
-        .first()
-    )
-
-    if existing:
-        # Update existing absence to VACATION
-        existing.absence_type = AbsenceType.VACATION
-    else:
-        new_absence = Absence(
-            user_id=user_id,
-            date=d,
-            absence_type=AbsenceType.VACATION,
-        )
-        db.add(new_absence)
-
-    db.commit()
-    clear_schedule_cache()
-
     return RedirectResponse(
-        url=f"/admin/vacation/{user_id}?year={d.year}&success=Semesterdag+tillagd",
+        url=f"/admin/vacation/{user_id}?year={day.year}&success=Semesterdag+tillagd",
         status_code=303,
     )
 
@@ -705,46 +594,8 @@ async def admin_sync_vacation_days(
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    def _parse_dates(raw: str) -> set[datetime.date]:
-        result = set()
-        for s in raw.split(","):
-            s = s.strip()
-            if s:
-                try:
-                    result.add(datetime.date.fromisoformat(s))
-                except ValueError:
-                    continue
-        return result
-
-    def _sync_type(new_dates: set[datetime.date], absence_type: AbsenceType) -> tuple[int, int]:
-        existing = (
-            db.query(Absence)
-            .filter(
-                Absence.user_id == user_id,
-                Absence.absence_type == absence_type,
-                Absence.date >= datetime.date(year, 1, 1),
-                Absence.date <= datetime.date(year, 12, 31),
-            )
-            .all()
-        )
-        existing_dates = {a.date: a for a in existing}
-        added = new_dates - set(existing_dates.keys())
-        removed = set(existing_dates.keys()) - new_dates
-        for d in added:
-            db.add(Absence(user_id=user_id, date=d, absence_type=absence_type))
-        for d in removed:
-            db.delete(existing_dates[d])
-        return len(added), len(removed)
-
-    vac_added, vac_removed = _sync_type(_parse_dates(dates), AbsenceType.VACATION)
-    par_added, par_removed = _sync_type(_parse_dates(parental_dates), AbsenceType.PARENTAL)
-
-    db.commit()
-    clear_schedule_cache()
-
-    total_added = vac_added + par_added
-    total_removed = vac_removed + par_removed
-    msg = f"{total_added}+tillagda,+{total_removed}+borttagna" if total_added or total_removed else "Inga+ändringar"
+    added, removed = vacation_core.sync_vacation_days(db, edit_user, year, dates, parental_dates)
+    msg = f"{added}+tillagda,+{removed}+borttagna" if added or removed else "Inga+ändringar"
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?year={year}&success={msg}",
@@ -762,22 +613,11 @@ async def admin_delete_vacation_day(
     db: Session = Depends(get_db),
 ):
     """Admin: remove a day-level vacation."""
-    absence = (
-        db.query(Absence)
-        .filter(
-            Absence.id == absence_id,
-            Absence.user_id == user_id,
-            Absence.absence_type == AbsenceType.VACATION,
-        )
-        .first()
-    )
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    year = get_today().year
-    if absence:
-        year = absence.date.year
-        db.delete(absence)
-        db.commit()
-        clear_schedule_cache()
+    year = vacation_core.delete_vacation_day(db, edit_user, absence_id)
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?year={year}&success=Semesterdag+borttagen",
@@ -845,25 +685,13 @@ async def admin_update_vacation_settings(
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
-    # Parse employment start date
-    if employment_start_date.strip():
-        try:
-            edit_user.employment_start_date = datetime.date.fromisoformat(employment_start_date)
-        except ValueError:
-            pass
-    else:
-        edit_user.employment_start_date = None
-
-    # Validate and set break month
-    if 1 <= vacation_year_start_month <= 12:
-        edit_user.vacation_year_start_month = vacation_year_start_month
-
-    # Validate and set days per year
-    if 0 <= vacation_days_per_year <= 40:
-        edit_user.vacation_days_per_year = vacation_days_per_year
-
-    db.commit()
-    clear_schedule_cache()
+    vacation_core.set_vacation_settings(
+        db,
+        edit_user,
+        employment_start_date,
+        year_start_month=vacation_year_start_month,
+        days_per_year=vacation_days_per_year,
+    )
 
     return RedirectResponse(
         url=f"/admin/vacation/{user_id}?success=Semesterinst%C3%A4llningar+sparade",
