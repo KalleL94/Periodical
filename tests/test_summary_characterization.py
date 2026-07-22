@@ -30,7 +30,16 @@ from app.core.schedule.summary import (
     _hourly_corrected_gross,
     summarize_month_for_person,
 )
-from app.database.database import Absence, AbsenceType, Base, RotationEra, User, UserRole, WageType
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    Base,
+    OvertimeShift,
+    RotationEra,
+    User,
+    UserRole,
+    WageType,
+)
 
 YEAR = 2026
 MONTH = 3
@@ -195,3 +204,110 @@ def test_summary_reflects_a_sick_day(char_session):
     assert s["sick_days"] == 1
     assert s["absence_deduction"] > 0
     assert s["brutto_pay"] < baseline["brutto_pay"]
+
+
+# --- Overtime hour accounting (issue: OT hours counted twice) -------------------
+#
+# 2026-03-09 is an OFF day for person 1 and 2026-03-25 an N1 day (06:00-14:30),
+# so the two OT variants can be pinned on days with no OB and no on-call.
+OT_FREE_DAY = datetime.date(2026, 3, 9)
+OT_WORK_DAY = datetime.date(2026, 3, 25)
+HOURLY_RATE = 200
+
+
+def _add_ot(session, date, start, end, hours, is_extension):
+    session.add(
+        OvertimeShift(
+            user_id=1,
+            date=date,
+            start_time=datetime.time(*start),
+            end_time=datetime.time(*end),
+            hours=hours,
+            ot_pay=0.0,
+            is_extension=is_extension,
+        )
+    )
+    session.commit()
+    clear_schedule_cache()
+
+
+def _make_hourly(session):
+    user = session.query(User).filter(User.id == 1).first()
+    user.wage_type = WageType.HOURLY
+    user.wage = HOURLY_RATE
+    session.commit()
+    clear_schedule_cache()
+
+
+def _summary(session):
+    return summarize_month_for_person(YEAR, MONTH, PERSON_ID, session=session, wage_user_id=1)
+
+
+def test_monthly_baseline_has_no_overtime(char_session):
+    s = _summary(char_session)
+    assert s["total_hours"] == 144.5
+    assert s["ot_hours"] == 0.0
+    assert s["brutto_pay"] == 44207.0
+
+
+def test_monthly_standalone_ot_day_counts_hours_once(char_session):
+    baseline = _summary(char_session)
+    _add_ot(char_session, OT_FREE_DAY, (8, 0), (16, 0), 8.0, is_extension=False)
+
+    s = _summary(char_session)
+
+    # A standalone (non-extension) OT shift replaces the day's shift with OT,
+    # so its 8 hours are worked hours, counted exactly once.
+    assert s["ot_hours"] == 8.0
+    assert s["total_hours"] == baseline["total_hours"] + 8.0
+    # Monthly pay: the monthly base is untouched, OT is paid at wage/72.
+    assert s["brutto_pay"] == pytest.approx(baseline["brutto_pay"] + 8.0 * WAGE / 72)
+
+
+def test_monthly_extension_ot_counts_shift_and_ot(char_session):
+    baseline = _summary(char_session)
+    _add_ot(char_session, OT_WORK_DAY, (14, 30), (16, 30), 2.0, is_extension=True)
+
+    s = _summary(char_session)
+
+    # An extension keeps the 8.5h shift and adds 2h on top.
+    assert s["ot_hours"] == 2.0
+    assert s["total_hours"] == baseline["total_hours"] + 2.0
+    assert s["brutto_pay"] == pytest.approx(baseline["brutto_pay"] + 2.0 * WAGE / 72)
+
+
+def test_hourly_baseline_pays_scheduled_hours(char_session):
+    _make_hourly(char_session)
+    s = _summary(char_session)
+
+    assert s["total_hours"] == 144.5
+    # Gross = worked hours x hourly rate, plus OB and on-call on top.
+    ob_total = sum(s["ob_pay"].values())
+    assert s["brutto_pay"] == pytest.approx(144.5 * HOURLY_RATE + ob_total + s["oncall_pay"])
+
+
+def test_hourly_standalone_ot_day_is_paid_once(char_session):
+    _make_hourly(char_session)
+    baseline = _summary(char_session)
+    _add_ot(char_session, OT_FREE_DAY, (8, 0), (16, 0), 8.0, is_extension=False)
+
+    s = _summary(char_session)
+
+    # The 8 OT hours are paid through ot_pay only; they must not also be billed
+    # as ordinary worked hours.
+    assert s["ot_hours"] == 8.0
+    assert s["ot_pay"] == pytest.approx(8.0 * HOURLY_RATE)
+    assert s["total_hours"] == baseline["total_hours"] + 8.0
+    assert s["brutto_pay"] == pytest.approx(baseline["brutto_pay"] + 8.0 * HOURLY_RATE)
+
+
+def test_hourly_extension_ot_pays_shift_plus_ot(char_session):
+    _make_hourly(char_session)
+    baseline = _summary(char_session)
+    _add_ot(char_session, OT_WORK_DAY, (14, 30), (16, 30), 2.0, is_extension=True)
+
+    s = _summary(char_session)
+
+    assert s["ot_hours"] == 2.0
+    assert s["total_hours"] == baseline["total_hours"] + 2.0
+    assert s["brutto_pay"] == pytest.approx(baseline["brutto_pay"] + 2.0 * HOURLY_RATE)

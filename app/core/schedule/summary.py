@@ -745,6 +745,23 @@ def build_calendar_grid_for_month(
     }
 
 
+def day_worked_hours(day: dict) -> float:
+    """Hours actually worked on one day, each hour counted exactly once.
+
+    On-call standby (OC) is availability, not worked time, so it contributes nothing.
+    A standalone overtime shift replaces the day's shift with OT and copies the OT
+    hours into "hours" (_apply_ot_display_shift), so for an OT day the hours must be
+    taken from ot_hours alone; an overtime extension keeps the underlying shift and
+    its ot_hours are added on top.
+
+    The week summary in routes/dashboard.py uses this too, so week, month and year
+    figures cannot drift apart.
+    """
+    code = getattr(day.get("shift"), "code", None)
+    shift_hours = 0.0 if code in (None, "OC", "OT") else day.get("hours", 0.0) or 0.0
+    return shift_hours + (day.get("ot_hours", 0.0) or 0.0)
+
+
 def _process_day_for_summary(
     day: dict,
     combined_rules: list,
@@ -799,9 +816,8 @@ def _process_day_for_summary(
         date_next_day = end.date()
         weekday_name_next_day = weekday_names[date_next_day.weekday()]
 
-    # Update totals (exclude OC from shifts and hours)
-    if shift and shift.code != "OC":
-        totals["total_hours"] += hours
+    # Update totals (worked hours, each hour counted once)
+    totals["total_hours"] += day_worked_hours(day)
 
     # "Antal pass" counts actual worked shifts only: day/evening/night and overtime.
     # On-call standby (OC) and all leave/absence days (OFF, SEM, SICK, VAB, LEAVE) are excluded.
@@ -854,7 +870,6 @@ def _process_day_for_summary(
     totals["oncall_hours"] += oncall_hours
     totals["ot_pay"] += ot_pay
     totals["ot_hours"] = totals.get("ot_hours", 0.0) + ot_hours
-    totals["total_hours"] += ot_hours
 
     return {
         "date": day["date"],
@@ -1452,14 +1467,7 @@ def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
     def _ob_sum(*codes: str) -> float:
         return round(sum(float(ob_hours_map.get(c, 0.0) or 0.0) for c in codes), 1)
 
-    # Hours = worked shift hours (day/evening/night) plus overtime, each counted once.
-    # summary["total_hours"] cannot be used directly: it double-counts non-extension OT.
     ot_hours = float(summary.get("ot_hours", 0.0) or 0.0)
-    worked_pass_hours = sum(
-        float(d.get("hours", 0.0) or 0.0)
-        for d in (summary.get("days") or [])
-        if d.get("shift") is not None and getattr(d["shift"], "code", None) in ("N1", "N2", "N3")
-    )
 
     return {
         "person_name": summary.get("person_name", ""),
@@ -1467,7 +1475,8 @@ def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
         "substitute_id": summary.get("substitute_id"),
         "is_substitute": is_substitute,
         "num_shifts": summary.get("num_shifts", 0) or 0,
-        "total_hours": round(worked_pass_hours + ot_hours, 1),
+        # Worked shift hours plus overtime, each counted once (see day_worked_hours).
+        "total_hours": round(float(summary.get("total_hours", 0.0) or 0.0), 1),
         "ot_hours": round(ot_hours, 1),
         "oncall_hours": round(summary.get("oncall_hours", 0.0) or 0.0, 1),
         # OB split into pay-code groups: evening, night, weekend, major holiday

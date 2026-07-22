@@ -24,6 +24,7 @@ import app.routes.dashboard as dashboard_module
 from app.auth.auth import create_access_token
 from app.core.schedule import _cached_special_rules, clear_schedule_cache, generate_period_data, ob_rules
 from app.core.schedule.ob import compute_day_ob_pay
+from app.core.schedule.summary import day_worked_hours
 from app.database.database import (
     Absence,
     AbsenceType,
@@ -134,10 +135,7 @@ def _canonical_week_summary(session) -> dict:
         hours, pay, _ = compute_day_ob_pay(day, combined_rules, WAGE)
         ob_hours += sum(hours.values())
         ob_pay += sum(pay.values())
-        shift = day.get("shift")
-        if shift and shift.code != "OC":
-            total_hours += day.get("hours", 0.0)
-        total_hours += day.get("ot_hours", 0.0)
+        total_hours += day_worked_hours(day)
     return {
         "total_hours": round(total_hours, 2),
         "ob_hours": round(ob_hours, 2),
@@ -160,10 +158,13 @@ def test_week_summary_figures(dash_env):
     total_hours 50.5, ob_hours 38.5 and total_pay 2837.50 for this same week: it
     priced OB on the overtime day (which carries no OB anywhere else) and counted
     the OT day's hours from the OT shift type's nominal length.
+
+    total_hours is 4 x 8.5h N3 plus the 8h OT day = 42.0. It read 50.0 until the
+    OT hours stopped being counted twice (once as the day's hours, once as OT).
     """
     client, _, captured = dash_env
     assert _rounded(_week_summary(client, captured)) == {
-        "total_hours": 50.0,
+        "total_hours": 42.0,
         "ob_hours": 34.0,
         "total_pay": 2612.5,
         "oc_pay": 1800.0,
