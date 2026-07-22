@@ -4,7 +4,7 @@ Dashboard route - personalized home page for authenticated users.
 """
 
 import datetime as dt
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,23 +13,17 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary
 from app.core.logging_config import get_logger
-from app.core.oncall import _cached_oncall_rules, calculate_oncall_pay
 from app.core.rates import get_user_rates
 from app.core.schedule import (
     _cached_special_rules,
     build_week_data,
-    calculate_ob_hours,
-    calculate_ob_pay,
-    calculate_overtime_pay,
-    calculate_shift_hours,
-    determine_shift_for_date,
+    generate_period_data,
     get_effective_monthly_wage,
-    get_ot_hourly_rate_from_stored_wage,
     get_overtime_shifts_for_month,
-    get_user_wage,
     ob_rules,
     rotation_start_date,
 )
+from app.core.schedule.ob import compute_day_ob_pay
 from app.core.schedule.wages import (
     KARENS_HOURS,
     calculate_absence_deduction,
@@ -38,7 +32,7 @@ from app.core.schedule.wages import (
     get_shift_times_for_date,
 )
 from app.core.utils import get_safe_today, get_today
-from app.database.database import Absence, OnCallOverride, OnCallOverrideType, ShiftSwap, SwapStatus, User, get_db
+from app.database.database import Absence, ShiftSwap, SwapStatus, User, get_db
 from app.routes.shared import render
 
 router = APIRouter(tags=["dashboard"])
@@ -162,8 +156,21 @@ async def read_root(
     # Get user's rotation position (person_id field, or fallback to user.id)
     person_id = current_user.rotation_person_id
 
-    # Build the viewed week's data for the user (pass session for oncall override support)
-    week_data = build_week_data(view_iso_year_w, view_iso_week, person_id=person_id, session=db)
+    user_wage = get_effective_monthly_wage(db, current_user.id)
+    _user_rates = get_user_rates(current_user, session=db)
+    show_salary = can_see_salary(current_user, current_user.id)
+
+    # Build the viewed week on the canonical period path, the same one the month and
+    # year summaries use: its day dicts already carry on-call, overtime and OB, so the
+    # dashboard sums them below instead of recomputing the rules a fourth time.
+    view_week_sunday = view_week_monday + timedelta(days=6)
+    week_data = generate_period_data(
+        view_week_monday,
+        view_week_sunday,
+        person_id=person_id,
+        session=db,
+        user_rates_map={person_id: _user_rates} if _user_rates else None,
+    )
 
     # Create compact week schedule for dashboard display
     week_schedule = []
@@ -191,29 +198,6 @@ async def read_root(
 
     # Create lookup dictionary for O(1) access (used for upcoming-shift detection)
     ot_shift_map = {shift.date: shift for shift in ot_shifts_current + ot_shifts_next}
-
-    # OT map for the viewed week (may differ from current month)
-    view_week_months: set[tuple[int, int]] = set()
-    for _d in range(7):
-        _day = view_week_monday + dt.timedelta(days=_d)
-        view_week_months.add((_day.year, _day.month))
-    _view_week_ot: list = []
-    for _wy, _wm in view_week_months:
-        _view_week_ot.extend(get_overtime_shifts_for_month(db, current_user.id, _wy, _wm))
-    view_week_ot_map = {s.date: s for s in _view_week_ot}
-
-    # On-call overrides for the viewed week (needed to detect OC+OT same day)
-    view_week_sunday = view_week_monday + timedelta(days=6)
-    week_oncall_overrides = (
-        db.query(OnCallOverride)
-        .filter(
-            OnCallOverride.user_id == current_user.id,
-            OnCallOverride.date >= view_week_monday,
-            OnCallOverride.date <= view_week_sunday,
-        )
-        .all()
-    )
-    week_oncall_override_map = {o.date: o for o in week_oncall_overrides}
 
     # Find next upcoming shift (including overtime shifts)
     next_shift = None
@@ -280,106 +264,40 @@ async def read_root(
                     "days_until": days_until,
                 }
 
-    # Setup OB/oncall rules for the viewed week
-    combined_rules_w = ob_rules + _cached_special_rules(view_iso_year_w)
-    oncall_rules_w = _cached_oncall_rules(view_iso_year_w)
-    user_wage = get_effective_monthly_wage(db, current_user.id)
-    _raw_wage_week = get_user_wage(db, current_user.id)
-    _user_rates = get_user_rates(current_user, session=db)
-    show_salary = can_see_salary(current_user, current_user.id)
-
-    # Calculate week summary
+    # Calculate week summary by summing the canonical day dicts. The only rules applied
+    # here are the summary's own aggregation rules (OB through the shared compute_day_ob_pay
+    # gate, on-call hours excluded from worked hours, OT hours added), mirroring
+    # _process_day_for_summary so the week, month and year figures cannot drift apart.
     week_summary = None
     if week_data:
+        combined_rules_w = ob_rules + _cached_special_rules(view_iso_year_w)
         total_hours = 0.0
         ob_hours = 0.0
         total_pay = 0.0
-        oc_pay = 0.0
-        ot_pay = 0.0
         absence_deduction = 0.0
 
         for day in week_data:
-            # Check for absence first
-            absence, deduction = _query_absence_and_deduction(db, current_user.id, day["date"], user_wage, show_salary)
+            _, deduction = _query_absence_and_deduction(db, current_user.id, day["date"], user_wage, show_salary)
             absence_deduction += deduction
 
-            # Check for overtime shift first (use dictionary lookup)
-            ot_shift = view_week_ot_map.get(day["date"])
+            day_ob_hours, day_ob_pay, _ = compute_day_ob_pay(
+                day, combined_rules_w, user_wage, _user_rates["ob"] if _user_rates else None
+            )
+            ob_hours += sum(day_ob_hours.values())
+            if show_salary:
+                total_pay += sum(day_ob_pay.values())
 
-            if ot_shift and not absence:  # Skip OT if there's an absence
-                # Calculate OT hours and pay
-                ot_start = datetime.combine(day["date"], ot_shift.start_time)
-                ot_end = datetime.combine(day["date"], ot_shift.end_time)
-
-                # Handle shifts that cross midnight
-                if ot_shift.end_time < ot_shift.start_time:
-                    ot_end += dt.timedelta(days=1)
-
-                ot_hours = (ot_end - ot_start).total_seconds() / 3600.0
-                total_hours += ot_hours
-
-                if show_salary:
-                    _custom_ot = _user_rates["ot"]
-                    _ot_rate_w = (
-                        _custom_ot
-                        if _custom_ot is not None
-                        else get_ot_hourly_rate_from_stored_wage(db, current_user.id, _raw_wage_week)
-                    )
-                    ot_ob_pay = calculate_overtime_pay(user_wage, ot_hours, ot_hourly_rate=_ot_rate_w)
-                    ot_pay += ot_ob_pay
-
-            # Determine effective on-call status using rotation shift + override
-            # (day["shift"] may show OT which masks an OC override on the same day)
-            _week_override = week_oncall_override_map.get(day["date"])
-            _rot_result = determine_shift_for_date(day["date"], start_week=person_id)
-            _rot_shift = _rot_result[0] if _rot_result else None
-            _has_rot_oc = _rot_shift and _rot_shift.code == "OC"
-            _is_effective_oc = (
-                _has_rot_oc and not (_week_override and _week_override.override_type == OnCallOverrideType.REMOVE)
-            ) or (_week_override and _week_override.override_type == OnCallOverrideType.ADD)
-
-            if _is_effective_oc and show_salary:
-                _oc_excluded = []
-                _ot_on_oc_day = view_week_ot_map.get(day["date"])
-                if _ot_on_oc_day:
-                    _ot_s = datetime.combine(day["date"], _ot_on_oc_day.start_time)
-                    _ot_e = datetime.combine(day["date"], _ot_on_oc_day.end_time)
-                    if _ot_on_oc_day.end_time < _ot_on_oc_day.start_time:
-                        _ot_e += dt.timedelta(days=1)
-                    _oc_excluded = [(_ot_s, _ot_e)]
-                oc_result = calculate_oncall_pay(
-                    day["date"],
-                    user_wage,
-                    oncall_rules_w,
-                    rate_overrides=_user_rates["oncall"],
-                    excluded_intervals=_oc_excluded or None,
-                )
-                oc_pay += oc_result["total_pay"]
-
-            # Handle regular rotation shifts (only if day is not purely on-call with no OT)
-            if day["shift"] and not (_is_effective_oc and day["shift"].code == "OC"):
-                if day["shift"].code not in ("OC", "OFF") and day["shift"].start_time is not None:
-                    # Calculate regular shift hours
-                    hours, start_dt, end_dt = calculate_shift_hours(day["date"], day["shift"])
-                    total_hours += hours
-
-                    # Calculate OB hours and pay if we have valid datetimes
-                    if start_dt and end_dt:
-                        ob_hours_dict = calculate_ob_hours(start_dt, end_dt, combined_rules_w)
-                        ob_hours += sum(ob_hours_dict.values())
-
-                        if show_salary:
-                            ob_pay_dict = calculate_ob_pay(
-                                start_dt, end_dt, combined_rules_w, user_wage, rate_overrides=_user_rates["ob"]
-                            )
-                            total_pay += sum(ob_pay_dict.values())
+            shift = day.get("shift")
+            if shift and shift.code != "OC":
+                total_hours += day.get("hours", 0.0)
+            total_hours += day.get("ot_hours", 0.0)
 
         week_summary = {
             "total_hours": total_hours,
             "ob_hours": ob_hours,
             "total_pay": total_pay,
-            "oc_pay": oc_pay,
-            "ot_pay": ot_pay,
+            "oc_pay": sum(d.get("oncall_pay", 0.0) for d in week_data) if show_salary else 0.0,
+            "ot_pay": sum(d.get("ot_pay", 0.0) for d in week_data) if show_salary else 0.0,
             "absence_deduction": absence_deduction,
         }
 
