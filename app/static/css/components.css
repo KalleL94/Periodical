@@ -299,6 +299,9 @@ input, select {
 .title-inline { margin: 0; }
 .btn-compact { padding: 0.25rem 0.75rem; font-size: 0.85rem; }
 .btn-sm { font-size: 0.85rem; }
+/* Quick-fill preset buttons for the overtime form (day view) */
+.ot-presets { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.ot-preset-time { display: block; font-family: var(--font-mono); font-size: 0.75rem; opacity: 0.7; }
 .btn-warning { background: var(--warning); border-color: var(--warning); color: #000; }
 .btn-warning:hover { background: var(--warning); }
 .badge-role { background: var(--role); }
