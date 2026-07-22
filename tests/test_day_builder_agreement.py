@@ -229,11 +229,6 @@ def _canonical_days(session) -> dict[datetime.date, dict]:
     return {d["date"]: d for d in generate_period_data(START, END, person_id=1, session=session)}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="known disagreement: on week-vacation days the canonical path reports rotation_week "
-    "None while the week path reports the real rotation week (see _resolve_effective_shift)",
-)
 def test_builders_agree_across_the_priority_chain(agree_session):
     _seed_chain_fixtures(agree_session)
 
@@ -250,24 +245,6 @@ def test_builders_agree_across_the_priority_chain(agree_session):
     assert mismatches == {}, f"canonical vs basic (canonical, basic): {mismatches}"
 
 
-def test_known_disagreement_rotation_week_on_vacation_days(agree_session):
-    """Pins the figures of the rotation_week disagreement until it is resolved."""
-    _seed_chain_fixtures(agree_session)
-
-    canonical = _canonical_days(agree_session)
-    basic = _basic_days(agree_session)
-
-    for date in (D(2026, 3, 12), D(2026, 3, 13), D(2026, 3, 14), D(2026, 3, 15)):
-        assert canonical[date]["shift"].code == "SEM"
-        assert canonical[date]["rotation_week"] is None
-        assert basic[date]["rotation_week"] == 1
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="known disagreement: on a week that is both vacation and parental leave the canonical "
-    "path renders LEAVE (parental checked first) and the week path renders SEM",
-)
 def test_builders_agree_when_vacation_and_parental_overlap(agree_session):
     """A week flagged as both vacation and parental leave must resolve the same way in both."""
     user = agree_session.query(User).filter(User.id == 1).first()

@@ -1524,27 +1524,9 @@ def _build_person_day_basic(
                 "end": None,
             }
 
-    # Kolla semester (veckobaserad). Visa endast SEM på dagar personen är schemalagd
-    # (icke-OFF), så markeringen matchar hur semesterdagar räknas. OFF-dagar lämnas
-    # orörda och renderas som vanligt nedan. Dagsnivå-semester hanteras av absence-blocket ovan.
-    if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
-        result = determine_shift_for_date(date, person_id)
-        original_shift, rotation_week = result if result else (None, None)
-        if original_shift and original_shift.code != "OFF":
-            return {
-                "person_id": person_id,
-                "person_name": person_name,
-                "shift": vacation_shift,
-                "original_shift": original_shift,  # For coworker matching
-                "rotation_week": rotation_week,
-                "rotation_length": rotation_length,
-                "hours": 0.0,
-                "start": None,
-                "end": None,
-            }
-
-    # Kolla föräldraledighet (veckobaserad). Samma regel: visa LEAVE endast på schemalagda
+    # Kolla föräldraledighet (veckobaserad). Visa LEAVE endast på schemalagda
     # (icke-OFF) dagar. Dagsnivå-föräldraledighet hanteras av absence-blocket ovan.
+    # Checked before vacation, matching the canonical path (_populate_single_person_day).
     if parental_dates and date in parental_dates.get(person_id, set()):
         leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
         result = determine_shift_for_date(date, person_id)
@@ -1563,6 +1545,25 @@ def _build_person_day_basic(
                 # Week-based parental leave renders as LEAVE; flag it so summaries can
                 # count it as parental rather than ordinary leave.
                 "parental_leave": True,
+            }
+
+    # Kolla semester (veckobaserad). Visa endast SEM på dagar personen är schemalagd
+    # (icke-OFF), så markeringen matchar hur semesterdagar räknas. OFF-dagar lämnas
+    # orörda och renderas som vanligt nedan. Dagsnivå-semester hanteras av absence-blocket ovan.
+    if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
+        result = determine_shift_for_date(date, person_id)
+        original_shift, rotation_week = result if result else (None, None)
+        if original_shift and original_shift.code != "OFF":
+            return {
+                "person_id": person_id,
+                "person_name": person_name,
+                "shift": vacation_shift,
+                "original_shift": original_shift,  # For coworker matching
+                "rotation_week": rotation_week,
+                "rotation_length": rotation_length,
+                "hours": 0.0,
+                "start": None,
+                "end": None,
             }
 
     # Check for manual shift override (admin-assigned N1/N2/N3 replacing rotation)
@@ -1922,7 +1923,9 @@ def _resolve_effective_shift(
         rot = determine_shift_for_date(current_day, person_id)
         rot_shift = rot[0] if rot else None
         if rot_shift and rot_shift.code != "OFF":
-            return _ShiftResolution(vacation_shift, None, 0.0, None, None, {})
+            # The rotation week is a property of the date, not of the shift shown, so it
+            # survives the vacation marking (the week path has always reported it).
+            return _ShiftResolution(vacation_shift, rot[1], 0.0, None, None, {})
 
     # Manual shift override
     if shift_override_map is not None and shift_override_map.get((person_id, current_day)):
