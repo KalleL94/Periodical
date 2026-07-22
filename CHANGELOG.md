@@ -16,6 +16,11 @@ number is bumped by the pull request that follows a release, not by every
 change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 `VERSIONS` disagree.
 
+## [1.3.0] - 2026-07-22
+
+### Added
+- The manual overtime form in the personal day view has one quick-fill button per standard shift (N1, N2, N3). Clicking one sets start time, end time and hours; all three fields stay editable afterwards. The times come from `get_shift_types()` rather than the template, so they follow `data/shift_types.json`, and the hours are computed client-side with a midnight wrap so the night shift yields 8.5 rather than a negative number
+
 ## [1.2.0] - 2026-07-22
 
 ### Added
