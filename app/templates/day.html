@@ -255,6 +255,12 @@
 
                     <details>
                         <summary class="day-summary-toggle">{{ t.day_add_called_ot }}</summary>
+                        <div class="ot-presets">
+                            {% for s in standard_shifts %}
+                            <button type="button" class="btn btn-secondary btn-sm ot-preset"
+                                    data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">{{ s.label }}</button>
+                            {% endfor %}
+                        </div>
                         <div class="form-row form-row--mt">
                             <div class="form-group">
                                 <label for="start_time">{{ t.day_start_time }}</label>
@@ -272,6 +278,21 @@
                         <button type="submit" class="btn btn-primary">{{ t.day_add_ot_button }}</button>
                     </details>
                 </form>
+
+                <script>
+                document.querySelectorAll('.ot-preset').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var start = btn.dataset.start, end = btn.dataset.end;
+                        var sm = parseInt(start.split(':')[0]) * 60 + parseInt(start.split(':')[1]);
+                        var em = parseInt(end.split(':')[0]) * 60 + parseInt(end.split(':')[1]);
+                        // Night shifts cross midnight
+                        if (em <= sm) em += 24 * 60;
+                        document.getElementById('start_time').value = start;
+                        document.getElementById('end_time').value = end;
+                        document.getElementById('hours').value = ((em - sm) / 60).toFixed(2);
+                    });
+                });
+                </script>
 
                 <p class="info-text">
                     {{ t.day_ot_rate_note }}

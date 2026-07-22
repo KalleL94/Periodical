@@ -16,6 +16,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.3.0",
+        "date": "2026-07-22",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "När du lägger till inkallad övertid i dagvyn finns nu en knapp för varje ordinarie pass: Dagpass, Kvällspass och Nattpass. Ett klick fyller i starttid, sluttid och antal timmar åt dig, så du slipper skriva dem för hand. Blev passet längre eller kortare ändrar du bara i fälten efteråt",
+                "en": "When you add called-in overtime in the day view there is now a button for each regular shift: day, evening and night. One click fills in the start time, end time and number of hours for you, so you no longer have to type them by hand. If the shift ran longer or shorter, just edit the fields afterwards",
+            },
+        ],
+    },
+    {
         "version": "1.2.0",
         "date": "2026-07-22",
         "entries": [

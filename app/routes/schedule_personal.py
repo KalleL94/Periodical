@@ -33,6 +33,7 @@ from app.core.schedule import (
     get_effective_monthly_wage,
     get_overtime_shift_for_date,
     get_rotation_length_for_date,
+    get_shift_types,
     get_user_wage,
     ob_rules,
     rotation_start_date,
@@ -468,6 +469,8 @@ async def show_day_for_person(
             "iso_week": iso_week,
             "show_salary": show_salary,
             "is_storhelg": is_storhelg,  # Whether this date is a major holiday
+            # Quick-fill presets for the manual overtime form
+            "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
             "absence": absence,  # Pass absence data to template
