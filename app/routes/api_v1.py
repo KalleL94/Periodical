@@ -6,16 +6,13 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_api_user, get_api_user
-from app.core.schedule.core import calculate_shift_hours, determine_shift_for_date, get_shift_types
-from app.core.schedule.ob import calculate_ob_pay, get_combined_rules_for_year
+from app.core.schedule.core import determine_shift_for_date, get_shift_types
+from app.core.schedule.ob import compute_day_ob_pay, get_combined_rules_for_year
+from app.core.schedule.period import generate_period_data
 from app.core.utils import APP_TIMEZONE, get_today
 from app.database.database import (
     Absence,
-    OnCallOverride,
-    OnCallOverrideType,
     OvertimeShift,
-    ShiftSwap,
-    SwapStatus,
     User,
     UserRole,
     get_db,
@@ -99,13 +96,23 @@ def _build_coworkers(
     date: datetime.date,
     all_users: list[User],
     absent_ids: set[int],
-    overtime_map: dict[int, datetime.time] | None = None,
+    overtime_map: dict[int, datetime.time],
 ) -> list[dict]:
+    """Who else is working that day.
+
+    NOTE: this is the one place left in the module that reads the rotation directly
+    instead of the canonical path, so a co-worker's swap or shift override is not
+    reflected in their shift_code (their absences are, via absent_ids). The canonical
+    source would be generate_period_data(person_id=None), but that resolves
+    PersonHistory per person and day: measured at ~52 queries per calendar day
+    against ~5 for the single-person call, which turns /schedule/year from ~2.5k
+    into ~21k queries. Switch this over once period.py batches those lookups.
+    """
     result = []
     for u in all_users:
         if u.id == user_id or u.id in absent_ids or u.role == UserRole.ADMIN:
             continue
-        if overtime_map is not None and u.id in overtime_map:
+        if u.id in overtime_map:
             code, label = _find_shift_for_overtime(overtime_map[u.id])
             result.append({"id": u.id, "name": u.name, "shift_code": code, "shift_label": label})
             continue
@@ -115,101 +122,92 @@ def _build_coworkers(
     return result
 
 
-def _build_day_status(
-    user: User,
+def _day_status_and_shift(canonical: dict, absence, overtime) -> tuple[str, object]:
+    """Map a canonical day to the API's (status, shift) pair.
+
+    The API's `shift` field has always meant "the shift this person was assigned",
+    with absence/vacation reported separately in `status`; the canonical day instead
+    replaces `shift` with the absence, vacation or overtime shift. So the assigned
+    shift is taken from `original_shift` on those days, and from the fully resolved
+    `shift` (rotation + swap + override + on-call override) on every other day.
+    """
+    shift = canonical.get("shift")
+    assigned = canonical.get("original_shift") or shift
+
+    def _status(s) -> str:
+        if s is None:
+            return "unknown"
+        return "off" if s.code == "OFF" else "working"
+
+    if absence is not None:
+        return absence.absence_type.value.lower(), assigned
+    if canonical.get("parental_leave"):
+        return "parental", assigned
+    if shift is not None and shift.code == "SEM":
+        return "vacation", assigned
+    if overtime is not None and not overtime.is_extension:
+        # Canonical swaps in the OT shift type; the API reports overtime in its own
+        # block and keeps the underlying shift here.
+        return _status(assigned), assigned
+    return _status(shift), shift
+
+
+def _build_day(
+    canonical: dict,
     date: datetime.date,
+    user: User,
     db: Session,
-    include_salary: bool = False,
-    all_users: list[User] | None = None,
-    absent_ids: set[int] | None = None,
-    overtime_map: dict[int, datetime.time] | None = None,
+    absence,
+    overtime,
+    include_salary: bool,
+    coworkers: list[dict] | None,
 ) -> dict:
-    absence = db.query(Absence).filter(Absence.user_id == user.id, Absence.date == date).first()
-    overtime = db.query(OvertimeShift).filter(OvertimeShift.user_id == user.id, OvertimeShift.date == date).first()
-    shift, rotation_week = determine_shift_for_date(date, user.rotation_person_id)
-
-    coworkers = None
-    if all_users is not None:
-        effective_absent = (
-            absent_ids
-            if absent_ids is not None
-            else {row[0] for row in db.query(Absence.user_id).filter(Absence.date == date).all()}
-        )
-        # Include the current user as absent if they have an absence
-        if absence:
-            effective_absent = effective_absent | {user.id}
-        if overtime_map is not None:
-            effective_overtime = overtime_map
-        else:
-            effective_overtime = {
-                row[0]: row[1]
-                for row in db.query(OvertimeShift.user_id, OvertimeShift.end_time)
-                .filter(OvertimeShift.date == date, OvertimeShift.is_extension.is_(False))
-                .all()
-            }
-        coworkers = _build_coworkers(user.id, date, all_users, effective_absent, effective_overtime)
-
-    shift_data = _shift_to_dict(shift) if shift else None
-
-    if absence:
-        result = {
-            "date": date.isoformat(),
-            "status": absence.absence_type.value.lower(),
-            "shift": shift_data,
-            "rotation_week": rotation_week,
-            "overtime": None,
-            "partial_day": absence.left_at,
-            "arrived_late": absence.arrived_at,
-        }
-        if include_salary:
-            result["ob_pay"] = None
-            result["ob_total"] = 0.0
-        if coworkers is not None:
-            result["coworkers"] = coworkers
-        return result
-
-    ob_pay_data = None
-    ob_total = 0.0
-
-    if shift and shift.code not in ("OFF", "OC") and include_salary:
-        is_full_ot = overtime and not overtime.is_extension
-        if not is_full_ot:
-            _, start_dt, end_dt = calculate_shift_hours(date, shift)
-            if start_dt and end_dt:
-                rules = get_combined_rules_for_year(date.year)
-                rate_overrides = (user.custom_rates or {}).get("ob")
-                from app.core.schedule.wages import get_effective_monthly_wage
-
-                monthly_wage = get_effective_monthly_wage(db, user.id, user.wage, effective_date=date)
-                ob_pay_raw = calculate_ob_pay(start_dt, end_dt, rules, monthly_wage, rate_overrides)
-                ob_total = round(sum(ob_pay_raw.values()), 2)
-                ob_pay_data = {k: round(v, 2) for k, v in ob_pay_raw.items() if v > 0}
-
-    overtime_data = None
-    if overtime:
-        overtime_data = {
-            "start_time": overtime.start_time.strftime("%H:%M"),
-            "end_time": overtime.end_time.strftime("%H:%M"),
-            "hours": overtime.hours,
-            "is_extension": overtime.is_extension,
-        }
-
-    status = "off" if (shift and shift.code == "OFF") else ("working" if shift else "unknown")
+    status, shift = _day_status_and_shift(canonical, absence, overtime)
 
     result = {
         "date": date.isoformat(),
         "status": status,
-        "shift": shift_data,
-        "rotation_week": rotation_week,
-        "overtime": overtime_data,
-        "partial_day": None,
+        "shift": _shift_to_dict(shift) if shift else None,
+        "rotation_week": canonical.get("rotation_week"),
+        # An absence outranks overtime in the response, as it always has.
+        "overtime": None
+        if (absence is not None or overtime is None)
+        else {
+            "start_time": overtime.start_time.strftime("%H:%M"),
+            "end_time": overtime.end_time.strftime("%H:%M"),
+            "hours": overtime.hours,
+            "is_extension": overtime.is_extension,
+        },
+        "partial_day": absence.left_at if absence is not None else None,
     }
+    if absence is not None:
+        result["arrived_late"] = absence.arrived_at
     if include_salary:
-        result["ob_pay"] = ob_pay_data
-        result["ob_total"] = ob_total
+        result["ob_pay"], result["ob_total"] = _day_ob_pay(canonical, date, user, db)
     if coworkers is not None:
         result["coworkers"] = coworkers
     return result
+
+
+def _day_ob_pay(canonical: dict, date: datetime.date, user: User, db: Session) -> tuple[dict | None, float]:
+    """OB pay for a canonical day, through the shared gate used by the day view."""
+    c_shift = canonical.get("shift")
+    has_ob = bool(canonical.get("ob_hours_override")) or bool(
+        c_shift and c_shift.code not in ("OFF", "OC", "OT") and canonical.get("start") and canonical.get("end")
+    )
+    if not has_ob:
+        return None, 0.0
+
+    from app.core.schedule.wages import get_effective_monthly_wage
+
+    monthly_wage = get_effective_monthly_wage(db, user.id, user.wage, effective_date=date)
+    _, ob_pay, _ = compute_day_ob_pay(
+        canonical,
+        get_combined_rules_for_year(date.year),
+        monthly_wage,
+        (user.custom_rates or {}).get("ob"),
+    )
+    return {k: round(v, 2) for k, v in ob_pay.items() if v > 0}, round(sum(ob_pay.values()), 2)
 
 
 def _build_period(
@@ -218,29 +216,87 @@ def _build_period(
     end: datetime.date,
     db: Session,
     include_salary: bool,
+    with_coworkers: bool = True,
 ) -> tuple[list[dict], float]:
-    """Build day-status list for a range; returns (days, ob_total_sum)."""
-    all_users = db.query(User).filter(User.is_active == 1).all()
-    absent_by_date = _absent_ids_by_date(start, end, db)
-    overtime_by_date = _overtime_by_date(start, end, db)
+    """Build day-status list for a range; returns (days, ob_total_sum).
+
+    INVARIANT (issue #206, same rule as app/routes/schedule_personal.py): shift
+    resolution comes exclusively from generate_period_data, so shift overrides,
+    swaps, on-call overrides, day pay overrides, linked substitutes and employment
+    masking reach this API automatically. The Absence and OvertimeShift rows read
+    below only decorate the response (status text, partial-day times, the overtime
+    block); do not reintroduce shadow calculations on top of them. A new override
+    layer belongs in period.py, where it reaches every view at once.
+    """
+    canonical_days = {
+        day["date"]: day for day in generate_period_data(start, end, person_id=target.rotation_person_id, session=db)
+    }
+    absences = {
+        a.date: a
+        for a in db.query(Absence).filter(Absence.user_id == target.id, Absence.date.between(start, end)).all()
+    }
+    overtimes = {
+        o.date: o
+        for o in db.query(OvertimeShift)
+        .filter(OvertimeShift.user_id == target.id, OvertimeShift.date.between(start, end))
+        .all()
+    }
+
+    all_users: list[User] = []
+    absent_by_date: dict[datetime.date, set[int]] = {}
+    overtime_by_date: dict[datetime.date, dict[int, datetime.time]] = {}
+    if with_coworkers:
+        all_users = db.query(User).filter(User.is_active == 1).all()
+        absent_by_date = _absent_ids_by_date(start, end, db)
+        overtime_by_date = _overtime_by_date(start, end, db)
+
     days = []
     ob_sum = 0.0
     d = start
     while d <= end:
-        day = _build_day_status(
-            target,
+        absence = absences.get(d)
+        coworkers = None
+        if with_coworkers:
+            # The viewed user counts as absent for co-worker matching too.
+            absent_ids = absent_by_date.get(d, set()) | ({target.id} if absence else set())
+            coworkers = _build_coworkers(target.id, d, all_users, absent_ids, overtime_by_date.get(d, {}))
+        day = _build_day(
+            canonical_days.get(d, {}),
             d,
+            target,
             db,
-            include_salary=include_salary,
-            all_users=all_users,
-            absent_ids=absent_by_date.get(d, set()),
-            overtime_map=overtime_by_date.get(d, {}),
+            absence,
+            overtimes.get(d),
+            include_salary,
+            coworkers,
         )
         if include_salary:
             ob_sum += day.get("ob_total") or 0.0
         days.append(day)
         d += datetime.timedelta(days=1)
     return days, round(ob_sum, 2)
+
+
+def _active_overnight_shift(day: dict, current_time: datetime.time) -> dict | None:
+    """The given day's shift, when it crosses midnight and is still running at current_time."""
+    shift = day["shift"]
+    if day["status"] != "working" or not shift or shift["code"] == "OC" or not shift["overnight"]:
+        return None
+    if current_time >= datetime.time.fromisoformat(shift["end_time"]):
+        return None
+    return {"date": day["date"], "shift": shift, "rotation_week": day["rotation_week"]}
+
+
+def _build_day_status(
+    user: User,
+    date: datetime.date,
+    db: Session,
+    include_salary: bool = False,
+    with_coworkers: bool = False,
+) -> dict:
+    """Single-day status; a one-day slice of the canonical period path."""
+    days, _ = _build_period(user, date, date, db, include_salary, with_coworkers=with_coworkers)
+    return days[0]
 
 
 # ── Own user shortcut ────────────────────────────────────────────────────────
@@ -313,24 +369,13 @@ async def get_user_status(
         now = datetime.datetime.now(APP_TIMEZONE)
         today = now.date()
         current_time = now.time()
-    all_users = db.query(User).filter(User.is_active == 1).all()
-    absent_ids = {row[0] for row in db.query(Absence.user_id).filter(Absence.date == today).all()}
-    result = _build_day_status(
-        target, today, db, include_salary=include_salary, all_users=all_users, absent_ids=absent_ids
-    )
-    # Check for an ongoing overnight shift from the previous day.
     yesterday = today - datetime.timedelta(days=1)
-    yesterday_absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == yesterday).first()
-    if not yesterday_absence:
-        prev_shift, prev_rw = determine_shift_for_date(yesterday, target.rotation_person_id)
-        if prev_shift and prev_shift.code not in ("OFF", "OC") and _is_overnight(prev_shift):
-            prev_end = datetime.time.fromisoformat(prev_shift.end_time)
-            if current_time < prev_end:
-                result["currently_active_shift"] = {
-                    "date": yesterday.isoformat(),
-                    "shift": _shift_to_dict(prev_shift),
-                    "rotation_week": prev_rw,
-                }
+    days, _ = _build_period(target, yesterday, today, db, include_salary)
+    previous, result = days
+    # Check for an ongoing overnight shift from the previous day.
+    active = _active_overnight_shift(previous, current_time)
+    if active is not None:
+        result["currently_active_shift"] = active
     return result
 
 
@@ -344,7 +389,6 @@ async def get_user_schedule_today(
     """Schedule for today including co-workers. Pass ?date=YYYY-MM-DD to simulate another day."""
     target = _get_user_or_404(user_id, db)
     include_salary = _can_see_salary(current_user, target)
-    all_users = db.query(User).filter(User.is_active == 1).all()
     if at_date:
         try:
             today = datetime.date.fromisoformat(at_date)
@@ -352,10 +396,7 @@ async def get_user_schedule_today(
             raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from e
     else:
         today = get_today()
-    absent_ids = {row[0] for row in db.query(Absence.user_id).filter(Absence.date == today).all()}
-    return _build_day_status(
-        target, today, db, include_salary=include_salary, all_users=all_users, absent_ids=absent_ids
-    )
+    return _build_day_status(target, today, db, include_salary=include_salary, with_coworkers=True)
 
 
 @router.get("/users/{user_id}/schedule/month")
@@ -461,11 +502,7 @@ async def get_user_schedule_date(
     except ValueError:
         raise HTTPException(status_code=400, detail="Ogiltigt datumformat, använd YYYY-MM-DD") from None
     include_salary = _can_see_salary(current_user, target)
-    all_users = db.query(User).filter(User.is_active == 1).all()
-    absent_ids = {row[0] for row in db.query(Absence.user_id).filter(Absence.date == target_date).all()}
-    return _build_day_status(
-        target, target_date, db, include_salary=include_salary, all_users=all_users, absent_ids=absent_ids
-    )
+    return _build_day_status(target, target_date, db, include_salary=include_salary, with_coworkers=True)
 
 
 # ── Users list ──────────────────────────────────────────────────────────────
@@ -593,47 +630,6 @@ async def get_user_absences(
 # ── Next shift ───────────────────────────────────────────────────────────────
 
 
-def _resolve_effective_shift(date: datetime.date, user: User, db: Session) -> tuple:
-    """Return (shift, rotation_week) for user on date, applying oncall overrides and accepted swaps."""
-    shift, rotation_week = determine_shift_for_date(date, user.rotation_person_id)
-
-    # Apply manual oncall override (ADD or REMOVE OC via day view)
-    override = db.query(OnCallOverride).filter(OnCallOverride.user_id == user.id, OnCallOverride.date == date).first()
-    if override:
-        shift_types = get_shift_types()
-        if override.override_type == OnCallOverrideType.ADD:
-            oc = next((s for s in shift_types if s.code == "OC"), None)
-            if oc:
-                shift = oc
-        elif override.override_type == OnCallOverrideType.REMOVE and shift and shift.code == "OC":
-            off = next((s for s in shift_types if s.code == "OFF"), None)
-            if off:
-                shift = off
-
-    # Apply accepted shift swap (if any)
-    swap = (
-        db.query(ShiftSwap)
-        .filter(
-            ShiftSwap.status == SwapStatus.ACCEPTED,
-            (ShiftSwap.requester_id == user.id) | (ShiftSwap.target_id == user.id),
-            (ShiftSwap.requester_date == date) | (ShiftSwap.target_date == date),
-        )
-        .first()
-    )
-    if swap is not None:
-        shift_types = get_shift_types()
-        if swap.requester_id == user.id and swap.requester_date == date:
-            shift, _ = determine_shift_for_date(date, swap.target.rotation_person_id)
-        elif swap.target_id == user.id and swap.requester_date == date:
-            shift = next((s for s in shift_types if s.code == swap.requester_shift_code), shift)
-        elif swap.requester_id == user.id and swap.target_date == date:
-            shift = next((s for s in shift_types if s.code == swap.target_shift_code), shift)
-        elif swap.target_id == user.id and swap.target_date == date:
-            shift, _ = determine_shift_for_date(date, swap.requester.rotation_person_id)
-
-    return shift, rotation_week
-
-
 @router.get("/users/{user_id}/next-shift")
 async def get_user_next_shift(
     user_id: int,
@@ -658,38 +654,24 @@ async def get_user_next_shift(
         today = now.date()
         current_time = now.time()
 
-    # Check if there is an ongoing overnight shift from yesterday still running.
-    currently_active: dict | None = None
     yesterday = today - datetime.timedelta(days=1)
-    yesterday_absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == yesterday).first()
-    if not yesterday_absence:
-        prev_shift, prev_rw = _resolve_effective_shift(yesterday, target, db)
-        if prev_shift and prev_shift.code not in ("OFF", "OC") and _is_overnight(prev_shift):
-            prev_end = datetime.time.fromisoformat(prev_shift.end_time)
-            if current_time < prev_end:
-                currently_active = {
-                    "date": yesterday.isoformat(),
-                    "shift": _shift_to_dict(prev_shift),
-                    "rotation_week": prev_rw,
-                }
+    days, _ = _build_period(
+        target, yesterday, today + datetime.timedelta(days=59), db, include_salary=False, with_coworkers=False
+    )
+    # Check if there is an ongoing overnight shift from yesterday still running.
+    currently_active = _active_overnight_shift(days[0], current_time)
 
-    for offset in range(60):
-        candidate = today + datetime.timedelta(days=offset)
-        absence = db.query(Absence).filter(Absence.user_id == target.id, Absence.date == candidate).first()
-        if absence:
+    for offset, day in enumerate(days[1:]):
+        # Absence, vacation and parental days never report as "working".
+        if day["status"] != "working" or not day["shift"] or not day["shift"]["start_time"]:
             continue
-        shift, rotation_week = _resolve_effective_shift(candidate, target, db)
-        if not shift or shift.code == "OFF":
+        if offset == 0 and current_time >= datetime.time.fromisoformat(day["shift"]["start_time"]):
             continue
-        if offset == 0:
-            shift_start = datetime.time.fromisoformat(shift.start_time)
-            if current_time >= shift_start:
-                continue
         result = {
-            "date": candidate.isoformat(),
+            "date": day["date"],
             "days_from_today": offset,
-            "shift": _shift_to_dict(shift),
-            "rotation_week": rotation_week,
+            "shift": day["shift"],
+            "rotation_week": day["rotation_week"],
         }
         if currently_active is not None:
             result["currently_active_shift"] = currently_active
