@@ -24,6 +24,7 @@ from app.core.schedule import (
     rotation_start_date,
 )
 from app.core.schedule.ob import compute_day_ob_pay
+from app.core.schedule.summary import day_worked_hours
 from app.core.schedule.wages import (
     KARENS_HOURS,
     calculate_absence_deduction,
@@ -266,7 +267,7 @@ async def read_root(
 
     # Calculate week summary by summing the canonical day dicts. The only rules applied
     # here are the summary's own aggregation rules (OB through the shared compute_day_ob_pay
-    # gate, on-call hours excluded from worked hours, OT hours added), mirroring
+    # gate, worked hours through the shared day_worked_hours helper), mirroring
     # _process_day_for_summary so the week, month and year figures cannot drift apart.
     week_summary = None
     if week_data:
@@ -287,10 +288,7 @@ async def read_root(
             if show_salary:
                 total_pay += sum(day_ob_pay.values())
 
-            shift = day.get("shift")
-            if shift and shift.code != "OC":
-                total_hours += day.get("hours", 0.0)
-            total_hours += day.get("ot_hours", 0.0)
+            total_hours += day_worked_hours(day)
 
         week_summary = {
             "total_hours": total_hours,
