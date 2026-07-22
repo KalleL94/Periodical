@@ -238,6 +238,8 @@
                             var sm = parseInt(start.split(':')[0]) * 60 + parseInt(start.split(':')[1]);
                             var em = parseInt(end.split(':')[0]) * 60 + parseInt(end.split(':')[1]);
                             var diff = em - sm;
+                            // Stayed past midnight (an evening shift ending 22:30, home 00:30)
+                            if (diff < 0) diff += 24 * 60;
                             if (diff > 0) hoursInput.value = (diff / 60).toFixed(2);
                         }
                         endInput.addEventListener('change', updateHours);
