@@ -13,7 +13,7 @@ from app.core.schedule import (
     summarize_year_for_person,
 )
 from app.core.schedule import persons as person_list
-from app.core.schedule.vacation import calculate_vacation_balance
+from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.utils import get_safe_today
 from app.database.database import User, UserRole, get_db
 from app.routes.shared import _resolve_person_param, render
@@ -85,7 +85,8 @@ async def statistics_view(
         months = [strip_salary_data(m) for m in months]
         year_summary = strip_salary_data(year_summary)
 
-    # Add vacation supplement data
+    # Fold the vacation supplement and any employment transition into the pay
+    # figures. Shared with /year/<id> so both pages show the same money.
     if show_salary:
         vac_user = (
             target_user
@@ -93,51 +94,7 @@ async def statistics_view(
             else db.query(User).filter(User.person_id == rotation_position).first()
         )
         if vac_user:
-            try:
-                vacation_pay = calculate_vacation_balance(vac_user, year, db)
-                supp_per_day = vacation_pay.get("pay", {}).get("supplement_per_day", 0)
-                for m in months:
-                    sem_days = sum(1 for d in m.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
-                    m["vacation_days"] = sem_days
-                    m["vacation_supplement"] = round(supp_per_day * sem_days, 0)
-                    if m["vacation_supplement"] > 0:
-                        supp = m["vacation_supplement"]
-                        brutto_before = m.get("brutto_pay", 0) or 0
-                        netto_before = m.get("netto_pay", 0) or 0
-                        m["brutto_pay"] = brutto_before + supp
-                        if brutto_before > 0:
-                            tax_ratio = netto_before / brutto_before
-                            m["netto_pay"] = round(netto_before + supp * tax_ratio, 0)
-
-                year_summary["total_brutto"] = sum((m.get("brutto_pay", 0) or 0) for m in months)
-                year_summary["total_netto"] = sum((m.get("netto_pay", 0) or 0) for m in months)
-            except Exception:
-                pass
-
-        # Add employment transition payout for the transition month
-        if vac_user and vac_user.employment_transition:
-            t = vac_user.employment_transition
-            if t.transition_date.year == year:
-                try:
-                    from app.core.schedule.transition import calculate_transition_month_summary
-
-                    transition_data = calculate_transition_month_summary(t, vac_user, db)
-                    vac_payout = float(transition_data["consultant_employer"]["vacation_payout"]["total"])
-                    direct_salary = float(transition_data["direct_employer"]["base_salary"])
-                    t_month = transition_data["transition_month"]
-                    for m in months:
-                        if m.get("payment_date") and m["payment_date"].month == t_month:
-                            brutto = float(m.get("brutto_pay") or 0)
-                            netto = float(m.get("netto_pay") or 0)
-                            tax_ratio = (netto / brutto) if brutto > 0 else 0.72
-                            extra = vac_payout + direct_salary
-                            m["brutto_pay"] = round(brutto + extra, 0)
-                            m["netto_pay"] = round(netto + extra * tax_ratio, 0)
-                            break
-                    year_summary["total_brutto"] = sum((m.get("brutto_pay", 0) or 0) for m in months)
-                    year_summary["total_netto"] = sum((m.get("netto_pay", 0) or 0) for m in months)
-                except Exception:
-                    pass
+            apply_year_pay_adjustments(months, year_summary, vac_user, year, db)
 
     # Build chart data for template
     chart_labels = []
@@ -148,6 +105,12 @@ async def statistics_view(
     chart_hours = []
 
     for m in months:
+        # The employment transition splits one payslip month into a consultant and a
+        # direct-employer row; the extra row follows its month, so fold it into that bar.
+        if m.get("transition_direct") and chart_labels:
+            chart_brutto[-1] += round(m.get("brutto_pay", 0) or 0)
+            chart_netto[-1] += round(m.get("netto_pay", 0) or 0)
+            continue
         label = f"{m.get('payment_year', m['year'])}-{m.get('payment_month', m['month']):02d}"
         chart_labels.append(label)
         chart_brutto.append(round(m.get("brutto_pay", 0) or 0))

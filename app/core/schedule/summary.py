@@ -2,6 +2,7 @@
 
 from typing import NamedTuple
 
+from app.core.logging_config import get_logger
 from app.core.storage import load_persons, load_tax_brackets
 
 from .core import get_settings, weekday_names
@@ -14,6 +15,8 @@ from .wages import (
     get_effective_monthly_wage,
     get_user_wage,
 )
+
+logger = get_logger(__name__)
 
 _tax_brackets = None
 _persons = None
@@ -1280,6 +1283,120 @@ def summarize_year_for_person(
         "months": months,
         "year_summary": year_summary,
     }
+
+
+def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, year: int, session) -> dict | None:
+    """Fold the vacation supplement and the employment transition into a year's pay.
+
+    Mutates ``months`` and ``year_summary`` in place: adds the per-month
+    semestertillägg (0.8% salary + 0.5% variable per vacation day, computed by
+    calculate_vacation_balance), folds it into gross/net, injects the consultant
+    vacation payout into the transition month and appends a row for the direct
+    employer's share, then recomputes the year totals and averages.
+
+    Both /year/<id> and /statistics/<id> show these figures. They each used to
+    do this arithmetic themselves and disagreed about the same person's gross
+    and net, so it lives here and both call it.
+
+    Returns the vacation balance dict (the year view renders it), or None when
+    it could not be calculated.
+    """
+    from app.core.schedule.transition import calculate_transition_month_summary
+    from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
+
+    vacation_pay = None
+    try:
+        vacation_pay = calculate_vacation_balance(user, year, session)
+        supp_per_day = vacation_pay.get("pay", {}).get("supplement_per_day", 0)
+        total_sem_days = 0
+        total_supplement = 0.0
+        for m in months:
+            sem_days = sum(1 for d in m.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
+            m["vacation_days"] = sem_days
+            m["vacation_supplement"] = round(supp_per_day * sem_days, 0)
+            total_sem_days += sem_days
+            total_supplement += m["vacation_supplement"]
+
+            # Include supplement in gross/net so table columns add up
+            if m["vacation_supplement"] > 0:
+                m["brutto_pay"], m["netto_pay"] = fold_vacation_supplement_into_pay(
+                    m.get("brutto_pay", 0), m.get("netto_pay", 0), m["vacation_supplement"]
+                )
+
+        # Recalculate year totals with updated brutto/netto
+        month_count = len(months) or 1
+        year_summary["total_brutto"] = sum((m.get("brutto_pay", 0) or 0) for m in months)
+        year_summary["total_netto"] = sum((m.get("netto_pay", 0) or 0) for m in months)
+        year_summary["avg_brutto"] = round(year_summary["total_brutto"] / month_count, 0)
+        year_summary["avg_netto"] = round(year_summary["total_netto"] / month_count, 0)
+        year_summary["total_vacation_days"] = total_sem_days
+        year_summary["total_vacation_supplement"] = total_supplement
+        year_summary["avg_vacation_supplement"] = round(total_supplement / month_count, 0)
+    except Exception:
+        logger.warning("Vacation supplement could not be applied for user %s, year %s", user.id, year, exc_info=True)
+
+    if not user.employment_transition or user.employment_transition.transition_date.year != year:
+        return vacation_pay
+
+    try:
+        transition_data = calculate_transition_month_summary(user.employment_transition, user, session)
+    except Exception:
+        logger.warning("Employment transition could not be applied for user %s, year %s", user.id, year, exc_info=True)
+        return vacation_pay
+
+    vac_payout = float(transition_data["consultant_employer"]["vacation_payout"]["total"])
+    direct_salary = float(transition_data["direct_employer"]["base_salary"])
+    t_year = transition_data["transition_year"]
+    t_month = transition_data["transition_month"]
+
+    for i, m in enumerate(months):
+        if m["payment_date"].year != t_year or m["payment_date"].month != t_month:
+            continue
+
+        brutto = float(m.get("brutto_pay") or 0)
+        netto = float(m.get("netto_pay") or 0)
+        tax_ratio = (netto / brutto) if brutto > 0 else 0.72
+
+        # Add vacation payout to Sem.till. and Gross on the trailing consultant row
+        m["vacation_supplement"] = round((m.get("vacation_supplement") or 0) + vac_payout, 0)
+        m["brutto_pay"] = round(brutto + vac_payout, 0)
+        m["netto_pay"] = round(netto + vac_payout * tax_ratio, 0)
+
+        # Extra row: direct employer innestående base salary. Same payslip month
+        # as the row above, which is how consumers can fold the two together.
+        original_count = len(months)  # before insert
+        months.insert(
+            i + 1,
+            {
+                "payment_date": m["payment_date"],
+                "year": t_year,
+                "month": t_month,
+                "transition_direct": True,
+                "netto_pay": round(direct_salary * tax_ratio, 0),
+                "brutto_pay": direct_salary,
+                "num_shifts": 0,
+                "total_hours": 0,
+                "total_ob": 0,
+                "oncall_pay": 0,
+                "ot_pay": 0,
+                "absence_deduction": 0,
+                "vacation_supplement": 0,
+            },
+        )
+
+        # Update year totals and averages: average uses the original month count
+        year_summary["total_brutto"] = sum(float(m2.get("brutto_pay") or 0) for m2 in months)
+        year_summary["total_netto"] = sum(float(m2.get("netto_pay") or 0) for m2 in months)
+        year_summary["avg_brutto"] = round(year_summary["total_brutto"] / original_count, 0)
+        year_summary["avg_netto"] = round(year_summary["total_netto"] / original_count, 0)
+        if "total_vacation_supplement" in year_summary:
+            year_summary["total_vacation_supplement"] = sum(float(m2.get("vacation_supplement") or 0) for m2 in months)
+            year_summary["avg_vacation_supplement"] = round(
+                year_summary["total_vacation_supplement"] / original_count, 0
+            )
+        break
+
+    return vacation_pay
 
 
 def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
