@@ -4,10 +4,12 @@
 
 set -e  # Exit on error
 
-# Configuration
-APP_DIR="/opt/ICA v0.0.20"
+# Configuration. Override APP_DIR to restore into a checkout somewhere else:
+#   APP_DIR=. ./scripts/restore_database.sh backups/schedule_backup_*.db.gz
+APP_DIR="${APP_DIR:-/opt/Periodical}"
 DB_PATH="$APP_DIR/app/database/schedule.db"
 BACKUP_DIR="$APP_DIR/backups"
+SERVICE_NAME="ica-schedule"
 
 # Colors
 RED='\033[0;31m'
@@ -45,6 +47,18 @@ if [ ! -f "$BACKUP_FILE" ]; then
 fi
 
 log "Starting database restore from: $BACKUP_FILE"
+log "Target: $DB_PATH"
+
+# Restoring overwrites live data, so make the operator say so out loud.
+# Skip with FORCE=1 when running unattended.
+if [ "${FORCE:-0}" != "1" ]; then
+    read -p "This replaces the current database. Continue? (yes/no): " -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        log "Aborted by user."
+        exit 0
+    fi
+fi
 
 # Create safety backup of current database
 if [ -f "$DB_PATH" ]; then
@@ -78,9 +92,9 @@ else
 fi
 
 # Stop application (if using systemd)
-if systemctl is-active --quiet ica-schedule; then
+if systemctl is-active --quiet "$SERVICE_NAME"; then
     warning "Stopping application..."
-    sudo systemctl stop ica-schedule
+    sudo systemctl stop "$SERVICE_NAME"
     NEED_RESTART=true
 else
     NEED_RESTART=false
@@ -97,8 +111,21 @@ rm -rf "$TEMP_DIR"
 # Restart application if it was running
 if [ "$NEED_RESTART" = true ]; then
     log "Restarting application..."
-    sudo systemctl start ica-schedule
-    log "Application restarted"
+    sudo systemctl start "$SERVICE_NAME"
+
+    # A restored file that the app cannot open is still a failed restore, so
+    # confirm the service actually serves before declaring success.
+    log "Waiting for the service to come up..."
+    sleep 10
+    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/health" || echo "000")
+    if [ "$HTTP_STATUS" = "200" ]; then
+        log "Application restarted and healthy"
+    else
+        error "Health check failed with status: $HTTP_STATUS"
+        error "The database was restored. Investigate before serving traffic."
+        error "To roll back: cp $SAFETY_BACKUP $DB_PATH"
+        exit 1
+    fi
 fi
 
 log "Restore completed successfully!"

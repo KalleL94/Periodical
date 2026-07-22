@@ -317,11 +317,20 @@ Periodical includes automated CI/CD via GitHub Actions:
 # Backup database
 ./scripts/backup_database.sh
 
-# Restore from backup
-./scripts/restore_database.sh backups/schedule_YYYYMMDD_HHMMSS.db.gz
+# Restore from backup (prompts before overwriting; set FORCE=1 to skip)
+./scripts/restore_database.sh backups/schedule_backup_YYYYMMDD_HHMMSS.db.gz
 ```
 
-Backups are stored in `backups/` directory (excluded from git).
+Both scripts default to the production path `/opt/Periodical`. Override
+`APP_DIR` to run them against a checkout elsewhere:
+
+```bash
+APP_DIR=. ./scripts/backup_database.sh
+```
+
+Backups are gzipped and stored in `$APP_DIR/backups/` (excluded from git).
+Restoring verifies the archive, keeps a `.before_restore_*` copy of the current
+database, and health-checks the service afterwards if it had to stop it.
 
 ## Development
 
