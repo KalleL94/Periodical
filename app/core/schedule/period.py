@@ -1414,6 +1414,68 @@ def _batch_fetch_swap_map(
     return swap_map
 
 
+def _lookup_for_day(batch_map, session, model, person_id: int, date: datetime.date):
+    """Row for (person, date), from the pre-fetched batch map or, without one, a query."""
+    if batch_map is not None:
+        return batch_map.get((person_id, date))
+    if session:
+        return session.query(model).filter(model.user_id == person_id, model.date == date).first()
+    return None
+
+
+def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session):
+    """Returns (ot_shift on the date, ot_shift that affects on-call).
+
+    The second may come from the previous day when that overtime crosses midnight; it
+    affects the on-call calculation but is never displayed as the day's shift.
+    """
+    ot_shift = _lookup_ot_shift(person_id, date, ot_shift_map, session)
+    if ot_shift:
+        return ot_shift, ot_shift
+
+    prev_day = date - datetime.timedelta(days=1)
+    prev_ot = _lookup_ot_shift(person_id, prev_day, ot_shift_map, session)
+    if prev_ot:
+        try:
+            _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
+            if ot_end_dt.date() > prev_day:
+                return None, prev_ot
+        except ValueError:
+            pass
+    return None, None
+
+
+def _lookup_ot_shift(person_id: int, date: datetime.date, ot_shift_map, session):
+    if ot_shift_map is not None:
+        return ot_shift_map.get((person_id, date))
+    if session:
+        return get_overtime_shift_for_date(session, person_id, date)
+    return None
+
+
+def _apply_ot_display_shift(ot_shift, date: datetime.date, shift, hours, start, end, shift_types):
+    """Replace the day's shift with OT for display, unless the overtime only extends it."""
+    if ot_shift.is_extension:
+        return shift, hours, start, end
+    ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
+    if not ot_shift_type:
+        return shift, hours, start, end
+    try:
+        ot_start, ot_end = parse_ot_times(ot_shift, date)
+    except ValueError:
+        ot_start, ot_end = None, None
+    return ot_shift_type, ot_shift.hours, ot_start, ot_end
+
+
+# Pay keys the canonical path fills in and the week path does not report.
+_PAY_KEYS = ("ob", "oncall_pay", "oncall_details", "ot_pay", "ot_hours", "ot_details")
+
+
+def _basic_day_result(day: dict, rotation_length: int) -> dict:
+    """The week path's day dict: the shared helpers' output plus rotation_length, minus pay."""
+    return {"rotation_length": rotation_length, **{k: v for k, v in day.items() if k not in _PAY_KEYS}}
+
+
 def _build_person_day_basic(
     date: datetime.date,
     person_id: int,
@@ -1421,21 +1483,22 @@ def _build_person_day_basic(
     session=None,
     employment_start: datetime.date | None = None,
 ) -> dict:
-    """Builds basic day data for a person."""
-    persons = ctx.persons
+    """Builds basic day data for a person.
+
+    Runs the same priority chain as _populate_single_person_day through the same helpers;
+    this builder only adds rotation_length, skips the pay computation (no OB rules are
+    passed in, and the pay keys are dropped) and exposes ot_shift_for_oncall.
+    """
+    from app.database.database import Absence, OnCallOverride
+
     shift_types = get_shift_types()
-    vacation_dates = ctx.vacation_dates
-    parental_dates = ctx.parental_dates
-    absence_map = ctx.absence_map
-    ot_shift_map = ctx.ot_shift_map
-    oncall_override_map = ctx.oncall_override_map
-    swap_map = ctx.swap_map
-    shift_override_map = ctx.shift_override_map
     vacation_shift = get_vacation_shift()
     rotation_length = get_rotation_length_for_date(date)
 
     # Get person name via PersonHistory and whether the date precedes employment.
-    person_name, show_off_before_employment = _resolve_day_person(session, person_id, date, persons, employment_start)
+    person_name, show_off_before_employment = _resolve_day_person(
+        session, person_id, date, ctx.persons, employment_start
+    )
 
     # If date is before current person's employment, show OFF - unless a linked
     # substitute has activity on the date (issue #290): same injection layer as
@@ -1460,234 +1523,43 @@ def _build_person_day_basic(
             "before_employment": True,  # Flag to indicate this is before employment
         }
 
+    day: dict = {}
+
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
-    absence = None
-    if absence_map is not None:
-        absence = absence_map.get((person_id, date))
-    elif session:
-        from app.database.database import Absence
+    absence = _lookup_for_day(ctx.absence_map, session, Absence, person_id, date)
+    if absence and _populate_absence_day(day, absence, date, person_id, person_name, [], vacation_shift, shift_types):
+        return _basic_day_result(day, rotation_length)
 
-        absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == date).first()
+    # Kolla föräldraledighet (veckobaserad)
+    if _populate_parental_day(day, date, person_id, person_name, ctx.parental_dates, shift_types):
+        return _basic_day_result(day, rotation_length)
 
-    if absence:
-        from app.database.database import AbsenceType
+    # Kolla semester / override / byte / normalt skift (i prioritetsordning)
+    shift, rotation_week, hours, start, end, _ob = _resolve_effective_shift(
+        date,
+        person_id,
+        vacation_shift,
+        ctx.vacation_dates or {},
+        ctx.shift_override_map,
+        ctx.swap_map,
+        shift_types,
+        [],
+    )
 
-        # Partial absence: show original shift with truncated start/end
-        if (
-            absence.left_at is not None or absence.arrived_at is not None
-        ) and absence.absence_type != AbsenceType.VACATION:
-            result = determine_shift_for_date(date, person_id)
-            if result and result[0]:
-                original_shift, rotation_week = result
-                hours, start, end = calculate_shift_hours(date, original_shift.code)
-                if start is not None:
-                    if absence.left_at:
-                        left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
-                        end = datetime.datetime.combine(date, left_time)
-                        if end <= start:
-                            end = start
-                    if absence.arrived_at:
-                        arrived_time = datetime.datetime.strptime(absence.arrived_at, "%H:%M").time()
-                        start = datetime.datetime.combine(date, arrived_time)
-                        if start >= end:
-                            start = end
-                    hours = (end - start).total_seconds() / 3600.0
-                return {
-                    "person_id": person_id,
-                    "person_name": person_name,
-                    "shift": original_shift,
-                    "original_shift": original_shift,
-                    "rotation_week": rotation_week,
-                    "rotation_length": rotation_length,
-                    "hours": hours,
-                    "start": start,
-                    "end": end,
-                    "partial_absence": absence,
-                }
+    # Week-based vacation outranks the overtime overlay below (issue #285). Captured
+    # here, before the on-call override can rebind `shift`.
+    is_vacation_day = vacation_shift is not None and shift is vacation_shift
 
-        # VACATION renders as the SEM shift (same object as week-based vacation), the rest
-        # resolve by code (see _absence_shift_code).
-        code = _absence_shift_code(absence.absence_type)
-        absence_shift = vacation_shift if code == "SEM" else next((s for s in shift_types if s.code == code), None)
-        if absence_shift:
-            result = determine_shift_for_date(date, person_id)
-            original_shift, rotation_week = result if result else (None, None)
-            return {
-                "person_id": person_id,
-                "person_name": person_name,
-                "shift": absence_shift,
-                "original_shift": original_shift,  # For coworker matching
-                "rotation_week": rotation_week,
-                "rotation_length": rotation_length,
-                "hours": 0.0,
-                "start": None,
-                "end": None,
-            }
+    # Rotationsskiftet (för coworker-matchning och "visa rotation"-toggle i alla-vyer)
+    _rot = determine_shift_for_date(date, person_id)
+    original_shift = _rot[0] if _rot else shift
 
-    # Kolla semester (veckobaserad). Visa endast SEM på dagar personen är schemalagd
-    # (icke-OFF), så markeringen matchar hur semesterdagar räknas. OFF-dagar lämnas
-    # orörda och renderas som vanligt nedan. Dagsnivå-semester hanteras av absence-blocket ovan.
-    if vacation_dates and vacation_shift and date in vacation_dates.get(person_id, set()):
-        result = determine_shift_for_date(date, person_id)
-        original_shift, rotation_week = result if result else (None, None)
-        if original_shift and original_shift.code != "OFF":
-            return {
-                "person_id": person_id,
-                "person_name": person_name,
-                "shift": vacation_shift,
-                "original_shift": original_shift,  # For coworker matching
-                "rotation_week": rotation_week,
-                "rotation_length": rotation_length,
-                "hours": 0.0,
-                "start": None,
-                "end": None,
-            }
+    oncall_override = _lookup_for_day(ctx.oncall_override_map, session, OnCallOverride, person_id, date)
+    shift, hours, start, end, _ob = _apply_oncall_override(oncall_override, shift, hours, start, end, _ob, shift_types)
 
-    # Kolla föräldraledighet (veckobaserad). Samma regel: visa LEAVE endast på schemalagda
-    # (icke-OFF) dagar. Dagsnivå-föräldraledighet hanteras av absence-blocket ovan.
-    if parental_dates and date in parental_dates.get(person_id, set()):
-        leave_shift = next((s for s in shift_types if s.code == "LEAVE"), None)
-        result = determine_shift_for_date(date, person_id)
-        original_shift, rotation_week = result if result else (None, None)
-        if leave_shift and original_shift and original_shift.code != "OFF":
-            return {
-                "person_id": person_id,
-                "person_name": person_name,
-                "shift": leave_shift,
-                "original_shift": original_shift,
-                "rotation_week": rotation_week,
-                "rotation_length": rotation_length,
-                "hours": 0.0,
-                "start": None,
-                "end": None,
-                # Week-based parental leave renders as LEAVE; flag it so summaries can
-                # count it as parental rather than ordinary leave.
-                "parental_leave": True,
-            }
-
-    # Check for manual shift override (admin-assigned N1/N2/N3 replacing rotation)
-    if shift_override_map is not None:
-        _shift_override_obj = shift_override_map.get((person_id, date))
-        override_code = _shift_override_obj.shift_code if _shift_override_obj else None
-        if override_code:
-            result = determine_shift_for_date(date, person_id)
-            original_shift, rotation_week = result if result else (None, None)
-            override_shift = next((s for s in shift_types if s.code == override_code), None)
-            if override_shift:
-                hours, start, end = calculate_shift_hours(date, override_shift.code)
-                return {
-                    "person_id": person_id,
-                    "person_name": person_name,
-                    "shift": override_shift,
-                    "original_shift": original_shift,
-                    "rotation_week": rotation_week,
-                    "rotation_length": rotation_length,
-                    "hours": hours,
-                    "start": start,
-                    "end": end,
-                }
-
-    # Kolla skiftbyte
-    if swap_map is not None:
-        new_code = swap_map.get((person_id, date))
-        if new_code:
-            result = determine_shift_for_date(date, person_id)
-            original_shift, rotation_week = result if result else (None, None)
-            swapped_shift = next((s for s in shift_types if s.code == new_code), None)
-            if swapped_shift:
-                hours, start, end = calculate_shift_hours(date, swapped_shift.code)
-                return {
-                    "person_id": person_id,
-                    "person_name": person_name,
-                    "shift": swapped_shift,
-                    "original_shift": original_shift,
-                    "rotation_week": rotation_week,
-                    "rotation_length": rotation_length,
-                    "hours": hours,
-                    "start": start,
-                    "end": end,
-                }
-
-    # Normalt skift
-    result = determine_shift_for_date(date, person_id)
-    if result is None or result[0] is None:
-        shift, rotation_week = None, None
-        hours, start, end = 0.0, None, None
-    else:
-        shift, rotation_week = result
-        hours, start, end = calculate_shift_hours(date, shift.code)
-
-    # Spara det ursprungliga skiftet för coworker-matchning
-    original_shift = shift
-
-    # Kolla oncall override - hämta från batch eller databas
-    oncall_override = None
-    if oncall_override_map is not None:
-        oncall_override = oncall_override_map.get((person_id, date))
-    elif session:
-        from app.database.database import OnCallOverride
-
-        oncall_override = (
-            session.query(OnCallOverride)
-            .filter(OnCallOverride.user_id == person_id, OnCallOverride.date == date)
-            .first()
-        )
-
-    if oncall_override:
-        from app.database.database import OnCallOverrideType
-
-        if oncall_override.override_type == OnCallOverrideType.ADD:
-            # Add on-call shift, replacing the regular shift
-            oc_shift = next((s for s in shift_types if s.code == "OC"), None)
-            if oc_shift:
-                shift = oc_shift
-                hours, start, end = 0.0, None, None  # OC har inga specifika tider
-        elif oncall_override.override_type == OnCallOverrideType.REMOVE:
-            # Ta bort OC-pass - om skiftet är OC, ersätt med OFF
-            if shift and shift.code == "OC":
-                off_shift = next((s for s in shift_types if s.code == "OFF"), None)
-                if off_shift:
-                    shift = off_shift
-                    hours, start, end = 0.0, None, None
-
-    # Kolla övertid på aktuell dag (för att visa som skift)
-    ot_shift_for_display = None
-    if ot_shift_map is not None:
-        ot_shift_for_display = ot_shift_map.get((person_id, date))
-    elif session:
-        ot_shift_for_display = get_overtime_shift_for_date(session, person_id, date)
-
-    # Kolla också föregående dag för OT som påverkar beredskap (men visas inte som skift)
-    ot_shift_for_oncall = ot_shift_for_display
-    if not ot_shift_for_oncall:
-        prev_day = date - datetime.timedelta(days=1)
-        if ot_shift_map is not None:
-            prev_ot = ot_shift_map.get((person_id, prev_day))
-        elif session:
-            prev_ot = get_overtime_shift_for_date(session, person_id, prev_day)
-        else:
-            prev_ot = None
-
-        if prev_ot:
-            try:
-                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
-                if ot_end_dt.date() > prev_day:
-                    # OT går över midnatt in i aktuell dag - används för beredskapsberäkning
-                    ot_shift_for_oncall = prev_ot
-            except ValueError:
-                pass
-
-    # Visa OT som skift bara om det är registrerat på aktuell dag
-    # is_extension=True innebär att skiftet förlängs – visa originalskiftet kvar
-    if ot_shift_for_display and not ot_shift_for_display.is_extension:
-        ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-        if ot_shift_type:
-            shift = ot_shift_type
-            hours = ot_shift_for_display.hours
-            try:
-                start, end = parse_ot_times(ot_shift_for_display, date)
-            except ValueError:
-                start, end = None, None
+    ot_shift, ot_shift_for_oncall = _lookup_ot_shifts(person_id, date, ctx.ot_shift_map, session)
+    if ot_shift and not is_vacation_day:
+        shift, hours, start, end = _apply_ot_display_shift(ot_shift, date, shift, hours, start, end, shift_types)
 
     return {
         "person_id": person_id,
@@ -1922,7 +1794,9 @@ def _resolve_effective_shift(
         rot = determine_shift_for_date(current_day, person_id)
         rot_shift = rot[0] if rot else None
         if rot_shift and rot_shift.code != "OFF":
-            return _ShiftResolution(vacation_shift, None, 0.0, None, None, {})
+            # The rotation week is a property of the date, not of the shift shown, so it
+            # survives the vacation marking (the week path has always reported it).
+            return _ShiftResolution(vacation_shift, rot[1], 0.0, None, None, {})
 
     # Manual shift override
     if shift_override_map is not None and shift_override_map.get((person_id, current_day)):
@@ -2021,6 +1895,8 @@ def _populate_single_person_day(
     employment_start: datetime.date | None = None,
 ) -> None:
     """Populates detailed day info for a person."""
+    from app.database.database import Absence, OnCallOverride
+
     vacation_dates = ctx.vacation_dates
     combined_ob_rules = ctx.combined_ob_rules
     user_wages = ctx.user_wages
@@ -2083,13 +1959,7 @@ def _populate_single_person_day(
         return
 
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
-    absence = None
-    if absence_map is not None:
-        absence = absence_map.get((person_id, current_day))
-    elif session:
-        from app.database.database import Absence
-
-        absence = session.query(Absence).filter(Absence.user_id == person_id, Absence.date == current_day).first()
+    absence = _lookup_for_day(absence_map, session, Absence, person_id, current_day)
 
     if absence and _populate_absence_day(
         day_info, absence, current_day, person_id, person_name, combined_ob_rules, vacation_shift, shift_types
@@ -2124,17 +1994,7 @@ def _populate_single_person_day(
     original_shift = _rot[0] if _rot else shift
 
     # Kolla oncall override - hämta från batch eller databas
-    oncall_override = None
-    if oncall_override_map is not None:
-        oncall_override = oncall_override_map.get((person_id, current_day))
-    elif session:
-        from app.database.database import OnCallOverride
-
-        oncall_override = (
-            session.query(OnCallOverride)
-            .filter(OnCallOverride.user_id == person_id, OnCallOverride.date == current_day)
-            .first()
-        )
+    oncall_override = _lookup_for_day(oncall_override_map, session, OnCallOverride, person_id, current_day)
 
     shift, hours, start, end, ob = _apply_oncall_override(oncall_override, shift, hours, start, end, ob, shift_types)
 
@@ -2145,31 +2005,7 @@ def _populate_single_person_day(
     )
 
     # Kolla övertid - både på aktuell dag (för visning) och föregående dag (för beredskap)
-    ot_shift = None
-    if ot_shift_map is not None:
-        ot_shift = ot_shift_map.get((person_id, current_day))
-    elif session:
-        ot_shift = get_overtime_shift_for_date(session, person_id, current_day)
-
-    # Check previous day for OT that crosses midnight (affects on-call but not displayed as OT)
-    ot_shift_for_oncall = ot_shift
-    if not ot_shift_for_oncall:
-        prev_day = current_day - datetime.timedelta(days=1)
-        if ot_shift_map is not None:
-            prev_ot = ot_shift_map.get((person_id, prev_day))
-        elif session:
-            prev_ot = get_overtime_shift_for_date(session, person_id, prev_day)
-        else:
-            prev_ot = None
-
-        if prev_ot:
-            try:
-                _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
-                if ot_end_dt.date() > prev_day:
-                    # OT crosses midnight into current day - used for on-call calc
-                    ot_shift_for_oncall = prev_ot
-            except ValueError:
-                pass
+    ot_shift, ot_shift_for_oncall = _lookup_ot_shifts(person_id, current_day, ot_shift_map, session)
 
     # Om beredskap + övertid (samma dag ELLER föregående dag över midnatt), räkna om beredskap
     if shift and shift.code == "OC" and ot_shift_for_oncall:
@@ -2192,15 +2028,7 @@ def _populate_single_person_day(
         )
 
         # Ersätt skift med OT för visning – men inte om det är en förlängning
-        if not ot_shift.is_extension:
-            ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
-            if ot_shift_type:
-                shift = ot_shift_type
-                hours = ot_shift.hours
-                try:
-                    start, end = parse_ot_times(ot_shift, current_day)
-                except ValueError:
-                    start, end = None, None
+        shift, hours, start, end = _apply_ot_display_shift(ot_shift, current_day, shift, hours, start, end, shift_types)
 
     # Apply manual hour overrides if one exists for this person and date
     day_pay_override_map = ctx.day_pay_override_map or {}
