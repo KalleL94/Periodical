@@ -160,6 +160,56 @@ def test_ob3_and_ob4_compare_as_one_wage_code_152_line():
     assert lines["ob_152"]["matched"] is True
 
 
+def test_amount_diff_with_matching_hours_is_a_rate_difference():
+    """Overtime: 8.0 tim both sides, but the a-price differs by 2.42/tim.
+
+    The comparison must expose the quantity and unit price so the amount diff
+    reads as a rate difference, not an unexplained number.
+    """
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [PayslipRow(key="ot", qty=8.0, unit="tim", amount=3402.24)]
+    uploaded = [SimpleNamespace(category="ot", qty=8.0, unit="tim", amount=3382.88)]
+
+    line = compare_to_upload(slip, uploaded)["lines"][0]
+
+    assert line["computed_qty"] == 8.0
+    assert line["uploaded_qty"] == 8.0
+    assert line["qty_mismatch"] is False
+    assert round(line["computed_price"], 2) == 425.28
+    assert round(line["uploaded_price"], 2) == 422.86
+    assert line["matched"] is False  # the amount still differs
+
+
+def test_quantity_mismatch_is_flagged_even_when_amounts_are_close():
+    """Same amount, different hours (a rate error hiding a quantity error)."""
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [PayslipRow(key="ot", qty=8.0, unit="tim", amount=3400.0)]
+    uploaded = [SimpleNamespace(category="ot", qty=10.0, unit="tim", amount=3400.0)]
+
+    line = compare_to_upload(slip, uploaded)["lines"][0]
+
+    assert line["qty_mismatch"] is True
+    assert line["matched"] is False
+
+
+def test_mixed_sign_bucket_hides_meaningless_quantity():
+    """Vacation nets a supplement and a deduction: summing their days is noise."""
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [PayslipRow(key="vacation_pay", qty=4.0, unit="dgr", amount=888.0)]
+    uploaded = [
+        SimpleNamespace(category="vacation_pay", qty=4.0, unit="dgr", amount=7444.4),
+        SimpleNamespace(category="vacation_deduction", qty=4.0, unit="dgr", amount=-6808.0),
+    ]
+
+    line = compare_to_upload(slip, uploaded)["lines"][0]
+
+    # The computed side has one row, so it keeps its quantity; the uploaded side
+    # mixes signs, so its quantity is suppressed rather than summed to 8 days.
+    assert line["computed_qty"] == 4.0
+    assert line["uploaded_qty"] is None
+    assert round(line["uploaded"], 2) == 636.40
+
+
 def test_compare_against_an_uploaded_pdf():
     """End to end: parse a payslip PDF and diff it against computed rows."""
     parsed = parse_payslip_pdf(FIXTURE_PDF.read_bytes())

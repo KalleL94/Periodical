@@ -120,6 +120,10 @@
                     <thead>
                         <tr>
                             <th class="th_left">{{ t.month_payslip_name_col }}</th>
+                            <th class="th_right">{{ t.payslip_compare_qty_computed }}</th>
+                            <th class="th_right">{{ t.payslip_compare_qty_uploaded }}</th>
+                            <th class="th_right">{{ t.payslip_compare_price_computed }}</th>
+                            <th class="th_right">{{ t.payslip_compare_price_uploaded }}</th>
                             <th class="th_right">{{ t.payslip_col_computed }}</th>
                             <th class="th_right">{{ t.payslip_col_uploaded }}</th>
                             <th class="th_right">{{ t.payslip_col_diff }}</th>
@@ -131,6 +135,10 @@
                         {% for line in comparison.lines %}
                         <tr class="{% if line.matched %}text-muted{% endif %}">
                             <td class="td_left">{{ t.payslip_row_labels.get(line.bucket, line.bucket) }}</td>
+                            <td class="td_right num">{% if line.computed_qty is not none %}{{ "%.1f"|format(line.computed_qty) }} {{ line.unit }}{% endif %}</td>
+                            <td class="td_right num">{% if line.uploaded_qty is not none %}{% if line.qty_mismatch %}<span class="text-danger">{{ "%.1f"|format(line.uploaded_qty) }} {{ line.unit }}</span>{% else %}{{ "%.1f"|format(line.uploaded_qty) }} {{ line.unit }}{% endif %}{% endif %}</td>
+                            <td class="td_right num">{% if line.computed_price is not none %}{{ "%.2f"|format(line.computed_price) }}{% endif %}</td>
+                            <td class="td_right num">{% if line.uploaded_price is not none %}{{ "%.2f"|format(line.uploaded_price) }}{% endif %}</td>
                             <td class="td_right num">{{ kr(line.computed) }}</td>
                             <td class="td_right num">{{ kr(line.uploaded) }}</td>
                             <td class="td_right num">
@@ -143,6 +151,10 @@
                                     <span class="text-danger">{{ t.payslip_compare_missing_here }}</span>
                                 {% elif line.missing_there %}
                                     <span class="text-danger">{{ t.payslip_compare_missing_there }}</span>
+                                {% elif line.qty_mismatch %}
+                                    <span class="text-danger">{{ t.payslip_compare_qty_diff }}</span>
+                                {% elif line.computed_qty is not none and line.uploaded_qty is not none %}
+                                    <span class="text-danger">{{ t.payslip_compare_rate_diff }}</span>
                                 {% endif %}
                             </td>
                         </tr>

@@ -306,6 +306,37 @@ def add_vacation_row(slip: Payslip, supplement: float, days: int) -> None:
 # Rounding slack when matching an uploaded payslip against the computed one.
 # The employer rounds each line to ören, so exact equality would report noise.
 MATCH_TOLERANCE = 1.0
+# Hours/days are printed to one decimal, so anything under half of that is noise.
+QTY_TOLERANCE = 0.05
+
+
+def _bucket_aggregate(entries: list[tuple]) -> dict[str, dict]:
+    """Group (bucket, qty, unit, amount) tuples into per-bucket figures.
+
+    Amount is always summed. Quantity is only exposed when every contributing
+    row has a quantity, shares one unit, and shares one sign: summing the day
+    count of a vacation supplement and a vacation deduction, or hours of sick
+    pay and a sick deduction, is meaningless, so those buckets compare on
+    amount alone. Two positive OB rows (weekend + public holiday) do sum
+    cleanly, so wage code 152 keeps its hours.
+    """
+    grouped: dict[str, list[tuple]] = {}
+    for bucket, qty, unit, amount in entries:
+        grouped.setdefault(bucket, []).append((qty, unit, amount))
+
+    out: dict[str, dict] = {}
+    for bucket, rows in grouped.items():
+        amount = sum(a for _, _, a in rows)
+        units = {u for _, u, _ in rows if u}
+        have_all_qty = all(q is not None for q, _, _ in rows)
+        signs = {(a > 0) for _, _, a in rows if abs(a) > MATCH_TOLERANCE}
+        qty = unit = price = None
+        if have_all_qty and len(units) == 1 and len(signs) <= 1:
+            qty = sum(q for q, _, _ in rows)
+            unit = next(iter(units))
+            price = amount / qty if qty else None
+        out[bucket] = {"amount": amount, "qty": qty, "unit": unit, "price": price}
+    return out
 
 
 def compare_to_upload(slip: Payslip, parsed_rows: list) -> dict:
@@ -317,39 +348,63 @@ def compare_to_upload(slip: Payslip, parsed_rows: list) -> dict:
     row-by-row diff would flag three mismatches on a month that is actually
     correct.
 
+    Each line also carries the quantity, unit and unit price for both sides
+    when the bucket has a comparable quantity, so an amount diff can be read as
+    a rate difference (same hours, different a-price) rather than just a number.
+
     `parsed_rows` are the Row objects from app/core/payslip_import.py. Returns
     per-bucket lines plus the totals, each with a signed `diff` (uploaded minus
     computed) and a `matched` flag.
     """
-    computed = slip.bucket_totals()
+    computed = _bucket_aggregate([(COMPARE_BUCKETS.get(r.key, r.key), r.qty, r.unit, r.amount) for r in slip.rows])
 
-    uploaded: dict[str, float] = {}
+    uploaded_entries = []
     unknown_rows = []
     for row in parsed_rows:
         category = getattr(row, "category", None) or "unknown"
-        amount = float(getattr(row, "amount", 0.0) or 0.0)
         if category == "unknown":
             unknown_rows.append(row)
             continue
         # Tax-free expense reimbursements are not pay and never reach gross.
         if category == "expense":
             continue
-        uploaded[COMPARE_BUCKETS.get(category, category)] = (
-            uploaded.get(COMPARE_BUCKETS.get(category, category), 0.0) + amount
+        uploaded_entries.append(
+            (
+                COMPARE_BUCKETS.get(category, category),
+                getattr(row, "qty", None),
+                getattr(row, "unit", None),
+                float(getattr(row, "amount", 0.0) or 0.0),
+            )
         )
+    uploaded = _bucket_aggregate(uploaded_entries)
 
     lines = []
     for bucket in sorted(set(computed) | set(uploaded), key=_bucket_sort_key):
-        ours = computed.get(bucket, 0.0)
-        theirs = uploaded.get(bucket, 0.0)
-        diff = theirs - ours
+        ours = computed.get(bucket, {})
+        theirs = uploaded.get(bucket, {})
+        our_amount = ours.get("amount", 0.0)
+        their_amount = theirs.get("amount", 0.0)
+        diff = their_amount - our_amount
+
+        amount_ok = abs(diff) <= MATCH_TOLERANCE
+        # A quantity mismatch is only meaningful when both sides expose one.
+        qty_ok = True
+        if ours.get("qty") is not None and theirs.get("qty") is not None:
+            qty_ok = abs(theirs["qty"] - ours["qty"]) <= QTY_TOLERANCE
+
         lines.append(
             {
                 "bucket": bucket,
-                "computed": ours,
-                "uploaded": theirs,
+                "computed": our_amount,
+                "uploaded": their_amount,
                 "diff": diff,
-                "matched": abs(diff) <= MATCH_TOLERANCE,
+                "computed_qty": ours.get("qty"),
+                "uploaded_qty": theirs.get("qty"),
+                "computed_price": ours.get("price"),
+                "uploaded_price": theirs.get("price"),
+                "unit": ours.get("unit") or theirs.get("unit"),
+                "qty_mismatch": not qty_ok,
+                "matched": amount_ok and qty_ok,
                 "missing_here": bucket not in computed,
                 "missing_there": bucket not in uploaded,
             }
