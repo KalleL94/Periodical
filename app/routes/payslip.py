@@ -146,6 +146,21 @@ async def show_payslip(
     return render("payslip.html", context)
 
 
+@router.get("/month/{person_id}/payslip/compare", name="payslip_compare_get")
+async def compare_payslip_get(person_id: int, request: Request):
+    """Send a GET on the compare URL back to the payslip page.
+
+    The comparison is rendered on this POST-only URL from an upload that is
+    never stored, so it cannot be reproduced on a GET. A language switch, a
+    refresh or the back button all arrive here as a GET; redirect to the plain
+    payslip page rather than returning 405. Any query string (year, month) is
+    carried over so the user lands on the month they were viewing.
+    """
+    query = request.url.query
+    target = f"/month/{person_id}/payslip"
+    return RedirectResponse(url=f"{target}?{query}" if query else target, status_code=303)
+
+
 def _parse_amount(raw: str) -> float:
     """Parse a form amount, accepting the Swedish decimal comma."""
     try:

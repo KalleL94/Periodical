@@ -75,6 +75,19 @@ def test_payslip_renders_for_hourly_user(test_client, hourly_user):
     assert "Arbetade timmar" in response.text
 
 
+def test_get_on_the_compare_url_redirects_instead_of_405(test_client, hourly_user):
+    """The comparison renders on a POST-only URL from an unstored upload.
+
+    A language switch, refresh or back button lands on it as a GET, which must
+    redirect to the payslip page rather than return 405 Method Not Allowed.
+    """
+    _login(test_client, hourly_user)
+    response = test_client.get("/month/6/payslip/compare?year=2026&month=6", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/month/6/payslip?year=2026&month=6"
+
+
 def test_payslip_is_forbidden_for_another_persons_month(test_client, monthly_user, hourly_user):
     _login(test_client, hourly_user)
     assert test_client.get("/month/5/payslip?year=2026&month=6").status_code == 403
