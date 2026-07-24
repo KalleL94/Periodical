@@ -252,16 +252,19 @@ def get_payslip_overrides(session, user_id: int, year: int, month: int) -> dict[
     return {r.row_key: {"amount": r.amount, "hours": r.hours, "reason": r.reason} for r in rows}
 
 
-def apply_payslip_overrides(slip: Payslip, overrides: dict[str, dict]) -> float:
+def apply_payslip_overrides(slip: Payslip, overrides: dict[str, dict]) -> dict[str, float]:
     """Replace computed rows with their manual overrides.
 
-    Returns the net change to gross pay, which the caller adds to brutto_pay so
-    the month, year and dashboard figures all follow the override.
+    Returns the per-row change (override minus computed) keyed by row key. The
+    caller adds the sum to gross pay, and routes individual deltas back into the
+    itemised totals the month and year views display (see
+    _route_override_deltas), so an overridden row is consistent everywhere it
+    appears, not only in the bottom-line gross.
     """
     if not overrides:
-        return 0.0
+        return {}
 
-    delta = 0.0
+    deltas: dict[str, float] = {}
     existing = slip.by_key()
 
     for key, ov in overrides.items():
@@ -273,7 +276,7 @@ def apply_payslip_overrides(slip: Payslip, overrides: dict[str, dict]) -> float:
             row = PayslipRow(key=key, amount=0.0)
             slip.rows.append(row)
             existing[key] = row
-        delta += amount - row.amount
+        deltas[key] = amount - row.amount
         row.computed_amount = row.amount
         row.amount = amount
         row.overridden = True
@@ -285,7 +288,36 @@ def apply_payslip_overrides(slip: Payslip, overrides: dict[str, dict]) -> float:
     # Keep the canonical order stable after appending unknown rows.
     slip.rows.sort(key=lambda r: ROW_ORDER.index(r.key) if r.key in ROW_ORDER else len(ROW_ORDER))
     slip.total = sum(r.amount for r in slip.rows)
-    return delta
+    return deltas
+
+
+# Payslip row key -> the totals field the month/year views display it through.
+# Only fields with no conflicting per-day breakdown are routed: the absence
+# deduction and sick-pay OB are shown as single aggregated figures, so they can
+# follow an override cleanly. OB, on-call and overtime are deliberately left
+# out: they also render in a per-day breakdown table that sums to the computed
+# value, and moving only the aggregate would put the total at odds with the
+# rows beneath it.
+_OVERRIDE_TO_TOTAL = {
+    # A deduction row is negative; its total is the positive amount deducted, so
+    # a positive delta (less deducted) lowers the total by the same amount.
+    "sick_deduction": ("absence_deduction", -1),
+    "vab_deduction": ("absence_deduction", -1),
+    "leave_deduction": ("absence_deduction", -1),
+    # Sick-pay OB is added to gross, so its total moves with the delta directly.
+    "sick_pay": ("sick_ob_pay", 1),
+}
+
+
+def route_override_deltas(totals: dict, deltas: dict[str, float]) -> None:
+    """Apply per-row override deltas to the itemised totals the views display.
+
+    Gross pay is handled by the caller; this keeps the sick-leave figures on the
+    month and year views consistent with an overridden deduction or sick-pay row.
+    """
+    for key, (total_field, sign) in _OVERRIDE_TO_TOTAL.items():
+        if key in deltas:
+            totals[total_field] = totals.get(total_field, 0.0) + sign * deltas[key]
 
 
 def add_vacation_row(slip: Payslip, supplement: float, days: int) -> None:

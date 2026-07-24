@@ -398,7 +398,12 @@ def summarize_month_for_person(
     # dashboard, the API and the all-persons views all come through this
     # function, and an override that only reached one of them would make the
     # views disagree about the same month's pay.
-    from app.core.schedule.payslip import apply_payslip_overrides, build_payslip_rows, get_payslip_overrides
+    from app.core.schedule.payslip import (
+        apply_payslip_overrides,
+        build_payslip_rows,
+        get_payslip_overrides,
+        route_override_deltas,
+    )
     from app.database.database import WageType as _WageType
 
     totals["absence_details"] = absence_details
@@ -410,7 +415,12 @@ def summarize_month_for_person(
         year=year,
         month=month,
     )
-    totals["brutto_pay"] += apply_payslip_overrides(payslip, get_payslip_overrides(session, uid_for_wages, year, month))
+    override_deltas = apply_payslip_overrides(payslip, get_payslip_overrides(session, uid_for_wages, year, month))
+    totals["brutto_pay"] += sum(override_deltas.values())
+    # Route the deltas into the itemised totals (absence deduction, sick-pay OB)
+    # so the sick-leave figures on the month and year views follow the override,
+    # not just the gross total.
+    route_override_deltas(totals, override_deltas)
 
     # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)

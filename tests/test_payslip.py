@@ -91,14 +91,14 @@ def test_absence_deduction_splits_per_type_and_is_negative():
     assert rows["vab_deduction"].amount == -853.84
 
 
-def test_override_returns_the_delta_applied_to_gross():
-    """The delta is what summarize adds to brutto_pay, so it must be exact."""
+def test_override_returns_the_per_row_delta_applied_to_gross():
+    """The deltas are what summarize adds to brutto_pay, so they must be exact."""
     days = [_day(ot_hours=8.0, ot_pay=3000.0, code="OT", hours=0.0)]
     slip = build_payslip_rows(_totals(), days, base_salary=37000.0, is_hourly=False, year=2026, month=6)
 
-    delta = apply_payslip_overrides(slip, {"ot": {"amount": 3382.88, "hours": 8.0, "reason": "enligt lönespec"}})
+    deltas = apply_payslip_overrides(slip, {"ot": {"amount": 3382.88, "hours": 8.0, "reason": "enligt lönespec"}})
 
-    assert round(delta, 2) == 382.88
+    assert round(deltas["ot"], 2) == 382.88
     row = slip.by_key()["ot"]
     assert row.overridden is True
     assert row.computed_amount == 3000.0
@@ -111,12 +111,26 @@ def test_override_can_add_a_row_the_model_never_computes():
     """An employer may pay something this app has no rule for at all."""
     slip = build_payslip_rows(_totals(), [_day()], base_salary=37000.0, is_hourly=False, year=2026, month=6)
 
-    delta = apply_payslip_overrides(slip, {"skiftbonus": {"amount": 1500.0}})
+    deltas = apply_payslip_overrides(slip, {"skiftbonus": {"amount": 1500.0}})
 
-    assert delta == 1500.0
+    assert deltas["skiftbonus"] == 1500.0
     assert slip.by_key()["skiftbonus"].amount == 1500.0
     # Unknown keys sort last so the known rows keep their payslip order.
     assert slip.rows[-1].key == "skiftbonus"
+
+
+def test_deduction_override_routes_into_the_absence_deduction_total():
+    """A sick-deduction override must move the itemised figure the month and
+    year views display (absence_deduction), not only gross pay."""
+    from app.core.schedule.payslip import route_override_deltas
+
+    totals = {"absence_deduction": 2454.85, "sick_ob_pay": 500.0}
+    # Computed -2454.85, overridden to -2049.0: less deducted by 405.85.
+    route_override_deltas(totals, {"sick_deduction": 405.85})
+
+    assert round(totals["absence_deduction"], 2) == 2049.0
+    # An untouched field stays put.
+    assert totals["sick_ob_pay"] == 500.0
 
 
 def test_sick_rows_share_one_comparison_bucket():
