@@ -57,6 +57,7 @@ build/
 testauth/
 alla/
 archive/
+temp/
 
 # Excluded files
 tree.txt

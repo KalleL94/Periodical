@@ -9,6 +9,8 @@ fresh receive callable, so handlers see the request unchanged.
 """
 
 import os
+from email.parser import BytesParser
+from email.policy import default
 from urllib.parse import parse_qs
 
 from starlette.datastructures import Headers, MutableHeaders
@@ -33,6 +35,7 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 EXEMPT_PATH_PREFIXES = ("/api/v1", "/static")
 
 _FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
+_MULTIPART_CONTENT_TYPE = "multipart/form-data"
 
 
 class CSRFMiddleware:
@@ -121,16 +124,43 @@ def _cookie_token(headers: Headers) -> str | None:
 
 
 def _form_token(headers: Headers, body: bytes) -> str | None:
-    """Extract the token field from a urlencoded body.
+    """Extract the token field from a form body.
 
-    Every form in the app is urlencoded, so any other content type on an
-    unsafe request is unexpected and fails closed.
+    Forms in the app are urlencoded, except the ones that upload a file, which
+    the browser has to send as multipart. Any other content type on an unsafe
+    request is unexpected and fails closed.
     """
-    if not headers.get("content-type", "").startswith(_FORM_CONTENT_TYPE):
+    content_type = headers.get("content-type", "")
+    if content_type.startswith(_FORM_CONTENT_TYPE):
+        fields = parse_qs(body.decode("utf-8", errors="replace"))
+        values = fields.get(CSRF_FIELD_NAME)
+        return values[0] if values else None
+    if content_type.startswith(_MULTIPART_CONTENT_TYPE):
+        return _multipart_token(content_type, body)
+    return None
+
+
+def _multipart_token(content_type: str, body: bytes) -> str | None:
+    """Extract the token field from a multipart body (file upload forms).
+
+    Parsed with the stdlib MIME parser rather than a regex: multipart boundary
+    rules are MIME's rules, and a pattern search over a body that also carries
+    an uploaded file would be guessing. Any parse failure returns None, so a
+    malformed body is rejected rather than let through.
+    """
+    try:
+        message = BytesParser(policy=default).parsebytes(
+            b"Content-Type: " + content_type.encode("utf-8", errors="replace") + b"\r\n\r\n" + body
+        )
+        if not message.is_multipart():
+            return None
+        for part in message.iter_parts():
+            if part.get_param("name", header="content-disposition") == CSRF_FIELD_NAME:
+                payload = part.get_payload(decode=True)
+                return payload.decode("utf-8", errors="replace") if payload else None
+    except Exception:
         return None
-    fields = parse_qs(body.decode("utf-8", errors="replace"))
-    values = fields.get(CSRF_FIELD_NAME)
-    return values[0] if values else None
+    return None
 
 
 async def _read_body(receive: Receive) -> bytes | None:

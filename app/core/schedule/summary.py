@@ -385,9 +385,32 @@ def summarize_month_for_person(
             totals["brutto_pay"] = _hourly_corrected_gross(
                 totals["brutto_pay"], base_salary, worked_hours, totals.get("absence_hours", 0.0), actual_hourly_rate
             )
+            # Kept for the payslip rows: they must price the same hours at the
+            # same rate as the gross correction above, or the two disagree.
+            totals["hourly_rate"] = actual_hourly_rate
+            totals["hourly_worked_hours"] = worked_hours
 
     # Add week-based parental leave (flagged days) on top of day-level parental absences.
     totals["parental_days"] += week_parental_days
+
+    # Build the payslip rows and apply any manual per-row overrides for the
+    # month. This belongs here, not in the month route: /month, /year, the
+    # dashboard, the API and the all-persons views all come through this
+    # function, and an override that only reached one of them would make the
+    # views disagree about the same month's pay.
+    from app.core.schedule.payslip import apply_payslip_overrides, build_payslip_rows, get_payslip_overrides
+    from app.database.database import WageType as _WageType
+
+    totals["absence_details"] = absence_details
+    payslip = build_payslip_rows(
+        totals,
+        days_out,
+        base_salary,
+        is_hourly=bool(user and user.wage_type == _WageType.HOURLY),
+        year=year,
+        month=month,
+    )
+    totals["brutto_pay"] += apply_payslip_overrides(payslip, get_payslip_overrides(session, uid_for_wages, year, month))
 
     # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
@@ -428,6 +451,7 @@ def summarize_month_for_person(
         "substitute_hours": totals.get("substitute_hours", 0.0),
         "substitute_base_pay": totals.get("substitute_base_pay", 0.0),
         "absence_details": absence_details,
+        "payslip": payslip,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
         "base_salary": base_salary,

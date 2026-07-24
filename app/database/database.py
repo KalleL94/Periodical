@@ -405,6 +405,37 @@ class DayPayOverride(Base):
         )
 
 
+class PayslipOverride(Base):
+    """Manual override of a single payslip row for one month.
+
+    Set when the employer's payslip pays an amount this app's model does not
+    reproduce, so the month, year and dashboard figures follow what is actually
+    paid. `row_key` is a payslip row key (see app/core/schedule/payslip.py
+    ROW_ORDER); an unknown key adds a row the model has no rule for at all.
+    `amount` is signed: deductions are negative.
+    """
+
+    __tablename__ = "payslip_overrides"
+    __table_args__ = (UniqueConstraint("user_id", "year", "month", "row_key", name="uq_payslip_override_row"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    row_key = Column(String(40), nullable=False)
+    amount = Column(Float, nullable=False)
+    hours = Column(Float, nullable=True)
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f"<PayslipOverride(user_id={self.user_id}, {self.year}-{self.month:02d}, {self.row_key}={self.amount})>"
+
+
 class PersonHistory(Base):
     """Person history model for tracking person changes over time with temporal validity.
 
