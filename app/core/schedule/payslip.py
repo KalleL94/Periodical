@@ -50,16 +50,24 @@ ROW_ORDER = (
     "leave_deduction",
 )
 
-# Rows an uploaded payslip splits differently from the way this app aggregates
-# them. Both sides are summed per bucket before being compared, so a payslip
-# that lists "Sjukavdrag", "Sjuklön" and "Karensavdrag" as three lines is not
+# Row keys the payslip groups differently from the way this app splits them.
+# Both sides are summed per bucket before being compared, so a payslip that
+# lists "Sjukavdrag", "Sjuklön" and "Karensavdrag" as three lines is not
 # reported as three diffs against this app's single net sick deduction.
+#
+# OB3 and OB4 share wage code 152 on the payslip (see excel_shared.py
+# REPORT_COL_HEADERS): "OB helg" and "OB helgdag" are one line there, so the
+# app's two levels must be compared as one, or a correct month reports +X on
+# one and -X on the other. This holds regardless of whether the two rates
+# happen to be equal for a given user.
 COMPARE_BUCKETS = {
     "sick_pay": "sick",
     "sick_deduction": "sick",
     "karens": "sick",
     "vacation_pay": "vacation",
     "vacation_deduction": "vacation",
+    "OB3": "ob_152",
+    "OB4": "ob_152",
 }
 
 # Units, matching what a Swedish payslip prints in the "Enhet" column.

@@ -136,6 +136,30 @@ def test_sick_rows_share_one_comparison_bucket():
     assert buckets["base"] == 37000.0
 
 
+def test_ob3_and_ob4_compare_as_one_wage_code_152_line():
+    """The payslip lists OB weekend and OB public holiday as one line (code 152).
+
+    The app splits them into OB3 and OB4, so without merging them a correct
+    month reports +383 on one and -383 on the other.
+    """
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [
+        PayslipRow(key="OB3", amount=536.0),
+        PayslipRow(key="OB4", amount=383.0),
+    ]
+    # The payslip has the pair as one "Faktor 1,24" line, which the parser
+    # categorises as OB3 (the lower level when the two rates coincide).
+    uploaded = [SimpleNamespace(category="OB3", amount=919.0)]
+
+    result = compare_to_upload(slip, uploaded)
+    lines = {line["bucket"]: line for line in result["lines"]}
+
+    assert set(lines) == {"ob_152"}
+    assert lines["ob_152"]["computed"] == 919.0
+    assert lines["ob_152"]["uploaded"] == 919.0
+    assert lines["ob_152"]["matched"] is True
+
+
 def test_compare_against_an_uploaded_pdf():
     """End to end: parse a payslip PDF and diff it against computed rows."""
     parsed = parse_payslip_pdf(FIXTURE_PDF.read_bytes())
