@@ -436,6 +436,12 @@ textarea {
 }
 .form-input--sm { width: min(100%, 7rem); }
 .form-input--md { width: min(100%, 13rem); }
+
+/* Payslip override row: keep the numeric inputs narrow and let the fields wrap
+   as a compact group rather than stretching across the cell. */
+form[data-override-form] { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.4rem; }
+form[data-override-form] input[inputmode="decimal"] { width: 5rem; }
+form[data-override-form] input[name="reason"] { width: min(100%, 11rem); }
 .admin-inline-actions {
   display: flex;
   flex-wrap: wrap;
