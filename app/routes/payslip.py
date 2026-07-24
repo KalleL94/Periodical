@@ -177,11 +177,17 @@ async def set_payslip_override(
     row_key: str = Form(...),
     amount: str = Form(default=""),
     hours: str = Form(default=""),
+    unit_price: str = Form(default=""),
     reason: str = Form(default=""),
     current_user: User = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """Upsert (or, with an empty amount, delete) one manual payslip row."""
+    """Upsert (or, with the whole row cleared, delete) one manual payslip row.
+
+    The amount can be entered directly, or derived from quantity times unit
+    price when those two are given, so a row can be corrected the way it reads
+    on the payslip (hours at an a-price) rather than only as a lump sum.
+    """
     if current_user is None:
         raise HTTPException(status_code=401, detail="Inloggning krävs")
 
@@ -203,14 +209,25 @@ async def set_payslip_override(
         .first()
     )
 
-    if not amount.strip():
-        # An empty amount is how the UI removes an override: back to computed.
+    qty = _parse_amount(hours) if hours.strip() else None
+    # Quantity times unit price wins when both are given; otherwise the amount
+    # field is used directly. This lets a row be entered as "8 tim a 422.86"
+    # without the user pre-multiplying it.
+    if unit_price.strip() and qty is not None:
+        resolved_amount = qty * _parse_amount(unit_price)
+    elif amount.strip():
+        resolved_amount = _parse_amount(amount)
+    else:
+        resolved_amount = None
+
+    if resolved_amount is None:
+        # Clearing every input is how the UI removes an override: back to computed.
         if existing:
             db.delete(existing)
     else:
         values = {
-            "amount": _parse_amount(amount),
-            "hours": _parse_amount(hours) if hours.strip() else None,
+            "amount": resolved_amount,
+            "hours": qty,
             "reason": reason.strip() or None,
             "created_by": current_user.id,
         }

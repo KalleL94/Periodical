@@ -129,6 +129,35 @@ def test_override_changes_the_row_and_reaches_month_and_year(test_client, monthl
     )
 
 
+def test_override_amount_is_computed_from_quantity_and_unit_price(test_client, monthly_user, test_db):
+    """A row can be entered as hours at an a-price, not only as a lump sum."""
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "ot", "hours": "8", "unit_price": "422.86"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    row = test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "ot").one()
+    assert round(row.amount, 2) == 3382.88
+    assert row.hours == 8.0
+
+
+def test_override_qty_and_price_do_not_delete_when_amount_is_blank(test_client, monthly_user, test_db):
+    """Blank amount must not clear the override when quantity and price are given."""
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "ot", "hours": "8", "unit_price": "422.86", "amount": ""},
+    )
+    assert test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "ot").count() == 1
+
+
 def test_override_is_removed_by_an_empty_amount(test_client, monthly_user, test_db):
     _login(test_client, monthly_user)
     from app.database.database import PayslipOverride

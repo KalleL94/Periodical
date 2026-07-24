@@ -53,22 +53,25 @@
                     <td class="td_left">
                         <details>
                             <summary class="cursor-pointer">{{ t.payslip_override_edit }}</summary>
-                            <form method="post" action="/month/{{ person_id }}/payslip/override" class="inline-form">
+                            <form method="post" action="/month/{{ person_id }}/payslip/override" class="inline-form" data-override-form>
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="year" value="{{ year }}">
                                 <input type="hidden" name="month" value="{{ month }}">
                                 <input type="hidden" name="row_key" value="{{ row.key }}">
-                                <input class="form-input form-input--sm" type="text" inputmode="decimal" name="amount"
-                                       value="{% if row.overridden %}{{ "%.2f"|format(row.amount) }}{% endif %}"
-                                       aria-label="{{ t.payslip_override_amount }}" placeholder="{{ t.payslip_override_amount }}">
                                 <input class="form-input form-input--sm" type="text" inputmode="decimal" name="hours"
                                        value="{% if row.overridden and row.qty %}{{ "%.2f"|format(row.qty) }}{% endif %}"
                                        aria-label="{{ t.payslip_override_hours }}" placeholder="{{ t.payslip_override_hours }}">
+                                <input class="form-input form-input--sm" type="text" inputmode="decimal" name="unit_price"
+                                       value="{% if row.overridden and row.unit_price %}{{ "%.2f"|format(row.unit_price) }}{% endif %}"
+                                       aria-label="{{ t.payslip_override_unit_price }}" placeholder="{{ t.payslip_override_unit_price }}">
+                                <input class="form-input form-input--sm" type="text" inputmode="decimal" name="amount"
+                                       value="{% if row.overridden %}{{ "%.2f"|format(row.amount) }}{% endif %}"
+                                       aria-label="{{ t.payslip_override_amount }}" placeholder="{{ t.payslip_override_amount }}">
                                 <input class="form-input form-input--sm" type="text" name="reason"
                                        value="{{ row.reason or '' }}" maxlength="255"
                                        aria-label="{{ t.payslip_override_reason }}" placeholder="{{ t.payslip_override_reason }}">
                                 <button type="submit" class="btn secondary btn-sm">{{ t.payslip_override_save }}</button>
-                                <span class="form-hint">{{ t.payslip_override_clear_hint }}</span>
+                                <span class="form-hint">{{ t.payslip_override_qty_price_hint }}</span>
                             </form>
                         </details>
                     </td>
@@ -194,6 +197,32 @@
         </div>
         {% endif %}
     </div>
+
+    <script>
+    // Live-fill the amount field from quantity x unit price as they are typed.
+    // The server recomputes the same product on submit, so this is only a
+    // convenience: the amount stays editable for rows entered as a lump sum.
+    (function () {
+        function num(el) {
+            var v = (el.value || "").replace(/\s/g, "").replace(",", ".");
+            return v === "" ? null : parseFloat(v);
+        }
+        document.querySelectorAll("form[data-override-form]").forEach(function (form) {
+            var qty = form.querySelector('[name="hours"]');
+            var price = form.querySelector('[name="unit_price"]');
+            var amount = form.querySelector('[name="amount"]');
+            function recompute() {
+                var q = num(qty);
+                var p = num(price);
+                if (q !== null && p !== null && !isNaN(q) && !isNaN(p)) {
+                    amount.value = (q * p).toFixed(2);
+                }
+            }
+            qty.addEventListener("input", recompute);
+            price.addEventListener("input", recompute);
+        });
+    })();
+    </script>
 
 {{ super() }}
 
