@@ -18,7 +18,7 @@ from app.core.logging_config import get_logger
 from app.core.payslip_import import parse_payslip_pdf
 from app.core.rates import get_user_rates
 from app.core.schedule import build_calendar_grid_for_month, clear_schedule_cache, rotation_start_date
-from app.core.schedule.payslip import ROW_ORDER, add_vacation_row, compare_to_upload
+from app.core.schedule.payslip import NON_OVERRIDABLE_KEYS, ROW_ORDER, add_vacation_row, compare_to_upload
 from app.core.schedule.vacation import calculate_vacation_balance
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
@@ -117,6 +117,7 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
         "brutto_pay": summary.get("brutto_pay", 0.0),
         "can_edit": current_user is not None
         and (current_user.role == UserRole.ADMIN or current_user.id == wage_user_id),
+        "non_overridable_keys": NON_OVERRIDABLE_KEYS,
         "wage_user": target_user,
         "outside_employment": outside_employment,
     }
@@ -194,6 +195,10 @@ async def set_payslip_override(
     validate_date_params(year, month, None)
     if row_key not in ROW_ORDER:
         raise HTTPException(status_code=400, detail="Okänd lönerad")
+    if row_key in NON_OVERRIDABLE_KEYS:
+        # The vacation supplement is derived from the vacation days and folded in
+        # per view, so overriding it here would double count. See NON_OVERRIDABLE_KEYS.
+        raise HTTPException(status_code=400, detail="Semestertillägget styrs av semesterdagarna, inte lönespecen")
 
     _, _, wage_user_id = _resolve_target(db, person_id, year, month)
     require_own_or_admin(current_user, wage_user_id, "Du kan bara ändra din egen lönespec")

@@ -158,6 +158,20 @@ def test_override_qty_and_price_do_not_delete_when_amount_is_blank(test_client, 
     assert test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "ot").count() == 1
 
 
+def test_vacation_supplement_cannot_be_overridden(test_client, monthly_user, test_db):
+    """Overriding the vacation supplement would double count it (it is folded
+    into gross per view, not through summarize), so the route must reject it."""
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "vacation_pay", "hours": "4", "unit_price": "148"},
+    )
+    assert response.status_code == 400
+    assert test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "vacation_pay").count() == 0
+
+
 def test_override_is_removed_by_an_empty_amount(test_client, monthly_user, test_db):
     _login(test_client, monthly_user)
     from app.database.database import PayslipOverride

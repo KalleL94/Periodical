@@ -50,6 +50,14 @@ ROW_ORDER = (
     "leave_deduction",
 )
 
+# Rows whose amount is folded into gross outside summarize_month_for_person and
+# added to the slip afterwards (the vacation supplement, via add_vacation_row).
+# The general override adds its delta to summarize's gross, but the computed
+# supplement is still folded in by each view separately, so an override would
+# double count. These rows are read-only on the payslip: correct the vacation
+# days instead, which is where the supplement is actually derived from.
+NON_OVERRIDABLE_KEYS = frozenset({"vacation_pay"})
+
 # Row keys the payslip groups differently from the way this app splits them.
 # Both sides are summed per bucket before being compared, so a payslip that
 # lists "Sjukavdrag", "Sjuklön" and "Karensavdrag" as three lines is not

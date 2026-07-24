@@ -51,6 +51,9 @@
                     </td>
                     {% if can_edit %}
                     <td class="td_left">
+                        {% if row.key in non_overridable_keys %}
+                            <span class="form-hint">{{ t.payslip_override_derived }}</span>
+                        {% else %}
                         <details>
                             <summary class="cursor-pointer">{{ t.payslip_override_edit }}</summary>
                             <form method="post" action="/month/{{ person_id }}/payslip/override" class="inline-form" data-override-form>
@@ -58,14 +61,17 @@
                                 <input type="hidden" name="year" value="{{ year }}">
                                 <input type="hidden" name="month" value="{{ month }}">
                                 <input type="hidden" name="row_key" value="{{ row.key }}">
+                                {# Pre-fill the current values (computed or overridden) so a single
+                                   field can be changed. Editing only the quantity with the a-price
+                                   already present recomputes the amount client-side and on submit. #}
                                 <input class="form-input form-input--sm" type="text" inputmode="decimal" name="hours"
-                                       value="{% if row.overridden and row.qty %}{{ "%.2f"|format(row.qty) }}{% endif %}"
+                                       value="{% if row.qty %}{{ "%.2f"|format(row.qty) }}{% endif %}"
                                        aria-label="{{ t.payslip_override_hours }}" placeholder="{{ t.payslip_override_hours }}">
                                 <input class="form-input form-input--sm" type="text" inputmode="decimal" name="unit_price"
-                                       value="{% if row.overridden and row.unit_price %}{{ "%.2f"|format(row.unit_price) }}{% endif %}"
+                                       value="{% if row.unit_price %}{{ "%.2f"|format(row.unit_price) }}{% endif %}"
                                        aria-label="{{ t.payslip_override_unit_price }}" placeholder="{{ t.payslip_override_unit_price }}">
                                 <input class="form-input form-input--sm" type="text" inputmode="decimal" name="amount"
-                                       value="{% if row.overridden %}{{ "%.2f"|format(row.amount) }}{% endif %}"
+                                       value="{{ "%.2f"|format(row.amount) }}"
                                        aria-label="{{ t.payslip_override_amount }}" placeholder="{{ t.payslip_override_amount }}">
                                 <input class="form-input form-input--sm" type="text" name="reason"
                                        value="{{ row.reason or '' }}" maxlength="255"
@@ -74,6 +80,7 @@
                                 <span class="form-hint">{{ t.payslip_override_qty_price_hint }}</span>
                             </form>
                         </details>
+                        {% endif %}
                     </td>
                     {% endif %}
                 </tr>
