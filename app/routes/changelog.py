@@ -17,12 +17,32 @@ router = APIRouter()
 VERSIONS = [
     {
         "version": "1.3.0",
-        "date": "2026-07-22",
+        "date": "2026-07-28",
         "entries": [
             {
                 "type": "nyhet",
                 "sv": "När du lägger till inkallad övertid i dagvyn finns nu en knapp för varje ordinarie pass: Dagpass, Kvällspass och Nattpass. Ett klick fyller i starttid, sluttid och antal timmar åt dig, så du slipper skriva dem för hand. Blev passet längre eller kortare ändrar du bara i fälten efteråt",
                 "en": "When you add called-in overtime in the day view there is now a button for each regular shift: day, evening and night. One click fills in the start time, end time and number of hours for you, so you no longer have to type them by hand. If the shift ran longer or shorter, just edit the fields afterwards",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Månadsvyn har fått en lönespecifikation: klicka på Lönespec så ser du varje ersättningstyp på egen rad, med antal, à-pris och belopp, precis som på en riktig lönespec. Summan stämmer på öret med din bruttolön för månaden, oavsett om du har månads- eller timlön",
+                "en": "The month view now has a payslip: click Payslip to see every type of compensation on its own row, with quantity, unit price and amount, just like a real payslip. The total reconciles to your gross pay for the month to the öre, whether you are paid monthly or hourly",
+            },
+            {
+                "type": "nyhet",
+                "sv": "På lönespec-sidan kan du ladda upp din arbetsgivares lönespec (PDF) så jämför appen den mot sina egna siffror och visar var de skiljer sig åt. Sjuklön, sjukavdrag och karens slås ihop till en post innan jämförelsen, precis som appen räknar dem, så en korrekt månad inte flaggas i onödan. Rader appen inte känner igen listas för sig i stället för att gissas",
+                "en": "On the payslip page you can upload your employer's payslip (PDF) and the app compares it against its own figures and shows where they differ. Sick pay, sick deduction and the waiting-day deduction are combined into one item before comparing, the way the app calculates them, so a correct month is not flagged needlessly. Rows the app does not recognise are listed separately rather than guessed",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Om arbetsgivaren betalar något appen inte räknar med kan du lägga in en manuell rad på lönespec-sidan. Ändringen följer med till månads- och årsberäkningarna, inte bara lönespecen, så totalerna stämmer överallt",
+                "en": "If your employer pays something the app does not account for, you can enter a manual row on the payslip page. The change carries through to the month and year figures, not just the payslip, so the totals agree everywhere",
+            },
+            {
+                "type": "nyhet",
+                "sv": "På en semesterdag i dagvyn kan du nu välja Uteslut från semester. Dagen ligger kvar i schemat men räknas inte som en semesterdag: den ger inget semestertillägg och återförs till ditt saldo. Praktiskt när arbetsgivaren har lagt in färre semesterdagar än du faktiskt tog ut, till exempel en helgdag som appen räknar men arbetsgivaren inte gör",
+                "en": "On a vacation day in the day view you can now choose Exclude from vacation. The day stays on the schedule but no longer counts as a vacation day: it earns no vacation supplement and returns to your balance. Useful when your employer registered fewer vacation days than you actually took, for example a weekend day the app counts but the employer does not",
             },
             {
                 "type": "fix",

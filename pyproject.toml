@@ -24,6 +24,8 @@ dependencies = [
     "sentry-sdk[fastapi]>=1.40.0",
     "icalendar>=5.0.0",
     "openpyxl>=3.1.0",
+    # Direct dependency: payslip PDF text extraction (app/core/payslip_import.py)
+    "pypdf>=5.0.0",
 ]
 
 [project.optional-dependencies]

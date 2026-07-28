@@ -332,7 +332,7 @@ def summarize_month_for_person(
             continue
 
         shift = day.get("shift")
-        if shift is not None and getattr(shift, "code", None) == "SEM":
+        if shift is not None and getattr(shift, "code", None) == "SEM" and day.get("vacation_counts", True):
             totals["vacation_days"] += 1
         # Week-based parental leave renders as LEAVE but is flagged; count it separately
         # so it is not lost (day-level parental is counted via absence records below).
@@ -385,9 +385,42 @@ def summarize_month_for_person(
             totals["brutto_pay"] = _hourly_corrected_gross(
                 totals["brutto_pay"], base_salary, worked_hours, totals.get("absence_hours", 0.0), actual_hourly_rate
             )
+            # Kept for the payslip rows: they must price the same hours at the
+            # same rate as the gross correction above, or the two disagree.
+            totals["hourly_rate"] = actual_hourly_rate
+            totals["hourly_worked_hours"] = worked_hours
 
     # Add week-based parental leave (flagged days) on top of day-level parental absences.
     totals["parental_days"] += week_parental_days
+
+    # Build the payslip rows and apply any manual per-row overrides for the
+    # month. This belongs here, not in the month route: /month, /year, the
+    # dashboard, the API and the all-persons views all come through this
+    # function, and an override that only reached one of them would make the
+    # views disagree about the same month's pay.
+    from app.core.schedule.payslip import (
+        apply_payslip_overrides,
+        build_payslip_rows,
+        get_payslip_overrides,
+        route_override_deltas,
+    )
+    from app.database.database import WageType as _WageType
+
+    totals["absence_details"] = absence_details
+    payslip = build_payslip_rows(
+        totals,
+        days_out,
+        base_salary,
+        is_hourly=bool(user and user.wage_type == _WageType.HOURLY),
+        year=year,
+        month=month,
+    )
+    override_deltas = apply_payslip_overrides(payslip, get_payslip_overrides(session, uid_for_wages, year, month))
+    totals["brutto_pay"] += sum(override_deltas.values())
+    # Route the deltas into the itemised totals (absence deduction, sick-pay OB)
+    # so the sick-leave figures on the month and year views follow the override,
+    # not just the gross total.
+    route_override_deltas(totals, override_deltas)
 
     # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
@@ -428,6 +461,7 @@ def summarize_month_for_person(
         "substitute_hours": totals.get("substitute_hours", 0.0),
         "substitute_base_pay": totals.get("substitute_base_pay", 0.0),
         "absence_details": absence_details,
+        "payslip": payslip,
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
         "base_salary": base_salary,
@@ -896,6 +930,7 @@ def _process_day_for_summary(
         "partial_absence": day.get("partial_absence"),
         "is_substitute": day.get("is_substitute"),
         "substitute_hourly_wage": day.get("substitute_hourly_wage"),
+        "vacation_counts": day.get("vacation_counts", True),
     }
 
 
@@ -1368,7 +1403,11 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
         total_sem_days = 0
         total_supplement = 0.0
         for m in months:
-            sem_days = sum(1 for d in m.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
+            sem_days = sum(
+                1
+                for d in m.get("days", [])
+                if d.get("shift") and d["shift"].code == "SEM" and d.get("vacation_counts", True)
+            )
             m["vacation_days"] = sem_days
             m["vacation_supplement"] = round(supp_per_day * sem_days, 0)
             total_sem_days += sem_days

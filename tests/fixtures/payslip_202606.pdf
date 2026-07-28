@@ -1,0 +1,122 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 700 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 4444 >>
+stream
+BT /F1 9 Tf 1 0 0 1 330 800 Tm (Lönebesked) Tj ET
+BT /F1 9 Tf 1 0 0 1 330 786 Tm (Månadslön juni 2026) Tj ET
+BT /F1 9 Tf 1 0 0 1 330 750 Tm (Anonym Testsson) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 715 Tm (Anställd) Tj ET
+BT /F1 9 Tf 1 0 0 1 150 715 Tm (999) Tj ET
+BT /F1 9 Tf 1 0 0 1 330 715 Tm (Utbetalningsdag) Tj ET
+BT /F1 9 Tf 1 0 0 1 450 715 Tm (2026-07-24) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 702 Tm (Bankkonto) Tj ET
+BT /F1 9 Tf 1 0 0 1 150 702 Tm (0000-0000000) Tj ET
+BT /F1 9 Tf 1 0 0 1 330 702 Tm (Intjänandeperiod) Tj ET
+BT /F1 9 Tf 1 0 0 1 450 702 Tm (2026-06-01--2026-06-30) Tj ET
+BT /F1 9 Tf 1 0 0 1 330 689 Tm (Avvikelseperiod) Tj ET
+BT /F1 9 Tf 1 0 0 1 450 689 Tm (2026-06-01--2026-06-30) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 650 Tm (Benämning) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 650 Tm (Från datum) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 650 Tm (Till datum) Tj ET
+BT /F1 9 Tf 1 0 0 1 405 650 Tm (Antal) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 650 Tm (Enhet) Tj ET
+BT /F1 9 Tf 1 0 0 1 500 650 Tm (Belopp) Tj ET
+BT /F1 9 Tf 1 0 0 1 555 650 Tm (Summa) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 630 Tm (Månadslön) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 630 Tm (mån) Tj ET
+BT /F1 9 Tf 1 0 0 1 548 630 Tm (37 000,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 614 Tm (Övertid betald 100%, timlön) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 614 Tm (2026-06-01) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 614 Tm (2026-06-30) Tj ET
+BT /F1 9 Tf 1 0 0 1 400 614 Tm (8,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 614 Tm (tim) Tj ET
+BT /F1 9 Tf 1 0 0 1 497 614 Tm (422,86) Tj ET
+BT /F1 9 Tf 1 0 0 1 550 614 Tm (3 382,88) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 598 Tm (Beredskap varrdag 75kr) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 598 Tm (2026-06-04) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 598 Tm (2026-06-04) Tj ET
+BT /F1 9 Tf 1 0 0 1 396 598 Tm (40,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 598 Tm (tim) Tj ET
+BT /F1 9 Tf 1 0 0 1 503 598 Tm (75,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 550 598 Tm (3 000,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 582 Tm (Faktor 1,24) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 582 Tm (2026-06-03) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 582 Tm (2026-06-03) Tj ET
+BT /F1 9 Tf 1 0 0 1 396 582 Tm (18,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 582 Tm (tim) Tj ET
+BT /F1 9 Tf 1 0 0 1 500 582 Tm (51,03) Tj ET
+BT /F1 9 Tf 1 0 0 1 554 582 Tm (918,54) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 566 Tm (OB Vardag kväll) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 566 Tm (2026-06-01) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 566 Tm (2026-06-01) Tj ET
+BT /F1 9 Tf 1 0 0 1 396 566 Tm (13,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 566 Tm (tim) Tj ET
+BT /F1 9 Tf 1 0 0 1 500 566 Tm (25,52) Tj ET
+BT /F1 9 Tf 1 0 0 1 554 566 Tm (331,76) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 550 Tm (Sjuklön dag -14, månadslön) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 550 Tm (2026-06-08) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 550 Tm (2026-06-09) Tj ET
+BT /F1 9 Tf 1 0 0 1 396 550 Tm (16,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 550 Tm (tim) Tj ET
+BT /F1 9 Tf 1 0 0 1 497 550 Tm (170,77) Tj ET
+BT /F1 9 Tf 1 0 0 1 550 550 Tm (2 732,32) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 534 Tm (Sjukavdrag 100%, månadslön) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 534 Tm (2026-06-08) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 534 Tm (2026-06-09) Tj ET
+BT /F1 9 Tf 1 0 0 1 396 534 Tm (16,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 534 Tm (tim) Tj ET
+BT /F1 9 Tf 1 0 0 1 492 534 Tm (-213,46) Tj ET
+BT /F1 9 Tf 1 0 0 1 545 534 Tm (-3 415,36) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 518 Tm (Karensavdrag) Tj ET
+BT /F1 9 Tf 1 0 0 1 240 518 Tm (2026-06-08) Tj ET
+BT /F1 9 Tf 1 0 0 1 320 518 Tm (2026-06-09) Tj ET
+BT /F1 9 Tf 1 0 0 1 440 518 Tm (st) Tj ET
+BT /F1 9 Tf 1 0 0 1 545 518 Tm (-1 366,15) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 470 Tm (Skattetabell) Tj ET
+BT /F1 9 Tf 1 0 0 1 170 470 Tm (33:1) Tj ET
+BT /F1 9 Tf 1 0 0 1 210 470 Tm (Flexsaldo) Tj ET
+BT /F1 9 Tf 1 0 0 1 300 470 Tm (0,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 390 470 Tm (Bruttolön) Tj ET
+BT /F1 9 Tf 1 0 0 1 545 470 Tm (42 583,99) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 456 Tm (Jämkning) Tj ET
+BT /F1 9 Tf 1 0 0 1 170 456 Tm (0,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 210 456 Tm (Kompsaldo) Tj ET
+BT /F1 9 Tf 1 0 0 1 300 456 Tm (0,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 390 456 Tm (Preliminärskatt) Tj ET
+BT /F1 9 Tf 1 0 0 1 548 456 Tm (-9 250,00) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 428 Tm (Tabellskattegrund) Tj ET
+BT /F1 9 Tf 1 0 0 1 170 428 Tm (42 583,99) Tj ET
+BT /F1 9 Tf 1 0 0 1 390 428 Tm (ATT UTBETALA) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 414 Tm (Ack. bruttolön) Tj ET
+BT /F1 9 Tf 1 0 0 1 170 414 Tm (331 950,66) Tj ET
+BT /F1 9 Tf 1 0 0 1 545 414 Tm (33 333,99) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 400 Tm (Ack. preliminärskatt) Tj ET
+BT /F1 9 Tf 1 0 0 1 170 400 Tm (-77 338,00) Tj ET
+
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000338 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+4834
+%%EOF

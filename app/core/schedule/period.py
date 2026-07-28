@@ -1706,6 +1706,10 @@ def _populate_absence_day(
                 "ot_pay": 0.0,
                 "ot_hours": 0.0,
                 "ot_details": {},
+                # VACATION days can be excluded from the vacation-day count while the
+                # SEM shift still renders. False marks a day that must not earn the
+                # supplement or consume a balance day.
+                "vacation_counts": getattr(absence, "counts_as_vacation_day", True),
             }
         )
         return True

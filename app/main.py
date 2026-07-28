@@ -31,6 +31,7 @@ from app.routes.dashboard import router as dashboard_router
 from app.routes.day_pay_override import router as day_pay_override_router
 from app.routes.oncall import router as oncall_router
 from app.routes.overtime import router as overtime_router
+from app.routes.payslip import router as payslip_router
 from app.routes.profile import router as profile_router
 from app.routes.reports import router as reports_router
 from app.routes.schedule_all import router as schedule_all_router
@@ -334,6 +335,7 @@ app.include_router(shift_swap_router)
 app.include_router(shift_override_router)
 app.include_router(substitutes_router)
 app.include_router(day_pay_override_router)
+app.include_router(payslip_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
