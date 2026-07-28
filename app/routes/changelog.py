@@ -17,7 +17,7 @@ router = APIRouter()
 VERSIONS = [
     {
         "version": "1.3.0",
-        "date": "2026-07-22",
+        "date": "2026-07-28",
         "entries": [
             {
                 "type": "nyhet",
