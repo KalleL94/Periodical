@@ -214,6 +214,11 @@ class Absence(Base):
     absence_type = Column(SQLEnum(AbsenceType), nullable=False)
     left_at = Column(String(5), nullable=True)  # "HH:MM" - time they left early (None = full day or on time)
     arrived_at = Column(String(5), nullable=True)  # "HH:MM" - time they arrived late (None = full day or on time)
+    # VACATION only: when False the SEM shift still shows on the schedule but the day
+    # does not consume a vacation day or earn the supplement. Used when an employer
+    # does not count a scheduled day (e.g. a weekend) as vacation even though the
+    # person was off. Ignored for other absence types.
+    counts_as_vacation_day = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
     # Relationships

@@ -849,7 +849,11 @@ async def show_month_for_person(
     # Count vacation days (SEM shifts) in this month and calculate supplement
     vacation_month = None
     if show_salary:
-        sem_count = sum(1 for d in days_in_month.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
+        sem_count = sum(
+            1
+            for d in days_in_month.get("days", [])
+            if d.get("shift") and d["shift"].code == "SEM" and d.get("vacation_counts", True)
+        )
         if sem_count > 0:
             vac_user = (
                 target_user

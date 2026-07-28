@@ -361,6 +361,18 @@
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button type="submit" class="btn btn-danger" onclick="return confirm('{{ t.day_delete_absence_confirm }}')">{{ t.day_delete }}</button>
                                     </form>
+                                    {% if absence.absence_type.value == 'VACATION' %}
+                                        <form method="POST" action="/absence/{{ absence.id }}/vacation-count-toggle" class="inline-form">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                            {% if absence.counts_as_vacation_day %}
+                                                <button type="submit" class="btn btn-secondary">{{ t.day_vacation_count_exclude }}</button>
+                                            {% else %}
+                                                <span class="badge badge-off-gray">{{ t.day_vacation_count_excluded }}</span>
+                                                <button type="submit" class="btn btn-secondary">{{ t.day_vacation_count_include }}</button>
+                                            {% endif %}
+                                        </form>
+                                        <p class="day-inline-note">{{ t.day_vacation_count_hint }}</p>
+                                    {% endif %}
                                 </td>
                             </tr>
                         </tbody>

@@ -274,7 +274,13 @@ def count_vacation_days_used(
         )
         .all()
     )
-    day_level = sum(1 for a in absences if off_dates is None or a.date not in off_dates)
+    # A VACATION day marked counts_as_vacation_day=False keeps its SEM shift on the
+    # schedule but does not consume a vacation day, so it is excluded here too.
+    day_level = sum(
+        1
+        for a in absences
+        if (off_dates is None or a.date not in off_dates) and getattr(a, "counts_as_vacation_day", True)
+    )
 
     return {
         "week_based": week_based,

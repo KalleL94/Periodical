@@ -635,3 +635,36 @@ async def delete_absence(
     return RedirectResponse(
         url=f"/day/{absence_user_id}/{absence_date.year}/{absence_date.month}/{absence_date.day}", status_code=302
     )
+
+
+@router.post("/absence/{absence_id}/vacation-count-toggle", name="toggle_vacation_count")
+async def toggle_vacation_count(
+    request: Request,
+    absence_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Flip whether a VACATION day counts toward the balance and supplement.
+
+    The SEM shift stays on the schedule; only the counting flag changes, so an
+    excluded day earns no supplement and returns to the vacation balance.
+    """
+    absence = db.query(Absence).filter(Absence.id == absence_id).first()
+
+    if not absence:
+        raise HTTPException(status_code=404, detail="Frånvaro hittades inte")
+
+    if absence.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Du kan bara ändra din egen frånvaro")
+
+    if absence.absence_type != AbsenceType.VACATION:
+        raise HTTPException(status_code=400, detail="Endast semesterdagar kan uteslutas")
+
+    absence.counts_as_vacation_day = not bool(absence.counts_as_vacation_day)
+    db.commit()
+
+    clear_schedule_cache()
+
+    return RedirectResponse(
+        url=f"/day/{absence.user_id}/{absence.date.year}/{absence.date.month}/{absence.date.day}", status_code=302
+    )

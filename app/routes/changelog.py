@@ -39,6 +39,11 @@ VERSIONS = [
                 "sv": "Om arbetsgivaren betalar något appen inte räknar med kan du lägga in en manuell rad på lönespec-sidan. Ändringen följer med till månads- och årsberäkningarna, inte bara lönespecen, så totalerna stämmer överallt",
                 "en": "If your employer pays something the app does not account for, you can enter a manual row on the payslip page. The change carries through to the month and year figures, not just the payslip, so the totals agree everywhere",
             },
+            {
+                "type": "nyhet",
+                "sv": "På en semesterdag i dagvyn kan du nu välja Uteslut från semester. Dagen ligger kvar i schemat men räknas inte som en semesterdag: den ger inget semestertillägg och återförs till ditt saldo. Praktiskt när arbetsgivaren har lagt in färre semesterdagar än du faktiskt tog ut, till exempel en helgdag som appen räknar men arbetsgivaren inte gör",
+                "en": "On a vacation day in the day view you can now choose Exclude from vacation. The day stays on the schedule but no longer counts as a vacation day: it earns no vacation supplement and returns to your balance. Useful when your employer registered fewer vacation days than you actually took, for example a weekend day the app counts but the employer does not",
+            },
         ],
     },
     {

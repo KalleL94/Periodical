@@ -332,7 +332,7 @@ def summarize_month_for_person(
             continue
 
         shift = day.get("shift")
-        if shift is not None and getattr(shift, "code", None) == "SEM":
+        if shift is not None and getattr(shift, "code", None) == "SEM" and day.get("vacation_counts", True):
             totals["vacation_days"] += 1
         # Week-based parental leave renders as LEAVE but is flagged; count it separately
         # so it is not lost (day-level parental is counted via absence records below).
@@ -930,6 +930,7 @@ def _process_day_for_summary(
         "partial_absence": day.get("partial_absence"),
         "is_substitute": day.get("is_substitute"),
         "substitute_hourly_wage": day.get("substitute_hourly_wage"),
+        "vacation_counts": day.get("vacation_counts", True),
     }
 
 
@@ -1402,7 +1403,11 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
         total_sem_days = 0
         total_supplement = 0.0
         for m in months:
-            sem_days = sum(1 for d in m.get("days", []) if d.get("shift") and d["shift"].code == "SEM")
+            sem_days = sum(
+                1
+                for d in m.get("days", [])
+                if d.get("shift") and d["shift"].code == "SEM" and d.get("vacation_counts", True)
+            )
             m["vacation_days"] = sem_days
             m["vacation_supplement"] = round(supp_per_day * sem_days, 0)
             total_sem_days += sem_days

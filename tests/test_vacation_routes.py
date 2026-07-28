@@ -269,6 +269,47 @@ class TestDeleteVacationDay:
 
         assert test_db.query(Absence).count() == 1
 
+
+class TestVacationCountToggle:
+    """The per-day toggle that excludes a SEM day from the balance and supplement
+    while keeping the shift on the schedule (counts_as_vacation_day flag)."""
+
+    def _vacation(self, db, user_id):
+        absence = Absence(user_id=user_id, date=datetime.date(2026, 6, 13), absence_type=AbsenceType.VACATION)
+        db.add(absence)
+        db.commit()
+        return absence
+
+    def test_toggle_excludes_then_includes_the_day(self, user_client, test_db, test_user):
+        absence = self._vacation(test_db, test_user.id)
+        assert absence.counts_as_vacation_day is True
+
+        resp = user_client.post(f"/absence/{absence.id}/vacation-count-toggle", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == f"/day/{test_user.id}/2026/6/13"
+        test_db.refresh(absence)
+        assert absence.counts_as_vacation_day is False
+
+        user_client.post(f"/absence/{absence.id}/vacation-count-toggle", follow_redirects=False)
+        test_db.refresh(absence)
+        assert absence.counts_as_vacation_day is True
+
+    def test_toggle_rejects_a_non_vacation_absence(self, user_client, test_db, test_user):
+        absence = Absence(user_id=test_user.id, date=datetime.date(2026, 6, 13), absence_type=AbsenceType.SICK)
+        test_db.add(absence)
+        test_db.commit()
+
+        resp = user_client.post(f"/absence/{absence.id}/vacation-count-toggle", follow_redirects=False)
+        assert resp.status_code == 400
+
+    def test_toggle_cannot_touch_another_users_day(self, user_client, test_db, test_user, admin_user):
+        absence = self._vacation(test_db, admin_user.id)
+
+        resp = user_client.post(f"/absence/{absence.id}/vacation-count-toggle", follow_redirects=False)
+        assert resp.status_code == 403
+        test_db.refresh(absence)
+        assert absence.counts_as_vacation_day is True
+
     def test_admin_deletes_a_users_vacation_day(self, admin_client, test_db, test_user):
         absence = Absence(user_id=test_user.id, date=datetime.date(2026, 5, 1), absence_type=AbsenceType.VACATION)
         test_db.add(absence)
