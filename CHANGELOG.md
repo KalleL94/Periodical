@@ -31,6 +31,7 @@ change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 ### Fixed
 - The payslip rows for hourly users were missing `(OB hours + absence hours) x hourly rate`: normal hours priced only the non-OB hours, and the absence hours that `_hourly_corrected_gross` pays back into gross had no row at all. Both are now priced with the same worked-hours and rate the gross correction uses, so an hourly month reconciles to the öre
 - CSRF validation rejected every multipart form (file uploads) with a 403: `_form_token` only read `application/x-www-form-urlencoded` bodies. It now parses multipart bodies with the stdlib MIME parser to find the token field, still failing closed on any parse error
+- The extension form in the day view computed hours as end minus start with no midnight wrap, so staying past midnight after an evening shift (22:30, home 00:30) gave a negative difference that the guard discarded. The hours field stayed at 0 and `min="0.01"` then blocked submission with nothing on screen explaining why. A negative difference now wraps by 24h; an unchanged end time still yields 0 rather than a full day. Server side is unaffected: `POST /overtime/add` prices from the submitted hours, not from the times
 
 ## [1.2.0] - 2026-07-22
 

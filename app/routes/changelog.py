@@ -44,6 +44,11 @@ VERSIONS = [
                 "sv": "På en semesterdag i dagvyn kan du nu välja Uteslut från semester. Dagen ligger kvar i schemat men räknas inte som en semesterdag: den ger inget semestertillägg och återförs till ditt saldo. Praktiskt när arbetsgivaren har lagt in färre semesterdagar än du faktiskt tog ut, till exempel en helgdag som appen räknar men arbetsgivaren inte gör",
                 "en": "On a vacation day in the day view you can now choose Exclude from vacation. The day stays on the schedule but no longer counts as a vacation day: it earns no vacation supplement and returns to your balance. Useful when your employer registered fewer vacation days than you actually took, for example a weekend day the app counts but the employer does not",
             },
+            {
+                "type": "fix",
+                "sv": "Stannade du kvar över midnatt efter ett kvällspass gick förlängningen inte att spara: antalet timmar räknades ut som ett negativt tal, fältet blev kvar på noll och knappen gjorde ingenting utan att förklara varför. Nu räknas timmarna rätt över dygnsgränsen, så 22:30 till 00:30 ger 2 timmar",
+                "en": "Staying past midnight after an evening shift made the extension impossible to save: the number of hours came out negative, the field stayed at zero, and the button did nothing without saying why. Hours now count correctly across midnight, so 22:30 to 00:30 gives 2 hours",
+            },
         ],
     },
     {
