@@ -251,19 +251,19 @@
                    they contradict each other. #}
                 <div class="vacation-supplement-breakdown-note">
                     {{ t.vacation_variable_parts_period
-                        .replace('{start}', balance.earning_year_start | date_format)
-                        .replace('{end}', balance.earning_year_end | date_format) }}
+                        .replace('{start}', balance.pay.breakdown_start.strftime('%Y-%m'))
+                        .replace('{end}', balance.pay.breakdown_end.strftime('%Y-%m')) }}
                 </div>
                 <div class="vacation-supplement-breakdown-grid">
                     <span>{{ t.vacation_ob_shifts }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_ob_total).replace(",", " ") }} kr</span>
                     <span>{{ t.vacation_overtime }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ot_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_ot_total).replace(",", " ") }} kr</span>
                     <span>{{ t.vacation_standby }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.oncall_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_oncall_total).replace(",", " ") }} kr</span>
                 </div>
                 <div class="vacation-supplement-sum">
-                    {{ t.vacation_variable_sum }} {{ "{:,.0f}".format(balance.pay.variable_total).replace(",", " ") }} kr
+                    {{ t.vacation_variable_sum }} {{ "{:,.0f}".format(balance.pay.breakdown_total).replace(",", " ") }} kr
                 </div>
             </div>
         </div>

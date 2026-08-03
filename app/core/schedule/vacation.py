@@ -151,6 +151,20 @@ def get_parental_dates_for_year(year: int, session=None) -> dict[int, set[dateti
 # ---------------------------------------------------------------------------
 
 
+def _breakdown(parts: tuple[float, float, float], window: tuple[datetime.date, datetime.date]) -> dict:
+    """The variable-pay breakdown a view should render, with the window it covers."""
+    ob, ot, oncall = parts
+    start, end = window
+    return {
+        "breakdown_ob_total": round(ob, 2),
+        "breakdown_ot_total": round(ot, 2),
+        "breakdown_oncall_total": round(oncall, 2),
+        "breakdown_total": round(ob + ot + oncall, 2),
+        "breakdown_start": start,
+        "breakdown_end": end,
+    }
+
+
 def _shift_month(date: datetime.date, months: int) -> datetime.date:
     """Move a date by whole months, landing on the first of the target month.
 
@@ -701,7 +715,8 @@ def calculate_vacation_pay(
     # All variable components are included (no exclusion rules for semestertillägg)
     ob_total, ot_total, oncall_total = _sum_window(earning_start, earning_end)
     variable_total = ob_total + ot_total + oncall_total
-    lump_base = sum(_sum_window(lump_start, lump_end))
+    lump_parts = _sum_window(lump_start, lump_end)
+    lump_base = sum(lump_parts)
 
     # Variable supplement: 0.5% of total variable earnings, per vacation day (customizable)
     variable_per_day = round(variable_total * vac["variable_pct"], 2)
@@ -738,6 +753,15 @@ def calculate_vacation_pay(
         "variable_lump_lag_months": lag,
         "variable_lump_start": lump_start,
         "variable_lump_end": lump_end,
+        # The breakdown the views render. Resolved here rather than in the
+        # templates so the figures they show are always the ones the payout
+        # actually used: under lump that is the shifted window, and a breakdown
+        # summing to a different total than the payout above it is worse than no
+        # breakdown at all.
+        **_breakdown(
+            lump_parts if lump else (ob_total, ot_total, oncall_total),
+            (lump_start, lump_end) if lump else (earning_start, earning_end),
+        ),
         "supplement_total": round(supplement_per_day * entitled_days, 2),
         "variable_total": round(variable_total, 2),
         "ob_total": round(ob_total, 2),

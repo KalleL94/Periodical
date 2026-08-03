@@ -167,18 +167,18 @@
                 </div>
             </div>
             <div class="vacation-supplement-breakdown">
-                <div class="vacation-supplement-breakdown-note">{{ t.admin_vac_user_variable_parts.replace('{start}', balance.earning_year_start | date_format).replace('{end}', balance.earning_year_end | date_format) }}</div>
+                <div class="vacation-supplement-breakdown-note">{{ t.admin_vac_user_variable_parts.replace('{start}', balance.pay.breakdown_start.strftime('%Y-%m')).replace('{end}', balance.pay.breakdown_end.strftime('%Y-%m')) }}</div>
                 <div class="vacation-supplement-breakdown-grid">
                     <span>{{ t.admin_vac_user_ob_shifts }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_ob_total).replace(",", " ") }} kr</span>
                     <span>{{ t.admin_vac_user_overtime }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ot_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_ot_total).replace(",", " ") }} kr</span>
                     <span>{{ t.admin_vac_user_oncall }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.oncall_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_oncall_total).replace(",", " ") }} kr</span>
                 </div>
                 <div class="vacation-supplement-sum vacation-supplement-breakdown-grid">
                     <span>{{ t.admin_vac_user_variable_sum }}</span>
-                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.variable_total).replace(",", " ") }} kr</span>
+                    <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.breakdown_total).replace(",", " ") }} kr</span>
                     <span>{{ t.admin_vac_user_monthly_salary }}</span>
                     <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.monthly_salary).replace(",", " ") }} kr</span>
                 </div>

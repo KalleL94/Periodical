@@ -47,7 +47,7 @@ change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 ### Fixed (1.4.0)
 - The vacation supplement card printed the agreement's default rates ("0,8%", "0,5%") next to figures derived from the user's own configured rates. A user with a 0% variable rate saw "0,5%" above a 0 kr figure, which is exactly the case where the number needs explaining. Both notes now print the rate actually used, and a flat amount per day says so instead of showing a percentage
 - `payslip_override_derived` claimed the row was "set by the vacation days", which is wrong for the variable lump: that one is a share of the earning year and does not move with the days taken. It now points at the vacation settings
-- The variable-pay breakdown on the personal vacation page named no period, so under lump payout it sat directly below a lump calculated on a different window and the two looked like they contradicted each other. It now labels its own earning year, the way the admin page already did
+- The variable-pay breakdown on the vacation cards showed the unshifted earning year even under lump payout, so it summed to a different total than the lump printed directly above it (36 510 vs 22 967 for the same person) with no period named on the personal page to explain the gap. `calculate_vacation_pay` now resolves which window the breakdown covers, so it always matches the payout the card is about, and both pages print that window
 - The per-day supplement total printed a double colon ("Totalt 13 dagar:: 2 068 kr"): the translation already ends in one and the template added another
 
 ### Fixed

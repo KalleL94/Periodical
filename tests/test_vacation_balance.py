@@ -450,6 +450,12 @@ class TestCalculateVacationPay:
         assert pay["variable_lump_total"] == 2400.0  # 20000 * 0.12
         assert pay["variable_lump_end"] == datetime.date(2026, 2, 1)
 
+        # The breakdown the card renders follows the window the payout used, or
+        # it would sum to a different total than the figure printed above it.
+        assert pay["breakdown_total"] == pay["variable_lump_base"]
+        assert pay["breakdown_ob_total"] == 20000.0
+        assert (pay["breakdown_start"], pay["breakdown_end"]) == (pay["variable_lump_start"], pay["variable_lump_end"])
+
     def test_zero_lag_counts_the_earning_year_itself(self, test_db, monkeypatch):
         """An employer paying variable pay in the month it is worked has no shift."""
         user = _make_user(test_db, person_id=1, wage=30000)
@@ -497,6 +503,9 @@ class TestCalculateVacationPay:
         assert pay["variable_lump_total"] == 0.0
         # The per-day rule still applies: 0.5% of the variable total, per day.
         assert pay["variable_per_day"] == round(20000.0 * 0.005, 2)
+        # Without a lump the breakdown shows the unshifted earning year.
+        assert pay["breakdown_total"] == pay["variable_total"]
+        assert pay["breakdown_start"] == datetime.date(2026, 1, 1)
 
     def test_payout_settings_in_custom_rates_are_ignored(self, test_db):
         """These settings moved off custom_rates onto the User, because
