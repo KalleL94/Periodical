@@ -246,6 +246,14 @@
                 </div>
             </div>
             <div class="vacation-supplement-breakdown">
+                {# Name the window. Under lump payout this breakdown and the lump
+                   above it read different months, and unlabelled they look like
+                   they contradict each other. #}
+                <div class="vacation-supplement-breakdown-note">
+                    {{ t.vacation_variable_parts_period
+                        .replace('{start}', balance.earning_year_start | date_format)
+                        .replace('{end}', balance.earning_year_end | date_format) }}
+                </div>
                 <div class="vacation-supplement-breakdown-grid">
                     <span>{{ t.vacation_ob_shifts }}</span>
                     <span class="vacation-supplement-breakdown-value">{{ "{:,.0f}".format(balance.pay.ob_total).replace(",", " ") }} kr</span>
