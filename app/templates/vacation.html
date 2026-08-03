@@ -244,9 +244,9 @@
             </div>
         </div>
 
-        <!-- Employment start date -->
+        <!-- Employment start date and how the supplement is paid out -->
         <div class="card">
-            <h3 class="vacation-section-title">{{ t.vacation_employment_start }}</h3>
+            <h3 class="vacation-section-title">{{ t.vacation_settings_title }}</h3>
             <form method="POST" action="/profile/vacation/settings">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
@@ -254,6 +254,38 @@
                     <input type="date" name="employment_start_date"
                         value="{{ user.employment_start_date | date_format }}"
                         class="form-input">
+                </div>
+                {# How your employer settles the supplement. Same fields the admin
+                   page has: this is your own pay, so you can set it yourself. #}
+                <div class="form-group">
+                    <label class="form-label">{{ t.vacation_flat_per_day }}</label>
+                    <input type="number" name="vacation_fixed_per_day" step="0.01" min="0"
+                        value="{{ user.vacation_fixed_per_day if user.vacation_fixed_per_day is not none else '' }}"
+                        placeholder="{{ t.vacation_flat_per_day_placeholder }}"
+                        class="form-input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t.vacation_variable_payout }}</label>
+                    <select name="vacation_variable_payout" class="form-input">
+                        <option value="per_day">{{ t.vacation_payout_per_day }}</option>
+                        <option value="lump" {% if user.vacation_variable_payout == 'lump' %}selected{% endif %}>
+                            {{ t.vacation_payout_lump }}
+                        </option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t.vacation_payout_month }}</label>
+                    <select name="vacation_variable_payout_month" class="form-input">
+                        <option value="">{{ t.vacation_payout_month_default }}</option>
+                        {# From the translations rather than the route: the admin page's
+                           month_names is a hardcoded Swedish list, wrong for an EN user. #}
+                        {% set month_names = t.month_names_json | from_json %}
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if user.vacation_variable_payout_month == m %}selected{% endif %}>
+                            {{ month_names[m-1] }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
                 <button type="submit" class="btn btn-primary login-submit">{{ t.vacation_save_button }}</button>
             </form>

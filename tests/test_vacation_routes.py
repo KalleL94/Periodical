@@ -427,12 +427,31 @@ class TestVacationSettings:
         assert test_user.vacation_fixed_per_day is None
         assert test_user.vacation_variable_payout_month is None
 
-    def test_profile_save_leaves_the_payout_settings_alone(self, user_client, test_db, test_user):
-        """Self-service only posts the employment date; the payout settings are
-        admin-only and must not be reset to their defaults by it."""
-        test_user.vacation_fixed_per_day = 159.10
-        test_user.vacation_variable_payout = "lump"
-        test_user.vacation_variable_payout_month = 6
+    def test_profile_sets_the_payout_settings_without_an_admin(self, user_client, test_db, test_user):
+        """How the employer settles the supplement only affects this user's own
+        forecast, so it is theirs to set. Needing an admin for it would be wrong."""
+        resp = user_client.post(
+            "/profile/vacation/settings",
+            data={
+                "employment_start_date": "",
+                "vacation_fixed_per_day": "159.10",
+                "vacation_variable_payout": "lump",
+                "vacation_variable_payout_month": "6",
+            },
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        test_db.refresh(test_user)
+        assert test_user.vacation_fixed_per_day == 159.10
+        assert test_user.vacation_variable_payout == "lump"
+        assert test_user.vacation_variable_payout_month == 6
+
+    def test_profile_save_leaves_the_admin_only_settings_alone(self, user_client, test_db, test_user):
+        """Self-service does not post the break month or days per year, so saving
+        must not reset them to the form defaults."""
+        test_user.vacation_year_start_month = 9
+        test_user.vacation_days_per_year = 30
         test_db.commit()
 
         user_client.post(
@@ -442,9 +461,8 @@ class TestVacationSettings:
         )
 
         test_db.refresh(test_user)
-        assert test_user.vacation_fixed_per_day == 159.10
-        assert test_user.vacation_variable_payout == "lump"
-        assert test_user.vacation_variable_payout_month == 6
+        assert test_user.vacation_year_start_month == 9
+        assert test_user.vacation_days_per_year == 30
 
     def test_admin_rejects_out_of_range_settings(self, admin_client, test_db, test_user):
         test_user.vacation_year_start_month = 4

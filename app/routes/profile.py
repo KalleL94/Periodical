@@ -528,11 +528,25 @@ async def delete_vacation_day(
 @router.post("/profile/vacation/settings", name="update_vacation_settings")
 async def update_vacation_settings(
     employment_start_date: str = Form(""),
+    vacation_fixed_per_day: str = Form(""),
+    vacation_variable_payout: str = Form("per_day"),
+    vacation_variable_payout_month: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Update employment start date for current user."""
-    vacation_core.set_vacation_settings(db, current_user, employment_start_date)
+    """Update the current user's own vacation settings.
+
+    The break month and days per year stay admin-only; how the employer settles
+    the supplement does not, since it only affects this user's own forecast.
+    """
+    vacation_core.set_vacation_settings(
+        db,
+        current_user,
+        employment_start_date,
+        fixed_per_day=vacation_fixed_per_day,
+        variable_payout=vacation_variable_payout,
+        variable_payout_month=vacation_variable_payout_month,
+    )
     return RedirectResponse(url="/profile/vacation", status_code=302)
 
 
