@@ -625,11 +625,11 @@ def calculate_vacation_pay(
         monthly_salary = user.wage if hasattr(user, "wage") else 0
 
     # Fixed supplement: 0.8% of monthly salary per vacation day (customizable).
-    # A configured fixed_per_day wins: some employers pay a flat krona amount per
-    # vacation day rather than a percentage of the salary.
+    # A flat amount configured on the user wins: some employers pay a fixed krona
+    # amount per vacation day rather than a percentage of the salary.
     vac = vacation_rates or {"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046}
-    fixed_per_day = vac.get("fixed_per_day")
-    fixed_per_day = round(float(fixed_per_day), 2) if fixed_per_day else round(monthly_salary * vac["fixed_pct"], 2)
+    flat = getattr(user, "vacation_fixed_per_day", None)
+    fixed_per_day = round(float(flat), 2) if flat else round(monthly_salary * vac["fixed_pct"], 2)
 
     # Sum ALL variable earnings during earning year
     ob_total = 0.0
@@ -682,7 +682,7 @@ def calculate_vacation_pay(
     # keeps both parts regardless: leaving employment pays out the whole
     # supplement per unused day (Handelns avtal 9.5) no matter how the employer
     # schedules the variable part while employed.
-    lump = vac.get("variable_payout") == "lump"
+    lump = getattr(user, "vacation_variable_payout", None) == "lump"
     supplement_per_day = round(fixed_per_day if lump else fixed_per_day + variable_per_day, 2)
 
     return {
@@ -691,7 +691,7 @@ def calculate_vacation_pay(
         "supplement_per_day": supplement_per_day,
         "full_supplement_per_day": round(fixed_per_day + variable_per_day, 2),
         "variable_payout": "lump" if lump else "per_day",
-        "variable_payout_month": vac.get("variable_payout_month"),
+        "variable_payout_month": getattr(user, "vacation_variable_payout_month", None),
         "variable_lump_total": round(variable_per_day * entitled_days, 2) if lump else 0.0,
         "supplement_total": round(supplement_per_day * entitled_days, 2),
         "variable_total": round(variable_total, 2),
@@ -703,22 +703,21 @@ def calculate_vacation_pay(
     }
 
 
-def _lump_payout_month(vac: dict, user) -> int:
+def _lump_payout_month(configured_month: int | None, user) -> int:
     """The month a variable lump is paid in: configured, else the vacation year's start."""
-    return vac.get("variable_payout_month") or getattr(user, "vacation_year_start_month", None) or 1
+    return configured_month or getattr(user, "vacation_year_start_month", None) or 1
 
 
-def is_variable_lump_month(user, month: int, session=None) -> bool:
+def is_variable_lump_month(user, month: int) -> bool:
     """Whether this user's variable supplement lump is paid in this month.
 
-    Reads the rate settings only. Callers use it to decide whether the far more
-    expensive calculate_vacation_balance (it summarises twelve months) is worth
-    running for a month that has no vacation days in it.
+    Reads the user's own settings, nothing else. Callers use it to decide whether
+    the far more expensive calculate_vacation_balance (it summarises twelve
+    months) is worth running for a month that has no vacation days in it.
     """
-    from app.core.rates import get_user_rates
-
-    vac = get_user_rates(user, session=session).get("vacation") or {}
-    return vac.get("variable_payout") == "lump" and _lump_payout_month(vac, user) == month
+    if getattr(user, "vacation_variable_payout", None) != "lump":
+        return False
+    return _lump_payout_month(getattr(user, "vacation_variable_payout_month", None), user) == month
 
 
 def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_days: int) -> dict:
@@ -746,7 +745,7 @@ def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_da
     lump = 0.0
     # Falling back to the vacation year's own start month means the lump has a
     # defined home without forcing every user to configure one.
-    if pay.get("variable_payout") == "lump" and _lump_payout_month(pay, user) == month:
+    if pay.get("variable_payout") == "lump" and _lump_payout_month(pay.get("variable_payout_month"), user) == month:
         lump = round(pay.get("variable_lump_total", 0.0), 0)
 
     return {"fixed": fixed, "variable": variable, "lump": lump, "total": total + lump}
@@ -975,12 +974,18 @@ def set_vacation_settings(
     employment_start_date: str,
     year_start_month: int | None = None,
     days_per_year: int | None = None,
+    fixed_per_day: str | None = None,
+    variable_payout: str | None = None,
+    variable_payout_month: str | None = None,
 ) -> None:
     """Update vacation settings. Out-of-range values are ignored, as is a
     malformed date; an empty date string clears the employment start date.
 
-    Only the admin form exposes the break month and days per year, so those stay
-    optional rather than being reset when self-service saves.
+    Only the admin form exposes the break month, days per year and the payout
+    settings, so those stay optional rather than being reset when self-service
+    saves. The three payout fields arrive as raw strings because blank is a
+    meaningful answer for two of them: it clears the flat amount and falls the
+    lump back to the vacation year's start month.
     """
     if employment_start_date.strip():
         try:
@@ -995,5 +1000,21 @@ def set_vacation_settings(
 
     if days_per_year is not None and 0 <= days_per_year <= 40:
         user.vacation_days_per_year = days_per_year
+
+    if fixed_per_day is not None:
+        # Blank clears it, so the fixed percentage applies again.
+        try:
+            amount = float(fixed_per_day.replace(",", ".").strip()) if fixed_per_day.strip() else None
+        except ValueError:
+            amount = user.vacation_fixed_per_day
+        user.vacation_fixed_per_day = amount if amount is None or amount >= 0 else user.vacation_fixed_per_day
+
+    if variable_payout in ("per_day", "lump"):
+        user.vacation_variable_payout = variable_payout
+
+    if variable_payout_month is not None:
+        month = variable_payout_month.strip()
+        # Blank falls the lump back to the vacation year's start month.
+        user.vacation_variable_payout_month = int(month) if month.isdigit() and 1 <= int(month) <= 12 else None
 
     _commit(db)

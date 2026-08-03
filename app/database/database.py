@@ -151,6 +151,17 @@ class User(Base):
     vacation_saved = Column(
         JSON, default=dict
     )  # Saved vacation days per year: {"2025": {"saved": 3, "paid_out": 2, "payout_amount": 3404.0}}
+    # How the employer settles the vacation supplement. These sit here rather
+    # than in custom_rates because custom_rates is versioned through RateHistory:
+    # a wage revision would open a new rate period and drag a payout routine
+    # along with it. A flat amount per day replaces the fixed percentage.
+    vacation_fixed_per_day = Column(Float, nullable=True)  # NULL = derive from the fixed_pct rate
+    vacation_variable_payout = Column(
+        String(10), default="per_day", nullable=False
+    )  # "per_day" or "lump": is the variable part paid per vacation day or once a year
+    vacation_variable_payout_month = Column(
+        Integer, nullable=True
+    )  # Month (1-12) the lump is paid. NULL = the vacation year's start month
     custom_rates = Column(JSON, default=dict)  # Per-user rate overrides (OB, OT, oncall, vacation)
     language = Column(String(5), default="sv", nullable=False)  # UI language: "sv" or "en"
     seen_release = Column(String(20), nullable=True)  # Last changelog version acknowledged; NULL = never opened

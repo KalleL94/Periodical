@@ -381,6 +381,71 @@ class TestVacationSettings:
         assert test_user.vacation_year_start_month == 4
         assert test_user.vacation_days_per_year == 30
 
+    def test_admin_sets_the_supplement_payout_settings(self, admin_client, test_db, test_user):
+        """The flat amount per day and the variable payout routine live here,
+        not with the rates: the rates are versioned through RateHistory."""
+        resp = admin_client.post(
+            f"/admin/vacation/{test_user.id}/settings",
+            data={
+                "employment_start_date": "",
+                "vacation_year_start_month": 4,
+                "vacation_days_per_year": 25,
+                "vacation_fixed_per_day": "159.10",
+                "vacation_variable_payout": "lump",
+                "vacation_variable_payout_month": "6",
+            },
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 303
+        test_db.refresh(test_user)
+        assert test_user.vacation_fixed_per_day == 159.10
+        assert test_user.vacation_variable_payout == "lump"
+        assert test_user.vacation_variable_payout_month == 6
+
+    def test_admin_clears_the_payout_month_and_flat_amount(self, admin_client, test_db, test_user):
+        """Blank is a real answer for both: no flat amount means the percentage
+        applies again, and no month falls the lump back to the year's start."""
+        test_user.vacation_fixed_per_day = 159.10
+        test_user.vacation_variable_payout_month = 6
+        test_db.commit()
+
+        admin_client.post(
+            f"/admin/vacation/{test_user.id}/settings",
+            data={
+                "employment_start_date": "",
+                "vacation_year_start_month": 4,
+                "vacation_days_per_year": 25,
+                "vacation_fixed_per_day": "",
+                "vacation_variable_payout": "per_day",
+                "vacation_variable_payout_month": "",
+            },
+            follow_redirects=False,
+        )
+
+        test_db.refresh(test_user)
+        assert test_user.vacation_fixed_per_day is None
+        assert test_user.vacation_variable_payout_month is None
+
+    def test_profile_save_leaves_the_payout_settings_alone(self, user_client, test_db, test_user):
+        """Self-service only posts the employment date; the payout settings are
+        admin-only and must not be reset to their defaults by it."""
+        test_user.vacation_fixed_per_day = 159.10
+        test_user.vacation_variable_payout = "lump"
+        test_user.vacation_variable_payout_month = 6
+        test_db.commit()
+
+        user_client.post(
+            "/profile/vacation/settings",
+            data={"employment_start_date": "2020-02-03"},
+            follow_redirects=False,
+        )
+
+        test_db.refresh(test_user)
+        assert test_user.vacation_fixed_per_day == 159.10
+        assert test_user.vacation_variable_payout == "lump"
+        assert test_user.vacation_variable_payout_month == 6
+
     def test_admin_rejects_out_of_range_settings(self, admin_client, test_db, test_user):
         test_user.vacation_year_start_month = 4
         test_user.vacation_days_per_year = 25

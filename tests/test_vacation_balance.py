@@ -335,7 +335,54 @@ class TestCalculateVacationPay:
         assert pay["payout_pct"] == 0.046
 
     def test_fixed_per_day_overrides_the_percentage(self, test_db):
-        """Some employers pay a flat krona amount per vacation day."""
+        """Some employers pay a flat krona amount per vacation day.
+
+        The flat amount is a User setting, not a rate: the rates are versioned
+        through RateHistory and a wage revision must not carry a payout routine
+        into a new rate period with it.
+        """
+        user = _make_user(test_db, person_id=99, wage=30000)
+        user.vacation_fixed_per_day = 300.0
+        test_db.commit()
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+        # 300 flat, not 30000 * 0.008 = 240.
+        assert pay["fixed_per_day"] == 300.0
+        assert pay["supplement_per_day"] == 300.0
+
+    def test_lump_payout_takes_the_variable_part_out_of_the_per_day_figure(self, test_db):
+        """Paying the variable part once means a taken day must not also carry it,
+        or the same money is paid twice."""
+        user = _make_user(test_db, person_id=99, wage=30000)
+        user.vacation_variable_payout = "lump"
+        test_db.commit()
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["supplement_per_day"] == pay["fixed_per_day"]
+        # The full figure survives for the payout path, which owes both parts.
+        assert pay["full_supplement_per_day"] == round(pay["fixed_per_day"] + pay["variable_per_day"], 2)
+        assert pay["variable_lump_total"] == round(pay["variable_per_day"] * 25, 2)
+
+    def test_payout_settings_in_custom_rates_are_ignored(self, test_db):
+        """These settings moved off custom_rates onto the User, because
+        custom_rates is versioned through RateHistory and a wage revision would
+        open a new rate period dragging the payout routine along with it. A
+        leftover value in the rates dict must not quietly still work."""
         user = _make_user(test_db, person_id=99, wage=30000)
         pay = calculate_vacation_pay(
             user=user,
@@ -347,36 +394,13 @@ class TestCalculateVacationPay:
                 "fixed_pct": 0.008,
                 "variable_pct": 0.005,
                 "payout_pct": 0.046,
-                "fixed_per_day": 300.0,
+                "fixed_per_day": 999.0,
+                "variable_payout": "lump",
             },
         )
-        # 300 flat, not 30000 * 0.008 = 240.
-        assert pay["fixed_per_day"] == 300.0
-        assert pay["supplement_per_day"] == 300.0
 
-    def test_lump_payout_takes_the_variable_part_out_of_the_per_day_figure(self, test_db):
-        """Paying the variable part once means a taken day must not also carry it,
-        or the same money is paid twice."""
-        user = _make_user(test_db, person_id=99, wage=30000)
-        rates = {
-            "fixed_pct": 0.008,
-            "variable_pct": 0.005,
-            "payout_pct": 0.046,
-            "variable_payout": "lump",
-        }
-        pay = calculate_vacation_pay(
-            user=user,
-            entitled_days=25,
-            earning_start=datetime.date(2025, 4, 1),
-            earning_end=datetime.date(2026, 3, 31),
-            db=test_db,
-            vacation_rates=rates,
-        )
-
-        assert pay["supplement_per_day"] == pay["fixed_per_day"]
-        # The full figure survives for the payout path, which owes both parts.
-        assert pay["full_supplement_per_day"] == round(pay["fixed_per_day"] + pay["variable_per_day"], 2)
-        assert pay["variable_lump_total"] == round(pay["variable_per_day"] * 25, 2)
+        assert pay["fixed_per_day"] == 240.0
+        assert pay["variable_payout"] == "per_day"
 
 
 class TestVacationSupplementForMonth:

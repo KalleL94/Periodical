@@ -63,7 +63,7 @@ def _vacation_supplement(db: Session, user: User | None, year: int, month: int, 
     if user is None:
         return empty
     try:
-        if not days and not is_variable_lump_month(user, month, db):
+        if not days and not is_variable_lump_month(user, month):
             return empty
         balance = calculate_vacation_balance(user, year, db)
         return vacation_supplement_for_month(balance, user, month, days)

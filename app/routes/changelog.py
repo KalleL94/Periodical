@@ -31,8 +31,8 @@ VERSIONS = [
             },
             {
                 "type": "nyhet",
-                "sv": "Semestertillägget delas upp i fast och rörlig del på lönespecen. Betalar din arbetsgivare den rörliga delen som en klumpsumma en gång om året i stället för per uttagen semesterdag går det att ställa in, tillsammans med vilken månad den betalas och ett fast kronbelopp per dag om du har ett sådant. Inställningarna finns bland dina ersättningsnivåer",
-                "en": "The vacation supplement is split into its fixed and variable parts on the payslip. If your employer pays the variable part as a lump sum once a year instead of per vacation day taken, you can set that, along with which month it is paid and a flat amount per day if you have one. The settings sit with your compensation rates",
+                "sv": "Semestertillägget delas upp i fast och rörlig del på lönespecen. Betalar din arbetsgivare den rörliga delen som en klumpsumma en gång om året i stället för per uttagen semesterdag går det att ställa in, tillsammans med vilken månad den betalas och ett fast kronbelopp per dag om du har ett sådant. Inställningarna finns under Semesterinställningar",
+                "en": "The vacation supplement is split into its fixed and variable parts on the payslip. If your employer pays the variable part as a lump sum once a year instead of per vacation day taken, you can set that, along with which month it is paid and a flat amount per day if you have one. The settings sit under Vacation settings",
             },
             {
                 "type": "nyhet",

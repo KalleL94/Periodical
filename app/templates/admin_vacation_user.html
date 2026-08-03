@@ -271,6 +271,35 @@
                         value="{{ edit_user.vacation_days_per_year }}" min="0" max="40"
                         class="form-input">
                 </div>
+                {# How the employer settles the supplement. Not a rate: these must not
+                   be versioned through RateHistory alongside the wage. #}
+                <div class="form-group avu-field">
+                    <label class="form-label avu-label">{{ t.admin_vac_user_flat_per_day }}</label>
+                    <input type="number" name="vacation_fixed_per_day" step="0.01" min="0"
+                        value="{{ edit_user.vacation_fixed_per_day if edit_user.vacation_fixed_per_day is not none else '' }}"
+                        placeholder="{{ t.admin_vac_user_flat_per_day_placeholder }}"
+                        class="form-input">
+                </div>
+                <div class="form-group avu-field">
+                    <label class="form-label avu-label">{{ t.admin_vac_user_variable_payout }}</label>
+                    <select name="vacation_variable_payout" class="form-input">
+                        <option value="per_day">{{ t.admin_vac_user_payout_per_day }}</option>
+                        <option value="lump" {% if edit_user.vacation_variable_payout == 'lump' %}selected{% endif %}>
+                            {{ t.admin_vac_user_payout_lump }}
+                        </option>
+                    </select>
+                </div>
+                <div class="form-group avu-field">
+                    <label class="form-label avu-label">{{ t.admin_vac_user_payout_month }}</label>
+                    <select name="vacation_variable_payout_month" class="form-input">
+                        <option value="">{{ t.admin_vac_user_payout_month_default }}</option>
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if edit_user.vacation_variable_payout_month == m %}selected{% endif %}>
+                            {{ month_names[m-1] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <button type="submit" class="btn btn-primary avu-btn-full">{{ t.admin_vac_user_save_settings }}</button>
             </form>
         </div>

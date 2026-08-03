@@ -868,7 +868,7 @@ async def show_month_for_person(
         # was taken in it, so days alone no longer decide whether there is
         # anything to show. Resolving the rates first is cheap; calculating the
         # balance is not (it summarises twelve months), so it stays gated.
-        if vac_user and (sem_count > 0 or is_variable_lump_month(vac_user, month, db)):
+        if vac_user and (sem_count > 0 or is_variable_lump_month(vac_user, month)):
             try:
                 balance = calculate_vacation_balance(vac_user, year, db)
                 pay = balance.get("pay", {})
