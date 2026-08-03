@@ -31,10 +31,19 @@ DEFAULT_ONCALL_RATES: dict[str, int] = {
     "OC_SPECIAL": 192,
 }
 
-DEFAULT_VACATION_RATES: dict[str, float] = {
+DEFAULT_VACATION_RATES: dict = {
     "fixed_pct": 0.008,
     "variable_pct": 0.005,
     "payout_pct": 0.046,
+    # Kronor per vacation day for the fixed part, overriding fixed_pct of the
+    # monthly salary. None keeps the percentage, which is the agreement's rule;
+    # a fixed amount is for employers who pay a flat figure instead.
+    "fixed_per_day": None,
+    # "per_day" pays the variable part with each vacation day taken. "lump" pays
+    # the whole year's variable part once, which is how many employers do it.
+    "variable_payout": "per_day",
+    # Month the lump is paid in. None means the vacation year's start month.
+    "variable_payout_month": None,
 }
 
 DEFAULT_OT_DIVISOR: int = OT_RATE_DIVISOR  # 72

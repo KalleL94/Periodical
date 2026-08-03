@@ -86,6 +86,15 @@
                         {% else %}
                             {{ m.year }}-{{ '%02d'|format(m.month) }}
                         {% endif %}
+                        {# This month's figures include a hand-entered payslip row,
+                           so they do not match the computed per-day breakdown. #}
+                        {% if show_salary and m.override_deltas %}
+                            {%- set _adj = [] -%}
+                            {%- for key, delta in m.override_deltas.items() -%}
+                                {%- set _ = _adj.append(t.payslip_row_labels.get(key, key) ~ " " ~ "%+.0f"|format(delta) ~ " kr") -%}
+                            {%- endfor -%}
+                            <span class="badge badge-warning" title="{{ _adj|join(', ') }}">{{ t.payslip_manual_adjustment }}</span>
+                        {% endif %}
                     </td>
                     {% if show_salary %}
                     <td class="td_right num" data-label="{{ t.year_net }}">{{ "%.0f"|format(m.netto_pay or 0) }}</td>

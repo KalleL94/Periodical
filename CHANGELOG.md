@@ -16,6 +16,17 @@ number is bumped by the pull request that follows a release, not by every
 change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 `VERSIONS` disagree.
 
+## [1.4.0] - Unreleased
+
+### Added
+- An "add a pay row" form on the payslip page. The select lists every pay type the app knows but did not produce for the month (`build_payslip_rows` skips rows that compute to zero, so a month with no OB3 previously had no row to edit), plus an "own label" option whose free-text label becomes the row key. `POST /month/<id>/payslip/override` no longer rejects a `row_key` outside `ROW_ORDER`, only a key that is empty or wider than the 40-character column; `apply_payslip_overrides` already created a row for a key the app did not compute. The sentinel for the free-text option is resolved server-side, so the form works with JavaScript disabled. No migration: rows are stored in the existing `payslip_overrides` table, per month like every other override
+- The waiting-day deduction (karens) is its own payslip row, split out of the single net sick deduction using the `karens_hours` already carried on each absence detail. The two rows sum back to the figure the app computed, so gross pay does not move, and `COMPARE_BUCKETS` already grouped `karens` with the other sick rows so the upload comparison is unchanged
+- The vacation supplement renders as two rows, fixed part and variable part, and a third for a variable part paid as a lump sum. Three new per-user settings in `DEFAULT_VACATION_RATES` drive it: `fixed_per_day` (a flat krona amount overriding `fixed_pct`), `variable_payout` (`per_day` or `lump`) and `variable_payout_month` (defaulting to the vacation year's start month). `custom_rates` is a JSON dict merged over the defaults, so this needs no migration. Under `lump` the variable part leaves the per-day figure, or a taken vacation day would be paid its share twice; `full_supplement_per_day` keeps both parts for the payout path, which owes the whole supplement on every unused day regardless (Handelns avtal §9.5)
+
+### Changed
+- Manual payslip rows now reach the itemised figures on the month and year views, not only gross pay. `_OVERRIDE_TO_TOTAL` routes OB (into `ob_pay` under its own code), on-call, overtime and substitute pay alongside the absence and sick-pay rows it already handled. The per-day breakdown tables still show what the app computed, so both views mark an adjusted month from the new `override_deltas` in the summary rather than rewriting per-day data to match. `strip_salary_data` clears `override_deltas` with the other salary figures
+- The month's vacation supplement is resolved in one place, `vacation_supplement_for_month`, instead of `supplement_per_day * days` repeated in the year view, the personal month view and the payslip route. The personal month view no longer skips the calculation when the month has no vacation days, since a lump payout lands in one month whether or not vacation was taken in it; a cheap rates lookup (`is_variable_lump_month`) still gates the expensive balance calculation
+
 ## [1.3.0] - 2026-07-28
 
 ### Added

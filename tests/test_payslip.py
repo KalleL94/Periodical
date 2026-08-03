@@ -13,7 +13,7 @@ from app.core.payslip_import import parse_payslip_pdf
 from app.core.schedule.payslip import (
     Payslip,
     PayslipRow,
-    add_vacation_row,
+    add_vacation_rows,
     apply_payslip_overrides,
     build_payslip_rows,
     compare_to_upload,
@@ -91,6 +91,43 @@ def test_absence_deduction_splits_per_type_and_is_negative():
     assert rows["vab_deduction"].amount == -853.84
 
 
+def test_karens_splits_out_of_the_sick_deduction_without_moving_the_total():
+    """A payslip lists the waiting-day deduction on its own line.
+
+    The split must be exact: this app carries one net sick deduction, so if the
+    two rows do not sum back to it, gross pay moves and every view disagrees
+    with the month summary.
+    """
+    from app.core.schedule.wages import _MONTHLY_HOURS
+
+    base_salary = 37000.0
+    hourly = base_salary / _MONTHLY_HOURS
+    # 16 sick hours, the first 8 of them waiting-day hours: 100% on the karens
+    # hours, 20% on the rest (see calculate_absence_deduction).
+    deduction = hourly * 8.0 + hourly * 8.0 * 0.2
+    totals = _totals(absence_details=[{"type": "SICK", "deduction": deduction, "hours": 16.0, "karens_hours": 8.0}])
+
+    slip = build_payslip_rows(totals, [_day()], base_salary=base_salary, is_hourly=False, year=2026, month=6)
+    rows = slip.by_key()
+
+    assert round(rows["karens"].amount, 2) == round(-hourly * 8.0, 2)
+    assert rows["karens"].qty == 8.0
+    assert round(rows["sick_deduction"].amount, 2) == round(-hourly * 8.0 * 0.2, 2)
+    assert rows["sick_deduction"].qty == 8.0
+    # The pair sums back to the single deduction the app computed.
+    assert round(rows["karens"].amount + rows["sick_deduction"].amount, 2) == round(-deduction, 2)
+
+
+def test_sick_deduction_without_karens_stays_one_row():
+    """A later sick period day has no waiting-day hours, so no karens row."""
+    totals = _totals(absence_details=[{"type": "SICK", "deduction": 341.55, "hours": 8.0, "karens_hours": 0.0}])
+
+    slip = build_payslip_rows(totals, [_day()], base_salary=37000.0, is_hourly=False, year=2026, month=6)
+
+    assert "karens" not in slip.by_key()
+    assert slip.by_key()["sick_deduction"].amount == -341.55
+
+
 def test_override_returns_the_per_row_delta_applied_to_gross():
     """The deltas are what summarize adds to brutto_pay, so they must be exact."""
     days = [_day(ot_hours=8.0, ot_pay=3000.0, code="OT", hours=0.0)]
@@ -131,6 +168,44 @@ def test_deduction_override_routes_into_the_absence_deduction_total():
     assert round(totals["absence_deduction"], 2) == 2049.0
     # An untouched field stays put.
     assert totals["sick_ob_pay"] == 500.0
+
+
+def test_variable_pay_overrides_route_into_their_itemised_totals():
+    """A hand-entered OB, on-call or overtime figure has to reach the month and
+    year views, not stop at gross pay."""
+    from app.core.schedule.payslip import route_override_deltas
+
+    totals = {"ob_pay": {"OB3": 536.0}, "oncall_pay": 1800.0, "ot_pay": 3000.0, "substitute_base_pay": 0.0}
+    route_override_deltas(totals, {"OB3": 100.0, "oc_helg": 250.0, "ot": 382.88, "substitute": 500.0})
+
+    # OB is itemised per code, so its delta lands inside the dict, not beside it.
+    assert round(totals["ob_pay"]["OB3"], 2) == 636.0
+    assert round(totals["oncall_pay"], 2) == 2050.0
+    assert round(totals["ot_pay"], 2) == 3382.88
+    assert round(totals["substitute_base_pay"], 2) == 500.0
+    # The views need the deltas to mark which aggregates were adjusted by hand.
+    assert totals["override_deltas"]["OB3"] == 100.0
+
+
+def test_override_for_an_ob_code_the_month_never_produced():
+    """Adding an OB row to a month with no OB at all must not need the code to
+    already exist in the totals dict."""
+    from app.core.schedule.payslip import route_override_deltas
+
+    totals = {"ob_pay": {}}
+    route_override_deltas(totals, {"OB5": 919.0})
+
+    assert totals["ob_pay"]["OB5"] == 919.0
+
+
+def test_karens_override_moves_the_absence_deduction():
+    """Karens is a deduction, so a positive delta means less was deducted."""
+    from app.core.schedule.payslip import route_override_deltas
+
+    totals = {"absence_deduction": 2049.27}
+    route_override_deltas(totals, {"karens": 200.0})
+
+    assert round(totals["absence_deduction"], 2) == 1849.27
 
 
 def test_sick_rows_share_one_comparison_bucket():
@@ -295,14 +370,29 @@ def test_tax_free_expenses_are_excluded_from_the_comparison():
     assert all(line["matched"] for line in result["lines"])
 
 
-def test_vacation_row_is_added_once():
-    """add_vacation_row runs outside summarize, so it must be idempotent."""
+def test_vacation_rows_are_added_once():
+    """add_vacation_rows runs outside summarize, so it must be idempotent."""
+    slip = build_payslip_rows(_totals(), [_day()], base_salary=37000.0, is_hourly=False, year=2026, month=6)
+    supplement = {"fixed": 1184.0, "variable": 300.0, "lump": 0.0, "total": 1484.0}
+
+    add_vacation_rows(slip, supplement, 4)
+    add_vacation_rows(slip, supplement, 4)
+
+    fixed = [r for r in slip.rows if r.key == "vacation_fixed"]
+    variable = [r for r in slip.rows if r.key == "vacation_variable"]
+    assert len(fixed) == 1
+    assert len(variable) == 1
+    assert fixed[0].qty == 4
+    assert round(slip.total, 2) == round(37000.0 + 1484.0, 2)
+
+
+def test_vacation_lump_row_carries_no_quantity():
+    """The lump settles the whole year, not the days taken in the month it lands in."""
     slip = build_payslip_rows(_totals(), [_day()], base_salary=37000.0, is_hourly=False, year=2026, month=6)
 
-    add_vacation_row(slip, 1184.0, 4)
-    add_vacation_row(slip, 1184.0, 4)
+    add_vacation_rows(slip, {"fixed": 0.0, "variable": 0.0, "lump": 6250.0, "total": 6250.0}, 0)
 
-    vacation_rows = [r for r in slip.rows if r.key == "vacation_pay"]
-    assert len(vacation_rows) == 1
-    assert vacation_rows[0].qty == 4
-    assert round(slip.total, 2) == round(37000.0 + 1184.0, 2)
+    lump = [r for r in slip.rows if r.key == "vacation_variable_lump"]
+    assert len(lump) == 1
+    assert lump[0].qty is None
+    assert round(slip.total, 2) == round(37000.0 + 6250.0, 2)

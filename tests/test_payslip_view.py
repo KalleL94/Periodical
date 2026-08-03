@@ -166,10 +166,10 @@ def test_vacation_supplement_cannot_be_overridden(test_client, monthly_user, tes
 
     response = test_client.post(
         "/month/5/payslip/override",
-        data={"year": 2026, "month": 6, "row_key": "vacation_pay", "hours": "4", "unit_price": "148"},
+        data={"year": 2026, "month": 6, "row_key": "vacation_fixed", "hours": "4", "unit_price": "148"},
     )
     assert response.status_code == 400
-    assert test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "vacation_pay").count() == 0
+    assert test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "vacation_fixed").count() == 0
 
 
 def test_override_is_removed_by_an_empty_amount(test_client, monthly_user, test_db):
@@ -182,6 +182,96 @@ def test_override_is_removed_by_an_empty_amount(test_client, monthly_user, test_
 
     test_client.post("/month/5/payslip/override", data={**payload, "amount": ""})
     assert test_db.query(PayslipOverride).count() == 0
+
+
+def test_add_row_for_a_pay_type_the_month_never_produced(test_client, monthly_user, test_db):
+    """build_payslip_rows skips rows that compute to zero, so an OB level the
+    month had none of has no row to edit. Adding one must still work."""
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "OB5", "hours": "6", "unit_price": "246.67"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    override = test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "OB5").one()
+    assert round(override.amount, 2) == round(6 * 246.67, 2)
+
+    page = test_client.get("/month/5/payslip?year=2026&month=6")
+    assert "OB storhelg" in page.text
+
+
+def test_add_row_with_a_hand_typed_label(test_client, monthly_user, test_db):
+    """An employer pays things the model has no rule for; the label is the key."""
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={
+            "year": 2026,
+            "month": 6,
+            "row_key": "__custom__",
+            "custom_key": "Milersättning",
+            "amount": "1250",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    override = test_db.query(PayslipOverride).filter(PayslipOverride.row_key == "Milersättning").one()
+    assert override.amount == 1250.0
+    # The key doubles as the label, so it has to survive onto the page.
+    assert "Milersättning" in test_client.get("/month/5/payslip?year=2026&month=6").text
+
+
+def test_add_row_rejects_a_key_longer_than_the_column(test_client, monthly_user, test_db):
+    """row_key is String(40); a longer key would be truncated or error on commit."""
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "__custom__", "custom_key": "x" * 41, "amount": "100"},
+    )
+
+    assert response.status_code == 400
+    assert test_db.query(PayslipOverride).count() == 0
+
+
+def test_add_row_rejects_an_empty_label(test_client, monthly_user, test_db):
+    _login(test_client, monthly_user)
+    from app.database.database import PayslipOverride
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "__custom__", "custom_key": "   ", "amount": "100"},
+    )
+
+    assert response.status_code == 400
+    assert test_db.query(PayslipOverride).count() == 0
+
+
+def test_manual_adjustment_is_marked_on_the_month_and_year_views(test_client, monthly_user):
+    """A routed override moves the aggregate but not the per-day breakdown below
+    it, so the views have to say the figure was adjusted by hand or it reads as
+    an arithmetic error."""
+    _login(test_client, monthly_user)
+    test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "OB5", "amount": "919", "hours": "6"},
+    )
+
+    month = test_client.get("/month/5?year=2026&month=6")
+    assert month.status_code == 200
+    assert "Manuell justering" in month.text
+
+    year = test_client.get("/year/5?year=2026")
+    assert year.status_code == 200
+    assert "Manuell justering" in year.text
 
 
 def test_override_rejects_another_users_payslip(test_client, monthly_user, hourly_user):

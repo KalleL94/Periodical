@@ -95,6 +95,19 @@
         </tbody>
     </table>
 
+    {# The figures above follow any manual payslip rows, but the per-day tables
+       below still show what the app computed, so the two no longer add up.
+       Naming the adjustment is what keeps that from reading as a bug. #}
+    {% if show_salary and days.override_deltas %}
+    <p class="form-hint">
+        <strong>{{ t.payslip_manual_adjustment }}:</strong>
+        {% for key, delta in days.override_deltas.items() %}
+            {{ t.payslip_row_labels.get(key, key) }} {{ "%+.0f"|format(delta) }} kr{% if not loop.last %}, {% endif %}
+        {% endfor %}
+        <a href="/month/{{ person_id }}/payslip?year={{ year }}&month={{ month }}">{{ t.payslip_link }}</a>
+    </p>
+    {% endif %}
+
     {% if show_salary and days.sick_days > 0 %}
     {% set sick_total_ob = days.sick_total_ob or 0 %}
     {% set sick_ob_lost = days.sick_ob_lost or 0 %}

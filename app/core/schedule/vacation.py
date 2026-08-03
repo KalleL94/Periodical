@@ -366,7 +366,9 @@ def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, d
     from sqlalchemy.orm.attributes import flag_modified
 
     monthly_salary = pay.get("monthly_salary", 0)
-    supplement_per_day = pay.get("supplement_per_day", 0)
+    # The full supplement, both parts: an employer who pays the variable part as a
+    # lump sum still owes it on every unused day that is paid out.
+    supplement_per_day = pay.get("full_supplement_per_day", pay.get("supplement_per_day", 0))
     payout_pct = pay.get("payout_pct", 0.046)
 
     # Vacation compensation = payout_pct base + vacation supplement
@@ -546,7 +548,8 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
     else:
         # Year is open — show projection of what will happen at year-end
         monthly_salary = pay.get("monthly_salary", 0)
-        supplement_per_day = pay.get("supplement_per_day", 0)
+        # Same full supplement the close itself pays out, see close_vacation_year.
+        supplement_per_day = pay.get("full_supplement_per_day", pay.get("supplement_per_day", 0))
         payout_pct = pay.get("payout_pct", 0.046)
         payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
@@ -621,9 +624,12 @@ def calculate_vacation_pay(
     if monthly_salary == 0:
         monthly_salary = user.wage if hasattr(user, "wage") else 0
 
-    # Fixed supplement: 0.8% of monthly salary per vacation day (customizable)
+    # Fixed supplement: 0.8% of monthly salary per vacation day (customizable).
+    # A configured fixed_per_day wins: some employers pay a flat krona amount per
+    # vacation day rather than a percentage of the salary.
     vac = vacation_rates or {"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046}
-    fixed_per_day = round(monthly_salary * vac["fixed_pct"], 2)
+    fixed_per_day = vac.get("fixed_per_day")
+    fixed_per_day = round(float(fixed_per_day), 2) if fixed_per_day else round(monthly_salary * vac["fixed_pct"], 2)
 
     # Sum ALL variable earnings during earning year
     ob_total = 0.0
@@ -671,13 +677,22 @@ def calculate_vacation_pay(
     # Variable supplement: 0.5% of total variable earnings, per vacation day (customizable)
     variable_per_day = round(variable_total * vac["variable_pct"], 2)
 
-    # Total supplement per day
-    supplement_per_day = round(fixed_per_day + variable_per_day, 2)
+    # Paying the variable part as a lump sum takes it out of the per-day figure,
+    # or a taken vacation day would be paid its share twice. full_supplement_per_day
+    # keeps both parts regardless: leaving employment pays out the whole
+    # supplement per unused day (Handelns avtal 9.5) no matter how the employer
+    # schedules the variable part while employed.
+    lump = vac.get("variable_payout") == "lump"
+    supplement_per_day = round(fixed_per_day if lump else fixed_per_day + variable_per_day, 2)
 
     return {
         "fixed_per_day": fixed_per_day,
         "variable_per_day": variable_per_day,
         "supplement_per_day": supplement_per_day,
+        "full_supplement_per_day": round(fixed_per_day + variable_per_day, 2),
+        "variable_payout": "lump" if lump else "per_day",
+        "variable_payout_month": vac.get("variable_payout_month"),
+        "variable_lump_total": round(variable_per_day * entitled_days, 2) if lump else 0.0,
         "supplement_total": round(supplement_per_day * entitled_days, 2),
         "variable_total": round(variable_total, 2),
         "ob_total": round(ob_total, 2),
@@ -686,6 +701,55 @@ def calculate_vacation_pay(
         "monthly_salary": monthly_salary,
         "payout_pct": vac["payout_pct"],
     }
+
+
+def _lump_payout_month(vac: dict, user) -> int:
+    """The month a variable lump is paid in: configured, else the vacation year's start."""
+    return vac.get("variable_payout_month") or getattr(user, "vacation_year_start_month", None) or 1
+
+
+def is_variable_lump_month(user, month: int, session=None) -> bool:
+    """Whether this user's variable supplement lump is paid in this month.
+
+    Reads the rate settings only. Callers use it to decide whether the far more
+    expensive calculate_vacation_balance (it summarises twelve months) is worth
+    running for a month that has no vacation days in it.
+    """
+    from app.core.rates import get_user_rates
+
+    vac = get_user_rates(user, session=session).get("vacation") or {}
+    return vac.get("variable_payout") == "lump" and _lump_payout_month(vac, user) == month
+
+
+def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_days: int) -> dict:
+    """One month's vacation supplement, split the way a payslip lists it.
+
+    Returns {"fixed", "variable", "lump", "total"}. The fixed and variable parts
+    follow the vacation days taken in the month. `lump` is the whole year's
+    variable part, paid in a single month by employers who settle it that way
+    (see rates.DEFAULT_VACATION_RATES "variable_payout"); it is zero in every
+    other month, and always zero under per-day payout.
+
+    The year view, the personal month view and the payslip all resolve the
+    month's supplement through this, so none of them can disagree about the
+    amount or about which month the lump lands in.
+    """
+    pay = (balance or {}).get("pay", {}) or {}
+    total = round(pay.get("supplement_per_day", 0) * sem_days, 0) if sem_days else 0.0
+    fixed = round(pay.get("fixed_per_day", 0) * sem_days, 0) if sem_days else 0.0
+    # The variable part is taken as the remainder rather than computed from its
+    # own per-day rate, so the two rows always sum to the single figure these
+    # views showed before the split. Under "lump" the per-day total is the fixed
+    # part alone, which makes this zero without a second branch.
+    variable = total - fixed
+
+    lump = 0.0
+    # Falling back to the vacation year's own start month means the lump has a
+    # defined home without forcing every user to configure one.
+    if pay.get("variable_payout") == "lump" and _lump_payout_month(pay, user) == month:
+        lump = round(pay.get("variable_lump_total", 0.0), 0)
+
+    return {"fixed": fixed, "variable": variable, "lump": lump, "total": total + lump}
 
 
 def fold_vacation_supplement_into_pay(brutto_pay: float, netto_pay: float, supplement: float) -> tuple[float, float]:

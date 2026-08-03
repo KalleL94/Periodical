@@ -195,6 +195,22 @@ class TestCloseVacationYear:
         test_db.refresh(user)
         assert user.vacation_saved["2025"]["saved"] == 5
 
+    def test_lump_payout_still_owes_the_variable_part_on_unused_days(self, test_db):
+        """Under lump payout supplement_per_day carries the fixed part only, but
+        semesterersättning (Handelns avtal 9.5) owes the whole supplement on every
+        day paid out. Reading the reduced figure here would quietly underpay."""
+        user = _make_user(test_db, person_id=6, vacation_saved={})
+        pay = {
+            "monthly_salary": 30000,
+            "supplement_per_day": 240,
+            "full_supplement_per_day": 300,
+            "payout_pct": 0.046,
+        }
+        result = close_vacation_year(user, 2025, remaining_own=8, pay=pay, db=test_db)
+
+        # 30000 * 0.046 + 300 (both parts), not + 240.
+        assert result["payout_per_day"] == 1680.0
+
     def test_negative_remaining_saves_nothing(self, test_db):
         user = _make_user(test_db, person_id=4, vacation_saved={})
         pay = {"monthly_salary": 30000, "supplement_per_day": 0, "payout_pct": 0.046}
@@ -317,3 +333,106 @@ class TestCalculateVacationPay:
         assert pay["supplement_per_day"] == 240.0
         assert pay["supplement_total"] == round(240.0 * 25, 2)
         assert pay["payout_pct"] == 0.046
+
+    def test_fixed_per_day_overrides_the_percentage(self, test_db):
+        """Some employers pay a flat krona amount per vacation day."""
+        user = _make_user(test_db, person_id=99, wage=30000)
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={
+                "fixed_pct": 0.008,
+                "variable_pct": 0.005,
+                "payout_pct": 0.046,
+                "fixed_per_day": 300.0,
+            },
+        )
+        # 300 flat, not 30000 * 0.008 = 240.
+        assert pay["fixed_per_day"] == 300.0
+        assert pay["supplement_per_day"] == 300.0
+
+    def test_lump_payout_takes_the_variable_part_out_of_the_per_day_figure(self, test_db):
+        """Paying the variable part once means a taken day must not also carry it,
+        or the same money is paid twice."""
+        user = _make_user(test_db, person_id=99, wage=30000)
+        rates = {
+            "fixed_pct": 0.008,
+            "variable_pct": 0.005,
+            "payout_pct": 0.046,
+            "variable_payout": "lump",
+        }
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates=rates,
+        )
+
+        assert pay["supplement_per_day"] == pay["fixed_per_day"]
+        # The full figure survives for the payout path, which owes both parts.
+        assert pay["full_supplement_per_day"] == round(pay["fixed_per_day"] + pay["variable_per_day"], 2)
+        assert pay["variable_lump_total"] == round(pay["variable_per_day"] * 25, 2)
+
+
+class TestVacationSupplementForMonth:
+    """The month's supplement, split the way a payslip lists it."""
+
+    def _pay(self, **kwargs):
+        base = {
+            "fixed_per_day": 240.0,
+            "variable_per_day": 60.0,
+            "supplement_per_day": 300.0,
+            "full_supplement_per_day": 300.0,
+            "variable_payout": "per_day",
+            "variable_payout_month": None,
+            "variable_lump_total": 0.0,
+        }
+        base.update(kwargs)
+        return {"pay": base}
+
+    def test_parts_sum_to_the_figure_the_views_showed_before_the_split(self):
+        from app.core.schedule.vacation import vacation_supplement_for_month
+
+        user = SimpleNamespace(vacation_year_start_month=4)
+        result = vacation_supplement_for_month(self._pay(), user, month=7, sem_days=4)
+
+        assert result["fixed"] == round(240.0 * 4, 0)
+        assert result["fixed"] + result["variable"] == round(300.0 * 4, 0)
+        assert result["lump"] == 0.0
+        assert result["total"] == round(300.0 * 4, 0)
+
+    def test_lump_lands_in_the_configured_month_only(self):
+        from app.core.schedule.vacation import vacation_supplement_for_month
+
+        user = SimpleNamespace(vacation_year_start_month=4)
+        pay = self._pay(
+            supplement_per_day=240.0,
+            variable_payout="lump",
+            variable_payout_month=6,
+            variable_lump_total=1500.0,
+        )
+
+        june = vacation_supplement_for_month(pay, user, month=6, sem_days=0)
+        july = vacation_supplement_for_month(pay, user, month=7, sem_days=4)
+
+        assert june["lump"] == 1500.0
+        assert june["total"] == 1500.0
+        assert july["lump"] == 0.0
+        # A day taken under lump payout carries the fixed part alone.
+        assert july["variable"] == 0.0
+        assert july["total"] == round(240.0 * 4, 0)
+
+    def test_lump_falls_back_to_the_vacation_year_start_month(self):
+        """Without a configured month the lump still needs a defined home."""
+        from app.core.schedule.vacation import vacation_supplement_for_month
+
+        user = SimpleNamespace(vacation_year_start_month=4)
+        pay = self._pay(variable_payout="lump", variable_payout_month=None, variable_lump_total=1500.0)
+
+        assert vacation_supplement_for_month(pay, user, month=4, sem_days=0)["lump"] == 1500.0
+        assert vacation_supplement_for_month(pay, user, month=5, sem_days=0)["lump"] == 0.0

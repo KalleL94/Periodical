@@ -225,6 +225,36 @@
             {% endfor %}
         </div>
 
+        {# The fixed part as a flat amount, and whether the variable part is paid
+           per vacation day or settled once a year. Both are employer practice
+           rather than agreement text, so they are per-user settings. #}
+        <div class="rate-grid rate-grid--3">
+            <div>
+                <label class="rate-vac-label">{{ t.rates_vacation_fixed_per_day }}</label>
+                <input type="number" step="0.01" name="rate_vac_fixed_per_day" min="0"
+                       value="{{ custom_rates.get('vacation', {}).get('fixed_per_day', '') }}"
+                       placeholder="{{ t.rates_vacation_fixed_per_day_placeholder }}"
+                       class="input rate-input--full">
+            </div>
+            <div>
+                <label class="rate-vac-label">{{ t.rates_vacation_variable_payout }}</label>
+                <select name="rate_vac_variable_payout" class="input rate-input--full">
+                    <option value="per_day">{{ t.rates_vacation_payout_per_day }}</option>
+                    <option value="lump"
+                        {% if custom_rates.get('vacation', {}).get('variable_payout') == 'lump' %}selected{% endif %}>
+                        {{ t.rates_vacation_payout_lump }}
+                    </option>
+                </select>
+            </div>
+            <div>
+                <label class="rate-vac-label">{{ t.rates_vacation_payout_month }}</label>
+                <input type="number" step="1" min="1" max="12" name="rate_vac_variable_payout_month"
+                       value="{{ custom_rates.get('vacation', {}).get('variable_payout_month', '') }}"
+                       placeholder="{{ t.rates_vacation_payout_month_placeholder }}"
+                       class="input rate-input--full">
+            </div>
+        </div>
+
         <!-- Sjukfrånvaro -->
         <h4 class="rate-section-title">{{ t.rates_sick_title }}</h4>
         <div class="rate-sick-block">

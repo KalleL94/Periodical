@@ -100,6 +100,43 @@
         </table>
     </div>
 
+    {# ── 2. Add a row the app did not compute ── #}
+    {% if can_edit %}
+    <div class="section-mt">
+        <h3 class="h-mb">{{ t.payslip_add_row_title }}</h3>
+        <p class="form-hint">{{ t.payslip_add_row_hint }}</p>
+
+        <form method="post" action="/month/{{ person_id }}/payslip/override" class="inline-form"
+              data-add-row-form data-override-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="year" value="{{ year }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <select class="form-input form-input--sm" name="row_key" required
+                    aria-label="{{ t.payslip_add_row_type }}" data-add-row-select>
+                <option value="">{{ t.payslip_add_row_choose }}</option>
+                {% for key in addable_keys %}
+                <option value="{{ key }}">{{ t.payslip_row_labels.get(key, key) }}</option>
+                {% endfor %}
+                <option value="{{ custom_row_sentinel }}">{{ t.payslip_add_row_custom }}</option>
+            </select>
+            {# Only used when the sentinel above is selected; the server resolves it,
+               so the form still works with JavaScript off. #}
+            <input class="form-input form-input--sm" type="text" name="custom_key" maxlength="40" hidden
+                   aria-label="{{ t.payslip_add_row_custom_label }}"
+                   placeholder="{{ t.payslip_add_row_custom_label }}" data-add-row-custom>
+            <input class="form-input form-input--sm" type="text" inputmode="decimal" name="hours"
+                   aria-label="{{ t.payslip_override_hours }}" placeholder="{{ t.payslip_override_hours }}">
+            <input class="form-input form-input--sm" type="text" inputmode="decimal" name="unit_price"
+                   aria-label="{{ t.payslip_override_unit_price }}" placeholder="{{ t.payslip_override_unit_price }}">
+            <input class="form-input form-input--sm" type="text" inputmode="decimal" name="amount"
+                   aria-label="{{ t.payslip_override_amount }}" placeholder="{{ t.payslip_override_amount }}">
+            <input class="form-input form-input--sm" type="text" name="reason" maxlength="255"
+                   aria-label="{{ t.payslip_override_reason }}" placeholder="{{ t.payslip_override_reason }}">
+            <button type="submit" class="btn secondary btn-sm">{{ t.payslip_add_row_save }}</button>
+        </form>
+    </div>
+    {% endif %}
+
     {# ── 3. Upload and comparison ── #}
     <div class="section-mt">
         <h3 class="h-mb">{{ t.payslip_upload_title }}</h3>
@@ -228,6 +265,19 @@
             qty.addEventListener("input", recompute);
             price.addEventListener("input", recompute);
         });
+
+        // The free-text label field only applies to the "own label" option. The
+        // server resolves the sentinel either way, so this is presentation only.
+        var addForm = document.querySelector("form[data-add-row-form]");
+        if (addForm) {
+            var select = addForm.querySelector("[data-add-row-select]");
+            var custom = addForm.querySelector("[data-add-row-custom]");
+            select.addEventListener("change", function () {
+                custom.hidden = select.value !== {{ custom_row_sentinel | tojson }};
+                custom.required = !custom.hidden;
+                if (!custom.hidden) { custom.focus(); }
+            });
+        }
     })();
     </script>
 

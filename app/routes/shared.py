@@ -156,7 +156,7 @@ class PasswordChange(BaseModel):
 
 def _parse_rates_form(form) -> dict:
     """Parse rate form fields into custom_rates dict."""
-    from app.core.rates import DEFAULT_OB_DIVISORS, DEFAULT_VACATION_RATES
+    from app.core.rates import DEFAULT_OB_DIVISORS
 
     custom = {}
 
@@ -188,12 +188,22 @@ def _parse_rates_form(form) -> dict:
     if oncall:
         custom["oncall"] = oncall
 
-    # Vacation percentages
+    # Vacation rates. The percentages and the flat per-day amount are numeric;
+    # the variable payout mode is not, so it cannot go through the same loop.
     vac = {}
-    for key in DEFAULT_VACATION_RATES:
+    for key in ("fixed_pct", "variable_pct", "payout_pct", "fixed_per_day"):
         val = form.get(f"rate_vac_{key}", "").strip()
         if val:
             vac[key] = float(val)
+
+    if form.get("rate_vac_variable_payout", "").strip() == "lump":
+        vac["variable_payout"] = "lump"
+        month = form.get("rate_vac_variable_payout_month", "").strip()
+        # Left blank the lump falls back to the vacation year's start month,
+        # so an unset value is a valid answer rather than something to reject.
+        if month.isdigit() and 1 <= int(month) <= 12:
+            vac["variable_payout_month"] = int(month)
+
     if vac:
         custom["vacation"] = vac
 

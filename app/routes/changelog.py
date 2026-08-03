@@ -16,6 +16,32 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.4.0",
+        "date": "2026-08-03",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "På lönespec-sidan kan du nu lägga till en lönerad som saknas. Välj en ersättningstyp appen inte räknade fram den här månaden, till exempel OB helg en månad du inte hade någon, eller skriv en egen benämning för något arbetsgivaren betalar som appen inte känner till alls. Raden gäller den månad du lägger in den på",
+                "en": "On the payslip page you can now add a pay row that is missing. Pick a type the app did not produce this month, for example weekend OB in a month you had none, or type your own label for something your employer pays that the app does not know about at all. The row applies to the month you add it to",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Karensavdraget visas som en egen rad på lönespecen i stället för att ligga inbakat i sjukavdraget, precis som arbetsgivaren skriver det. Summan är densamma, den är bara uppdelad så du kan jämföra rad för rad",
+                "en": "The waiting-day deduction now shows as its own payslip row instead of being folded into the sick deduction, the way your employer prints it. The total is the same, it is just split so you can compare row by row",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Semestertillägget delas upp i fast och rörlig del på lönespecen. Betalar din arbetsgivare den rörliga delen som en klumpsumma en gång om året i stället för per uttagen semesterdag går det att ställa in, tillsammans med vilken månad den betalas och ett fast kronbelopp per dag om du har ett sådant. Inställningarna finns bland dina ersättningsnivåer",
+                "en": "The vacation supplement is split into its fixed and variable parts on the payslip. If your employer pays the variable part as a lump sum once a year instead of per vacation day taken, you can set that, along with which month it is paid and a flat amount per day if you have one. The settings sit with your compensation rates",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Lägger du in en manuell rad syns den nu också i månads- och årsvyn, inte bara i bruttolönen. Månaden märks med Manuell justering så det syns att siffran är handpåläggning och inte ett räknefel mot dagsraderna under",
+                "en": "A manual row now also shows in the month and year views, not just in your gross pay. The month is marked Manual adjustment so it is clear the figure was entered by hand rather than disagreeing with the per-day rows below it",
+            },
+        ],
+    },
+    {
         "version": "1.3.0",
         "date": "2026-07-28",
         "entries": [

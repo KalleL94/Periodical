@@ -109,6 +109,9 @@ def strip_salary_data(data: dict) -> dict:
     result["ob_pay"] = {}
     result["ob_hours"] = {}
     result["total_ob"] = None
+    # Manual payslip adjustments are amounts in kronor, so they are salary data
+    # like any other figure here.
+    result["override_deltas"] = {}
     if "base_salary" in result:
         result["base_salary"] = None
     if "tax_table" in result:
