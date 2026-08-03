@@ -187,6 +187,17 @@ def test_variable_pay_overrides_route_into_their_itemised_totals():
     assert totals["override_deltas"]["OB3"] == 100.0
 
 
+def test_an_override_matching_the_computed_figure_is_not_marked_as_an_adjustment():
+    """Setting a row to exactly what the app computed is still a manual row, but
+    marking the month's aggregate for it would print "+0 kr" and say nothing."""
+    from app.core.schedule.payslip import route_override_deltas
+
+    totals = {"ot_pay": 3000.0}
+    route_override_deltas(totals, {"ot": 0.0, "karens": 400.0})
+
+    assert list(totals["override_deltas"]) == ["karens"]
+
+
 def test_override_for_an_ob_code_the_month_never_produced():
     """Adding an OB row to a month with no OB at all must not need the code to
     already exist in the totals dict."""

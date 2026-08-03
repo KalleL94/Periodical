@@ -370,7 +370,12 @@ def route_override_deltas(totals: dict, deltas: dict[str, float]) -> None:
     for code in _OB_KEYS.intersection(deltas):
         ob_pay[code] = ob_pay.get(code, 0.0) + deltas[code]
 
-    totals["override_deltas"] = dict(deltas)
+    # Only rows that actually moved a figure. An override set to exactly what the
+    # app computed is still a manual row, but marking the month's aggregate for it
+    # would print "+0 kr" and say nothing.
+    moved = {key: delta for key, delta in deltas.items() if abs(delta) >= 0.5}
+    if moved:
+        totals["override_deltas"] = moved
 
 
 def add_vacation_rows(slip: Payslip, supplement: dict, days: int) -> None:
