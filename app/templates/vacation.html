@@ -199,19 +199,50 @@
                 <div class="vacation-metric">
                     <div class="vacation-supplement-label">{{ t.vacation_fixed_per_day }}</div>
                     <div class="vacation-supplement-value">{{ "%.0f"|format(balance.pay.fixed_per_day) }} kr</div>
-                    <div class="vacation-supplement-note">0,8%</div>
+                    {# Your own rate, not the agreement default: printing 0,8% next to
+                       a figure derived from another rate is how a 0% rate stays hidden. #}
+                    <div class="vacation-supplement-note">
+                        {% if user.vacation_fixed_per_day %}{{ t.vacation_flat_per_day }}{% else %}{{ "%.2f"|format(balance.pay.fixed_pct * 100) }}%{% endif %}
+                    </div>
                 </div>
                 <div class="vacation-metric">
                     <div class="vacation-supplement-label">{{ t.vacation_variable_per_day }}</div>
                     <div class="vacation-supplement-value vacation-value-positive">{{ "%.0f"|format(balance.pay.variable_per_day) }} kr</div>
-                    <div class="vacation-supplement-note">0,5%</div>
+                    <div class="vacation-supplement-note">{{ "%.2f"|format(balance.pay.variable_pct * 100) }}%</div>
                 </div>
             </div>
+
+            {# Under lump payout the per-day figure above carries the fixed part only,
+               so say where the variable part went. Shown even at 0 kr: a silent
+               nothing is exactly what makes a 0% rate impossible to diagnose. #}
+            {% if balance.pay.variable_payout == 'lump' %}
+            {% set _month = balance.pay.variable_payout_month or user.vacation_year_start_month or 1 %}
+            {% set month_names = t.month_names_json | from_json %}
+            <div class="vacation-supplement-total">
+                <div class="vacation-supplement-total-label">
+                    {{ t.vacation_lump_label.replace('{month}', month_names[_month - 1]) }}
+                </div>
+                <div class="vacation-supplement-total-value {% if not balance.pay.variable_lump_total %}vacation-value-warning{% endif %}">
+                    {{ "{:,.0f}".format(balance.pay.variable_lump_total).replace(",", " ") }} kr
+                </div>
+                <div class="vacation-supplement-note">
+                    {% if balance.pay.variable_lump_total %}
+                        {{ t.vacation_lump_formula
+                            .replace('{pct}', "%.1f"|format(balance.pay.variable_lump_pct * 100))
+                            .replace('{base}', "{:,.0f}".format(balance.pay.variable_lump_base).replace(",", " "))
+                            .replace('{start}', balance.pay.variable_lump_start.strftime('%Y-%m'))
+                            .replace('{end}', balance.pay.variable_lump_end.strftime('%Y-%m')) }}
+                    {% else %}
+                        {{ t.vacation_lump_zero }}
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
             <div class="vacation-supplement-total">
                 <div class="vacation-supplement-total-label">{{ t.vacation_supplement_per_day }}</div>
                 <div class="vacation-supplement-total-value">{{ "%.0f"|format(balance.pay.supplement_per_day) }} kr</div>
                 <div class="vacation-supplement-note">
-                    {{ t.vacation_supplement_total.replace('{n}', balance.entitled_days|string) }}: {{ "{:,.0f}".format(balance.pay.supplement_total).replace(",", " ") }} kr
+                    {{ t.vacation_supplement_total.replace('{n}', balance.entitled_days|string) }} {{ "{:,.0f}".format(balance.pay.supplement_total).replace(",", " ") }} kr
                 </div>
             </div>
             <div class="vacation-supplement-breakdown">
@@ -286,6 +317,20 @@
                         </option>
                         {% endfor %}
                     </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t.vacation_lump_pct }}</label>
+                    <input type="number" name="vacation_variable_lump_pct" step="0.1" min="0" max="100"
+                        value="{{ "%.1f"|format((user.vacation_variable_lump_pct if user.vacation_variable_lump_pct is not none else 0.12) * 100) }}"
+                        class="form-input">
+                    <div class="form-hint">{{ t.vacation_lump_pct_hint }}</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t.vacation_lump_lag }}</label>
+                    <input type="number" name="vacation_variable_lump_lag_months" step="1" min="0" max="6"
+                        value="{{ user.vacation_variable_lump_lag_months if user.vacation_variable_lump_lag_months is not none else 1 }}"
+                        class="form-input">
+                    <div class="form-hint">{{ t.vacation_lump_lag_hint }}</div>
                 </div>
                 <button type="submit" class="btn btn-primary login-submit">{{ t.vacation_save_button }}</button>
             </form>

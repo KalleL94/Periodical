@@ -151,6 +151,16 @@ def get_parental_dates_for_year(year: int, session=None) -> dict[int, set[dateti
 # ---------------------------------------------------------------------------
 
 
+def _shift_month(date: datetime.date, months: int) -> datetime.date:
+    """Move a date by whole months, landing on the first of the target month.
+
+    Used to walk the earning year and to offset it for payroll lag, so neither
+    has to reimplement December wrapping.
+    """
+    index = (date.year * 12 + date.month - 1) + months
+    return datetime.date(index // 12, index % 12 + 1, 1)
+
+
 def get_vacation_year_boundaries(reference_year: int, start_month: int) -> tuple[datetime.date, datetime.date]:
     """
     Calculate the vacation year boundaries for a given reference year and break month.
@@ -632,14 +642,27 @@ def calculate_vacation_pay(
     fixed_per_day = round(float(flat), 2) if flat else round(monthly_salary * vac["fixed_pct"], 2)
 
     # Sum ALL variable earnings during earning year
-    ob_total = 0.0
-    ot_total = 0.0
-    oncall_total = 0.0
+    # The lump follows semesterlagen's percentage rule, which counts pay that fell
+    # due during the earning year. Variable pay is normally paid a month or two
+    # after it is worked, so the months that were *paid* inside the earning year
+    # are the ones earned `lag` months earlier. March worked, April paid, and with
+    # a March year-end that March never belongs to the year that just closed.
+    #
+    # The per-day 0.5% supplement deliberately keeps the unshifted window; only
+    # the lump uses the shifted one. Both are summed from the same per-month pass
+    # so the shift costs one extra month, not a second full loop.
+    lag = getattr(user, "vacation_variable_lump_lag_months", None)
+    lag = int(lag) if lag is not None else 1
+    lump_start, lump_end = _shift_month(earning_start, -lag), _shift_month(earning_end, -lag)
 
+    # Per month, per component: the views break the earning year down into OB,
+    # overtime and on-call, so the components have to survive the pass.
+    per_month: dict[tuple[int, int], tuple[float, float, float]] = {}
     person_id = user.rotation_person_id
     if person_id and 1 <= person_id <= 10:
-        current = earning_start
-        while current <= earning_end:
+        current = min(earning_start, lump_start)
+        loop_end = max(earning_end, lump_end)
+        while current <= loop_end:
             try:
                 summary = summarize_month_for_person(
                     year=current.year,
@@ -650,9 +673,11 @@ def calculate_vacation_pay(
                     wage_user_id=user.id,
                 )
                 ob_pay_dict = summary.get("ob_pay", {})
-                ob_total += sum(ob_pay_dict.values())
-                ot_total += summary.get("ot_pay", 0.0)
-                oncall_total += summary.get("oncall_pay", 0.0)
+                per_month[(current.year, current.month)] = (
+                    sum(ob_pay_dict.values()),
+                    summary.get("ot_pay") or 0.0,
+                    summary.get("oncall_pay") or 0.0,
+                )
             except Exception:
                 # Keep going so one bad month does not break the whole vacation
                 # calculation, but log it: silently dropping a month understates the
@@ -666,13 +691,17 @@ def calculate_vacation_pay(
                     exc_info=True,
                 )
 
-            if current.month == 12:
-                current = datetime.date(current.year + 1, 1, 1)
-            else:
-                current = datetime.date(current.year, current.month + 1, 1)
+            current = _shift_month(current, 1)
+
+    def _sum_window(start: datetime.date, end: datetime.date) -> tuple[float, float, float]:
+        last = datetime.date(end.year, end.month, 1)
+        rows = [parts for (y, m), parts in per_month.items() if start <= datetime.date(y, m, 1) <= last]
+        return tuple(sum(col) for col in zip(*rows, strict=True)) if rows else (0.0, 0.0, 0.0)
 
     # All variable components are included (no exclusion rules for semestertillägg)
+    ob_total, ot_total, oncall_total = _sum_window(earning_start, earning_end)
     variable_total = ob_total + ot_total + oncall_total
+    lump_base = sum(_sum_window(lump_start, lump_end))
 
     # Variable supplement: 0.5% of total variable earnings, per vacation day (customizable)
     variable_per_day = round(variable_total * vac["variable_pct"], 2)
@@ -683,6 +712,15 @@ def calculate_vacation_pay(
     # supplement per unused day (Handelns avtal 9.5) no matter how the employer
     # schedules the variable part while employed.
     lump = getattr(user, "vacation_variable_payout", None) == "lump"
+
+    # The lump follows semesterlagen's percentage rule rather than the per-day
+    # supplement: a share of the whole earning year's variable pay, settled once.
+    # It is deliberately not scaled by the entitlement, which is what separates it
+    # from variable_per_day x days.
+    lump_pct = getattr(user, "vacation_variable_lump_pct", None)
+    lump_pct = float(lump_pct) if lump_pct is not None else 0.12
+    lump_total = round(lump_base * lump_pct, 2) if lump else 0.0
+
     supplement_per_day = round(fixed_per_day if lump else fixed_per_day + variable_per_day, 2)
 
     return {
@@ -692,7 +730,14 @@ def calculate_vacation_pay(
         "full_supplement_per_day": round(fixed_per_day + variable_per_day, 2),
         "variable_payout": "lump" if lump else "per_day",
         "variable_payout_month": getattr(user, "vacation_variable_payout_month", None),
-        "variable_lump_total": round(variable_per_day * entitled_days, 2) if lump else 0.0,
+        "variable_lump_total": lump_total,
+        "variable_lump_pct": lump_pct,
+        # The shifted window the lump was calculated on, so the views can show
+        # which months it actually covers rather than implying the earning year.
+        "variable_lump_base": round(lump_base, 2),
+        "variable_lump_lag_months": lag,
+        "variable_lump_start": lump_start,
+        "variable_lump_end": lump_end,
         "supplement_total": round(supplement_per_day * entitled_days, 2),
         "variable_total": round(variable_total, 2),
         "ob_total": round(ob_total, 2),
@@ -700,6 +745,11 @@ def calculate_vacation_pay(
         "oncall_total": round(oncall_total, 2),
         "monthly_salary": monthly_salary,
         "payout_pct": vac["payout_pct"],
+        # The rates actually used, so the views can print them instead of the
+        # agreement's defaults. A user whose variable_pct is 0 was being shown
+        # "0,5%" next to a 0 kr figure, which hides why it is zero.
+        "fixed_pct": vac["fixed_pct"],
+        "variable_pct": vac["variable_pct"],
     }
 
 
@@ -977,6 +1027,8 @@ def set_vacation_settings(
     fixed_per_day: str | None = None,
     variable_payout: str | None = None,
     variable_payout_month: str | None = None,
+    variable_lump_pct: str | None = None,
+    variable_lump_lag_months: str | None = None,
 ) -> None:
     """Update vacation settings. Out-of-range values are ignored, as is a
     malformed date; an empty date string clears the employment start date.
@@ -1016,5 +1068,20 @@ def set_vacation_settings(
         month = variable_payout_month.strip()
         # Blank falls the lump back to the vacation year's start month.
         user.vacation_variable_payout_month = int(month) if month.isdigit() and 1 <= int(month) <= 12 else None
+
+    if variable_lump_pct is not None and variable_lump_pct.strip():
+        # Entered as a percentage (12), stored as a share (0.12), matching how
+        # the field reads on screen. Out of range is ignored like every other value.
+        try:
+            pct = float(variable_lump_pct.replace(",", ".").strip()) / 100
+        except ValueError:
+            pct = None
+        if pct is not None and 0 <= pct <= 1:
+            user.vacation_variable_lump_pct = pct
+
+    if variable_lump_lag_months is not None and variable_lump_lag_months.strip():
+        lag = variable_lump_lag_months.strip()
+        if lag.isdigit() and 0 <= int(lag) <= 6:
+            user.vacation_variable_lump_lag_months = int(lag)
 
     _commit(db)

@@ -162,6 +162,13 @@ class User(Base):
     vacation_variable_payout_month = Column(
         Integer, nullable=True
     )  # Month (1-12) the lump is paid. NULL = the vacation year's start month
+    vacation_variable_lump_pct = Column(
+        Float, default=0.12, nullable=False
+    )  # Lump = this share of the earning year's variable pay (semesterlagen's 12% rule)
+    vacation_variable_lump_lag_months = Column(
+        Integer, default=1, nullable=False
+    )  # Payroll lag: variable pay worked in month N is paid in month N+lag, and the
+    # lump counts what was *paid* inside the earning year, not what was worked in it
     custom_rates = Column(JSON, default=dict)  # Per-user rate overrides (OB, OT, oncall, vacation)
     language = Column(String(5), default="sv", nullable=False)  # UI language: "sv" or "en"
     seen_release = Column(String(20), nullable=True)  # Last changelog version acknowledged; NULL = never opened

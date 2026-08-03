@@ -26,6 +26,14 @@ NEW_COLUMNS = (
     ("vacation_fixed_per_day", "FLOAT"),
     ("vacation_variable_payout", "VARCHAR(10) NOT NULL DEFAULT 'per_day'"),
     ("vacation_variable_payout_month", "INTEGER"),
+    # Semesterlagen's percentage rule: 12% of the earning year's variable pay at
+    # a 25-day entitlement. Only read under lump payout, so the default is inert
+    # for everyone still on per-day.
+    ("vacation_variable_lump_pct", "FLOAT NOT NULL DEFAULT 0.12"),
+    # Payroll lag in months. Variable pay is normally paid the month after it is
+    # worked, and the percentage rule counts what fell due inside the earning
+    # year, so the lump's window is the earning year shifted back by this much.
+    ("vacation_variable_lump_lag_months", "INTEGER NOT NULL DEFAULT 1"),
 )
 
 # custom_rates["vacation"] key -> users column

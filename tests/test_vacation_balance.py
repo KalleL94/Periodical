@@ -376,7 +376,127 @@ class TestCalculateVacationPay:
         assert pay["supplement_per_day"] == pay["fixed_per_day"]
         # The full figure survives for the payout path, which owes both parts.
         assert pay["full_supplement_per_day"] == round(pay["fixed_per_day"] + pay["variable_per_day"], 2)
-        assert pay["variable_lump_total"] == round(pay["variable_per_day"] * 25, 2)
+
+    def test_lump_is_a_share_of_the_earning_year_not_a_per_day_amount(self, test_db, monkeypatch):
+        """Semesterlagen's percentage rule: the lump is a share of the whole
+        earning year's variable pay, settled once. It must not be scaled by the
+        entitlement, which is what separates it from variable_per_day x days."""
+        user = _make_user(test_db, person_id=1, wage=30000)
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_lump_pct = 0.12
+        test_db.commit()
+
+        # Two months of the earning year, 10 000 kr variable pay each.
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kwargs: {"ob_pay": {"OB1": 6000.0}, "ot_pay": 3000.0, "oncall_pay": 1000.0},
+        )
+
+        def _pay(entitled_days):
+            return calculate_vacation_pay(
+                user=user,
+                entitled_days=entitled_days,
+                earning_start=datetime.date(2026, 1, 1),
+                earning_end=datetime.date(2026, 2, 28),
+                db=test_db,
+                vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+            )
+
+        full = _pay(25)
+        assert full["variable_total"] == 20000.0
+        assert full["variable_lump_total"] == 2400.0  # 20000 * 0.12
+
+        # Half the entitlement, same lump: the rule is not per day.
+        assert _pay(13)["variable_lump_total"] == 2400.0
+
+    def test_lump_counts_pay_that_fell_due_inside_the_earning_year(self, test_db, monkeypatch):
+        """Variable pay worked in March is paid in April, so with an earning year
+        ending 31 March that March belongs to the next year, not the closing one.
+        The lump's window is the earning year shifted back by the payroll lag.
+
+        The per-day 0.5% part deliberately keeps the unshifted window, so the two
+        read different totals off the same months.
+        """
+        user = _make_user(test_db, person_id=1, wage=30000)
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_lump_pct = 0.12
+        user.vacation_variable_lump_lag_months = 1
+        test_db.commit()
+
+        # Only Jan-Mar 2026 have variable pay, 10 000 kr each.
+        earned = {(2026, 1): 10000.0, (2026, 2): 10000.0, (2026, 3): 10000.0}
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kw: {
+                "ob_pay": {"OB1": earned.get((kw["year"], kw["month"]), 0.0)},
+                "ot_pay": 0.0,
+                "oncall_pay": 0.0,
+            },
+        )
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        # Worked Apr 2025 - Mar 2026: all three months.
+        assert pay["variable_total"] == 30000.0
+        # Paid Apr 2025 - Mar 2026, i.e. worked Mar 2025 - Feb 2026: March drops out.
+        assert pay["variable_lump_base"] == 20000.0
+        assert pay["variable_lump_total"] == 2400.0  # 20000 * 0.12
+        assert pay["variable_lump_end"] == datetime.date(2026, 2, 1)
+
+    def test_zero_lag_counts_the_earning_year_itself(self, test_db, monkeypatch):
+        """An employer paying variable pay in the month it is worked has no shift."""
+        user = _make_user(test_db, person_id=1, wage=30000)
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_lump_lag_months = 0
+        test_db.commit()
+
+        earned = {(2026, 1): 10000.0, (2026, 2): 10000.0, (2026, 3): 10000.0}
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kw: {
+                "ob_pay": {"OB1": earned.get((kw["year"], kw["month"]), 0.0)},
+                "ot_pay": 0.0,
+                "oncall_pay": 0.0,
+            },
+        )
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["variable_lump_base"] == pay["variable_total"] == 30000.0
+
+    def test_per_day_payout_pays_no_lump(self, test_db, monkeypatch):
+        user = _make_user(test_db, person_id=1, wage=30000)
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kwargs: {"ob_pay": {"OB1": 6000.0}, "ot_pay": 3000.0, "oncall_pay": 1000.0},
+        )
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2026, 1, 1),
+            earning_end=datetime.date(2026, 2, 28),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["variable_lump_total"] == 0.0
+        # The per-day rule still applies: 0.5% of the variable total, per day.
+        assert pay["variable_per_day"] == round(20000.0 * 0.005, 2)
 
     def test_payout_settings_in_custom_rates_are_ignored(self, test_db):
         """These settings moved off custom_rates onto the User, because

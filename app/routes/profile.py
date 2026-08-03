@@ -531,6 +531,8 @@ async def update_vacation_settings(
     vacation_fixed_per_day: str = Form(""),
     vacation_variable_payout: str = Form("per_day"),
     vacation_variable_payout_month: str = Form(""),
+    vacation_variable_lump_pct: str = Form(""),
+    vacation_variable_lump_lag_months: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -546,6 +548,8 @@ async def update_vacation_settings(
         fixed_per_day=vacation_fixed_per_day,
         variable_payout=vacation_variable_payout,
         variable_payout_month=vacation_variable_payout_month,
+        variable_lump_pct=vacation_variable_lump_pct,
+        variable_lump_lag_months=vacation_variable_lump_lag_months,
     )
     return RedirectResponse(url="/profile/vacation", status_code=302)
 
