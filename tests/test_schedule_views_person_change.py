@@ -35,6 +35,7 @@ from app.database.database import (
     OvertimeShift,
     RateHistory,
     RotationEra,
+    ShiftOverride,
     User,
     UserRole,
     WageType,
@@ -3029,3 +3030,49 @@ def test_vacation_week_straddling_swap_splits_per_day(month_env):
     assert not ({thu, fri} & per_person[3])
     assert {thu, fri} <= per_person[8]
     assert not ({mon, tue, wed} & per_person[8])
+
+
+def test_all_persons_week_shows_a_departed_holders_own_days(month_env):
+    """The all-persons views must read rows belonging to the holder on the DATE,
+    not the position's current holder.
+
+    _build_rotation_to_user_map resolves a position through User.person_id, which
+    only ever points at the current (or incoming) holder. For a week the departed
+    holder actually worked, that map names the wrong user, so their absences and
+    shift overrides are never fetched and the view silently falls back to the raw
+    rotation shift. The single-position view already recovers the real holders
+    from PersonHistory; the all-persons view did not.
+    """
+    client, session = month_env
+    anna = _make_user(session, 11, "anna1", "Anna")
+    bert = _make_user(session, 12, "bert1", "Bert", person_id=3)
+    start_employment(session, anna.id, 3, "Anna", "anna1", datetime.date(2026, 1, 2), created_by=1)
+    end_employment(session, anna.id, 3, end_date=datetime.date(2026, 8, 4))
+    start_employment(session, bert.id, 3, "Bert", "bert1", datetime.date(2026, 9, 1), created_by=1)
+
+    # Anna's own last week: a paid day off on Monday, a shift override on Tuesday.
+    monday = datetime.date.fromisocalendar(2026, 32, 1)
+    tuesday = datetime.date.fromisocalendar(2026, 32, 2)
+    session.add(Absence(user_id=anna.id, date=monday, absence_type=AbsenceType.OFF))
+    session.add(ShiftOverride(user_id=anna.id, date=tuesday, shift_code="N2", created_by=1))
+    session.commit()
+    clear_schedule_cache()
+
+    def _shift_on(days, date):
+        row = next(d for d in days if d["date"] == date)
+        person = next(p for p in row["persons"] if p["person_id"] == 3)
+        return getattr(person["shift"], "code", None)
+
+    all_persons = build_week_data(2026, 32, session=session)
+    single = build_week_data(2026, 32, person_id=3, session=session)
+
+    def _single_shift_on(date):
+        return getattr(next(d for d in single if d["date"] == date)["shift"], "code", None)
+
+    # The single-position view is the reference: it already resolves Anna's rows.
+    assert _single_shift_on(monday) == "OFF"
+    assert _single_shift_on(tuesday) == "N2"
+
+    # The all-persons view must agree rather than showing the raw rotation.
+    assert _shift_on(all_persons, monday) == "OFF"
+    assert _shift_on(all_persons, tuesday) == "N2"
