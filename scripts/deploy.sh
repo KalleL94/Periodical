@@ -82,7 +82,11 @@ fi
 
 # 3. Hämta kod
 log "📥 Hämtar senaste koden..."
-git fetch --tags origin
+# --force: without it git refuses to move a tag this host already has ("would
+# clobber existing tag") and the checkout below silently ships the commit the
+# stale local tag points at. A release tag moved after a bad tagging otherwise
+# deploys the old code and reports success.
+git fetch --tags --force origin
 
 # Ta bort ospårade filer som konfliktar med inkommande ändringar
 TARGET="${TAG:-origin/main}"
