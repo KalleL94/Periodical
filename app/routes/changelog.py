@@ -17,7 +17,7 @@ router = APIRouter()
 VERSIONS = [
     {
         "version": "1.4.0",
-        "date": "2026-08-03",
+        "date": "2026-08-05",
         "entries": [
             {
                 "type": "nyhet",
@@ -33,6 +33,16 @@ VERSIONS = [
                 "type": "nyhet",
                 "sv": "Semestertillägget delas upp i fast och rörlig del på lönespecen. Betalar din arbetsgivare den rörliga delen som en klumpsumma en gång om året i stället för per uttagen semesterdag går det att ställa in, tillsammans med vilken månad den betalas och ett fast kronbelopp per dag om du har ett sådant. Inställningarna finns under Semester, som du styr själv",
                 "en": "The vacation supplement is split into its fixed and variable parts on the payslip. If your employer pays the variable part as a lump sum once a year instead of per vacation day taken, you can set that, along with which month it is paid and a flat amount per day if you have one. The settings sit under Vacation, and are yours to set",
+            },
+            {
+                "type": "fix",
+                "sv": "Vecko-, månads- och intervallvyerna för hela laget kunde visa fel pass för någon som slutat på en position: de sista dagarna föll tillbaka på rotationsschemat i stället för det som faktiskt gällde, så frånvaro, ändrade pass, övertid och beredskap saknades. Dagvyn och din egen veckovy visade rätt hela tiden, vilket är varför de sa emot varandra",
+                "en": "The whole-team week, month and range views could show the wrong shift for someone who had left a position: their last days fell back on the rotation schedule instead of what actually applied, so absences, changed shifts, overtime and on-call went missing. The day view and your own week view were right all along, which is why they disagreed",
+            },
+            {
+                "type": "fix",
+                "sv": "Semestertilläggskortet skrev alltid ut avtalets standardsatser (0,8% och 0,5%) bredvid belopp som räknats på dina egna satser. Har du andra satser stämde inte texten med siffran, och en sats på 0% gick inte att upptäcka. Nu visas den sats som faktiskt använts",
+                "en": "The vacation supplement card always printed the agreement's default rates (0.8% and 0.5%) next to amounts calculated from your own rates. If yours differ the text did not match the figure, and a 0% rate was impossible to spot. It now shows the rate actually used",
             },
             {
                 "type": "nyhet",
