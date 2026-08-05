@@ -7,7 +7,7 @@ known schedule it falls back to a flat Mon-Fri.
 
 import datetime
 
-from app.core.schedule.vacation import _count_weekdays_in_vacation_weeks
+from app.core.schedule.vacation import _vacation_dates_in_weeks
 
 YEAR = 2025
 WEEK = 10
@@ -21,23 +21,23 @@ def _week_days(week: int) -> list[datetime.date]:
 
 def test_without_off_dates_falls_back_to_mon_fri():
     # No schedule known -> flat Monday..Friday = 5 days.
-    assert _count_weekdays_in_vacation_weeks([WEEK], YEAR, START, END, None) == 5
+    assert len(_vacation_dates_in_weeks([WEEK], YEAR, START, END, None)) == 5
 
 
 def test_with_schedule_counts_only_worked_days():
     days = _week_days(WEEK)
     # Scheduled OFF on Mon, Sat, Sun -> 4 scheduled work days remain (incl. a worked weekend day).
     off = {days[0], days[5], days[6]}
-    assert _count_weekdays_in_vacation_weeks([WEEK], YEAR, START, END, off) == 4
+    assert len(_vacation_dates_in_weeks([WEEK], YEAR, START, END, off)) == 4
 
 
 def test_weekend_work_day_is_counted():
     days = _week_days(WEEK)
     # Off the whole standard week except a worked Sunday -> only that Sunday counts.
     off = set(days) - {days[6]}  # everything off except Sunday
-    assert _count_weekdays_in_vacation_weeks([WEEK], YEAR, START, END, off) == 1
+    assert len(_vacation_dates_in_weeks([WEEK], YEAR, START, END, off)) == 1
 
 
 def test_empty_off_set_counts_all_seven():
     # An explicit empty set means "schedule known, no OFF days" -> all 7 days worked.
-    assert _count_weekdays_in_vacation_weeks([WEEK], YEAR, START, END, set()) == 7
+    assert len(_vacation_dates_in_weeks([WEEK], YEAR, START, END, set())) == 7

@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 from app.core.schedule.vacation import (
     _calculate_prorated_days,
-    _count_weekdays_in_vacation_weeks,
+    _vacation_dates_in_weeks,
     calculate_vacation_balance,
     calculate_vacation_pay,
     close_vacation_year,
@@ -26,7 +26,9 @@ from app.core.schedule.vacation import (
     get_saved_days_balance,
     get_vacation_dates_for_year,
     get_vacation_year_boundaries,
+    resolve_vacation_year,
 )
+from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, User, UserRole
 
 
@@ -65,11 +67,11 @@ class TestCountWeekdaysInVacationWeeks:
     def test_without_off_dates_counts_mon_to_fri(self):
         ps, pe = datetime.date(2026, 1, 1), datetime.date(2026, 12, 31)
         # Two full weeks, Mon-Fri each.
-        assert _count_weekdays_in_vacation_weeks([10, 11], 2026, ps, pe) == 10
+        assert len(_vacation_dates_in_weeks([10, 11], 2026, ps, pe)) == 10
 
     def test_invalid_week_number_is_skipped(self):
         ps, pe = datetime.date(2026, 1, 1), datetime.date(2026, 12, 31)
-        assert _count_weekdays_in_vacation_weeks([99], 2026, ps, pe) == 0
+        assert len(_vacation_dates_in_weeks([99], 2026, ps, pe)) == 0
 
     def test_with_off_dates_uses_all_seven_days_minus_off(self):
         ps, pe = datetime.date(2026, 1, 1), datetime.date(2026, 12, 31)
@@ -78,13 +80,13 @@ class TestCountWeekdaysInVacationWeeks:
             datetime.date.fromisocalendar(2026, 10, 7),  # Sun
         }
         # 7 scheduled days minus 2 OFF days = 5 consumed.
-        assert _count_weekdays_in_vacation_weeks([10], 2026, ps, pe, off) == 5
+        assert len(_vacation_dates_in_weeks([10], 2026, ps, pe, off)) == 5
 
     def test_days_outside_period_are_excluded(self):
         # Period ends mid-week; only the in-window weekdays count.
         ps = datetime.date(2026, 1, 1)
         pe = datetime.date.fromisocalendar(2026, 10, 2)  # Tuesday of week 10
-        assert _count_weekdays_in_vacation_weeks([10], 2026, ps, pe) == 2
+        assert len(_vacation_dates_in_weeks([10], 2026, ps, pe)) == 2
 
 
 class TestCalculateProratedDays:
@@ -167,6 +169,30 @@ class TestCountVacationDaysUsed:
         assert result["week_based"] == 5  # week 10, Mon-Fri
         assert result["day_level"] == 1
         assert result["total"] == 6
+
+    def test_day_level_on_a_week_already_taken_is_not_charged_twice(self, test_db):
+        # The vacation page offers both the week picker and the day calendar, so
+        # the same date can be recorded in both. It must cost one day, not two.
+        user = _make_user(test_db, person_id=6, vacation={"2026": [10]})
+        monday_of_week_10 = datetime.date.fromisocalendar(2026, 10, 1)
+        test_db.add(
+            Absence(
+                user_id=user.id,
+                date=monday_of_week_10,
+                absence_type=AbsenceType.VACATION,
+            )
+        )
+        test_db.commit()
+        result = count_vacation_days_used(
+            user_id=user.id,
+            year_start=datetime.date(2026, 1, 1),
+            year_end=datetime.date(2026, 12, 31),
+            db=test_db,
+            vacation_json=user.vacation,
+        )
+        assert result["week_based"] == 5
+        assert result["day_level"] == 0
+        assert result["total"] == 5
 
     def test_loads_vacation_json_from_db_when_not_passed(self, test_db):
         user = _make_user(test_db, person_id=2, vacation={"2026": [11]})
@@ -312,6 +338,51 @@ class TestCalculateVacationBalanceIntegration:
         # Persisted onto the user for future lookups.
         rotation_session.refresh(user)
         assert user.vacation_saved["2023"]["saved"] == 5
+
+    def test_year_before_employment_is_not_closed(self, rotation_session):
+        # Every view reaches a balance on a GET, so closing a year the employee was
+        # not around for would mint saved days and a payout just from browsing back.
+        user = rotation_session.query(User).filter(User.id == 1).first()
+        user.vacation_year_start_month = 4
+        user.employment_start_date = datetime.date(2024, 6, 1)
+        user.vacation = {}
+        user.vacation_saved = {}
+        rotation_session.commit()
+
+        balance = calculate_vacation_balance(user, 2022, rotation_session)
+
+        assert balance["closed"] is None
+        rotation_session.refresh(user)
+        assert user.vacation_saved == {}
+
+    def test_missing_employment_start_date_never_closes(self, rotation_session):
+        # Without a start date the entitlement falls back to the full quota, so an
+        # unguarded close would hand out five saved days per year browsed.
+        user = rotation_session.query(User).filter(User.id == 1).first()
+        user.vacation_year_start_month = 4
+        user.employment_start_date = None
+        user.vacation = {}
+        user.vacation_saved = {}
+        rotation_session.commit()
+
+        for year in (2021, 2022, 2023):
+            assert calculate_vacation_balance(user, year, rotation_session)["closed"] is None
+
+        rotation_session.refresh(user)
+        assert user.vacation_saved == {}
+        assert calculate_vacation_balance(user, 2026, rotation_session)["saved_from_previous"] == 0
+
+
+class TestResolveVacationYear:
+    def test_out_of_range_year_falls_back_to_current(self):
+        # datetime.date raises on a year like 99999, and a balance is expensive to
+        # compute, so a query parameter is clamped before it reaches either.
+        assert resolve_vacation_year(99999) == get_today().year
+        assert resolve_vacation_year(1900) == get_today().year
+        assert resolve_vacation_year(None) == get_today().year
+
+    def test_valid_year_is_kept(self):
+        assert resolve_vacation_year(2026) == 2026
 
 
 class TestCalculateVacationPay:

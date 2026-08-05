@@ -568,10 +568,9 @@ async def get_user_vacation_balance(
     target = _get_user_or_404(user_id, db)
     if not _can_see_salary(current_user, target):
         raise HTTPException(status_code=403, detail="Åtkomst nekad")
-    year = year or get_today().year
+    from app.core.schedule.vacation import calculate_vacation_balance, resolve_vacation_year
 
-    from app.core.schedule.vacation import calculate_vacation_balance
-
+    year = resolve_vacation_year(year)
     balance = calculate_vacation_balance(target, year, db)
 
     def _iso(v):
