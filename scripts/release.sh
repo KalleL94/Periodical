@@ -30,13 +30,19 @@ TAG="$MODE"
 # bumps the version when the topmost block has already been released. This
 # check is what makes that convention hold: it fails both when the version was
 # bumped without a release and when a release forgot the bump.
-REPO_VERSION=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
-APP_VERSION=$(grep -m1 '"version":' app/routes/changelog.py | cut -d'"' -f4)
+#
+# Read from origin/main, not the working tree: this tags main, so checking the
+# branch that happens to be checked out would pass on an unmerged release branch
+# and then tag main without the release on it.
+git fetch -q origin main
+REPO_VERSION=$(git show origin/main:pyproject.toml | grep -m1 '^version = ' | cut -d'"' -f2)
+APP_VERSION=$(git show origin/main:app/routes/changelog.py | grep -m1 '"version":' | cut -d'"' -f4)
 if [ "$TAG" != "v$REPO_VERSION" ] || [ "$REPO_VERSION" != "$APP_VERSION" ]; then
-    echo "Error: version mismatch." >&2
+    echo "Error: version mismatch on origin/main." >&2
     echo "  tag:                    $TAG" >&2
     echo "  pyproject.toml:         v$REPO_VERSION" >&2
     echo "  changelog.py VERSIONS:  v$APP_VERSION  (this one is what the app displays)" >&2
+    echo "  If the release is still on a branch, merge it before tagging." >&2
     exit 1
 fi
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then

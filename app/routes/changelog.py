@@ -16,6 +16,17 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.4.1",
+        "date": "2026-08-05",
+        "entries": [
+            {
+                "type": "fix",
+                "sv": "En release kunde rapporteras som lyckad utan att appen faktiskt uppdaterades, så versionsnumret här nere stod kvar på det gamla trots att nyheterna var släppta. Det gick att hända om releasetaggen behövde flyttas i efterhand",
+                "en": "A release could report success without the app actually updating, so the version number down here stayed on the old one even though the new features had shipped. This could happen when a release tag had to be moved after the fact",
+            },
+        ],
+    },
+    {
         "version": "1.4.0",
         "date": "2026-08-05",
         "entries": [

@@ -16,7 +16,14 @@ number is bumped by the pull request that follows a release, not by every
 change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 `VERSIONS` disagree.
 
-## [1.4.0] - Unreleased
+## [1.4.1] - Unreleased
+
+### Fixed
+- The deploy shipped the previous release and reported success when a release tag was repointed. `deploy.sh` fetched with `git fetch --tags`, which refuses to move a tag the host already has and says so as a warning rather than an error, so the `git checkout "$TAG"` that follows resolved the stale local tag. The service restarted, the health check passed and the deploy went green with prod still on the old commit. Fetching with `--force` is the whole fix; the warning is easy to miss in a log that is otherwise all pip output
+- `release.sh` read `pyproject.toml` and `changelog.py` from the working tree and then checked out main and tagged that, so it validated one tree and tagged another. Run from an unmerged release branch the check passed against the branch's own bumped version and tagged main without the release on it, producing a deploy of the previous release under the new tag. It now reads both versions from `origin/main` and says to merge first when they do not match
+- Every shell script under `scripts/` except `release.sh` has been mode `100644` since it was added, so a fresh clone leaves them non-executable and `./scripts/dev.sh` fails with "Permission denied". The exec bit is set in git now, not just on whichever working copy someone chmodded
+
+## [1.4.0] - 2026-08-05
 
 ### Added
 - An "add a pay row" form on the payslip page. The select lists every pay type the app knows but did not produce for the month (`build_payslip_rows` skips rows that compute to zero, so a month with no OB3 previously had no row to edit), plus an "own label" option whose free-text label becomes the row key. `POST /month/<id>/payslip/override` no longer rejects a `row_key` outside `ROW_ORDER`, only a key that is empty or wider than the 40-character column; `apply_payslip_overrides` already created a row for a key the app did not compute. The sentinel for the free-text option is resolved server-side, so the form works with JavaScript disabled. No migration: rows are stored in the existing `payslip_overrides` table, per month like every other override
