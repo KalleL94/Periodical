@@ -16,7 +16,13 @@ number is bumped by the pull request that follows a release, not by every
 change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
 `VERSIONS` disagree.
 
-## [1.4.1] - Unreleased
+A version number exists so a user can match what they see to a release note, so
+a change with no user-facing behaviour does not get one. Those land under
+`## [Unreleased]` here with no bump and no `VERSIONS` entry, and ship either with
+`./scripts/release.sh --notag` or alongside the next version that does have
+something to tell users about, whose pull request renames the heading.
+
+## [Unreleased]
 
 ### Fixed
 - The deploy shipped the previous release and reported success when a release tag was repointed. `deploy.sh` fetched with `git fetch --tags`, which refuses to move a tag the host already has and says so as a warning rather than an error, so the `git checkout "$TAG"` that follows resolved the stale local tag. The service restarted, the health check passed and the deploy went green with prod still on the old commit. Fetching with `--force` is the whole fix; the warning is easy to miss in a log that is otherwise all pip output
