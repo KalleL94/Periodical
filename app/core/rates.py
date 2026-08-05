@@ -36,6 +36,10 @@ DEFAULT_VACATION_RATES: dict[str, float] = {
     "variable_pct": 0.005,
     "payout_pct": 0.046,
 }
+# How the supplement is settled (a flat amount per day, and whether the variable
+# part is paid per day or as a yearly lump) lives on the User, not here: these
+# rates are versioned through RateHistory, and a wage revision must not open a
+# new rate period carrying a payout routine with it. See User.vacation_*.
 
 DEFAULT_OT_DIVISOR: int = OT_RATE_DIVISOR  # 72
 

@@ -188,7 +188,9 @@ def _parse_rates_form(form) -> dict:
     if oncall:
         custom["oncall"] = oncall
 
-    # Vacation percentages
+    # Vacation percentages. How the supplement is actually paid out (flat amount
+    # per day, per-day vs lump) is a User setting, edited with the other vacation
+    # settings rather than here: these rates are versioned through RateHistory.
     vac = {}
     for key in DEFAULT_VACATION_RATES:
         val = form.get(f"rate_vac_{key}", "").strip()

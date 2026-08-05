@@ -462,6 +462,9 @@ def summarize_month_for_person(
         "substitute_base_pay": totals.get("substitute_base_pay", 0.0),
         "absence_details": absence_details,
         "payslip": payslip,
+        # Per-row manual adjustments, so the views can mark an aggregate that no
+        # longer matches the per-day rows beneath it (see route_override_deltas).
+        "override_deltas": totals.get("override_deltas", {}),
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
         "base_salary": base_salary,
@@ -1394,12 +1397,15 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
     it could not be calculated.
     """
     from app.core.schedule.transition import calculate_transition_month_summary
-    from app.core.schedule.vacation import calculate_vacation_balance, fold_vacation_supplement_into_pay
+    from app.core.schedule.vacation import (
+        calculate_vacation_balance,
+        fold_vacation_supplement_into_pay,
+        vacation_supplement_for_month,
+    )
 
     vacation_pay = None
     try:
         vacation_pay = calculate_vacation_balance(user, year, session)
-        supp_per_day = vacation_pay.get("pay", {}).get("supplement_per_day", 0)
         total_sem_days = 0
         total_supplement = 0.0
         for m in months:
@@ -1409,7 +1415,12 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
                 if d.get("shift") and d["shift"].code == "SEM" and d.get("vacation_counts", True)
             )
             m["vacation_days"] = sem_days
-            m["vacation_supplement"] = round(supp_per_day * sem_days, 0)
+            # Resolved centrally so this view, the personal month view and the
+            # payslip agree on the amount and on which month a variable lump
+            # payout lands in.
+            supplement = vacation_supplement_for_month(vacation_pay, user, m.get("month", 0), sem_days)
+            m["vacation_supplement"] = supplement["total"]
+            m["vacation_supplement_parts"] = supplement
             total_sem_days += sem_days
             total_supplement += m["vacation_supplement"]
 

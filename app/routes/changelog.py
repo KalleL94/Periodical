@@ -16,6 +16,42 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.4.0",
+        "date": "2026-08-05",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "På lönespec-sidan kan du nu lägga till en lönerad som saknas. Välj en ersättningstyp appen inte räknade fram den här månaden, till exempel OB helg en månad du inte hade någon, eller skriv en egen benämning för något arbetsgivaren betalar som appen inte känner till alls. Raden gäller den månad du lägger in den på",
+                "en": "On the payslip page you can now add a pay row that is missing. Pick a type the app did not produce this month, for example weekend OB in a month you had none, or type your own label for something your employer pays that the app does not know about at all. The row applies to the month you add it to",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Karensavdraget visas som en egen rad på lönespecen i stället för att ligga inbakat i sjukavdraget, precis som arbetsgivaren skriver det. Summan är densamma, den är bara uppdelad så du kan jämföra rad för rad",
+                "en": "The waiting-day deduction now shows as its own payslip row instead of being folded into the sick deduction, the way your employer prints it. The total is the same, it is just split so you can compare row by row",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Semestertillägget delas upp i fast och rörlig del på lönespecen. Betalar din arbetsgivare den rörliga delen som en klumpsumma en gång om året i stället för per uttagen semesterdag går det att ställa in, tillsammans med vilken månad den betalas och ett fast kronbelopp per dag om du har ett sådant. Inställningarna finns under Semester, som du styr själv",
+                "en": "The vacation supplement is split into its fixed and variable parts on the payslip. If your employer pays the variable part as a lump sum once a year instead of per vacation day taken, you can set that, along with which month it is paid and a flat amount per day if you have one. The settings sit under Vacation, and are yours to set",
+            },
+            {
+                "type": "fix",
+                "sv": "Vecko-, månads- och intervallvyerna för hela laget kunde visa fel pass för någon som slutat på en position: de sista dagarna föll tillbaka på rotationsschemat i stället för det som faktiskt gällde, så frånvaro, ändrade pass, övertid och beredskap saknades. Dagvyn och din egen veckovy visade rätt hela tiden, vilket är varför de sa emot varandra",
+                "en": "The whole-team week, month and range views could show the wrong shift for someone who had left a position: their last days fell back on the rotation schedule instead of what actually applied, so absences, changed shifts, overtime and on-call went missing. The day view and your own week view were right all along, which is why they disagreed",
+            },
+            {
+                "type": "fix",
+                "sv": "Semestertilläggskortet skrev alltid ut avtalets standardsatser (0,8% och 0,5%) bredvid belopp som räknats på dina egna satser. Har du andra satser stämde inte texten med siffran, och en sats på 0% gick inte att upptäcka. Nu visas den sats som faktiskt använts",
+                "en": "The vacation supplement card always printed the agreement's default rates (0.8% and 0.5%) next to amounts calculated from your own rates. If yours differ the text did not match the figure, and a 0% rate was impossible to spot. It now shows the rate actually used",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Lägger du in en manuell rad syns den nu också i månads- och årsvyn, inte bara i bruttolönen. Månaden märks med Manuell justering så det syns att siffran är handpåläggning och inte ett räknefel mot dagsraderna under",
+                "en": "A manual row now also shows in the month and year views, not just in your gross pay. The month is marked Manual adjustment so it is clear the figure was entered by hand rather than disagreeing with the per-day rows below it",
+            },
+        ],
+    },
+    {
         "version": "1.3.0",
         "date": "2026-07-28",
         "entries": [

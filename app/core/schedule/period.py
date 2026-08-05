@@ -97,10 +97,11 @@ def build_week_data(
 
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
-    # For a single-position personal view, also fetch rows for every other user who
-    # held that position at any point in the week (past/future holder across a swap
-    # or succession); the all-persons view already covers every active holder.
-    extra_user_ids = _range_holder_user_ids(session, person_ids, monday, sunday) if person_id is not None else None
+    # Fetch rows for every user who held any viewed position during the week, not
+    # just its current holder. This is not a single-position concern: the map from
+    # position to user resolves the CURRENT holder, so a departed holder's own
+    # last days go missing from the all-persons views the same way.
+    extra_user_ids = _range_holder_user_ids(session, person_ids, monday, sunday)
 
     # Batch fetch absences, overtime, oncall overrides, swaps, and shift overrides for the week
     absence_map = _batch_fetch_absences(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
@@ -272,12 +273,9 @@ def generate_period_data(
     # Bygg mappning rotation_position -> user_id (hanterar Peter/Rickard som har olika user_id)
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
-    # For a single-position personal view, also fetch rows for every other user who
-    # held that position at any point in the range (past/future holder across a swap
-    # or succession); the all-persons view already covers every active holder.
-    extra_user_ids = (
-        _range_holder_user_ids(session, person_ids, effective_start, end_date) if person_id is not None else None
-    )
+    # Every holder in range, not just the current one. See build_week_data: the
+    # all-persons views need this as much as the single-position view does.
+    extra_user_ids = _range_holder_user_ids(session, person_ids, effective_start, end_date)
 
     # Batch fetch absences, overtime shifts, oncall overrides, swaps, and shift overrides for the entire period
     absence_map = _batch_fetch_absences(
@@ -453,26 +451,40 @@ def _range_holder_user_ids(
     """Return every user_id that held any of rotation_positions during a date range.
 
     _build_rotation_to_user_map only knows each position's CURRENT holder, so the
-    batch helpers, keying off it, query just those users. For a narrow single-position
-    view whose range sits on the far side of a swap or succession, the position's
-    prior/future holder is never queried and their rows (overtime, on-call, absences,
-    etc.) are structurally excluded before any per-row date re-attribution runs.
+    batch helpers, keying off it, query just those users. For any range sitting on
+    the far side of a swap or succession, the position's prior/future holder is
+    never queried and their rows (overtime, on-call, absences, shift overrides)
+    are structurally excluded before any per-row date re-attribution runs. This
+    applies to the all-persons views too: "current holder" is not the same as
+    "every holder in range", and a departed holder's own last days would fall
+    back to the raw rotation shift.
 
     Reading the PersonHistory segments overlapping [start_date, end_date] recovers the
     full set of holders in range. The per-row resolver in each batch helper then still
     buckets every fetched row onto the position its holder occupied on that row's date,
     so rows for a position not actually held on a given day fall outside the viewed
     position set and are harmlessly ignored.
-    """
-    from app.core.schedule.person_history import get_position_holder_segments
 
-    user_ids: set[int] = set()
+    One query regardless of how many positions are asked for: the all-persons
+    views pass all ten, and this runs on every week, month and range render.
+    """
     if not session:
-        return user_ids
-    for pid in rotation_positions:
-        for seg in get_position_holder_segments(session, pid, start_date, end_date):
-            user_ids.add(seg["user_id"])
-    return user_ids
+        return set()
+    from app.database.database import PersonHistory
+
+    rows = (
+        session.query(PersonHistory.user_id)
+        .filter(
+            PersonHistory.person_id.in_(rotation_positions),
+            PersonHistory.effective_from <= end_date,
+            # effective_to is an inclusive last valid day, so a segment ending on
+            # start_date still overlaps the range.
+            (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= start_date),
+        )
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
 
 
 def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]):

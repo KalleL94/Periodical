@@ -18,8 +18,12 @@ from app.core.logging_config import get_logger
 from app.core.payslip_import import parse_payslip_pdf
 from app.core.rates import get_user_rates
 from app.core.schedule import build_calendar_grid_for_month, clear_schedule_cache, rotation_start_date
-from app.core.schedule.payslip import NON_OVERRIDABLE_KEYS, ROW_ORDER, add_vacation_row, compare_to_upload
-from app.core.schedule.vacation import calculate_vacation_balance
+from app.core.schedule.payslip import NON_OVERRIDABLE_KEYS, ROW_ORDER, add_vacation_rows, compare_to_upload
+from app.core.schedule.vacation import (
+    calculate_vacation_balance,
+    is_variable_lump_month,
+    vacation_supplement_for_month,
+)
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
 from app.database.database import PayslipOverride, User, UserRole, get_db
@@ -32,6 +36,10 @@ router = APIRouter(tags=["payslip"])
 # A payslip PDF is a couple of hundred kilobytes; anything larger is not one.
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
+# Marks "I typed my own label" in the add-row form's row_key select. Not a valid
+# row key itself: the real one arrives in custom_key.
+CUSTOM_ROW_SENTINEL = "__custom__"
+
 
 def _resolve_target(db: Session, person_id: int, year: int, month: int) -> tuple[User | None, int, int]:
     """Resolve the path parameter the way the month view does.
@@ -43,20 +51,25 @@ def _resolve_target(db: Session, person_id: int, year: int, month: int) -> tuple
     return target_user, rotation_position, wage_user_id
 
 
-def _vacation_supplement(db: Session, user: User | None, year: int, days: int) -> float:
-    """The month's vacation supplement, as the month view computes it.
+def _vacation_supplement(db: Session, user: User | None, year: int, month: int, days: int) -> dict:
+    """The month's vacation supplement, split into fixed, variable and lump.
 
     It is folded into gross outside summarize_month_for_person, so the payslip
-    row is added here rather than inside the row builder.
+    rows are added here rather than inside the row builder. A variable lump
+    payout lands in one month whether or not vacation was taken in it, so days
+    alone do not decide whether there is anything to add.
     """
-    if not days or user is None:
-        return 0.0
+    empty = {"fixed": 0.0, "variable": 0.0, "lump": 0.0, "total": 0.0}
+    if user is None:
+        return empty
     try:
+        if not days and not is_variable_lump_month(user, month):
+            return empty
         balance = calculate_vacation_balance(user, year, db)
-        return round(balance.get("pay", {}).get("supplement_per_day", 0) * days, 0)
+        return vacation_supplement_for_month(balance, user, month, days)
     except Exception:
         logger.warning("Semestertillägg kunde inte beräknas för user_id=%s", user.id, exc_info=True)
-        return 0.0
+        return empty
 
 
 def _build_context(request: Request, person_id: int, year: int, month: int, current_user: User | None, db: Session):
@@ -102,9 +115,15 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
 
     slip = summary["payslip"]
     vacation_days = summary.get("vacation_days", 0)
-    add_vacation_row(slip, _vacation_supplement(db, target_user, year, vacation_days), vacation_days)
+    add_vacation_rows(slip, _vacation_supplement(db, target_user, year, month, vacation_days), vacation_days)
 
     person_name = target_user.name if target_user is not None else summary.get("person_name")
+
+    # Rows the user can still add: everything the app knows about that this
+    # month did not produce. The select is built here rather than in the
+    # template so the ordering stays with ROW_ORDER, its single source.
+    present = {row.key for row in slip.rows}
+    addable_keys = [key for key in ROW_ORDER if key not in present and key not in NON_OVERRIDABLE_KEYS]
 
     return {
         "request": request,
@@ -118,6 +137,8 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
         "can_edit": current_user is not None
         and (current_user.role == UserRole.ADMIN or current_user.id == wage_user_id),
         "non_overridable_keys": NON_OVERRIDABLE_KEYS,
+        "addable_keys": addable_keys,
+        "custom_row_sentinel": CUSTOM_ROW_SENTINEL,
         "wage_user": target_user,
         "outside_employment": outside_employment,
     }
@@ -176,6 +197,7 @@ async def set_payslip_override(
     year: int = Form(...),
     month: int = Form(...),
     row_key: str = Form(...),
+    custom_key: str = Form(default=""),
     amount: str = Form(default=""),
     hours: str = Form(default=""),
     unit_price: str = Form(default=""),
@@ -193,8 +215,15 @@ async def set_payslip_override(
         raise HTTPException(status_code=401, detail="Inloggning krävs")
 
     validate_date_params(year, month, None)
-    if row_key not in ROW_ORDER:
-        raise HTTPException(status_code=400, detail="Okänd lönerad")
+    # A key outside ROW_ORDER is allowed: it adds a row for a compensation type
+    # the model has no rule for, using the key as its own label. Only the shape
+    # is checked, against the row_key column width.
+    # The add-row form marks a hand-typed label with this sentinel, so the real
+    # key arrives in custom_key. Resolved on the server, which keeps the form
+    # working without JavaScript.
+    row_key = (custom_key if row_key == CUSTOM_ROW_SENTINEL else row_key).strip()
+    if not row_key or len(row_key) > 40:
+        raise HTTPException(status_code=400, detail="Ogiltig lönerad")
     if row_key in NON_OVERRIDABLE_KEYS:
         # The vacation supplement is derived from the vacation days and folded in
         # per view, so overriding it here would double count. See NON_OVERRIDABLE_KEYS.

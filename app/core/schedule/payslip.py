@@ -43,9 +43,12 @@ ROW_ORDER = (
     "oc_storhelg",
     "ot",
     "substitute",
-    "vacation_pay",
+    "vacation_fixed",
+    "vacation_variable",
+    "vacation_variable_lump",
     "sick_pay",
     "sick_deduction",
+    "karens",
     "vab_deduction",
     "leave_deduction",
 )
@@ -56,7 +59,7 @@ ROW_ORDER = (
 # supplement is still folded in by each view separately, so an override would
 # double count. These rows are read-only on the payslip: correct the vacation
 # days instead, which is where the supplement is actually derived from.
-NON_OVERRIDABLE_KEYS = frozenset({"vacation_pay"})
+NON_OVERRIDABLE_KEYS = frozenset({"vacation_fixed", "vacation_variable", "vacation_variable_lump"})
 
 # Row keys the payslip groups differently from the way this app splits them.
 # Both sides are summed per bucket before being compared, so a payslip that
@@ -73,6 +76,9 @@ COMPARE_BUCKETS = {
     "sick_deduction": "sick",
     "karens": "sick",
     "vacation_pay": "vacation",
+    "vacation_fixed": "vacation",
+    "vacation_variable": "vacation",
+    "vacation_variable_lump": "vacation",
     "vacation_deduction": "vacation",
     "OB3": "ob_152",
     "OB4": "ob_152",
@@ -166,8 +172,6 @@ def build_payslip_rows(
     is_hourly: bool,
     year: int,
     month: int,
-    vacation_supplement: float = 0.0,
-    vacation_days: int = 0,
 ) -> Payslip:
     """Build the month's payslip rows from the summary totals.
 
@@ -218,9 +222,6 @@ def build_payslip_rows(
     if sub_pay:
         add("substitute", sub_pay, totals.get("substitute_hours", 0.0) or 0.0, UNIT_HOURS)
 
-    if vacation_supplement:
-        add("vacation_pay", vacation_supplement, vacation_days or None, UNIT_DAYS)
-
     # Sick pay here is the OB compensation paid on sick days; the wage part of
     # sick pay is already netted inside absence_deduction (see
     # calculate_absence_deduction: it returns karens + 20% of the sick hours).
@@ -230,13 +231,31 @@ def build_payslip_rows(
     # payslip row it deserves rather than one opaque lump.
     per_type: dict[str, dict] = {}
     for detail in totals.get("absence_details") or []:
-        entry = per_type.setdefault(detail["type"], {"deduction": 0.0, "hours": 0.0})
+        entry = per_type.setdefault(detail["type"], {"deduction": 0.0, "hours": 0.0, "karens_hours": 0.0})
         entry["deduction"] += detail.get("deduction", 0.0) or 0.0
         entry["hours"] += detail.get("hours", 0.0) or 0.0
+        entry["karens_hours"] += detail.get("karens_hours", 0.0) or 0.0
+
+    # The same hourly wage calculate_absence_deduction priced the deduction with,
+    # so the karens row split out below cannot drift from the figure it came from.
+    hourly_wage = base_salary / _MONTHLY_HOURS if base_salary else 0.0
+
     for absence_type, key in (("SICK", "sick_deduction"), ("VAB", "vab_deduction"), ("LEAVE", "leave_deduction")):
         entry = per_type.get(absence_type)
-        if entry and entry["deduction"]:
-            add(key, -entry["deduction"], entry["hours"], UNIT_HOURS)
+        if not entry or not entry["deduction"]:
+            continue
+        deduction, hours = entry["deduction"], entry["hours"]
+        # A payslip lists the waiting-day deduction as its own line. It is a full
+        # 100% deduction inside this app's single net sick deduction, the rest
+        # being 20% of the remaining sick hours, so splitting it out here leaves
+        # the two rows summing to the same amount: gross does not move.
+        karens_hours = entry["karens_hours"] if absence_type == "SICK" else 0.0
+        if karens_hours:
+            karens_amount = hourly_wage * karens_hours
+            add("karens", -karens_amount, karens_hours, UNIT_HOURS)
+            deduction -= karens_amount
+            hours -= karens_hours
+        add(key, -deduction, hours, UNIT_HOURS)
 
     slip.total = sum(r.amount for r in slip.rows)
     return slip
@@ -300,47 +319,94 @@ def apply_payslip_overrides(slip: Payslip, overrides: dict[str, dict]) -> dict[s
 
 
 # Payslip row key -> the totals field the month/year views display it through.
-# Only fields with no conflicting per-day breakdown are routed: the absence
-# deduction and sick-pay OB are shown as single aggregated figures, so they can
-# follow an override cleanly. OB, on-call and overtime are deliberately left
-# out: they also render in a per-day breakdown table that sums to the computed
-# value, and moving only the aggregate would put the total at odds with the
-# rows beneath it.
+# Every row the views itemise is routed, so a hand-entered OB or on-call figure
+# shows up in the month and year views rather than only in the gross total.
+#
+# OB, on-call and overtime also render in a per-day breakdown table that sums to
+# the *computed* value, so a routed override leaves the aggregate above rows
+# that no longer add up to it. The per-day rows are left alone (they are what
+# the app computed, and rewriting them would invent hours nobody worked); the
+# views mark the aggregate instead, from totals["override_deltas"].
+#
+# Rows with no totals field of their own (free-text rows, base salary, the
+# vacation rows) move gross only, which is correct: nothing itemises them.
 _OVERRIDE_TO_TOTAL = {
     # A deduction row is negative; its total is the positive amount deducted, so
     # a positive delta (less deducted) lowers the total by the same amount.
     "sick_deduction": ("absence_deduction", -1),
+    "karens": ("absence_deduction", -1),
     "vab_deduction": ("absence_deduction", -1),
     "leave_deduction": ("absence_deduction", -1),
     # Sick-pay OB is added to gross, so its total moves with the delta directly.
     "sick_pay": ("sick_ob_pay", 1),
+    "oc_vardag": ("oncall_pay", 1),
+    "oc_helg": ("oncall_pay", 1),
+    "oc_helgdag": ("oncall_pay", 1),
+    "oc_storhelg": ("oncall_pay", 1),
+    "ot": ("ot_pay", 1),
+    "substitute": ("substitute_base_pay", 1),
 }
+
+# OB pay is itemised per OB code rather than as a single figure, so an OB
+# override has to land inside totals["ob_pay"] under its own code.
+_OB_KEYS = frozenset({"OB1", "OB2", "OB3", "OB4", "OB5"})
 
 
 def route_override_deltas(totals: dict, deltas: dict[str, float]) -> None:
     """Apply per-row override deltas to the itemised totals the views display.
 
-    Gross pay is handled by the caller; this keeps the sick-leave figures on the
-    month and year views consistent with an overridden deduction or sick-pay row.
+    Gross pay is handled by the caller; this keeps the itemised figures on the
+    month and year views consistent with an overridden row, and records the
+    deltas under totals["override_deltas"] so those views can mark which
+    aggregates carry a manual adjustment.
     """
+    if not deltas:
+        return
     for key, (total_field, sign) in _OVERRIDE_TO_TOTAL.items():
         if key in deltas:
             totals[total_field] = totals.get(total_field, 0.0) + sign * deltas[key]
 
+    ob_pay = totals.setdefault("ob_pay", {})
+    for code in _OB_KEYS.intersection(deltas):
+        ob_pay[code] = ob_pay.get(code, 0.0) + deltas[code]
 
-def add_vacation_row(slip: Payslip, supplement: float, days: int) -> None:
-    """Add the vacation supplement row.
+    # Only rows that actually moved a figure. An override set to exactly what the
+    # app computed is still a manual row, but marking the month's aggregate for it
+    # would print "+0 kr" and say nothing.
+    moved = {key: delta for key, delta in deltas.items() if abs(delta) >= 0.5}
+    if moved:
+        totals["override_deltas"] = moved
 
-    The supplement is folded into gross pay outside summarize_month_for_person
-    (see fold_vacation_supplement_into_pay), so it is added to the payslip at
-    the same point rather than inside the month summary, where it would be
-    counted twice.
+
+def add_vacation_rows(slip: Payslip, supplement: dict, days: int) -> None:
+    """Add the vacation supplement rows: fixed part, variable part, variable lump.
+
+    `supplement` is the dict from vacation.vacation_supplement_for_month. The
+    supplement is folded into gross pay outside summarize_month_for_person (see
+    fold_vacation_supplement_into_pay), so it is added to the payslip at the
+    same point rather than inside the month summary, where it would be counted
+    twice. Adding it here also means this must stay idempotent: the payslip
+    route builds its context twice on an upload.
+
+    The lump carries no quantity: it settles the whole year's variable part, not
+    the days taken in the month it lands in.
     """
-    if not supplement or any(r.key == "vacation_pay" for r in slip.rows):
-        return
-    slip.rows.append(PayslipRow(key="vacation_pay", qty=days or None, unit=UNIT_DAYS, amount=supplement))
-    slip.rows.sort(key=lambda r: ROW_ORDER.index(r.key) if r.key in ROW_ORDER else len(ROW_ORDER))
-    slip.total = sum(r.amount for r in slip.rows)
+    rows = (
+        ("vacation_fixed", supplement.get("fixed", 0.0), days or None),
+        ("vacation_variable", supplement.get("variable", 0.0), days or None),
+        ("vacation_variable_lump", supplement.get("lump", 0.0), None),
+    )
+    existing = {r.key for r in slip.rows}
+    added = False
+    for key, amount, qty in rows:
+        if not amount or key in existing:
+            continue
+        slip.rows.append(PayslipRow(key=key, qty=qty, unit=UNIT_DAYS if qty else None, amount=amount))
+        added = True
+
+    if added:
+        slip.rows.sort(key=lambda r: ROW_ORDER.index(r.key) if r.key in ROW_ORDER else len(ROW_ORDER))
+        slip.total = sum(r.amount for r in slip.rows)
 
 
 # Rounding slack when matching an uploaded payslip against the computed one.
