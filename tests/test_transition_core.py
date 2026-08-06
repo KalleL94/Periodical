@@ -16,6 +16,8 @@ from types import SimpleNamespace
 from app.core.schedule.transition import (
     PERCENTAGE_RULE,
     SAME_PAY_RULE,
+    _lump_already_paid,
+    _shift_months,
     calculate_consultant_vacation_days,
     calculate_consultant_vacation_payout,
     calculate_transition_month_summary,
@@ -66,23 +68,27 @@ def _make_transition(
     )
 
 
-def _stub_years(monkeypatch, *rows):
+def _stub_years(monkeypatch, *rows, lump_settled=False):
     """Pin get_earning_years so payout tests exercise the money math, not the accrual.
 
     Each row is (days, earned, variable, total_pay); dates are filler, the payout
-    reads only the numbers.
+    reads only the numbers. `lump_settled` may be a single flag for every year or one
+    per row.
     """
+    flags = lump_settled if isinstance(lump_settled, (list, tuple)) else [lump_settled] * len(rows)
     years = [
         {
             "start": datetime.date(2025, 4, 1),
             "end": datetime.date(2026, 3, 31),
+            "vacation_year_start": datetime.date(2026, 4, 1),
             "earned": earned,
             "used": earned - days,
             "days": days,
             "variable": variable,
             "total_pay": total_pay,
+            "lump_settled": settled,
         }
-        for days, earned, variable, total_pay in rows
+        for (days, earned, variable, total_pay), settled in zip(rows, flags, strict=True)
     ]
     monkeypatch.setattr("app.core.schedule.transition.get_earning_years", lambda *a, **k: years)
     return years
@@ -382,6 +388,98 @@ class TestCalculateConsultantVacationPayout:
         assert result["base_payout"] == 0.0
         assert result["variable_payout"] == 0.0
         assert result["total"] == 0.0
+
+
+class TestVariableLumpAlreadySettled:
+    """A year whose variable supplement was paid as a lump must not pay it again.
+
+    The employer settles the whole earning year in one month of the following vacation
+    year. If that month is behind the transition, the money is out the door, and paying
+    0.5% per unused day on top would hand over the same variable pay twice.
+    """
+
+    def test_settled_year_pays_only_the_base_component(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0), lump_settled=True)
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["variable_payout"] == 0.0
+        assert result["years"][0]["per_day"] == 1509.0  # 30000 * 0.0503, no variable part
+        assert result["total"] == 7545.0
+
+    def test_only_the_settled_year_loses_its_variable_part(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
+        _stub_years(
+            monkeypatch,
+            (5, 13, 8000.0, 188000.0),
+            (17, 17, 20000.0, 320000.0),
+            lump_settled=(True, False),
+        )
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        # Only the second year keeps its 0.5%: 100.00/day on 17 days.
+        assert result["variable_payout"] == 1700.0
+        assert [year["per_day"] for year in result["years"]] == [1509.0, 1609.0]
+
+    def test_explicit_override_still_wins_over_a_settled_lump(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(
+            transition_date=datetime.date(2026, 5, 1),
+            variable_avg_daily_override=15.5,
+        )
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0), lump_settled=True)
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["variable_payout"] == 77.5
+
+
+class TestLumpAlreadyPaid:
+    def test_lump_month_before_the_transition_counts_as_paid(self, test_db):
+        user = _make_user(test_db)
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_payout_month = 7
+        # Vacation year starts 2026-04-01 -> the lump lands 2026-07-01, before the transition.
+        assert _lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2026, 12, 1)) is True
+
+    def test_lump_month_after_the_transition_is_not_yet_paid(self, test_db):
+        user = _make_user(test_db)
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_payout_month = 7
+        # Vacation year starts 2027-04-01 -> the lump lands 2027-07-01, after the transition.
+        assert _lump_already_paid(user, datetime.date(2027, 4, 1), datetime.date(2026, 12, 1)) is False
+
+    def test_lump_month_before_the_vacation_year_start_rolls_into_the_next_year(self, test_db):
+        user = _make_user(test_db)
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_payout_month = 2
+        # Vacation year starts in April, so February belongs to the calendar year after.
+        assert _lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 1, 1)) is False
+        assert _lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 3, 1)) is True
+
+    def test_per_day_payout_is_never_treated_as_settled(self, test_db):
+        user = _make_user(test_db)
+        user.vacation_variable_payout = "per_day"
+        user.vacation_variable_payout_month = 7
+        assert _lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2026, 12, 1)) is False
+
+
+class TestShiftMonths:
+    def test_shifts_back_and_keeps_the_day(self):
+        assert _shift_months(datetime.date(2026, 4, 1), 1) == datetime.date(2026, 3, 1)
+
+    def test_shifts_back_to_the_month_end(self):
+        assert _shift_months(datetime.date(2026, 11, 30), 1, to_month_end=True) == datetime.date(2026, 10, 31)
+
+    def test_crosses_the_year_boundary(self):
+        assert _shift_months(datetime.date(2026, 1, 15), 1) == datetime.date(2025, 12, 15)
+
+    def test_clamps_a_day_the_target_month_does_not_have(self):
+        assert _shift_months(datetime.date(2026, 3, 31), 1) == datetime.date(2026, 2, 28)
 
 
 class TestPercentageRulePayout:

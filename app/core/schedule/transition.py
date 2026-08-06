@@ -99,16 +99,34 @@ def get_earning_years(
 
     last_day = transition.transition_date - datetime.timedelta(days=1)
 
-    def _row(start, end, earned, used):
-        variable, total_pay = _pay_for_window(user, session, start, end) if session else (0.0, 0.0)
+    lag = _payroll_lag_months(user)
+
+    def _row(start, end, earned, used, vacation_year_start):
+        # Variable pay is paid the month after it is worked, so the pay that *fell due*
+        # inside the earning year is the pay worked in the window shifted back by the
+        # payroll lag. The monthly salary does not lag, so its window stays put. This
+        # matches the shifted window vacation.py already computes the variable lump on.
+        if session:
+            variable, _ = _pay_for_window(
+                user,
+                session,
+                _shift_months(start, lag),
+                _shift_months(end, lag, to_month_end=True),
+            )
+            _, base = _pay_for_window(user, session, start, end)
+        else:
+            variable, base = 0.0, 0.0
+
         return {
             "start": start,
             "end": end,
+            "vacation_year_start": vacation_year_start,
             "earned": earned,
             "used": used,
             "days": max(0, earned - used),
             "variable": variable,
-            "total_pay": total_pay,
+            "total_pay": round(base + variable, 2),
+            "lump_settled": _lump_already_paid(user, vacation_year_start, transition.transition_date),
         }
 
     # Manual override: single custom earning period (legacy / admin-configured)
@@ -122,7 +140,7 @@ def get_earning_years(
         employed_days = (overlap_end - overlap_start).days + 1
         total_days = (earning_end - earning_start).days + 1
         earned = math.ceil(full_year_days * employed_days / total_days)
-        return [_row(overlap_start, overlap_end, earned, 0)]
+        return [_row(overlap_start, overlap_end, earned, 0, earning_end + datetime.timedelta(days=1))]
 
     # Auto mode: iterate all April–March earning years from employment start to transition
     from app.core.schedule.vacation import count_vacation_days_used
@@ -160,7 +178,7 @@ def get_earning_years(
                     )
                     used = used_data["total"]
 
-            years.append(_row(overlap_start, period_end, earned, used))
+            years.append(_row(overlap_start, period_end, earned, used, next_april))
 
         current_april = next_april
 
@@ -198,19 +216,64 @@ def _iter_months(start: datetime.date, end: datetime.date) -> list[tuple[int, in
     return months
 
 
+def _shift_months(date: datetime.date, months: int, to_month_end: bool = False) -> datetime.date:
+    """The same date `months` months earlier, optionally snapped to that month's last day."""
+    import calendar
+
+    total = (date.year * 12 + date.month - 1) - months
+    year, month = divmod(total, 12)
+    month += 1
+    days_in_month = calendar.monthrange(year, month)[1]
+    day = days_in_month if to_month_end else min(date.day, days_in_month)
+    return datetime.date(year, month, day)
+
+
+def _payroll_lag_months(user: "User") -> int:
+    """How many months variable pay lags the month it was worked in."""
+    lag = getattr(user, "vacation_variable_lump_lag_months", None)
+    return int(lag) if lag is not None else 1
+
+
+def _lump_already_paid(
+    user: "User",
+    vacation_year_start: datetime.date,
+    transition_date: datetime.date,
+) -> bool:
+    """
+    Whether this earning year's variable supplement was already settled as a lump.
+
+    An employer paying the variable part as a yearly lump settles the whole earning
+    year in one month of the vacation year that follows it. If that month falls before
+    the transition, the money is already paid and the payout must not hand it over a
+    second time, once per unused day.
+    """
+    if getattr(user, "vacation_variable_payout", None) != "lump":
+        return False
+
+    from app.core.schedule.vacation import _lump_payout_month
+
+    month = _lump_payout_month(getattr(user, "vacation_variable_payout_month", None), user)
+    # The lump month belongs to the vacation year, so it rolls into the next calendar
+    # year whenever it sits before the month that vacation year starts in.
+    year = vacation_year_start.year if month >= vacation_year_start.month else vacation_year_start.year + 1
+    return datetime.date(year, month, 1) < transition_date
+
+
 def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.date) -> tuple[float, float]:
     """
-    Variable pay and total gross pay that fell due between start and end, inclusive.
+    Variable pay and base pay for the months worked between start and end, inclusive.
 
-    Variable pay is OB supplement + on-call compensation + overtime. Total gross is
-    the month's whole brutto, which is the pay base the percentage rule works from.
+    Variable pay is OB supplement + on-call compensation + overtime. Base pay is the
+    rest of the month's brutto, i.e. the monthly salary net of absence deductions.
+    Callers combine the two across different windows, which is why they come apart
+    here rather than as one total.
 
     Months are summed whole and scaled at the window edges: summarize_month_for_person
     always reports a full monthly salary even for a month the person was not employed
     through, so a partly covered month has to be pro-rated here rather than trusted.
 
     Returns:
-        (variable_pay, total_gross_pay), both 0.0 if the person has no rotation slot.
+        (variable_pay, base_pay), both 0.0 if the person has no rotation slot.
     """
     import calendar
 
@@ -221,7 +284,7 @@ def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.d
         return 0.0, 0.0
 
     variable = 0.0
-    total = 0.0
+    base = 0.0
     for year, month in _iter_months(start, end):
         try:
             summary = summarize_month_for_person(
@@ -248,9 +311,9 @@ def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.d
             sum(summary.get("ob_pay", {}).values()) + summary.get("ot_pay", 0.0) + summary.get("oncall_pay", 0.0)
         )
         variable += month_variable * share
-        total += summary.get("brutto_pay", 0.0) * share
+        base += (summary.get("brutto_pay", 0.0) - month_variable) * share
 
-    return round(variable, 2), round(total, 2)
+    return round(variable, 2), round(base, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -411,8 +474,15 @@ def calculate_consultant_vacation_payout(
         override = transition.variable_avg_daily_override
         for year in years:
             # 0.5% of each year's own variable pay: an older day is worth what its own
-            # earning year paid, not what the most recent one did.
-            var_per_day = override if override is not None else variable_pct * year["variable"]
+            # earning year paid, not what the most recent one did. A year whose variable
+            # supplement was already settled as a lump gets nothing here, or it would be
+            # paid twice. An explicit override still wins: it is a stated intent.
+            if override is not None:
+                var_per_day = override
+            elif year["lump_settled"]:
+                var_per_day = 0.0
+            else:
+                var_per_day = variable_pct * year["variable"]
             year["per_day"] = round(base_with_supplement_per_day + var_per_day, 2)
             year["payout"] = round(year["per_day"] * year["days"], 2)
             variable_payout += var_per_day * year["days"]

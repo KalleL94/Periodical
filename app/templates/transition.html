@@ -238,7 +238,7 @@
                     <div class="transition-row">
                         <span>
                             {{ t.transition_year_row.replace('{start}', y.start|string).replace('{end}', y.end|string) }}
-                            <span class="form-hint">{{ t.transition_year_days.replace('{days}', y.days|string).replace('{earned}', y.earned|string) }} &#215; {{ "%.2f"|format(y.per_day) }} kr</span>
+                            <span class="form-hint">{{ t.transition_year_days.replace('{days}', y.days|string).replace('{earned}', y.earned|string) }} &#215; {{ "%.2f"|format(y.per_day) }} kr{% if y.lump_settled and vp.rule != 'procent' %}, {{ t.transition_year_lump_settled }}{% endif %}</span>
                         </span>
                         <span>{{ "{:,.0f}".format(y.payout).replace(",", "\u00a0") }} kr</span>
                     </div>
