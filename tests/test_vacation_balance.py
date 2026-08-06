@@ -593,13 +593,74 @@ class TestCalculateVacationPay:
         # Half the entitlement, same lump: the rule is not per day.
         assert _pay(13)["variable_lump_total"] == 2400.0
 
-    def test_lump_counts_pay_that_fell_due_inside_the_earning_year(self, test_db, monkeypatch):
+    def test_supplement_uses_the_salary_in_force_during_the_vacation_year(self, test_db):
+        """Semesterlagen 16 a bases the supplement on the salary current when the
+        vacation is taken, so a future year uses the raise already on record rather
+        than today's salary."""
+        from app.core.schedule.wages import add_new_wage
+
+        user = _make_user(test_db, person_id=1, wage=30000)
+        add_new_wage(test_db, user.id, 30000, datetime.date(2020, 1, 1))
+        add_new_wage(test_db, user.id, 45000, datetime.date(2026, 12, 1))
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            # Earning year 2026/27 feeds vacation year 2027, which runs on 45000.
+            earning_start=datetime.date(2026, 4, 1),
+            earning_end=datetime.date(2027, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["monthly_salary"] == 45000
+        assert pay["fixed_per_day"] == 360.0  # 45000 * 0.008, not 30000 * 0.008
+
+    def test_variable_pay_before_a_transition_belongs_to_the_consultant_employer(self, test_db, monkeypatch):
+        """A transition inside the earning year splits it. The months worked before it
+        are settled in the consultant employer's final payout, so counting them in the
+        direct employment's supplement would pay for them twice."""
+        from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+        user = _make_user(test_db, person_id=1, wage=30000)
+        test_db.add(
+            EmploymentTransition(
+                user_id=user.id,
+                transition_date=datetime.date(2026, 12, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        test_db.commit()
+        test_db.refresh(user)
+
+        # 10 000 kr of variable pay every month of the earning year.
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kw: {"ob_pay": {"OB1": 10000.0}, "ot_pay": 0.0, "oncall_pay": 0.0},
+        )
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=9,
+            earning_start=datetime.date(2026, 4, 1),
+            earning_end=datetime.date(2027, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        # Worked Dec 2026 - Feb 2027 (paid Jan - Mar 2027): three months, not twelve.
+        assert pay["variable_total"] == 30000.0
+        assert pay["breakdown_start"] == datetime.date(2026, 12, 1)
+
+    def test_variable_pay_counts_what_fell_due_inside_the_earning_year(self, test_db, monkeypatch):
         """Variable pay worked in March is paid in April, so with an earning year
         ending 31 March that March belongs to the next year, not the closing one.
-        The lump's window is the earning year shifted back by the payroll lag.
 
-        The per-day 0.5% part deliberately keeps the unshifted window, so the two
-        read different totals off the same months.
+        Both the lump and the per-day 0.5% part read that shifted window. The per-day
+        figure used to run on the unshifted one, which made the same year worth a
+        different amount depending only on how the employer settled it.
         """
         user = _make_user(test_db, person_id=1, wage=30000)
         user.vacation_variable_payout = "lump"
@@ -627,10 +688,11 @@ class TestCalculateVacationPay:
             vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
         )
 
-        # Worked Apr 2025 - Mar 2026: all three months.
-        assert pay["variable_total"] == 30000.0
-        # Paid Apr 2025 - Mar 2026, i.e. worked Mar 2025 - Feb 2026: March drops out.
+        # Paid Apr 2025 - Mar 2026, i.e. worked Mar 2025 - Feb 2026: March drops out
+        # of both figures, which now read the same window.
+        assert pay["variable_total"] == 20000.0
         assert pay["variable_lump_base"] == 20000.0
+        assert pay["variable_per_day"] == 100.0  # 20000 * 0.005, not 30000 * 0.005
         assert pay["variable_lump_total"] == 2400.0  # 20000 * 0.12
         assert pay["variable_lump_end"] == datetime.date(2026, 2, 1)
 

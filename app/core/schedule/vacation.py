@@ -664,9 +664,23 @@ def calculate_vacation_pay(
     from app.core.schedule.summary import summarize_month_for_person
     from app.core.schedule.wages import get_effective_monthly_wage
 
-    # Get current wage (monthly equivalent for HOURLY workers)
+    # The payout routine is versioned per vacation year, and the year in question is the
+    # one that opens the day after this earning year closes.
+    from app.core.utils import get_today
+
+    vacation_year = vacation_year_of(earning_end + datetime.timedelta(days=1), user)
+    year_start, year_end = get_vacation_year_boundaries(
+        vacation_year, getattr(user, "vacation_year_start_month", None) or 4
+    )
+
+    # Semesterlagen 16 a bases the supplement on the salary current *at the time the
+    # vacation is taken*, so a future year has to use the raise that is already on
+    # record rather than today's salary, and a past year the salary it actually ran on.
+    wage_date = min(max(get_today(), year_start), year_end)
+
+    # Get the wage in force then (monthly equivalent for HOURLY workers)
     try:
-        monthly_salary = get_effective_monthly_wage(db, user.id, 0)
+        monthly_salary = get_effective_monthly_wage(db, user.id, 0, effective_date=wage_date)
     except Exception:
         monthly_salary = user.wage if hasattr(user, "wage") else 0
     if monthly_salary == 0:
@@ -676,25 +690,37 @@ def calculate_vacation_pay(
     # A flat amount configured on the user wins: some employers pay a fixed krona
     # amount per vacation day rather than a percentage of the salary.
     vac = vacation_rates or {"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046}
-    # The payout routine is versioned per vacation year, and the year in question is the
-    # one that opens the day after this earning year closes.
-    settings = vacation_settings_for_year(user, vacation_year_of(earning_end + datetime.timedelta(days=1), user))
+    settings = vacation_settings_for_year(user, vacation_year)
     flat = settings["fixed_per_day"]
     fixed_per_day = round(float(flat), 2) if flat else round(monthly_salary * vac["fixed_pct"], 2)
 
     # Sum ALL variable earnings during earning year
-    # The lump follows semesterlagen's percentage rule, which counts pay that fell
-    # due during the earning year. Variable pay is normally paid a month or two
-    # after it is worked, so the months that were *paid* inside the earning year
-    # are the ones earned `lag` months earlier. March worked, April paid, and with
-    # a March year-end that March never belongs to the year that just closed.
+    # Semesterlagen 16 a counts "the variable pay during the earning year", meaning the
+    # pay that fell *due* in it. Variable pay is normally paid a month or two after it
+    # is worked, so the months paid inside the earning year are the ones worked `lag`
+    # months earlier. March worked, April paid, and with a March year-end that March
+    # never belongs to the year that just closed.
     #
-    # The per-day 0.5% supplement deliberately keeps the unshifted window; only
-    # the lump uses the shifted one. Both are summed from the same per-month pass
-    # so the shift costs one extra month, not a second full loop.
+    # Both the 0.5% per-day supplement and the lump read that same shifted window: the
+    # statute makes no distinction between them, and the per-day figure used to run on
+    # the unshifted one, which paid a different total for the same year depending only
+    # on how the employer chose to settle it.
     lag = settings["variable_lump_lag_months"]
     lag = int(lag) if lag is not None else 1
+
+    # A transition inside the earning year splits it between two employers. Variable pay
+    # from before it belongs to the consultant employer and is settled in its final
+    # payout, so counting it here would pay for the same months twice. The same boundary
+    # entitled_days and used_days already apply.
+    transition = getattr(user, "employment_transition", None)
+    if transition and earning_start < transition.transition_date <= earning_end:
+        earning_start = transition.transition_date
+
     lump_start, lump_end = _shift_month(earning_start, -lag), _shift_month(earning_end, -lag)
+    if transition and lump_start < transition.transition_date <= earning_end:
+        # The shifted window is the months *worked*; the consultant employer pays the
+        # ones worked before the transition, however late they fall due.
+        lump_start = datetime.date(transition.transition_date.year, transition.transition_date.month, 1)
 
     # Per month, per component: the views break the earning year down into OB,
     # overtime and on-call, so the components have to survive the pass.
@@ -740,10 +766,10 @@ def calculate_vacation_pay(
         return tuple(sum(col) for col in zip(*rows, strict=True)) if rows else (0.0, 0.0, 0.0)
 
     # All variable components are included (no exclusion rules for semestertillägg)
-    ob_total, ot_total, oncall_total = _sum_window(earning_start, earning_end)
+    ob_total, ot_total, oncall_total = _sum_window(lump_start, lump_end)
     variable_total = ob_total + ot_total + oncall_total
-    lump_parts = _sum_window(lump_start, lump_end)
-    lump_base = sum(lump_parts)
+    lump_parts = (ob_total, ot_total, oncall_total)
+    lump_base = variable_total
 
     # Variable supplement: 0.5% of total variable earnings, per vacation day (customizable)
     variable_per_day = round(variable_total * vac["variable_pct"], 2)
