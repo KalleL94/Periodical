@@ -1171,3 +1171,13 @@ form[data-override-form] input[name="reason"] { width: min(100%, 11rem); }
 .mb-sm { margin-bottom: 0.75rem; }
 .w-6 { width: 6rem; }
 .text-xs-muted { font-size: 0.75rem; color: var(--muted); }
+
+/* Fields that only mean anything when the variable part is settled as a lump: which
+   month it lands in and what share of the year it comes to. :has() reads the live
+   select value, so switching payout routine reveals or hides them without any JS. */
+form:not(:has(select[name="vacation_variable_payout"] option[value="lump"]:checked)) .lump-only {
+    display: none;
+}
+
+/* A derived value shown where an input used to sit: same box, not editable. */
+.form-input--readonly { background: transparent; border-color: transparent; padding-left: 0; }

@@ -331,7 +331,7 @@
                         </option>
                     </select>
                 </div>
-                <div class="form-group avu-field">
+                <div class="form-group avu-field lump-only">
                     <label class="form-label avu-label">{{ t.vacation_payout_month }}</label>
                     <select name="vacation_variable_payout_month" class="form-input">
                         <option value="">{{ t.vacation_payout_month_default }}</option>
@@ -345,7 +345,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group avu-field">
+                <div class="form-group avu-field lump-only">
                     <label class="form-label avu-label">{{ t.vacation_lump_pct }}</label>
                     <div class="form-input form-input--readonly">{{ "%.1f"|format(balance.pay.variable_lump_pct * 100) }}%</div>
                     <div class="form-hint">{{ t.vacation_lump_pct_hint.replace('{days}', balance.entitled_days|string).replace('{pct}', "%.2f"|format(balance.pay.variable_pct * 100)) }}</div>
