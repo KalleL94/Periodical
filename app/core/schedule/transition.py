@@ -101,17 +101,22 @@ def get_earning_years(
 
     lag = _payroll_lag_months(user)
 
-    def _row(start, end, earned, used, vacation_year_start):
+    def _row(start, end, earned, used, vacation_year_start, is_final):
         # Variable pay is paid the month after it is worked, so the pay that *fell due*
         # inside the earning year is the pay worked in the window shifted back by the
         # payroll lag. The monthly salary does not lag, so its window stays put. This
         # matches the shifted window vacation.py already computes the variable lump on.
+        #
+        # The final year is not shifted at its end: the engagement stops there, and the
+        # last months' variable pay is settled by the consultant employer along with
+        # everything else it still owes. Shifting that end would leave it in no earning
+        # year at all, even though it is paid out.
         if session:
             variable, _ = _pay_for_window(
                 user,
                 session,
                 _shift_months(start, lag),
-                _shift_months(end, lag, to_month_end=True),
+                end if is_final else _shift_months(end, lag, to_month_end=True),
             )
             _, base = _pay_for_window(user, session, start, end)
         else:
@@ -140,7 +145,7 @@ def get_earning_years(
         employed_days = (overlap_end - overlap_start).days + 1
         total_days = (earning_end - earning_start).days + 1
         earned = math.ceil(full_year_days * employed_days / total_days)
-        return [_row(overlap_start, overlap_end, earned, 0, earning_end + datetime.timedelta(days=1))]
+        return [_row(overlap_start, overlap_end, earned, 0, earning_end + datetime.timedelta(days=1), True)]
 
     # Auto mode: iterate all April–March earning years from employment start to transition
     from app.core.schedule.vacation import count_vacation_days_used
@@ -178,7 +183,7 @@ def get_earning_years(
                     )
                     used = used_data["total"]
 
-            years.append(_row(overlap_start, period_end, earned, used, next_april))
+            years.append(_row(overlap_start, period_end, earned, used, next_april, period_end == last_day))
 
         current_april = next_april
 

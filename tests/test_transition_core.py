@@ -23,6 +23,7 @@ from app.core.schedule.transition import (
     calculate_transition_month_summary,
     calculate_variable_avg_daily,
     get_earning_year,
+    get_earning_years,
 )
 from app.database.database import ConsultantSalaryType, User, UserRole
 
@@ -388,6 +389,51 @@ class TestCalculateConsultantVacationPayout:
         assert result["base_payout"] == 0.0
         assert result["variable_payout"] == 0.0
         assert result["total"] == 0.0
+
+
+class TestEarningYearVariableWindows:
+    """The windows the variable pay is summed over must tile the whole engagement.
+
+    Variable pay lags a month, so each year's window shifts back. The final year is the
+    exception: the engagement ends there and the consultant employer settles the last
+    months along with everything else, so its window runs to the last consultant day. A
+    gap between the years would silently drop a month of variable pay from the payout.
+    """
+
+    def _windows(self, test_db, monkeypatch, user, transition):
+        calls = []
+
+        def _record(_user, _session, start, end):
+            calls.append((start, end))
+            return 0.0, 0.0
+
+        monkeypatch.setattr("app.core.schedule.transition._pay_for_window", _record)
+        get_earning_years(user, transition, session=test_db)
+        # Each row asks for the shifted variable window first, then the unshifted base one.
+        return calls[::2]
+
+    def test_final_year_runs_to_the_last_consultant_day(self, test_db, monkeypatch):
+        user = _make_user(test_db, employment_start_date=datetime.date(2025, 10, 1), person_id=1)
+        transition = _make_transition(transition_date=datetime.date(2026, 12, 1))
+
+        windows = self._windows(test_db, monkeypatch, user, transition)
+
+        assert windows == [
+            # earning year 2025/26, shifted a month back at both ends
+            (datetime.date(2025, 9, 1), datetime.date(2026, 2, 28)),
+            # final year: shifted start, but the end stays on the last consultant day
+            (datetime.date(2026, 3, 1), datetime.date(2026, 11, 30)),
+        ]
+
+    def test_windows_leave_no_gap_between_the_years(self, test_db, monkeypatch):
+        user = _make_user(test_db, employment_start_date=datetime.date(2024, 1, 1), person_id=1)
+        transition = _make_transition(transition_date=datetime.date(2026, 12, 1))
+
+        windows = self._windows(test_db, monkeypatch, user, transition)
+
+        assert len(windows) == 4  # earning years 2023/24 through 2026/27
+        for (_, earlier_end), (later_start, _) in zip(windows, windows[1:], strict=False):
+            assert later_start == earlier_end + datetime.timedelta(days=1)
 
 
 class TestVariableLumpAlreadySettled:
