@@ -344,9 +344,8 @@
                 </div>
                 <div class="form-group avu-field">
                     <label class="form-label avu-label">{{ t.vacation_lump_pct }}</label>
-                    <input type="number" name="vacation_variable_lump_pct" step="0.1" min="0" max="100"
-                        value="{{ "%.1f"|format((vacation_settings.variable_lump_pct if vacation_settings.variable_lump_pct is not none else 0.12) * 100) }}"
-                        class="form-input">
+                    <div class="form-input form-input--readonly">{{ "%.1f"|format(balance.pay.variable_lump_pct * 100) }}%</div>
+                    <div class="form-hint">{{ t.vacation_lump_pct_hint.replace('{days}', balance.entitled_days|string).replace('{pct}', "%.2f"|format(balance.pay.variable_pct * 100)) }}</div>
                 </div>
                 <div class="form-group avu-field">
                     <label class="form-label avu-label">{{ t.vacation_lump_lag }}</label>

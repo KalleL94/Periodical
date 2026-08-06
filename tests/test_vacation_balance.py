@@ -561,13 +561,13 @@ class TestCalculateVacationPay:
         # The full figure survives for the payout path, which owes both parts.
         assert pay["full_supplement_per_day"] == round(pay["fixed_per_day"] + pay["variable_per_day"], 2)
 
-    def test_lump_is_a_share_of_the_earning_year_not_a_per_day_amount(self, test_db, monkeypatch):
-        """Semesterlagen's percentage rule: the lump is a share of the whole
-        earning year's variable pay, settled once. It must not be scaled by the
-        entitlement, which is what separates it from variable_per_day x days."""
+    def test_lump_scales_with_the_days_the_year_earned(self, test_db, monkeypatch):
+        """The lump is the same money as the per-day supplement, settled once instead
+        of spread over the days, so it scales with the entitlement: 0.5% each, the
+        familiar 12.5% at a full 25 days but less for a part year. A flat percentage
+        would pay a 13-day year as if it had 25."""
         user = _make_user(test_db, person_id=1, wage=30000)
         user.vacation_variable_payout = "lump"
-        user.vacation_variable_lump_pct = 0.12
         test_db.commit()
 
         # Two months of the earning year, 10 000 kr variable pay each.
@@ -588,10 +588,60 @@ class TestCalculateVacationPay:
 
         full = _pay(25)
         assert full["variable_total"] == 20000.0
-        assert full["variable_lump_total"] == 2400.0  # 20000 * 0.12
+        assert full["variable_lump_pct"] == 0.125  # 25 x 0.5%
+        assert full["variable_lump_total"] == 2500.0  # 20000 * 0.125
 
-        # Half the entitlement, same lump: the rule is not per day.
-        assert _pay(13)["variable_lump_total"] == 2400.0
+        # A part year earns fewer days, so it is owed proportionally less.
+        part = _pay(13)
+        assert part["variable_lump_pct"] == 0.065  # 13 x 0.5%
+        assert part["variable_lump_total"] == 1300.0
+
+    def test_a_lump_paid_before_a_transition_settles_the_consultant_accrual(self, test_db, monkeypatch):
+        """A transition zeroes the direct employment's share of an earlier year, but the
+        lump for that year was paid by the consultant employer, on the days the person
+        had actually accrued. Scaling it by the direct employment's zero pays nothing
+        for a year that really was settled."""
+        user = _make_user(test_db, person_id=1, wage=30000, employment_start_date=datetime.date(2025, 10, 1))
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_payout_month = 7
+        test_db.commit()
+
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kw: {"ob_pay": {"OB1": 10000.0}, "ot_pay": 0.0, "oncall_pay": 0.0},
+        )
+
+        def _pay(accrued):
+            return calculate_vacation_pay(
+                user=user,
+                # The direct employment accrued nothing for this year.
+                entitled_days=0,
+                accrued_days=accrued,
+                earning_start=datetime.date(2025, 4, 1),
+                earning_end=datetime.date(2026, 3, 31),
+                db=test_db,
+                vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+            )
+
+        # No transition: the employer's share is all there is, so a zero stays zero.
+        assert _pay(13)["variable_lump_pct"] == 0.0
+
+        from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+        test_db.add(
+            EmploymentTransition(
+                user_id=user.id,
+                # July 2026 falls before this, so the consultant employer paid the lump.
+                transition_date=datetime.date(2026, 12, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        test_db.commit()
+        test_db.refresh(user)
+
+        assert _pay(13)["variable_lump_pct"] == 0.065  # 13 x 0.5%, not 0
 
     def test_supplement_uses_the_rates_in_force_during_the_vacation_year(self, test_db):
         """Rates are versioned through RateHistory, so a year running on rates opened at
@@ -688,7 +738,6 @@ class TestCalculateVacationPay:
         """
         user = _make_user(test_db, person_id=1, wage=30000)
         user.vacation_variable_payout = "lump"
-        user.vacation_variable_lump_pct = 0.12
         user.vacation_variable_lump_lag_months = 1
         test_db.commit()
 
@@ -717,7 +766,7 @@ class TestCalculateVacationPay:
         assert pay["variable_total"] == 20000.0
         assert pay["variable_lump_base"] == 20000.0
         assert pay["variable_per_day"] == 100.0  # 20000 * 0.005, not 30000 * 0.005
-        assert pay["variable_lump_total"] == 2400.0  # 20000 * 0.12
+        assert pay["variable_lump_total"] == 2500.0  # 20000 * (25 x 0.5%)
         assert pay["variable_lump_end"] == datetime.date(2026, 2, 1)
 
         # The breakdown the card renders follows the window the payout used, or

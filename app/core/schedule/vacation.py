@@ -510,13 +510,18 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
     ):
         employment_start = user.employment_transition.transition_date
 
-    is_first_year = False
-    if employment_start and employment_start > earning_start:
-        # Employee started during or after the earning year → pro-rate
-        is_first_year = True
-        entitled_days = _calculate_prorated_days(employment_start, earning_start, earning_end, full_days)
-    else:
-        entitled_days = full_days
+    def _accrued(start):
+        # Started during or after the earning year → pro-rate
+        if start and start > earning_start:
+            return _calculate_prorated_days(start, earning_start, earning_end, full_days)
+        return full_days
+
+    is_first_year = bool(employment_start and employment_start > earning_start)
+    entitled_days = _accrued(employment_start)
+    # What the person accrued that year regardless of which employer owes it. The lump
+    # needs it: a transition zeroes the direct employment's share of an earlier year,
+    # but the consultant employer still paid that year's lump on its own accrual.
+    accrued_days = _accrued(user.employment_start_date)
 
     transition = getattr(user, "employment_transition", None)
 
@@ -547,6 +552,7 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
         earning_start=earning_start,
         earning_end=earning_end,
         db=db,
+        accrued_days=accrued_days,
     )
 
     # Advance vacation: ICA tops up to the full quota in the first direct-employment year.
@@ -636,6 +642,7 @@ def calculate_vacation_pay(
     earning_end: datetime.date,
     db,
     vacation_rates: dict | None = None,
+    accrued_days: int | None = None,
 ) -> dict:
     """
     Calculate vacation supplement (semestertillägg) per Handelns tjänstemannaavtal 2025-2027.
@@ -791,12 +798,20 @@ def calculate_vacation_pay(
     # schedules the variable part while employed.
     lump = settings["variable_payout"] == "lump"
 
-    # The lump follows semesterlagen's percentage rule rather than the per-day
-    # supplement: a share of the whole earning year's variable pay, settled once.
-    # It is deliberately not scaled by the entitlement, which is what separates it
-    # from variable_per_day x days.
-    lump_pct = settings["variable_lump_pct"]
-    lump_pct = float(lump_pct) if lump_pct is not None else 0.12
+    # The lump is the same money as the per-day supplement, settled once instead of
+    # spread over the days, so it scales with the days the year actually earned:
+    # 0.5% each, i.e. the familiar 12.5% at a full 25-day entitlement but less for a
+    # part year. A flat percentage would pay a 9-day year as if it had 25.
+    # The lump is owed by whoever was the employer in its payout month, for the days
+    # that employer accrued. One paid before a transition came from the consultant
+    # employer, whose accrual the transition boundary never applied to, so it settles
+    # the days the person actually earned that year rather than the direct
+    # employment's share of them, which is zero for a year it was not around for.
+    lump_days = entitled_days
+    if transition and accrued_days is not None and lump_already_paid(user, year_start, transition.transition_date):
+        lump_days = accrued_days
+
+    lump_pct = round(vac["variable_pct"] * lump_days, 6)
     lump_total = round(lump_base * lump_pct, 2) if lump else 0.0
 
     supplement_per_day = round(fixed_per_day if lump else fixed_per_day + variable_per_day, 2)
@@ -852,7 +867,6 @@ VACATION_SETTING_FALLBACKS = {
     "fixed_per_day": "vacation_fixed_per_day",
     "variable_payout": "vacation_variable_payout",
     "variable_payout_month": "vacation_variable_payout_month",
-    "variable_lump_pct": "vacation_variable_lump_pct",
     "variable_lump_lag_months": "vacation_variable_lump_lag_months",
     "payout_rule": None,  # no column; the statutory default is the same-pay rule
 }
@@ -872,7 +886,7 @@ def vacation_settings_for_year(user, vacation_year: int) -> dict:
     every year used before these settings were versioned.
 
     Returns:
-        {fixed_per_day, variable_payout, variable_payout_month, variable_lump_pct,
+        {fixed_per_day, variable_payout, variable_payout_month,
          variable_lump_lag_months, payout_rule}
     """
     stored = getattr(user, "vacation_settings", None) or {}
@@ -891,6 +905,26 @@ def vacation_settings_for_year(user, vacation_year: int) -> dict:
         else:
             resolved[field] = DEFAULT_VACATION_PAYOUT_RULE
     return resolved
+
+
+def lump_already_paid(user, vacation_year_start: datetime.date, transition_date: datetime.date) -> bool:
+    """
+    Whether an earning year's variable supplement was already settled as a lump.
+
+    An employer paying the variable part as a yearly lump settles the whole earning
+    year in one month of the vacation year that follows it. Which employer that was
+    decides who owes the lump, and a lump that landed before a transition was paid by
+    the employer the person had then.
+    """
+    settings = vacation_settings_for_year(user, vacation_year_start.year)
+    if settings["variable_payout"] != "lump":
+        return False
+
+    month = _lump_payout_month(settings["variable_payout_month"], user)
+    # The lump month belongs to the vacation year, so it rolls into the next calendar
+    # year whenever it sits before the month that vacation year starts in.
+    year = vacation_year_start.year if month >= vacation_year_start.month else vacation_year_start.year + 1
+    return datetime.date(year, month, 1) < transition_date
 
 
 def vacation_year_of(date: datetime.date, user) -> int:
@@ -1186,7 +1220,6 @@ def set_vacation_settings(
     fixed_per_day: str | None = None,
     variable_payout: str | None = None,
     variable_payout_month: str | None = None,
-    variable_lump_pct: str | None = None,
     variable_lump_lag_months: str | None = None,
     payout_rule: str | None = None,
     settings_year: int | None = None,
@@ -1248,16 +1281,6 @@ def set_vacation_settings(
         month = variable_payout_month.strip()
         # Blank falls the lump back to the vacation year's start month.
         _set("variable_payout_month", int(month) if month.isdigit() and 1 <= int(month) <= 12 else None)
-
-    if variable_lump_pct is not None and variable_lump_pct.strip():
-        # Entered as a percentage (12), stored as a share (0.12), matching how
-        # the field reads on screen. Out of range is ignored like every other value.
-        try:
-            pct = float(variable_lump_pct.replace(",", ".").strip()) / 100
-        except ValueError:
-            pct = None
-        if pct is not None and 0 <= pct <= 1:
-            _set("variable_lump_pct", pct)
 
     if variable_lump_lag_months is not None and variable_lump_lag_months.strip():
         lag = variable_lump_lag_months.strip()

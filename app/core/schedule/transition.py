@@ -236,6 +236,13 @@ def _shift_months(date: datetime.date, months: int, to_month_end: bool = False) 
     return datetime.date(year, month, day)
 
 
+def _lump_already_paid(user: "User", vacation_year_start, transition_date) -> bool:
+    """Whether this earning year's variable supplement was already settled as a lump."""
+    from app.core.schedule.vacation import lump_already_paid
+
+    return lump_already_paid(user, vacation_year_start, transition_date)
+
+
 def _settings_for(user: "User", vacation_year_start: datetime.date) -> dict:
     """The payout settings in force for the vacation year an earning year feeds."""
     from app.core.schedule.vacation import vacation_settings_for_year
@@ -247,32 +254,6 @@ def _payroll_lag_months(user: "User", vacation_year_start: datetime.date) -> int
     """How many months variable pay lags the month it was worked in."""
     lag = _settings_for(user, vacation_year_start)["variable_lump_lag_months"]
     return int(lag) if lag is not None else 1
-
-
-def _lump_already_paid(
-    user: "User",
-    vacation_year_start: datetime.date,
-    transition_date: datetime.date,
-) -> bool:
-    """
-    Whether this earning year's variable supplement was already settled as a lump.
-
-    An employer paying the variable part as a yearly lump settles the whole earning
-    year in one month of the vacation year that follows it. If that month falls before
-    the transition, the money is already paid and the payout must not hand it over a
-    second time, once per unused day.
-    """
-    from app.core.schedule.vacation import _lump_payout_month
-
-    settings = _settings_for(user, vacation_year_start)
-    if settings["variable_payout"] != "lump":
-        return False
-
-    month = _lump_payout_month(settings["variable_payout_month"], user)
-    # The lump month belongs to the vacation year, so it rolls into the next calendar
-    # year whenever it sits before the month that vacation year starts in.
-    year = vacation_year_start.year if month >= vacation_year_start.month else vacation_year_start.year + 1
-    return datetime.date(year, month, 1) < transition_date
 
 
 def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.date) -> tuple[float, float]:
