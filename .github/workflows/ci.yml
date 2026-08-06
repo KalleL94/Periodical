@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           # Match the version run in production (venv) and used to compile requirements.txt
           python-version: "3.14"
