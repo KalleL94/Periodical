@@ -337,6 +337,9 @@
                     <label class="form-label">{{ t.vacation_payout_month }}</label>
                     <select name="vacation_variable_payout_month" class="form-input">
                         <option value="">{{ t.vacation_payout_month_default }}</option>
+                        <option value="end" {% if vacation_settings.variable_payout_month == 'end' %}selected{% endif %}>
+                            {{ t.vacation_payout_month_year_end }}
+                        </option>
                         {# From the translations rather than the route: the admin page's
                            month_names is a hardcoded Swedish list, wrong for an EN user. #}
                         {% set month_names = t.month_names_json | from_json %}

@@ -335,6 +335,9 @@
                     <label class="form-label avu-label">{{ t.vacation_payout_month }}</label>
                     <select name="vacation_variable_payout_month" class="form-input">
                         <option value="">{{ t.vacation_payout_month_default }}</option>
+                        <option value="end" {% if vacation_settings.variable_payout_month == 'end' %}selected{% endif %}>
+                            {{ t.vacation_payout_month_year_end }}
+                        </option>
                         {% for m in range(1, 13) %}
                         <option value="{{ m }}" {% if vacation_settings.variable_payout_month == m %}selected{% endif %}>
                             {{ month_names[m-1] }}

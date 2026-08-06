@@ -16,7 +16,9 @@ import datetime
 from types import SimpleNamespace
 
 from app.core.schedule.vacation import (
+    LUMP_MONTH_YEAR_END,
     _calculate_prorated_days,
+    _lump_payout_month,
     _vacation_dates_in_weeks,
     calculate_vacation_balance,
     calculate_vacation_pay,
@@ -26,6 +28,7 @@ from app.core.schedule.vacation import (
     get_saved_days_balance,
     get_vacation_dates_for_year,
     get_vacation_year_boundaries,
+    lump_already_paid,
     resolve_vacation_year,
     vacation_settings_for_year,
 )
@@ -289,6 +292,40 @@ class TestGetParentalDatesForYear:
         assert datetime.date.fromisocalendar(2026, 20, 1) in dates
         assert datetime.date(2026, 9, 3) in dates
         assert len(dates) == 8  # 7 days of week 20 + 1 absence day
+
+
+class TestLumpPayoutMonth:
+    """The lump's payout month can track the vacation year instead of naming a month.
+
+    Blank is the year's first month and "end" its last, both resolved from the user's
+    own break month, so neither has to be re-picked if the break moves.
+    """
+
+    def test_blank_is_the_vacation_years_first_month(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=4)
+        assert _lump_payout_month(None, user) == 4
+
+    def test_end_is_the_vacation_years_last_month(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=4)
+        assert _lump_payout_month(LUMP_MONTH_YEAR_END, user) == 3
+
+    def test_end_wraps_to_december_for_a_calendar_vacation_year(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=1)
+        assert _lump_payout_month(LUMP_MONTH_YEAR_END, user) == 12
+
+    def test_an_explicit_month_is_left_alone(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=4)
+        assert _lump_payout_month(7, user) == 7
+
+    def test_a_year_end_lump_lands_in_the_next_calendar_year(self, test_db):
+        # Vacation year 2026 runs Apr 2026 - Mar 2027, so its last month is Mar 2027.
+        user = _make_user(test_db, vacation_year_start_month=4)
+        user.vacation_variable_payout = "lump"
+        user.vacation_settings = {"2026": {"variable_payout_month": LUMP_MONTH_YEAR_END}}
+        test_db.commit()
+
+        assert lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 4, 1)) is True
+        assert lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 2, 1)) is False
 
 
 class TestVacationSettingsPerYear:
@@ -854,7 +891,7 @@ class TestCalculateVacationPay:
 class TestVacationSupplementForMonth:
     """The month's supplement, split the way a payslip lists it."""
 
-    def _pay(self, **kwargs):
+    def _pay(self, vacation_year=2026, **kwargs):
         base = {
             "fixed_per_day": 240.0,
             "variable_per_day": 60.0,
@@ -865,13 +902,15 @@ class TestVacationSupplementForMonth:
             "variable_lump_total": 0.0,
         }
         base.update(kwargs)
-        return {"pay": base}
+        # The balance carries the vacation year it was calculated for; the lump is
+        # matched on the full date, so the payout month alone is not enough.
+        return {"pay": base, "year_start": datetime.date(vacation_year, 4, 1)}
 
     def test_parts_sum_to_the_figure_the_views_showed_before_the_split(self):
         from app.core.schedule.vacation import vacation_supplement_for_month
 
         user = SimpleNamespace(vacation_year_start_month=4)
-        result = vacation_supplement_for_month(self._pay(), user, month=7, sem_days=4)
+        result = vacation_supplement_for_month(self._pay(), user, month=7, sem_days=4, year=2026)
 
         assert result["fixed"] == round(240.0 * 4, 0)
         assert result["fixed"] + result["variable"] == round(300.0 * 4, 0)
@@ -889,8 +928,8 @@ class TestVacationSupplementForMonth:
             variable_lump_total=1500.0,
         )
 
-        june = vacation_supplement_for_month(pay, user, month=6, sem_days=0)
-        july = vacation_supplement_for_month(pay, user, month=7, sem_days=4)
+        june = vacation_supplement_for_month(pay, user, month=6, sem_days=0, year=2026)
+        july = vacation_supplement_for_month(pay, user, month=7, sem_days=4, year=2026)
 
         assert june["lump"] == 1500.0
         assert june["total"] == 1500.0
@@ -906,5 +945,22 @@ class TestVacationSupplementForMonth:
         user = SimpleNamespace(vacation_year_start_month=4)
         pay = self._pay(variable_payout="lump", variable_payout_month=None, variable_lump_total=1500.0)
 
-        assert vacation_supplement_for_month(pay, user, month=4, sem_days=0)["lump"] == 1500.0
-        assert vacation_supplement_for_month(pay, user, month=5, sem_days=0)["lump"] == 0.0
+        assert vacation_supplement_for_month(pay, user, month=4, sem_days=0, year=2026)["lump"] == 1500.0
+        assert vacation_supplement_for_month(pay, user, month=5, sem_days=0, year=2026)["lump"] == 0.0
+
+    def test_a_lump_month_before_the_break_lands_in_the_next_calendar_year(self):
+        """Vacation year 2027 runs Apr 2027 - Mar 2028, so a March payout is March 2028.
+        Matching the month alone paid it a year early, in the March the year opened in."""
+        from app.core.schedule.vacation import vacation_supplement_for_month
+
+        user = SimpleNamespace(vacation_year_start_month=4)
+        pay = self._pay(
+            vacation_year=2027,
+            supplement_per_day=240.0,
+            variable_payout="lump",
+            variable_payout_month=3,
+            variable_lump_total=1500.0,
+        )
+
+        assert vacation_supplement_for_month(pay, user, month=3, sem_days=0, year=2028)["lump"] == 1500.0
+        assert vacation_supplement_for_month(pay, user, month=3, sem_days=0, year=2027)["lump"] == 0.0

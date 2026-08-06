@@ -855,9 +855,21 @@ def calculate_vacation_pay(
     }
 
 
-def _lump_payout_month(configured_month: int | None, user) -> int:
-    """The month a variable lump is paid in: configured, else the vacation year's start."""
-    return configured_month or getattr(user, "vacation_year_start_month", None) or 1
+LUMP_MONTH_YEAR_END = "end"
+
+
+def _lump_payout_month(configured_month, user) -> int:
+    """
+    The month a variable lump is paid in.
+
+    A number is that month. LUMP_MONTH_YEAR_END is the vacation year's last month and
+    blank is its first, both resolved from the user's own break month so they keep
+    meaning the same thing if the break moves.
+    """
+    start_month = getattr(user, "vacation_year_start_month", None) or 1
+    if configured_month == LUMP_MONTH_YEAR_END:
+        return 12 if start_month == 1 else start_month - 1
+    return configured_month or start_month
 
 
 # The payout settings that are versioned per vacation year, and the User column each
@@ -907,6 +919,20 @@ def vacation_settings_for_year(user, vacation_year: int) -> dict:
     return resolved
 
 
+def lump_payout_date(user, vacation_year: int, configured_month=None) -> datetime.date:
+    """
+    The month a vacation year's variable lump lands in, as the first of that month.
+
+    The month belongs to the vacation year, not the calendar year, so it rolls into the
+    next calendar year whenever it sits before the month the vacation year starts in.
+    March for a vacation year running April to March is the March at its *end*: vacation
+    year 2027 pays in March 2028.
+    """
+    start_month = getattr(user, "vacation_year_start_month", None) or 1
+    month = _lump_payout_month(configured_month, user)
+    return datetime.date(vacation_year if month >= start_month else vacation_year + 1, month, 1)
+
+
 def lump_already_paid(user, vacation_year_start: datetime.date, transition_date: datetime.date) -> bool:
     """
     Whether an earning year's variable supplement was already settled as a lump.
@@ -920,11 +946,7 @@ def lump_already_paid(user, vacation_year_start: datetime.date, transition_date:
     if settings["variable_payout"] != "lump":
         return False
 
-    month = _lump_payout_month(settings["variable_payout_month"], user)
-    # The lump month belongs to the vacation year, so it rolls into the next calendar
-    # year whenever it sits before the month that vacation year starts in.
-    year = vacation_year_start.year if month >= vacation_year_start.month else vacation_year_start.year + 1
-    return datetime.date(year, month, 1) < transition_date
+    return lump_payout_date(user, vacation_year_start.year, settings["variable_payout_month"]) < transition_date
 
 
 def vacation_year_of(date: datetime.date, user) -> int:
@@ -940,13 +962,15 @@ def is_variable_lump_month(user, month: int, year: int) -> bool:
     the far more expensive calculate_vacation_balance (it summarises twelve
     months) is worth running for a month that has no vacation days in it.
     """
-    settings = vacation_settings_for_year(user, vacation_year_of(datetime.date(year, month, 1), user))
+    target = datetime.date(year, month, 1)
+    vacation_year = vacation_year_of(target, user)
+    settings = vacation_settings_for_year(user, vacation_year)
     if settings["variable_payout"] != "lump":
         return False
-    return _lump_payout_month(settings["variable_payout_month"], user) == month
+    return lump_payout_date(user, vacation_year, settings["variable_payout_month"]) == target
 
 
-def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_days: int) -> dict:
+def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_days: int, year: int) -> dict:
     """One month's vacation supplement, split the way a payslip lists it.
 
     Returns {"fixed", "variable", "lump", "total"}. The fixed and variable parts
@@ -969,9 +993,16 @@ def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_da
     variable = total - fixed
 
     lump = 0.0
-    # Falling back to the vacation year's own start month means the lump has a
-    # defined home without forcing every user to configure one.
-    if pay.get("variable_payout") == "lump" and _lump_payout_month(pay.get("variable_payout_month"), user) == month:
+    # Matched on the full date, not the month alone: the payout month belongs to the
+    # vacation year, so March for a year running April to March is the March in the
+    # *next* calendar year. Falling back to the year's own start month means the lump
+    # has a defined home without forcing every user to configure one.
+    year_start = (balance or {}).get("year_start")
+    if (
+        pay.get("variable_payout") == "lump"
+        and year_start
+        and lump_payout_date(user, year_start.year, pay.get("variable_payout_month")) == datetime.date(year, month, 1)
+    ):
         lump = round(pay.get("variable_lump_total", 0.0), 0)
 
     return {"fixed": fixed, "variable": variable, "lump": lump, "total": total + lump}
@@ -1279,8 +1310,12 @@ def set_vacation_settings(
 
     if variable_payout_month is not None:
         month = variable_payout_month.strip()
-        # Blank falls the lump back to the vacation year's start month.
-        _set("variable_payout_month", int(month) if month.isdigit() and 1 <= int(month) <= 12 else None)
+        # Blank falls the lump back to the vacation year's start month; "end" tracks its
+        # last month, so neither has to be re-picked if the break month moves.
+        if month == LUMP_MONTH_YEAR_END:
+            _set("variable_payout_month", LUMP_MONTH_YEAR_END)
+        else:
+            _set("variable_payout_month", int(month) if month.isdigit() and 1 <= int(month) <= 12 else None)
 
     if variable_lump_lag_months is not None and variable_lump_lag_months.strip():
         lag = variable_lump_lag_months.strip()
