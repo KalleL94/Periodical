@@ -67,7 +67,7 @@
             </div>
             {% if balance.week_based_used > 0 or balance.day_level_used > 0 %}
             <div class="vacation-small-note">
-                {{ t.admin_vac_user_week_based }} {{ balance.week_based_used }}d | {{ t.admin_vac_user_day_level_used }} {{ balance.day_level_used }}d
+                {{ t.vacation_week_based }} {{ balance.week_based_used }}d | {{ t.vacation_day_level_used }} {{ balance.day_level_used }}d
             </div>
             {% endif %}
         </div>
@@ -258,6 +258,7 @@
                     value="{% for a in parental_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
 
                 <div id="day-calendar" class="vacation-day-calendar"></div>
+                {% include "vacation_day_legend.html" with context %}
 
                 <div class="vacation-form-footer">
                     <span id="day-count" class="vacation-day-count"></span>
@@ -384,7 +385,7 @@
                     <p><strong>{{ vacation_weeks | length }}</strong> {{ t.admin_vac_user_weeks_selected_js }}</p>
                     <p class="vacation-summary-text">{{ vacation_weeks | join(', ') }}</p>
                 {% else %}
-                    <p class="vacation-summary-text">{{ t.admin_vac_user_none_selected.replace('{year}', year | string) }}</p>
+                    <p class="vacation-summary-text">{{ t.vacation_none_selected.replace('{year}', year | string) }}</p>
                 {% endif %}
             </div>
         </div>
@@ -406,7 +407,7 @@
 
 <script>
 const _t = {
-    noneSelected: "{{ t.admin_vac_user_none_selected_js }}",
+    noneSelected: "{{ t.vacation_none_selected_js }}",
     weeksSelected: "{{ t.admin_vac_user_weeks_selected_js }}",
     dayCount: "{{ t.admin_vac_user_day_count_js }}",
     daysCount: "{{ t.admin_vac_user_days_count_js }}",

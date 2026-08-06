@@ -95,6 +95,7 @@
                     value="{% for a in parental_absences %}{{ a.date | date_format }}{% if not loop.last %},{% endif %}{% endfor %}">
 
                 <div id="day-calendar" class="vacation-day-calendar"></div>
+                {% include "vacation_day_legend.html" with context %}
 
                 <div class="vacation-form-footer">
                     <span id="day-count" class="vacation-day-count"></span>
@@ -144,6 +145,11 @@
                 {{ balance.year_start | date_format }} &mdash; {{ balance.year_end | date_format }}
                 {% if balance.is_first_year %}<br><span class="vacation-value-warning">{{ t.vacation_first_year }}</span>{% endif %}
             </div>
+            {% if balance.week_based_used > 0 or balance.day_level_used > 0 %}
+            <div class="vacation-small-note">
+                {{ t.vacation_week_based }} {{ balance.week_based_used }}d | {{ t.vacation_day_level_used }} {{ balance.day_level_used }}d
+            </div>
+            {% endif %}
         </div>
 
         <!-- Projection Card (open years) -->
