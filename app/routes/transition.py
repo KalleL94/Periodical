@@ -56,6 +56,10 @@ def _get_transition_context(
             ("trailing", "Släpande (lön för föregående månad)"),
             ("current", "Innestående (lön för aktuell månad)"),
         ],
+        "payout_rules": [
+            ("sammalone", "Sammalöneregeln (semesterlagen 16 a)"),
+            ("procent", "Procentregeln, 12 % (semesterlagen 16 b)"),
+        ],
         "auto_variable_avg": auto_variable_avg,
         "auto_consultant_vacation_days": auto_consultant_vacation_days,
         "preview": preview,
@@ -79,6 +83,7 @@ async def transition_save(
     request: Request,
     transition_date: str = Form(...),
     consultant_salary_type: str = Form(...),
+    vacation_payout_rule: str = Form("sammalone"),
     consultant_vacation_days: str = Form(""),
     consultant_supplement_pct: float = Form(...),
     variable_avg_daily_override: str = Form(""),
@@ -100,6 +105,12 @@ async def transition_save(
 
     if consultant_salary_type not in ("trailing", "current"):
         ctx = _get_transition_context(request, current_user, db, error="Ogiltig lönetyp.")
+        return render("transition.html", ctx, status_code=400)
+
+    from app.core.schedule.transition import VACATION_PAYOUT_RULES
+
+    if vacation_payout_rule not in VACATION_PAYOUT_RULES:
+        ctx = _get_transition_context(request, current_user, db, error="Ogiltig beräkningsregel.")
         return render("transition.html", ctx, status_code=400)
 
     if not (0 < consultant_supplement_pct < 1):
@@ -162,6 +173,7 @@ async def transition_save(
 
     transition.transition_date = t_date
     transition.consultant_salary_type = salary_type
+    transition.vacation_payout_rule = vacation_payout_rule
     transition.consultant_vacation_days = parsed_vacation_days
     transition.consultant_supplement_pct = consultant_supplement_pct
     transition.variable_avg_daily_override = variable_override

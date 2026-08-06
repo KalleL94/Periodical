@@ -2,8 +2,18 @@
 
 Handles:
 - Automatic calculation of average daily variable pay from the earning year
-- Vacation payout per the Swedish vacation act (same-pay rule)
+- Vacation payout per the Swedish vacation act, under either statutory rule
 - Pay split for the transition month per employer
+
+Two rules can produce the payout, picked per transition because which one applies
+depends on the consultant employer's agreement:
+
+- SAME_PAY ("sammalöneregeln", Semesterlagen 16 a): per unused day, 4.6% of the
+  current monthly salary plus a supplement of `consultant_supplement_pct` of that
+  salary, plus 0.5% of the variable pay earned in that day's own earning year.
+- PERCENTAGE ("procentregeln", Semesterlagen 16 b): 12% of all pay that fell due
+  during the earning year, spread over the days that year earned. Semesterlagen 16 §
+  makes this the required rule when pay is variable to a substantial degree.
 """
 
 import datetime
@@ -12,6 +22,14 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.database.database import EmploymentTransition, User
+
+SAME_PAY_RULE = "sammalone"
+PERCENTAGE_RULE = "procent"
+VACATION_PAYOUT_RULES = (SAME_PAY_RULE, PERCENTAGE_RULE)
+
+# Semesterlagen 16 b: 12% of the earning year's pay is the whole vacation pay,
+# so it replaces the same-pay rule rather than adding to it.
+PERCENTAGE_RULE_PCT = 0.12
 
 
 # ---------------------------------------------------------------------------
@@ -41,36 +59,57 @@ def get_earning_year(
     return start, end
 
 
-def calculate_consultant_vacation_days(
+def get_earning_years(
     user: "User",
     transition: "EmploymentTransition",
     full_year_days: int = 25,
     session=None,
-) -> int | None:
+) -> list[dict] | None:
     """
-    Calculates net vacation days to pay out at the end of the consultant engagement.
+    Every earning year behind the payout, each with its own days and its own pay.
 
-    Formula (Swedish Vacation Act §7):
+    Vacation is earned and paid per earning year (1 April–31 March), and both the
+    variable supplement (0.5% of that year's variable pay) and the percentage rule
+    (12% of that year's total pay) draw on the pay that fell due in *that* year.
+    Collapsing the years into one window would pay the wrong rate for the older days,
+    so every caller that needs money, not just a day count, goes through here.
+
+    Days earned follow the Swedish Vacation Act §7:
         ceil(full_year_days * employed_days / total_days_in_earning_year)
-
-    Iterates over ALL earning years (1 April–31 March) from employment_start_date
-    to the day before transition_date. Per earning year:
-        earned days - days used in the corresponding vacation year (from vacation year
-        start up to but not including transition_date)
-
-    If a session is provided, actual used days are fetched from the database.
-    Without session, gross earned days are returned (used days not deducted).
+    minus the days already used in the matching vacation year (needs a session).
 
     If transition.earning_year_start/end are manually set, they are used as a single
     custom earning year (backward-compatible with older configurations).
 
     Returns:
-        Net days to pay out (ceiling per year), or None if data is missing.
+        One dict per earning year, or None if employment_start_date is missing:
+        {
+            "start": date,        # earning year start, clipped to employment
+            "end": date,          # earning year end, clipped to the transition
+            "earned": int,        # days earned in this year
+            "used": int,          # days already taken from this year
+            "days": int,          # net days still to pay out
+            "variable": float,    # OB + on-call + overtime that fell due in the window
+            "total_pay": float,   # all gross pay that fell due in the window
+        }
+        `variable` and `total_pay` are 0.0 without a session.
     """
     if not user.employment_start_date:
         return None
 
     last_day = transition.transition_date - datetime.timedelta(days=1)
+
+    def _row(start, end, earned, used):
+        variable, total_pay = _pay_for_window(user, session, start, end) if session else (0.0, 0.0)
+        return {
+            "start": start,
+            "end": end,
+            "earned": earned,
+            "used": used,
+            "days": max(0, earned - used),
+            "variable": variable,
+            "total_pay": total_pay,
+        }
 
     # Manual override: single custom earning period (legacy / admin-configured)
     if transition.earning_year_start and transition.earning_year_end:
@@ -79,10 +118,11 @@ def calculate_consultant_vacation_days(
         overlap_start = max(user.employment_start_date, earning_start)
         overlap_end = min(last_day, earning_end)
         if overlap_start > overlap_end:
-            return 0
+            return []
         employed_days = (overlap_end - overlap_start).days + 1
         total_days = (earning_end - earning_start).days + 1
-        return math.ceil(full_year_days * employed_days / total_days)
+        earned = math.ceil(full_year_days * employed_days / total_days)
+        return [_row(overlap_start, overlap_end, earned, 0)]
 
     # Auto mode: iterate all April–March earning years from employment start to transition
     from app.core.schedule.vacation import count_vacation_days_used
@@ -91,7 +131,7 @@ def calculate_consultant_vacation_days(
     april_year = employment_start.year if employment_start.month >= 4 else employment_start.year - 1
     current_april = datetime.date(april_year, 4, 1)
 
-    total = 0
+    years: list[dict] = []
     while current_april <= last_day:
         next_april = datetime.date(current_april.year + 1, 4, 1)
         full_year_end = next_april - datetime.timedelta(days=1)  # 31 mars
@@ -120,11 +160,29 @@ def calculate_consultant_vacation_days(
                     )
                     used = used_data["total"]
 
-            total += max(0, earned - used)
+            years.append(_row(overlap_start, period_end, earned, used))
 
         current_april = next_april
 
-    return total
+    return years
+
+
+def calculate_consultant_vacation_days(
+    user: "User",
+    transition: "EmploymentTransition",
+    full_year_days: int = 25,
+    session=None,
+) -> int | None:
+    """
+    Net vacation days to pay out at the end of the consultant engagement.
+
+    Sums the per-year days from get_earning_years; see that function for the formula.
+    Without a session, gross earned days are returned (used days not deducted).
+    """
+    years = get_earning_years(user, transition, full_year_days, session)
+    if years is None:
+        return None
+    return sum(year["days"] for year in years)
 
 
 def _iter_months(start: datetime.date, end: datetime.date) -> list[tuple[int, int]]:
@@ -138,6 +196,61 @@ def _iter_months(start: datetime.date, end: datetime.date) -> list[tuple[int, in
         else:
             current = datetime.date(current.year, current.month + 1, 1)
     return months
+
+
+def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.date) -> tuple[float, float]:
+    """
+    Variable pay and total gross pay that fell due between start and end, inclusive.
+
+    Variable pay is OB supplement + on-call compensation + overtime. Total gross is
+    the month's whole brutto, which is the pay base the percentage rule works from.
+
+    Months are summed whole and scaled at the window edges: summarize_month_for_person
+    always reports a full monthly salary even for a month the person was not employed
+    through, so a partly covered month has to be pro-rated here rather than trusted.
+
+    Returns:
+        (variable_pay, total_gross_pay), both 0.0 if the person has no rotation slot.
+    """
+    import calendar
+
+    from app.core.schedule.summary import summarize_month_for_person
+
+    person_id = user.rotation_person_id
+    if not person_id or not (1 <= person_id <= 10):
+        return 0.0, 0.0
+
+    variable = 0.0
+    total = 0.0
+    for year, month in _iter_months(start, end):
+        try:
+            summary = summarize_month_for_person(
+                year=year,
+                month=month,
+                person_id=person_id,
+                session=session,
+                fetch_tax_table=False,
+                wage_user_id=user.id,
+            )
+        except Exception:
+            continue
+
+        days_in_month = calendar.monthrange(year, month)[1]
+        month_start = datetime.date(year, month, 1)
+        month_end = datetime.date(year, month, days_in_month)
+        covered = (min(end, month_end) - max(start, month_start)).days + 1
+        # ponytail: a partial month is pro-rated by calendar days, so its variable pay is
+        # spread evenly rather than followed shift by shift. Sum the days themselves if a
+        # mid-month employment start ever needs to be exact.
+        share = covered / days_in_month
+
+        month_variable = (
+            sum(summary.get("ob_pay", {}).values()) + summary.get("ot_pay", 0.0) + summary.get("oncall_pay", 0.0)
+        )
+        variable += month_variable * share
+        total += summary.get("brutto_pay", 0.0) * share
+
+    return round(variable, 2), round(total, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +275,6 @@ def calculate_variable_avg_daily(
         Average variable pay per day in SEK, or None if data is missing.
     """
     from app.core.schedule.period import generate_period_data
-    from app.core.schedule.summary import summarize_month_for_person
 
     person_id = user.rotation_person_id
     if not person_id or not (1 <= person_id <= 10):
@@ -192,29 +304,7 @@ def calculate_variable_avg_daily(
     if working_days == 0:
         return None
 
-    # Sum variable pay components per month (same pattern as vacation.py)
-    ob_total = 0.0
-    ot_total = 0.0
-    oncall_total = 0.0
-
-    for year, month in _iter_months(earning_start, earning_end):
-        try:
-            summary = summarize_month_for_person(
-                year=year,
-                month=month,
-                person_id=person_id,
-                session=session,
-                fetch_tax_table=False,
-                wage_user_id=user.id,
-            )
-            ob_pay_dict = summary.get("ob_pay", {})
-            ob_total += sum(ob_pay_dict.values())
-            ot_total += summary.get("ot_pay", 0.0)
-            oncall_total += summary.get("oncall_pay", 0.0)
-        except Exception:
-            pass
-
-    total_variable = ob_total + ot_total + oncall_total
+    total_variable, _ = _pay_for_window(user, session, earning_start, earning_end)
     if total_variable == 0.0:
         return None
 
@@ -222,7 +312,7 @@ def calculate_variable_avg_daily(
 
 
 # ---------------------------------------------------------------------------
-# Vacation payout (Swedish Vacation Act — same-pay rule)
+# Vacation payout (Swedish Vacation Act — same-pay rule and percentage rule)
 # ---------------------------------------------------------------------------
 
 
@@ -234,9 +324,17 @@ def calculate_consultant_vacation_payout(
     """
     Calculates the vacation payout at the end of the consultant engagement.
 
-    Formula (Swedish Vacation Act, same-pay rule):
-        Base component:     (monthly_salary / 21.75) × days × (1 + supplement_pct)
-        Variable component: average daily variable pay × days
+    Both statutory rules are supported; `transition.vacation_payout_rule` picks one.
+
+    SAME_PAY (Semesterlagen 16 a), per unused day:
+        Base:     monthly_salary × (payout_pct + supplement_pct)
+        Variable: variable_pct × the variable pay of that day's own earning year
+                  (or variable_avg_daily_override × days, when set)
+
+    PERCENTAGE (Semesterlagen 16 b), per earning year:
+        12% of all pay that fell due that year, spread over the days that year earned,
+        times the days still unused. This is the whole vacation pay, not a supplement,
+        so there is no separate base component.
 
     Args:
         transition: EmploymentTransition object for the user
@@ -246,26 +344,33 @@ def calculate_consultant_vacation_payout(
     Returns:
         Dict with detailed breakdown:
         {
-            "vacation_days": float,
+            "rule": str,                     # SAME_PAY_RULE or PERCENTAGE_RULE
+            "vacation_days": int,
             "monthly_salary": int,
-            "base_per_day": float,
+            "base_per_day": float,           # SAME_PAY only, 0.0 under PERCENTAGE
             "supplement_pct": float,
             "base_with_supplement_per_day": float,
             "base_payout": float,
-            "variable_avg_daily": float | None,
+            "variable_avg_daily": float | None,   # SAME_PAY only
             "variable_auto_calculated": bool,
             "variable_payout": float,
+            "years": list[dict],             # per earning year, see below
             "total": float,
             "earning_year_start": date,
             "earning_year_end": date,
         }
+        Each entry in "years" adds "payout" and "per_day" to the get_earning_years dict.
     """
+    from app.core.rates import DEFAULT_VACATION_RATES
     from app.core.schedule.wages import get_effective_monthly_wage
 
+    rule = getattr(transition, "vacation_payout_rule", None) or SAME_PAY_RULE
     earning_start, earning_end = get_earning_year(transition)
-    # Always dynamically calculate net vacation days (earned minus already used before transition)
-    # so the payout reflects the actual state at the time of calculation.
-    days = calculate_consultant_vacation_days(user, transition, session=session) or 0
+    # Always recalculate the days from history (earned minus already used before the
+    # transition) so the payout reflects the actual state at the time of calculation.
+    years = get_earning_years(user, transition, session=session) or []
+    _apply_day_override(years, transition.consultant_vacation_days)
+    days = sum(year["days"] for year in years)
     supplement_pct = transition.consultant_supplement_pct
 
     # Consultant wage: wage on the day before the transition (from WageHistory or User.wage)
@@ -274,35 +379,91 @@ def calculate_consultant_vacation_payout(
         session, user.id, fallback=user.wage, effective_date=last_consultant_day
     )
 
-    # Base component: same-pay rule
-    base_per_day = monthly_salary / 21.75
-    base_with_supplement_per_day = round(base_per_day * (1 + supplement_pct), 4)
-    base_payout = round(base_with_supplement_per_day * days, 2)
+    # Statutory defaults, deliberately not the user's own RateHistory: those rates
+    # describe the direct employment's agreement (and may settle the variable part
+    # as a yearly lump, i.e. variable_pct = 0), while this payout comes from the
+    # consultant employer. Per-transition tuning goes through consultant_supplement_pct
+    # and variable_avg_daily_override.
+    payout_pct = DEFAULT_VACATION_RATES["payout_pct"]
+    variable_pct = DEFAULT_VACATION_RATES["variable_pct"]
 
-    # Variable component
+    base_per_day = 0.0
+    base_with_supplement_per_day = 0.0
+    base_payout = 0.0
+    variable_payout = 0.0
+    avg_daily = None
     variable_auto_calculated = transition.variable_avg_daily_override is None
-    if variable_auto_calculated:
-        avg_daily = calculate_variable_avg_daily(user, session, earning_start, earning_end)
-    else:
-        avg_daily = transition.variable_avg_daily_override
 
-    variable_payout = round((avg_daily or 0.0) * days, 2)
+    if rule == PERCENTAGE_RULE:
+        # 12% of the year's pay, spread over the days that year earned. Dividing by
+        # `earned` and not `days` is the point: the days already taken drew their
+        # share when they were taken, so the unused ones keep only their own share.
+        for year in years:
+            per_day = PERCENTAGE_RULE_PCT * year["total_pay"] / year["earned"] if year["earned"] else 0.0
+            year["per_day"] = round(per_day, 2)
+            year["payout"] = round(per_day * year["days"], 2)
+        base_payout = round(sum(year["payout"] for year in years), 2)
+    else:
+        base_per_day = round(monthly_salary * payout_pct, 4)
+        base_with_supplement_per_day = round(monthly_salary * (payout_pct + supplement_pct), 4)
+        base_payout = round(base_with_supplement_per_day * days, 2)
+
+        override = transition.variable_avg_daily_override
+        for year in years:
+            # 0.5% of each year's own variable pay: an older day is worth what its own
+            # earning year paid, not what the most recent one did.
+            var_per_day = override if override is not None else variable_pct * year["variable"]
+            year["per_day"] = round(base_with_supplement_per_day + var_per_day, 2)
+            year["payout"] = round(year["per_day"] * year["days"], 2)
+            variable_payout += var_per_day * year["days"]
+
+        variable_payout = round(variable_payout, 2)
+        avg_daily = round(variable_payout / days, 4) if days else override
+
     total = round(base_payout + variable_payout, 2)
 
     return {
+        "rule": rule,
         "vacation_days": days,
         "monthly_salary": monthly_salary,
-        "base_per_day": round(base_per_day, 4),
+        "base_per_day": base_per_day,
+        "payout_pct": payout_pct,
+        "variable_pct": variable_pct,
         "supplement_pct": supplement_pct,
         "base_with_supplement_per_day": base_with_supplement_per_day,
         "base_payout": base_payout,
         "variable_avg_daily": avg_daily,
         "variable_auto_calculated": variable_auto_calculated,
         "variable_payout": variable_payout,
+        "years": years,
         "total": total,
         "earning_year_start": earning_start,
         "earning_year_end": earning_end,
     }
+
+
+def _apply_day_override(years: list[dict], stored_days: float | None) -> None:
+    """
+    Redistribute a manually entered day total over the earning years, in place.
+
+    The form stores the auto-calculated total when the override field is left blank,
+    so a stored value that still matches the calculation is not an override and is
+    left alone. A real override is filled oldest year first, because vacation days
+    are consumed oldest first; anything beyond what the years earned lands on the
+    most recent year.
+    """
+    if not stored_days or not years:
+        return
+    if stored_days == sum(year["days"] for year in years):
+        return
+
+    remaining = stored_days
+    for year in years:
+        taken = min(remaining, year["earned"])
+        year["days"] = taken
+        remaining -= taken
+    if remaining:
+        years[-1]["days"] += remaining
 
 
 # ---------------------------------------------------------------------------

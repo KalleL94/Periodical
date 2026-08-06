@@ -14,6 +14,8 @@ import datetime
 from types import SimpleNamespace
 
 from app.core.schedule.transition import (
+    PERCENTAGE_RULE,
+    SAME_PAY_RULE,
     calculate_consultant_vacation_days,
     calculate_consultant_vacation_payout,
     calculate_transition_month_summary,
@@ -49,6 +51,8 @@ def _make_transition(
     consultant_supplement_pct=0.0043,
     variable_avg_daily_override=None,
     consultant_salary_type=ConsultantSalaryType.TRAILING,
+    vacation_payout_rule=SAME_PAY_RULE,
+    consultant_vacation_days=0.0,
 ):
     return SimpleNamespace(
         transition_date=transition_date,
@@ -57,7 +61,31 @@ def _make_transition(
         consultant_supplement_pct=consultant_supplement_pct,
         variable_avg_daily_override=variable_avg_daily_override,
         consultant_salary_type=consultant_salary_type,
+        vacation_payout_rule=vacation_payout_rule,
+        consultant_vacation_days=consultant_vacation_days,
     )
+
+
+def _stub_years(monkeypatch, *rows):
+    """Pin get_earning_years so payout tests exercise the money math, not the accrual.
+
+    Each row is (days, earned, variable, total_pay); dates are filler, the payout
+    reads only the numbers.
+    """
+    years = [
+        {
+            "start": datetime.date(2025, 4, 1),
+            "end": datetime.date(2026, 3, 31),
+            "earned": earned,
+            "used": earned - days,
+            "days": days,
+            "variable": variable,
+            "total_pay": total_pay,
+        }
+        for days, earned, variable, total_pay in rows
+    ]
+    monkeypatch.setattr("app.core.schedule.transition.get_earning_years", lambda *a, **k: years)
+    return years
 
 
 class TestGetEarningYear:
@@ -252,30 +280,48 @@ class TestCalculateVariableAvgDaily:
 
 
 class TestCalculateConsultantVacationPayout:
+    """Same-pay rule (Semesterlagen 16 a).
+
+    Per unused day: 4.6% of the monthly salary + the supplement, plus 0.5% of the
+    variable pay earned in that day's own earning year.
+    """
+
     def test_payout_math_with_auto_calculated_variable_pay(self, test_db, monkeypatch):
         user = _make_user(test_db, wage=30000)
         transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
-
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_consultant_vacation_days",
-            lambda *a, **k: 13,
-        )
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_variable_avg_daily",
-            lambda *a, **k: 40.0,
-        )
+        # 8000 variable -> 0.5% = 40.00 per day.
+        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0))
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 
+        assert result["rule"] == SAME_PAY_RULE
         assert result["vacation_days"] == 13
         assert result["monthly_salary"] == 30000
-        assert result["base_per_day"] == 1379.3103
-        assert result["base_with_supplement_per_day"] == 1385.2414
-        assert result["base_payout"] == 18008.14
+        # 30000 * 0.046 = 1380.00; + 0.43% supplement -> 30000 * 0.0503 = 1509.00
+        assert result["base_per_day"] == 1380.0
+        assert result["base_with_supplement_per_day"] == 1509.0
+        assert result["base_payout"] == 19617.0
         assert result["variable_avg_daily"] == 40.0
         assert result["variable_auto_calculated"] is True
         assert result["variable_payout"] == 520.0
-        assert result["total"] == 18528.14
+        assert result["total"] == 20137.0
+
+    def test_each_earning_year_uses_its_own_variable_pay(self, test_db, monkeypatch):
+        # The older year earned less variable pay, so its days are worth less. Paying
+        # both years at the latest year's rate is the bug this pins.
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0), (17, 17, 20000.0, 320000.0))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["vacation_days"] == 22
+        # 0.5% of 8000 = 40.00/day on 5 days; 0.5% of 20000 = 100.00/day on 17 days
+        assert result["variable_payout"] == 1900.0
+        assert result["base_payout"] == 33198.0  # 1509.00 * 22
+        assert result["total"] == 35098.0
+        assert [year["per_day"] for year in result["years"]] == [1549.0, 1609.0]
+        assert [year["payout"] for year in result["years"]] == [7745.0, 27353.0]
 
     def test_manual_variable_override_skips_auto_calculation(self, test_db, monkeypatch):
         user = _make_user(test_db, wage=30000)
@@ -283,41 +329,52 @@ class TestCalculateConsultantVacationPayout:
             transition_date=datetime.date(2026, 5, 1),
             variable_avg_daily_override=15.5,
         )
-
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_consultant_vacation_days",
-            lambda *a, **k: 13,
-        )
-
-        def _should_not_be_called(*a, **k):
-            raise AssertionError("calculate_variable_avg_daily must not run when override is set")
-
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_variable_avg_daily",
-            _should_not_be_called,
-        )
+        # A variable pay that would have produced 40.00/day if it were consulted.
+        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0))
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 
         assert result["variable_auto_calculated"] is False
         assert result["variable_avg_daily"] == 15.5
         assert result["variable_payout"] == 201.5
-        assert result["base_payout"] == 18008.14
-        assert result["total"] == 18209.64
+        assert result["base_payout"] == 19617.0
+        assert result["total"] == 19818.5
+
+    def test_manual_day_override_replaces_the_calculated_days(self, test_db, monkeypatch):
+        # The stored day count only overrides when it disagrees with the calculation;
+        # it is filled oldest year first, because vacation days are consumed oldest first.
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(
+            transition_date=datetime.date(2026, 5, 1),
+            consultant_vacation_days=20.0,
+        )
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0), (17, 17, 20000.0, 320000.0))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["vacation_days"] == 20
+        assert [year["days"] for year in result["years"]] == [13, 7]
+
+    def test_stored_days_matching_the_calculation_is_not_an_override(self, test_db, monkeypatch):
+        # The form stores the auto total when the override field is blank, so an equal
+        # value must not be mistaken for a deliberate override.
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(
+            transition_date=datetime.date(2026, 5, 1),
+            consultant_vacation_days=22.0,
+        )
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0), (17, 17, 20000.0, 320000.0))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["vacation_days"] == 22
+        assert [year["days"] for year in result["years"]] == [5, 17]
 
     def test_zero_vacation_days_left_yields_zero_payout(self, test_db, monkeypatch):
         # Edge case: nothing left to pay out (e.g. all accrued days already used).
         user = _make_user(test_db, wage=30000)
         transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
-
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_consultant_vacation_days",
-            lambda *a, **k: 0,
-        )
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_variable_avg_daily",
-            lambda *a, **k: 40.0,
-        )
+        _stub_years(monkeypatch, (0, 13, 8000.0, 188000.0))
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 
@@ -325,6 +382,63 @@ class TestCalculateConsultantVacationPayout:
         assert result["base_payout"] == 0.0
         assert result["variable_payout"] == 0.0
         assert result["total"] == 0.0
+
+
+class TestPercentageRulePayout:
+    """Percentage rule (Semesterlagen 16 b).
+
+    12% of the earning year's pay, spread over the days that year earned. It is the
+    whole vacation pay, so the monthly salary and the supplement play no part.
+    """
+
+    def test_payout_is_twelve_percent_spread_over_the_days_the_year_earned(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(
+            transition_date=datetime.date(2026, 5, 1),
+            vacation_payout_rule=PERCENTAGE_RULE,
+        )
+        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["rule"] == PERCENTAGE_RULE
+        # 0.12 * 188000 = 22560.00 over 13 earned days = 1735.38/day, all 13 unused
+        assert result["years"][0]["per_day"] == 1735.38
+        assert result["base_payout"] == 22560.0
+        assert result["variable_payout"] == 0.0
+        assert result["total"] == 22560.0
+
+    def test_days_already_taken_keep_their_share_of_the_underlying_pay(self, test_db, monkeypatch):
+        # Dividing by the days earned, not the days left, is what stops the unused days
+        # from absorbing the share the taken days already drew.
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(
+            transition_date=datetime.date(2026, 5, 1),
+            vacation_payout_rule=PERCENTAGE_RULE,
+        )
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["vacation_days"] == 5
+        assert result["years"][0]["per_day"] == 1735.38
+        assert result["total"] == 8676.92
+
+    def test_supplement_and_variable_override_do_not_affect_the_percentage_rule(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=30000)
+        transition = _make_transition(
+            transition_date=datetime.date(2026, 5, 1),
+            vacation_payout_rule=PERCENTAGE_RULE,
+            consultant_supplement_pct=0.05,
+            variable_avg_daily_override=999.0,
+        )
+        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["base_per_day"] == 0.0
+        assert result["variable_payout"] == 0.0
+        assert result["total"] == 22560.0
 
 
 class TestCalculateTransitionMonthSummary:
@@ -446,14 +560,7 @@ class TestKnownBugWageBoundaryOnBackdatedTransition:
 
         transition = _make_transition(transition_date=transition_date)
 
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_consultant_vacation_days",
-            lambda *a, **k: 10,
-        )
-        monkeypatch.setattr(
-            "app.core.schedule.transition.calculate_variable_avg_daily",
-            lambda *a, **k: 0.0,
-        )
+        _stub_years(monkeypatch, (10, 10, 0.0, 280000.0))
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 

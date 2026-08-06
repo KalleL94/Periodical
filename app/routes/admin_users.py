@@ -644,6 +644,7 @@ async def admin_transition_save(
     user_id: int,
     transition_date: str = Form(...),
     consultant_salary_type: str = Form(...),
+    vacation_payout_rule: str = Form("sammalone"),
     consultant_vacation_days: str = Form(""),
     consultant_supplement_pct: float = Form(...),
     variable_avg_daily_override: str = Form(""),
@@ -670,6 +671,11 @@ async def admin_transition_save(
         return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
     if consultant_salary_type not in ("trailing", "current"):
+        return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+    from app.core.schedule.transition import VACATION_PAYOUT_RULES
+
+    if vacation_payout_rule not in VACATION_PAYOUT_RULES:
         return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
 
     salary_type = ConsultantSalaryType(consultant_salary_type)
@@ -719,6 +725,7 @@ async def admin_transition_save(
 
     transition.transition_date = t_date
     transition.consultant_salary_type = salary_type
+    transition.vacation_payout_rule = vacation_payout_rule
     transition.consultant_vacation_days = parsed_vacation_days
     transition.consultant_supplement_pct = consultant_supplement_pct
     transition.variable_avg_daily_override = variable_override

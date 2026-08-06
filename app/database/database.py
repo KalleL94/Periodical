@@ -565,6 +565,9 @@ class EmploymentTransition(Base):
     consultant_salary_type = Column(SQLEnum(ConsultantSalaryType), nullable=False)  # TRAILING or CURRENT
     consultant_vacation_days = Column(Float, nullable=False, default=0.0)  # Days to pay out
     consultant_supplement_pct = Column(Float, nullable=False, default=0.0043)  # Semesterlagen minimum: 0.43% per dag
+    # Which statutory rule computes the payout: "sammalone" (SemL 16 a) or "procent"
+    # (SemL 16 b, required when pay is variable to a substantial degree).
+    vacation_payout_rule = Column(String(20), nullable=False, default="sammalone", server_default="sammalone")
     variable_avg_daily_override = Column(Float, nullable=True)  # Manual override; NULL = auto-calculate from history
     earning_year_start = Column(Date, nullable=True)  # NULL = auto: April 1 two years back
     earning_year_end = Column(Date, nullable=True)  # NULL = auto: day before transition_date
