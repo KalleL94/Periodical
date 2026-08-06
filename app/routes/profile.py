@@ -532,6 +532,8 @@ async def update_vacation_settings(
     vacation_variable_payout_month: str = Form(""),
     vacation_variable_lump_pct: str = Form(""),
     vacation_variable_lump_lag_months: str = Form(""),
+    vacation_payout_rule: str = Form(""),
+    vacation_settings_year: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -549,6 +551,8 @@ async def update_vacation_settings(
         variable_payout_month=vacation_variable_payout_month,
         variable_lump_pct=vacation_variable_lump_pct,
         variable_lump_lag_months=vacation_variable_lump_lag_months,
+        payout_rule=vacation_payout_rule,
+        settings_year=int(vacation_settings_year) if vacation_settings_year.strip().lstrip("-").isdigit() else None,
     )
     return RedirectResponse(url="/profile/vacation", status_code=302)
 

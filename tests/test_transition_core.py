@@ -54,7 +54,6 @@ def _make_transition(
     consultant_supplement_pct=0.0043,
     variable_avg_daily_override=None,
     consultant_salary_type=ConsultantSalaryType.TRAILING,
-    vacation_payout_rule=SAME_PAY_RULE,
     consultant_vacation_days=0.0,
 ):
     return SimpleNamespace(
@@ -64,19 +63,22 @@ def _make_transition(
         consultant_supplement_pct=consultant_supplement_pct,
         variable_avg_daily_override=variable_avg_daily_override,
         consultant_salary_type=consultant_salary_type,
-        vacation_payout_rule=vacation_payout_rule,
         consultant_vacation_days=consultant_vacation_days,
     )
 
 
-def _stub_years(monkeypatch, *rows, lump_settled=False):
+def _stub_years(monkeypatch, *rows, lump_settled=False, rule=SAME_PAY_RULE):
     """Pin get_earning_years so payout tests exercise the money math, not the accrual.
 
     Each row is (days, earned, variable, total_pay); dates are filler, the payout
-    reads only the numbers. `lump_settled` may be a single flag for every year or one
-    per row.
+    reads only the numbers. `lump_settled` and `rule` may each be a single value for
+    every year or one per row, since both are resolved per earning year.
     """
-    flags = lump_settled if isinstance(lump_settled, (list, tuple)) else [lump_settled] * len(rows)
+
+    def _per_row(value):
+        return list(value) if isinstance(value, (list, tuple)) else [value] * len(rows)
+
+    flags, rules = _per_row(lump_settled), _per_row(rule)
     years = [
         {
             "start": datetime.date(2025, 4, 1),
@@ -88,8 +90,9 @@ def _stub_years(monkeypatch, *rows, lump_settled=False):
             "variable": variable,
             "total_pay": total_pay,
             "lump_settled": settled,
+            "rule": year_rule,
         }
-        for (days, earned, variable, total_pay), settled in zip(rows, flags, strict=True)
+        for (days, earned, variable, total_pay), settled, year_rule in zip(rows, flags, rules, strict=True)
     ]
     monkeypatch.setattr("app.core.schedule.transition.get_earning_years", lambda *a, **k: years)
     return years
@@ -537,11 +540,8 @@ class TestPercentageRulePayout:
 
     def test_payout_is_twelve_percent_spread_over_the_days_the_year_earned(self, test_db, monkeypatch):
         user = _make_user(test_db, wage=30000)
-        transition = _make_transition(
-            transition_date=datetime.date(2026, 5, 1),
-            vacation_payout_rule=PERCENTAGE_RULE,
-        )
-        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0))
+        transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
+        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0), rule=PERCENTAGE_RULE)
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 
@@ -556,11 +556,8 @@ class TestPercentageRulePayout:
         # Dividing by the days earned, not the days left, is what stops the unused days
         # from absorbing the share the taken days already drew.
         user = _make_user(test_db, wage=30000)
-        transition = _make_transition(
-            transition_date=datetime.date(2026, 5, 1),
-            vacation_payout_rule=PERCENTAGE_RULE,
-        )
-        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0))
+        transition = _make_transition(transition_date=datetime.date(2026, 5, 1))
+        _stub_years(monkeypatch, (5, 13, 8000.0, 188000.0), rule=PERCENTAGE_RULE)
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 
@@ -572,11 +569,10 @@ class TestPercentageRulePayout:
         user = _make_user(test_db, wage=30000)
         transition = _make_transition(
             transition_date=datetime.date(2026, 5, 1),
-            vacation_payout_rule=PERCENTAGE_RULE,
             consultant_supplement_pct=0.05,
             variable_avg_daily_override=999.0,
         )
-        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0))
+        _stub_years(monkeypatch, (13, 13, 8000.0, 188000.0), rule=PERCENTAGE_RULE)
 
         result = calculate_consultant_vacation_payout(transition, user, test_db)
 

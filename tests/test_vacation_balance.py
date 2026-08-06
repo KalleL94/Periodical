@@ -27,6 +27,7 @@ from app.core.schedule.vacation import (
     get_vacation_dates_for_year,
     get_vacation_year_boundaries,
     resolve_vacation_year,
+    vacation_settings_for_year,
 )
 from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, ConsultantSalaryType, User, UserRole
@@ -288,6 +289,80 @@ class TestGetParentalDatesForYear:
         assert datetime.date.fromisocalendar(2026, 20, 1) in dates
         assert datetime.date(2026, 9, 3) in dates
         assert len(dates) == 8  # 7 days of week 20 + 1 absence day
+
+
+class TestVacationSettingsPerYear:
+    """Payout settings are versioned per vacation year.
+
+    They used to be single columns on the user, so changing them for one year rewrote
+    every other year with them. A year now resolves to its own entry, else the closest
+    earlier one, else the old columns, which is what every year had before.
+    """
+
+    def test_falls_back_to_the_user_columns_when_no_year_is_configured(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={},
+            vacation_variable_payout="lump",
+            vacation_variable_payout_month=7,
+            vacation_fixed_per_day=159.10,
+        )
+
+        settings = vacation_settings_for_year(user, 2027)
+
+        assert settings["variable_payout"] == "lump"
+        assert settings["variable_payout_month"] == 7
+        assert settings["fixed_per_day"] == 159.10
+        assert settings["payout_rule"] == "sammalone"
+
+    def test_the_years_own_entry_wins_over_the_columns(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={"2027": {"variable_payout": "per_day", "payout_rule": "procent"}},
+            vacation_variable_payout="lump",
+        )
+
+        settings = vacation_settings_for_year(user, 2027)
+
+        assert settings["variable_payout"] == "per_day"
+        assert settings["payout_rule"] == "procent"
+
+    def test_a_year_without_an_entry_inherits_the_closest_earlier_one(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={
+                "2024": {"variable_payout": "per_day"},
+                "2027": {"variable_payout": "lump"},
+            },
+            vacation_variable_payout="per_day",
+        )
+
+        assert vacation_settings_for_year(user, 2025)["variable_payout"] == "per_day"
+        assert vacation_settings_for_year(user, 2027)["variable_payout"] == "lump"
+        assert vacation_settings_for_year(user, 2030)["variable_payout"] == "lump"
+
+    def test_a_year_before_every_entry_falls_back_to_the_columns(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={"2027": {"variable_payout": "lump"}},
+            vacation_variable_payout="per_day",
+        )
+
+        assert vacation_settings_for_year(user, 2020)["variable_payout"] == "per_day"
+
+    def test_a_field_missing_from_the_entry_still_falls_back(self, test_db):
+        # Entries are partial: only what the form submitted is stored, so the rest of
+        # the year has to resolve rather than come back as None.
+        user = _make_user(
+            test_db,
+            vacation_settings={"2027": {"payout_rule": "procent"}},
+            vacation_fixed_per_day=159.10,
+        )
+
+        settings = vacation_settings_for_year(user, 2027)
+
+        assert settings["payout_rule"] == "procent"
+        assert settings["fixed_per_day"] == 159.10
 
 
 class TestCalculateVacationBalanceIntegration:

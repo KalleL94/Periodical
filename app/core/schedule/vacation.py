@@ -676,7 +676,10 @@ def calculate_vacation_pay(
     # A flat amount configured on the user wins: some employers pay a fixed krona
     # amount per vacation day rather than a percentage of the salary.
     vac = vacation_rates or {"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046}
-    flat = getattr(user, "vacation_fixed_per_day", None)
+    # The payout routine is versioned per vacation year, and the year in question is the
+    # one that opens the day after this earning year closes.
+    settings = vacation_settings_for_year(user, vacation_year_of(earning_end + datetime.timedelta(days=1), user))
+    flat = settings["fixed_per_day"]
     fixed_per_day = round(float(flat), 2) if flat else round(monthly_salary * vac["fixed_pct"], 2)
 
     # Sum ALL variable earnings during earning year
@@ -689,7 +692,7 @@ def calculate_vacation_pay(
     # The per-day 0.5% supplement deliberately keeps the unshifted window; only
     # the lump uses the shifted one. Both are summed from the same per-month pass
     # so the shift costs one extra month, not a second full loop.
-    lag = getattr(user, "vacation_variable_lump_lag_months", None)
+    lag = settings["variable_lump_lag_months"]
     lag = int(lag) if lag is not None else 1
     lump_start, lump_end = _shift_month(earning_start, -lag), _shift_month(earning_end, -lag)
 
@@ -750,13 +753,13 @@ def calculate_vacation_pay(
     # keeps both parts regardless: leaving employment pays out the whole
     # supplement per unused day (Handelns avtal 9.5) no matter how the employer
     # schedules the variable part while employed.
-    lump = getattr(user, "vacation_variable_payout", None) == "lump"
+    lump = settings["variable_payout"] == "lump"
 
     # The lump follows semesterlagen's percentage rule rather than the per-day
     # supplement: a share of the whole earning year's variable pay, settled once.
     # It is deliberately not scaled by the entitlement, which is what separates it
     # from variable_per_day x days.
-    lump_pct = getattr(user, "vacation_variable_lump_pct", None)
+    lump_pct = settings["variable_lump_pct"]
     lump_pct = float(lump_pct) if lump_pct is not None else 0.12
     lump_total = round(lump_base * lump_pct, 2) if lump else 0.0
 
@@ -768,7 +771,7 @@ def calculate_vacation_pay(
         "supplement_per_day": supplement_per_day,
         "full_supplement_per_day": round(fixed_per_day + variable_per_day, 2),
         "variable_payout": "lump" if lump else "per_day",
-        "variable_payout_month": getattr(user, "vacation_variable_payout_month", None),
+        "variable_payout_month": settings["variable_payout_month"],
         "variable_lump_total": lump_total,
         "variable_lump_pct": lump_pct,
         # The shifted window the lump was calculated on, so the views can show
@@ -806,16 +809,71 @@ def _lump_payout_month(configured_month: int | None, user) -> int:
     return configured_month or getattr(user, "vacation_year_start_month", None) or 1
 
 
-def is_variable_lump_month(user, month: int) -> bool:
+# The payout settings that are versioned per vacation year, and the User column each
+# one falls back to. The columns hold what was configured before per-year settings
+# existed, so an unconfigured year keeps behaving exactly as it did.
+VACATION_SETTING_FALLBACKS = {
+    "fixed_per_day": "vacation_fixed_per_day",
+    "variable_payout": "vacation_variable_payout",
+    "variable_payout_month": "vacation_variable_payout_month",
+    "variable_lump_pct": "vacation_variable_lump_pct",
+    "variable_lump_lag_months": "vacation_variable_lump_lag_months",
+    "payout_rule": None,  # no column; the statutory default is the same-pay rule
+}
+
+DEFAULT_VACATION_PAYOUT_RULE = "sammalone"
+VACATION_PAYOUT_RULE_VALUES = ("sammalone", "procent")
+
+
+def vacation_settings_for_year(user, vacation_year: int) -> dict:
+    """
+    The payout settings in force for one vacation year.
+
+    Settings live in User.vacation_settings, keyed by the vacation year they start
+    applying in. A year without its own entry inherits the closest earlier year that
+    has one, so a change made once carries forward instead of having to be repeated;
+    with no earlier entry at all it falls back to the User columns, which is what
+    every year used before these settings were versioned.
+
+    Returns:
+        {fixed_per_day, variable_payout, variable_payout_month, variable_lump_pct,
+         variable_lump_lag_months, payout_rule}
+    """
+    stored = getattr(user, "vacation_settings", None) or {}
+
+    inherited = {}
+    earlier = [int(key) for key in stored if str(key).lstrip("-").isdigit() and int(key) <= vacation_year]
+    if earlier:
+        inherited = stored.get(str(max(earlier))) or {}
+
+    resolved = {}
+    for field, column in VACATION_SETTING_FALLBACKS.items():
+        if field in inherited:
+            resolved[field] = inherited[field]
+        elif column:
+            resolved[field] = getattr(user, column, None)
+        else:
+            resolved[field] = DEFAULT_VACATION_PAYOUT_RULE
+    return resolved
+
+
+def vacation_year_of(date: datetime.date, user) -> int:
+    """The vacation year a date falls in, per the user's own year break."""
+    start_month = getattr(user, "vacation_year_start_month", None) or 4
+    return date.year if date.month >= start_month else date.year - 1
+
+
+def is_variable_lump_month(user, month: int, year: int) -> bool:
     """Whether this user's variable supplement lump is paid in this month.
 
     Reads the user's own settings, nothing else. Callers use it to decide whether
     the far more expensive calculate_vacation_balance (it summarises twelve
     months) is worth running for a month that has no vacation days in it.
     """
-    if getattr(user, "vacation_variable_payout", None) != "lump":
+    settings = vacation_settings_for_year(user, vacation_year_of(datetime.date(year, month, 1), user))
+    if settings["variable_payout"] != "lump":
         return False
-    return _lump_payout_month(getattr(user, "vacation_variable_payout_month", None), user) == month
+    return _lump_payout_month(settings["variable_payout_month"], user) == month
 
 
 def vacation_supplement_for_month(balance: dict | None, user, month: int, sem_days: int) -> dict:
@@ -967,6 +1025,10 @@ def build_vacation_page_context(db, user, year: int) -> dict:
 
     return {
         "vacation_weeks": sorted((user.vacation or {}).get(str(year), [])),
+        # The payout settings in force for this vacation year, so the form edits the
+        # year on screen rather than one global setting shared by every year.
+        "vacation_settings": vacation_settings_for_year(user, year),
+        "vacation_settings_own": bool((getattr(user, "vacation_settings", None) or {}).get(str(year))),
         "balance": calculate_vacation_balance(user, year, db, off_dates=off_days),
         "day_absences": _absences(AbsenceType.VACATION),
         "parental_absences": _absences(AbsenceType.PARENTAL),
@@ -1090,15 +1152,21 @@ def set_vacation_settings(
     variable_payout_month: str | None = None,
     variable_lump_pct: str | None = None,
     variable_lump_lag_months: str | None = None,
+    payout_rule: str | None = None,
+    settings_year: int | None = None,
 ) -> None:
     """Update vacation settings. Out-of-range values are ignored, as is a
     malformed date; an empty date string clears the employment start date.
 
     Only the admin form exposes the break month, days per year and the payout
     settings, so those stay optional rather than being reset when self-service
-    saves. The three payout fields arrive as raw strings because blank is a
+    saves. The payout fields arrive as raw strings because blank is a
     meaningful answer for two of them: it clears the flat amount and falls the
     lump back to the vacation year's start month.
+
+    The payout settings are written to `settings_year` in User.vacation_settings, so
+    changing one year leaves the others alone. Later years without an entry of their
+    own inherit it; earlier ones keep whatever they had.
     """
     if employment_start_date.strip():
         try:
@@ -1114,21 +1182,36 @@ def set_vacation_settings(
     if days_per_year is not None and 0 <= days_per_year <= 40:
         user.vacation_days_per_year = days_per_year
 
+    # Everything below is versioned per vacation year. Start from what that year
+    # already resolves to, so a form that only submits some fields does not silently
+    # drop the rest of the year's settings.
+    from app.core.utils import get_today
+
+    year = settings_year if settings_year is not None else vacation_year_of(get_today(), user)
+    resolved = vacation_settings_for_year(user, year)
+    stored = dict(getattr(user, "vacation_settings", None) or {})
+    entry = dict(stored.get(str(year)) or {})
+
+    def _set(field, value):
+        entry[field] = value
+        resolved[field] = value
+
     if fixed_per_day is not None:
         # Blank clears it, so the fixed percentage applies again.
         try:
             amount = float(fixed_per_day.replace(",", ".").strip()) if fixed_per_day.strip() else None
         except ValueError:
-            amount = user.vacation_fixed_per_day
-        user.vacation_fixed_per_day = amount if amount is None or amount >= 0 else user.vacation_fixed_per_day
+            amount = resolved["fixed_per_day"]
+        if amount is None or amount >= 0:
+            _set("fixed_per_day", amount)
 
     if variable_payout in ("per_day", "lump"):
-        user.vacation_variable_payout = variable_payout
+        _set("variable_payout", variable_payout)
 
     if variable_payout_month is not None:
         month = variable_payout_month.strip()
         # Blank falls the lump back to the vacation year's start month.
-        user.vacation_variable_payout_month = int(month) if month.isdigit() and 1 <= int(month) <= 12 else None
+        _set("variable_payout_month", int(month) if month.isdigit() and 1 <= int(month) <= 12 else None)
 
     if variable_lump_pct is not None and variable_lump_pct.strip():
         # Entered as a percentage (12), stored as a share (0.12), matching how
@@ -1138,11 +1221,21 @@ def set_vacation_settings(
         except ValueError:
             pct = None
         if pct is not None and 0 <= pct <= 1:
-            user.vacation_variable_lump_pct = pct
+            _set("variable_lump_pct", pct)
 
     if variable_lump_lag_months is not None and variable_lump_lag_months.strip():
         lag = variable_lump_lag_months.strip()
         if lag.isdigit() and 0 <= int(lag) <= 6:
-            user.vacation_variable_lump_lag_months = int(lag)
+            _set("variable_lump_lag_months", int(lag))
+
+    if payout_rule in VACATION_PAYOUT_RULE_VALUES:
+        _set("payout_rule", payout_rule)
+
+    if entry:
+        from sqlalchemy.orm.attributes import flag_modified
+
+        stored[str(year)] = entry
+        user.vacation_settings = stored
+        flag_modified(user, "vacation_settings")
 
     _commit(db)

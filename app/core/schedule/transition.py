@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 SAME_PAY_RULE = "sammalone"
 PERCENTAGE_RULE = "procent"
 VACATION_PAYOUT_RULES = (SAME_PAY_RULE, PERCENTAGE_RULE)
+# Reported when an engagement spans earning years configured with different rules.
+MIXED_RULES = "mixed"
 
 # Semesterlagen 16 b: 12% of the earning year's pay is the whole vacation pay,
 # so it replaces the same-pay rule rather than adding to it.
@@ -99,9 +101,9 @@ def get_earning_years(
 
     last_day = transition.transition_date - datetime.timedelta(days=1)
 
-    lag = _payroll_lag_months(user)
-
     def _row(start, end, earned, used, vacation_year_start, is_final):
+        lag = _payroll_lag_months(user, vacation_year_start)
+
         # Variable pay is paid the month after it is worked, so the pay that *fell due*
         # inside the earning year is the pay worked in the window shifted back by the
         # payroll lag. The monthly salary does not lag, so its window stays put. This
@@ -132,6 +134,7 @@ def get_earning_years(
             "variable": variable,
             "total_pay": round(base + variable, 2),
             "lump_settled": _lump_already_paid(user, vacation_year_start, transition.transition_date),
+            "rule": _settings_for(user, vacation_year_start)["payout_rule"],
         }
 
     # Manual override: single custom earning period (legacy / admin-configured)
@@ -233,9 +236,16 @@ def _shift_months(date: datetime.date, months: int, to_month_end: bool = False) 
     return datetime.date(year, month, day)
 
 
-def _payroll_lag_months(user: "User") -> int:
+def _settings_for(user: "User", vacation_year_start: datetime.date) -> dict:
+    """The payout settings in force for the vacation year an earning year feeds."""
+    from app.core.schedule.vacation import vacation_settings_for_year
+
+    return vacation_settings_for_year(user, vacation_year_start.year)
+
+
+def _payroll_lag_months(user: "User", vacation_year_start: datetime.date) -> int:
     """How many months variable pay lags the month it was worked in."""
-    lag = getattr(user, "vacation_variable_lump_lag_months", None)
+    lag = _settings_for(user, vacation_year_start)["variable_lump_lag_months"]
     return int(lag) if lag is not None else 1
 
 
@@ -252,12 +262,13 @@ def _lump_already_paid(
     the transition, the money is already paid and the payout must not hand it over a
     second time, once per unused day.
     """
-    if getattr(user, "vacation_variable_payout", None) != "lump":
-        return False
-
     from app.core.schedule.vacation import _lump_payout_month
 
-    month = _lump_payout_month(getattr(user, "vacation_variable_payout_month", None), user)
+    settings = _settings_for(user, vacation_year_start)
+    if settings["variable_payout"] != "lump":
+        return False
+
+    month = _lump_payout_month(settings["variable_payout_month"], user)
     # The lump month belongs to the vacation year, so it rolls into the next calendar
     # year whenever it sits before the month that vacation year starts in.
     year = vacation_year_start.year if month >= vacation_year_start.month else vacation_year_start.year + 1
@@ -432,7 +443,6 @@ def calculate_consultant_vacation_payout(
     from app.core.rates import DEFAULT_VACATION_RATES
     from app.core.schedule.wages import get_effective_monthly_wage
 
-    rule = getattr(transition, "vacation_payout_rule", None) or SAME_PAY_RULE
     earning_start, earning_end = get_earning_year(transition)
     # Always recalculate the days from history (earned minus already used before the
     # transition) so the payout reflects the actual state at the time of calculation.
@@ -455,45 +465,56 @@ def calculate_consultant_vacation_payout(
     payout_pct = DEFAULT_VACATION_RATES["payout_pct"]
     variable_pct = DEFAULT_VACATION_RATES["variable_pct"]
 
-    base_per_day = 0.0
-    base_with_supplement_per_day = 0.0
+    base_per_day = round(monthly_salary * payout_pct, 4)
+    base_with_supplement_per_day = round(monthly_salary * (payout_pct + supplement_pct), 4)
     base_payout = 0.0
     variable_payout = 0.0
-    avg_daily = None
+    same_pay_days = 0
     variable_auto_calculated = transition.variable_avg_daily_override is None
+    override = transition.variable_avg_daily_override
 
-    if rule == PERCENTAGE_RULE:
-        # 12% of the year's pay, spread over the days that year earned. Dividing by
-        # `earned` and not `days` is the point: the days already taken drew their
-        # share when they were taken, so the unused ones keep only their own share.
-        for year in years:
+    # Each earning year follows the rule its own vacation year is configured with, so
+    # an engagement spanning a change of agreement settles each year the way that year
+    # was actually run.
+    for year in years:
+        if year["rule"] == PERCENTAGE_RULE:
+            # 12% of the year's pay, spread over the days that year earned. Dividing by
+            # `earned` and not `days` is the point: the days already taken drew their
+            # share when they were taken, so the unused ones keep only their own share.
             per_day = PERCENTAGE_RULE_PCT * year["total_pay"] / year["earned"] if year["earned"] else 0.0
             year["per_day"] = round(per_day, 2)
             year["payout"] = round(per_day * year["days"], 2)
-        base_payout = round(sum(year["payout"] for year in years), 2)
-    else:
-        base_per_day = round(monthly_salary * payout_pct, 4)
-        base_with_supplement_per_day = round(monthly_salary * (payout_pct + supplement_pct), 4)
-        base_payout = round(base_with_supplement_per_day * days, 2)
+            base_payout += year["payout"]
+            continue
 
-        override = transition.variable_avg_daily_override
-        for year in years:
-            # 0.5% of each year's own variable pay: an older day is worth what its own
-            # earning year paid, not what the most recent one did. A year whose variable
-            # supplement was already settled as a lump gets nothing here, or it would be
-            # paid twice. An explicit override still wins: it is a stated intent.
-            if override is not None:
-                var_per_day = override
-            elif year["lump_settled"]:
-                var_per_day = 0.0
-            else:
-                var_per_day = variable_pct * year["variable"]
-            year["per_day"] = round(base_with_supplement_per_day + var_per_day, 2)
-            year["payout"] = round(year["per_day"] * year["days"], 2)
-            variable_payout += var_per_day * year["days"]
+        # 0.5% of each year's own variable pay: an older day is worth what its own
+        # earning year paid, not what the most recent one did. A year whose variable
+        # supplement was already settled as a lump gets nothing here, or it would be
+        # paid twice. An explicit override still wins: it is a stated intent.
+        if override is not None:
+            var_per_day = override
+        elif year["lump_settled"]:
+            var_per_day = 0.0
+        else:
+            var_per_day = variable_pct * year["variable"]
 
-        variable_payout = round(variable_payout, 2)
-        avg_daily = round(variable_payout / days, 4) if days else override
+        year["per_day"] = round(base_with_supplement_per_day + var_per_day, 2)
+        year["payout"] = round(year["per_day"] * year["days"], 2)
+        base_payout += base_with_supplement_per_day * year["days"]
+        variable_payout += var_per_day * year["days"]
+        same_pay_days += year["days"]
+
+    base_payout = round(base_payout, 2)
+    variable_payout = round(variable_payout, 2)
+    avg_daily = round(variable_payout / same_pay_days, 4) if same_pay_days else override
+
+    # One rule for the whole payout when the years agree, which they normally do.
+    rules = {year["rule"] for year in years}
+    rule = rules.pop() if len(rules) == 1 else MIXED_RULES
+
+    if rule == PERCENTAGE_RULE:
+        base_per_day = 0.0
+        base_with_supplement_per_day = 0.0
 
     total = round(base_payout + variable_payout, 2)
 
