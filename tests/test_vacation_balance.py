@@ -328,6 +328,27 @@ class TestLumpPayoutMonth:
         assert lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 2, 1)) is False
 
 
+class TestLumpPayoutMonthIsResolvedForConsumers:
+    def test_pay_reports_a_month_number_even_when_configured_as_year_end(self, test_db):
+        """The views index a month-name list with this, so the sentinel must not reach
+        them: "end" - 1 is a TypeError, and the vacation page 500s on it."""
+        user = _make_user(test_db, person_id=1, wage=30000, vacation_year_start_month=4)
+        user.vacation_variable_payout = "lump"
+        user.vacation_settings = {"2026": {"variable_payout_month": LUMP_MONTH_YEAR_END}}
+        test_db.commit()
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["variable_payout_month"] == 3
+
+
 class TestVacationSettingsPerYear:
     """Payout settings are versioned per vacation year.
 

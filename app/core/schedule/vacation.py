@@ -822,7 +822,9 @@ def calculate_vacation_pay(
         "supplement_per_day": supplement_per_day,
         "full_supplement_per_day": round(fixed_per_day + variable_per_day, 2),
         "variable_payout": "lump" if lump else "per_day",
-        "variable_payout_month": settings["variable_payout_month"],
+        # Resolved, not raw: the setting may be LUMP_MONTH_YEAR_END, and every consumer
+        # (the views, the payslip, the supplement matcher) wants the month it lands in.
+        "variable_payout_month": _lump_payout_month(settings["variable_payout_month"], user),
         "variable_lump_total": lump_total,
         "variable_lump_pct": lump_pct,
         # The shifted window the lump was calculated on, so the views can show
