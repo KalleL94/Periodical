@@ -678,8 +678,9 @@ async def admin_update_vacation_settings(
     vacation_fixed_per_day: str = Form(""),
     vacation_variable_payout: str = Form("per_day"),
     vacation_variable_payout_month: str = Form(""),
-    vacation_variable_lump_pct: str = Form(""),
     vacation_variable_lump_lag_months: str = Form(""),
+    vacation_payout_rule: str = Form(""),
+    vacation_settings_year: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Admin: update vacation settings for a user."""
@@ -696,8 +697,9 @@ async def admin_update_vacation_settings(
         fixed_per_day=vacation_fixed_per_day,
         variable_payout=vacation_variable_payout,
         variable_payout_month=vacation_variable_payout_month,
-        variable_lump_pct=vacation_variable_lump_pct,
         variable_lump_lag_months=vacation_variable_lump_lag_months,
+        payout_rule=vacation_payout_rule,
+        settings_year=int(vacation_settings_year) if vacation_settings_year.strip().lstrip("-").isdigit() else None,
     )
 
     return RedirectResponse(

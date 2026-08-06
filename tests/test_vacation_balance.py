@@ -16,7 +16,9 @@ import datetime
 from types import SimpleNamespace
 
 from app.core.schedule.vacation import (
+    LUMP_MONTH_YEAR_END,
     _calculate_prorated_days,
+    _lump_payout_month,
     _vacation_dates_in_weeks,
     calculate_vacation_balance,
     calculate_vacation_pay,
@@ -26,10 +28,12 @@ from app.core.schedule.vacation import (
     get_saved_days_balance,
     get_vacation_dates_for_year,
     get_vacation_year_boundaries,
+    lump_already_paid,
     resolve_vacation_year,
+    vacation_settings_for_year,
 )
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, User, UserRole
+from app.database.database import Absence, AbsenceType, ConsultantSalaryType, User, UserRole
 
 
 def _make_user(db, **kwargs):
@@ -290,6 +294,135 @@ class TestGetParentalDatesForYear:
         assert len(dates) == 8  # 7 days of week 20 + 1 absence day
 
 
+class TestLumpPayoutMonth:
+    """The lump's payout month can track the vacation year instead of naming a month.
+
+    Blank is the year's first month and "end" its last, both resolved from the user's
+    own break month, so neither has to be re-picked if the break moves.
+    """
+
+    def test_blank_is_the_vacation_years_first_month(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=4)
+        assert _lump_payout_month(None, user) == 4
+
+    def test_end_is_the_vacation_years_last_month(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=4)
+        assert _lump_payout_month(LUMP_MONTH_YEAR_END, user) == 3
+
+    def test_end_wraps_to_december_for_a_calendar_vacation_year(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=1)
+        assert _lump_payout_month(LUMP_MONTH_YEAR_END, user) == 12
+
+    def test_an_explicit_month_is_left_alone(self, test_db):
+        user = _make_user(test_db, vacation_year_start_month=4)
+        assert _lump_payout_month(7, user) == 7
+
+    def test_a_year_end_lump_lands_in_the_next_calendar_year(self, test_db):
+        # Vacation year 2026 runs Apr 2026 - Mar 2027, so its last month is Mar 2027.
+        user = _make_user(test_db, vacation_year_start_month=4)
+        user.vacation_variable_payout = "lump"
+        user.vacation_settings = {"2026": {"variable_payout_month": LUMP_MONTH_YEAR_END}}
+        test_db.commit()
+
+        assert lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 4, 1)) is True
+        assert lump_already_paid(user, datetime.date(2026, 4, 1), datetime.date(2027, 2, 1)) is False
+
+
+class TestLumpPayoutMonthIsResolvedForConsumers:
+    def test_pay_reports_a_month_number_even_when_configured_as_year_end(self, test_db):
+        """The views index a month-name list with this, so the sentinel must not reach
+        them: "end" - 1 is a TypeError, and the vacation page 500s on it."""
+        user = _make_user(test_db, person_id=1, wage=30000, vacation_year_start_month=4)
+        user.vacation_variable_payout = "lump"
+        user.vacation_settings = {"2026": {"variable_payout_month": LUMP_MONTH_YEAR_END}}
+        test_db.commit()
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            earning_start=datetime.date(2025, 4, 1),
+            earning_end=datetime.date(2026, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["variable_payout_month"] == 3
+
+
+class TestVacationSettingsPerYear:
+    """Payout settings are versioned per vacation year.
+
+    They used to be single columns on the user, so changing them for one year rewrote
+    every other year with them. A year now resolves to its own entry, else the closest
+    earlier one, else the old columns, which is what every year had before.
+    """
+
+    def test_falls_back_to_the_user_columns_when_no_year_is_configured(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={},
+            vacation_variable_payout="lump",
+            vacation_variable_payout_month=7,
+            vacation_fixed_per_day=159.10,
+        )
+
+        settings = vacation_settings_for_year(user, 2027)
+
+        assert settings["variable_payout"] == "lump"
+        assert settings["variable_payout_month"] == 7
+        assert settings["fixed_per_day"] == 159.10
+        assert settings["payout_rule"] == "sammalone"
+
+    def test_the_years_own_entry_wins_over_the_columns(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={"2027": {"variable_payout": "per_day", "payout_rule": "procent"}},
+            vacation_variable_payout="lump",
+        )
+
+        settings = vacation_settings_for_year(user, 2027)
+
+        assert settings["variable_payout"] == "per_day"
+        assert settings["payout_rule"] == "procent"
+
+    def test_a_year_without_an_entry_inherits_the_closest_earlier_one(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={
+                "2024": {"variable_payout": "per_day"},
+                "2027": {"variable_payout": "lump"},
+            },
+            vacation_variable_payout="per_day",
+        )
+
+        assert vacation_settings_for_year(user, 2025)["variable_payout"] == "per_day"
+        assert vacation_settings_for_year(user, 2027)["variable_payout"] == "lump"
+        assert vacation_settings_for_year(user, 2030)["variable_payout"] == "lump"
+
+    def test_a_year_before_every_entry_falls_back_to_the_columns(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={"2027": {"variable_payout": "lump"}},
+            vacation_variable_payout="per_day",
+        )
+
+        assert vacation_settings_for_year(user, 2020)["variable_payout"] == "per_day"
+
+    def test_a_field_missing_from_the_entry_still_falls_back(self, test_db):
+        # Entries are partial: only what the form submitted is stored, so the rest of
+        # the year has to resolve rather than come back as None.
+        user = _make_user(
+            test_db,
+            vacation_settings={"2027": {"payout_rule": "procent"}},
+            vacation_fixed_per_day=159.10,
+        )
+
+        settings = vacation_settings_for_year(user, 2027)
+
+        assert settings["payout_rule"] == "procent"
+        assert settings["fixed_per_day"] == 159.10
+
+
 class TestCalculateVacationBalanceIntegration:
     """End-to-end §9 pipeline against a real rotation era (rotation_session fixture)."""
 
@@ -317,6 +450,44 @@ class TestCalculateVacationBalanceIntegration:
         assert balance["projection"]["days_to_save"] == 5
         assert balance["projection"]["days_to_pay_out"] == 20
         assert "supplement_per_day" in balance["pay"]
+
+    def test_days_taken_before_a_transition_do_not_charge_the_direct_employment(self, rotation_session):
+        # A transition mid vacation year splits it between two employers. Days taken
+        # before it came out of the consultant employer's quota and were deducted from
+        # its final payout, so charging them here too leaves a negative balance for a
+        # year the direct employment earned nothing in.
+        from app.database.database import EmploymentTransition
+
+        user = rotation_session.query(User).filter(User.id == 1).first()
+        user.vacation_year_start_month = 4
+        user.vacation_days_per_year = 25
+        user.employment_start_date = datetime.date(2025, 10, 1)
+        user.vacation = {}
+        user.vacation_saved = {}
+        # Four days taken in June 2026, while still a consultant.
+        for day in range(15, 19):
+            rotation_session.add(
+                Absence(user_id=user.id, date=datetime.date(2026, 6, day), absence_type=AbsenceType.VACATION)
+            )
+        rotation_session.add(
+            EmploymentTransition(
+                user_id=user.id,
+                transition_date=datetime.date(2026, 12, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        rotation_session.commit()
+        rotation_session.refresh(user)
+
+        balance = calculate_vacation_balance(user, 2026, rotation_session)
+
+        # Earning year 2025/26 predates the transition, so the direct employment earned
+        # nothing for this vacation year, and nothing was taken from it either.
+        assert balance["entitled_days"] == 0
+        assert balance["used_days"] == 0
+        assert balance["remaining_days"] == 0
 
     def test_past_year_is_auto_closed(self, rotation_session):
         user = rotation_session.query(User).filter(User.id == 1).first()
@@ -448,13 +619,13 @@ class TestCalculateVacationPay:
         # The full figure survives for the payout path, which owes both parts.
         assert pay["full_supplement_per_day"] == round(pay["fixed_per_day"] + pay["variable_per_day"], 2)
 
-    def test_lump_is_a_share_of_the_earning_year_not_a_per_day_amount(self, test_db, monkeypatch):
-        """Semesterlagen's percentage rule: the lump is a share of the whole
-        earning year's variable pay, settled once. It must not be scaled by the
-        entitlement, which is what separates it from variable_per_day x days."""
+    def test_lump_scales_with_the_days_the_year_earned(self, test_db, monkeypatch):
+        """The lump is the same money as the per-day supplement, settled once instead
+        of spread over the days, so it scales with the entitlement: 0.5% each, the
+        familiar 12.5% at a full 25 days but less for a part year. A flat percentage
+        would pay a 13-day year as if it had 25."""
         user = _make_user(test_db, person_id=1, wage=30000)
         user.vacation_variable_payout = "lump"
-        user.vacation_variable_lump_pct = 0.12
         test_db.commit()
 
         # Two months of the earning year, 10 000 kr variable pay each.
@@ -475,22 +646,156 @@ class TestCalculateVacationPay:
 
         full = _pay(25)
         assert full["variable_total"] == 20000.0
-        assert full["variable_lump_total"] == 2400.0  # 20000 * 0.12
+        assert full["variable_lump_pct"] == 0.125  # 25 x 0.5%
+        assert full["variable_lump_total"] == 2500.0  # 20000 * 0.125
 
-        # Half the entitlement, same lump: the rule is not per day.
-        assert _pay(13)["variable_lump_total"] == 2400.0
+        # A part year earns fewer days, so it is owed proportionally less.
+        part = _pay(13)
+        assert part["variable_lump_pct"] == 0.065  # 13 x 0.5%
+        assert part["variable_lump_total"] == 1300.0
 
-    def test_lump_counts_pay_that_fell_due_inside_the_earning_year(self, test_db, monkeypatch):
+    def test_a_lump_paid_before_a_transition_settles_the_consultant_accrual(self, test_db, monkeypatch):
+        """A transition zeroes the direct employment's share of an earlier year, but the
+        lump for that year was paid by the consultant employer, on the days the person
+        had actually accrued. Scaling it by the direct employment's zero pays nothing
+        for a year that really was settled."""
+        user = _make_user(test_db, person_id=1, wage=30000, employment_start_date=datetime.date(2025, 10, 1))
+        user.vacation_variable_payout = "lump"
+        user.vacation_variable_payout_month = 7
+        test_db.commit()
+
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kw: {"ob_pay": {"OB1": 10000.0}, "ot_pay": 0.0, "oncall_pay": 0.0},
+        )
+
+        def _pay(accrued):
+            return calculate_vacation_pay(
+                user=user,
+                # The direct employment accrued nothing for this year.
+                entitled_days=0,
+                accrued_days=accrued,
+                earning_start=datetime.date(2025, 4, 1),
+                earning_end=datetime.date(2026, 3, 31),
+                db=test_db,
+                vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+            )
+
+        # No transition: the employer's share is all there is, so a zero stays zero.
+        assert _pay(13)["variable_lump_pct"] == 0.0
+
+        from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+        test_db.add(
+            EmploymentTransition(
+                user_id=user.id,
+                # July 2026 falls before this, so the consultant employer paid the lump.
+                transition_date=datetime.date(2026, 12, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        test_db.commit()
+        test_db.refresh(user)
+
+        assert _pay(13)["variable_lump_pct"] == 0.065  # 13 x 0.5%, not 0
+
+    def test_supplement_uses_the_rates_in_force_during_the_vacation_year(self, test_db):
+        """Rates are versioned through RateHistory, so a year running on rates opened at
+        a transition must not be priced with whatever is current on the user row."""
+        from app.core.rates import add_new_rates
+
+        user = _make_user(test_db, person_id=1, wage=30000)
+        user.custom_rates = {"vacation": {"fixed_pct": 0.004, "variable_pct": 0.0, "payout_pct": 0.046}}
+        test_db.commit()
+        # Empty rates from 2026-12-01 mean "back to the agreement's defaults".
+        add_new_rates(test_db, user.id, {}, datetime.date(2026, 12, 1))
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            # Earning year 2027/28 feeds vacation year 2028, well past the rate change.
+            earning_start=datetime.date(2027, 4, 1),
+            earning_end=datetime.date(2028, 3, 31),
+            db=test_db,
+        )
+
+        # 0.8% of 30000, not the 0.4% still sitting on the user row.
+        assert pay["fixed_pct"] == 0.008
+        assert pay["fixed_per_day"] == 240.0
+
+    def test_supplement_uses_the_salary_in_force_during_the_vacation_year(self, test_db):
+        """Semesterlagen 16 a bases the supplement on the salary current when the
+        vacation is taken, so a future year uses the raise already on record rather
+        than today's salary."""
+        from app.core.schedule.wages import add_new_wage
+
+        user = _make_user(test_db, person_id=1, wage=30000)
+        add_new_wage(test_db, user.id, 30000, datetime.date(2020, 1, 1))
+        add_new_wage(test_db, user.id, 45000, datetime.date(2026, 12, 1))
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            # Earning year 2026/27 feeds vacation year 2027, which runs on 45000.
+            earning_start=datetime.date(2026, 4, 1),
+            earning_end=datetime.date(2027, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        assert pay["monthly_salary"] == 45000
+        assert pay["fixed_per_day"] == 360.0  # 45000 * 0.008, not 30000 * 0.008
+
+    def test_variable_pay_before_a_transition_belongs_to_the_consultant_employer(self, test_db, monkeypatch):
+        """A transition inside the earning year splits it. The months worked before it
+        are settled in the consultant employer's final payout, so counting them in the
+        direct employment's supplement would pay for them twice."""
+        from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+        user = _make_user(test_db, person_id=1, wage=30000)
+        test_db.add(
+            EmploymentTransition(
+                user_id=user.id,
+                transition_date=datetime.date(2026, 12, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        test_db.commit()
+        test_db.refresh(user)
+
+        # 10 000 kr of variable pay every month of the earning year.
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kw: {"ob_pay": {"OB1": 10000.0}, "ot_pay": 0.0, "oncall_pay": 0.0},
+        )
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=9,
+            earning_start=datetime.date(2026, 4, 1),
+            earning_end=datetime.date(2027, 3, 31),
+            db=test_db,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+
+        # Worked Dec 2026 - Feb 2027 (paid Jan - Mar 2027): three months, not twelve.
+        assert pay["variable_total"] == 30000.0
+        assert pay["breakdown_start"] == datetime.date(2026, 12, 1)
+
+    def test_variable_pay_counts_what_fell_due_inside_the_earning_year(self, test_db, monkeypatch):
         """Variable pay worked in March is paid in April, so with an earning year
         ending 31 March that March belongs to the next year, not the closing one.
-        The lump's window is the earning year shifted back by the payroll lag.
 
-        The per-day 0.5% part deliberately keeps the unshifted window, so the two
-        read different totals off the same months.
+        Both the lump and the per-day 0.5% part read that shifted window. The per-day
+        figure used to run on the unshifted one, which made the same year worth a
+        different amount depending only on how the employer settled it.
         """
         user = _make_user(test_db, person_id=1, wage=30000)
         user.vacation_variable_payout = "lump"
-        user.vacation_variable_lump_pct = 0.12
         user.vacation_variable_lump_lag_months = 1
         test_db.commit()
 
@@ -514,11 +819,12 @@ class TestCalculateVacationPay:
             vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
         )
 
-        # Worked Apr 2025 - Mar 2026: all three months.
-        assert pay["variable_total"] == 30000.0
-        # Paid Apr 2025 - Mar 2026, i.e. worked Mar 2025 - Feb 2026: March drops out.
+        # Paid Apr 2025 - Mar 2026, i.e. worked Mar 2025 - Feb 2026: March drops out
+        # of both figures, which now read the same window.
+        assert pay["variable_total"] == 20000.0
         assert pay["variable_lump_base"] == 20000.0
-        assert pay["variable_lump_total"] == 2400.0  # 20000 * 0.12
+        assert pay["variable_per_day"] == 100.0  # 20000 * 0.005, not 30000 * 0.005
+        assert pay["variable_lump_total"] == 2500.0  # 20000 * (25 x 0.5%)
         assert pay["variable_lump_end"] == datetime.date(2026, 2, 1)
 
         # The breakdown the card renders follows the window the payout used, or
@@ -606,7 +912,7 @@ class TestCalculateVacationPay:
 class TestVacationSupplementForMonth:
     """The month's supplement, split the way a payslip lists it."""
 
-    def _pay(self, **kwargs):
+    def _pay(self, vacation_year=2026, **kwargs):
         base = {
             "fixed_per_day": 240.0,
             "variable_per_day": 60.0,
@@ -617,13 +923,15 @@ class TestVacationSupplementForMonth:
             "variable_lump_total": 0.0,
         }
         base.update(kwargs)
-        return {"pay": base}
+        # The balance carries the vacation year it was calculated for; the lump is
+        # matched on the full date, so the payout month alone is not enough.
+        return {"pay": base, "year_start": datetime.date(vacation_year, 4, 1)}
 
     def test_parts_sum_to_the_figure_the_views_showed_before_the_split(self):
         from app.core.schedule.vacation import vacation_supplement_for_month
 
         user = SimpleNamespace(vacation_year_start_month=4)
-        result = vacation_supplement_for_month(self._pay(), user, month=7, sem_days=4)
+        result = vacation_supplement_for_month(self._pay(), user, month=7, sem_days=4, year=2026)
 
         assert result["fixed"] == round(240.0 * 4, 0)
         assert result["fixed"] + result["variable"] == round(300.0 * 4, 0)
@@ -641,8 +949,8 @@ class TestVacationSupplementForMonth:
             variable_lump_total=1500.0,
         )
 
-        june = vacation_supplement_for_month(pay, user, month=6, sem_days=0)
-        july = vacation_supplement_for_month(pay, user, month=7, sem_days=4)
+        june = vacation_supplement_for_month(pay, user, month=6, sem_days=0, year=2026)
+        july = vacation_supplement_for_month(pay, user, month=7, sem_days=4, year=2026)
 
         assert june["lump"] == 1500.0
         assert june["total"] == 1500.0
@@ -658,5 +966,22 @@ class TestVacationSupplementForMonth:
         user = SimpleNamespace(vacation_year_start_month=4)
         pay = self._pay(variable_payout="lump", variable_payout_month=None, variable_lump_total=1500.0)
 
-        assert vacation_supplement_for_month(pay, user, month=4, sem_days=0)["lump"] == 1500.0
-        assert vacation_supplement_for_month(pay, user, month=5, sem_days=0)["lump"] == 0.0
+        assert vacation_supplement_for_month(pay, user, month=4, sem_days=0, year=2026)["lump"] == 1500.0
+        assert vacation_supplement_for_month(pay, user, month=5, sem_days=0, year=2026)["lump"] == 0.0
+
+    def test_a_lump_month_before_the_break_lands_in_the_next_calendar_year(self):
+        """Vacation year 2027 runs Apr 2027 - Mar 2028, so a March payout is March 2028.
+        Matching the month alone paid it a year early, in the March the year opened in."""
+        from app.core.schedule.vacation import vacation_supplement_for_month
+
+        user = SimpleNamespace(vacation_year_start_month=4)
+        pay = self._pay(
+            vacation_year=2027,
+            supplement_per_day=240.0,
+            variable_payout="lump",
+            variable_payout_month=3,
+            variable_lump_total=1500.0,
+        )
+
+        assert vacation_supplement_for_month(pay, user, month=3, sem_days=0, year=2028)["lump"] == 1500.0
+        assert vacation_supplement_for_month(pay, user, month=3, sem_days=0, year=2027)["lump"] == 0.0

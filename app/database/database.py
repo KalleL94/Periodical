@@ -151,10 +151,16 @@ class User(Base):
     vacation_saved = Column(
         JSON, default=dict
     )  # Saved vacation days per year: {"2025": {"saved": 3, "paid_out": 2, "payout_amount": 3404.0}}
-    # How the employer settles the vacation supplement. These sit here rather
-    # than in custom_rates because custom_rates is versioned through RateHistory:
-    # a wage revision would open a new rate period and drag a payout routine
-    # along with it. A flat amount per day replaces the fixed percentage.
+    # How the employer settles the vacation supplement, versioned per vacation year:
+    # {"2027": {"variable_payout": "lump", "payout_month": 7, "payout_rule": "procent", ...}}
+    # A year without an entry inherits the closest earlier one, and with none at all
+    # falls back to the columns below. Read it through
+    # app.core.schedule.vacation.vacation_settings_for_year, never directly.
+    vacation_settings = Column(JSON, default=dict)
+    # The pre-versioning values, still the fallback for years never configured. They sit
+    # here rather than in custom_rates because custom_rates is versioned through
+    # RateHistory: a wage revision would open a new rate period and drag a payout
+    # routine along with it. A flat amount per day replaces the fixed percentage.
     vacation_fixed_per_day = Column(Float, nullable=True)  # NULL = derive from the fixed_pct rate
     vacation_variable_payout = Column(
         String(10), default="per_day", nullable=False
@@ -565,6 +571,8 @@ class EmploymentTransition(Base):
     consultant_salary_type = Column(SQLEnum(ConsultantSalaryType), nullable=False)  # TRAILING or CURRENT
     consultant_vacation_days = Column(Float, nullable=False, default=0.0)  # Days to pay out
     consultant_supplement_pct = Column(Float, nullable=False, default=0.0043)  # Semesterlagen minimum: 0.43% per dag
+    # The statutory rule (SemL 16 a or 16 b) is not stored here: the payout inherits it
+    # from each earning year's vacation settings, so the two cannot disagree.
     variable_avg_daily_override = Column(Float, nullable=True)  # Manual override; NULL = auto-calculate from history
     earning_year_start = Column(Date, nullable=True)  # NULL = auto: April 1 two years back
     earning_year_end = Column(Date, nullable=True)  # NULL = auto: day before transition_date

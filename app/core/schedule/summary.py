@@ -1396,16 +1396,31 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
     Returns the vacation balance dict (the year view renders it), or None when
     it could not be calculated.
     """
+    import datetime as _dt
+
     from app.core.schedule.transition import calculate_transition_month_summary
     from app.core.schedule.vacation import (
         calculate_vacation_balance,
         fold_vacation_supplement_into_pay,
         vacation_supplement_for_month,
+        vacation_year_of,
     )
 
     vacation_pay = None
     try:
         vacation_pay = calculate_vacation_balance(user, year, session)
+
+        # A calendar year straddles two vacation years whenever the break is not
+        # January, and each month's supplement belongs to its own. Balances are
+        # expensive (twelve months of summaries each), so they are cached per year.
+        balances = {year: vacation_pay}
+
+        def _balance_for(month: int):
+            vacation_year = vacation_year_of(_dt.date(year, month, 1), user)
+            if vacation_year not in balances:
+                balances[vacation_year] = calculate_vacation_balance(user, vacation_year, session)
+            return balances[vacation_year]
+
         total_sem_days = 0
         total_supplement = 0.0
         for m in months:
@@ -1418,7 +1433,14 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
             # Resolved centrally so this view, the personal month view and the
             # payslip agree on the amount and on which month a variable lump
             # payout lands in.
-            supplement = vacation_supplement_for_month(vacation_pay, user, m.get("month", 0), sem_days)
+            month_number = m.get("month", 0)
+            supplement = vacation_supplement_for_month(
+                _balance_for(month_number) if month_number else vacation_pay,
+                user,
+                month_number,
+                sem_days,
+                year,
+            )
             m["vacation_supplement"] = supplement["total"]
             m["vacation_supplement_parts"] = supplement
             total_sem_days += sem_days

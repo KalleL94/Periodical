@@ -23,6 +23,7 @@ from app.core.schedule.vacation import (
     calculate_vacation_balance,
     is_variable_lump_month,
     vacation_supplement_for_month,
+    vacation_year_of,
 )
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
@@ -63,10 +64,13 @@ def _vacation_supplement(db: Session, user: User | None, year: int, month: int, 
     if user is None:
         return empty
     try:
-        if not days and not is_variable_lump_month(user, month):
+        if not days and not is_variable_lump_month(user, month, year):
             return empty
-        balance = calculate_vacation_balance(user, year, db)
-        return vacation_supplement_for_month(balance, user, month, days)
+        # A month before the break belongs to the previous vacation year, so the
+        # calendar year would fetch the wrong balance entirely.
+        vacation_year = vacation_year_of(date(year, month, 1), user)
+        balance = calculate_vacation_balance(user, vacation_year, db)
+        return vacation_supplement_for_month(balance, user, month, days, year)
     except Exception:
         logger.warning("Semestertillägg kunde inte beräknas för user_id=%s", user.id, exc_info=True)
         return empty

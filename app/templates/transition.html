@@ -194,9 +194,20 @@
                 {% set vp = preview.consultant_employer.vacation_payout %}
                 <div class="transition-breakdown">
                     <p class="transition-breakdown__label">{{ t.transition_vacation_payout_label.replace('{days}', vp.vacation_days|string) }}</p>
+                    <p class="form-hint">{{ t.transition_rule_mixed if vp.rule == 'mixed' else (t.transition_rule_procent if vp.rule == 'procent' else t.transition_rule_sammalone) }}</p>
 
+                    {# Years on different rules have no shared summary: a base component
+                       label naming one rule would sit over a figure containing both. The
+                       per-year rows below are the breakdown in that case. #}
+                    {% if vp.rule == 'mixed' %}
+                    {% elif vp.rule == 'procent' %}
                     <div class="transition-row">
-                        <span>{{ t.transition_base_component.replace('{factor}', "%.4f"|format(1 + vp.supplement_pct)) }}</span>
+                        <span>{{ t.transition_base_component_pct }}</span>
+                        <span>{{ "{:,.0f}".format(vp.base_payout).replace(",", "\u00a0") }} kr</span>
+                    </div>
+                    {% else %}
+                    <div class="transition-row">
+                        <span>{{ t.transition_base_component.replace('{pct}', "%.2f%%"|format((vp.payout_pct + vp.supplement_pct) * 100)) }}</span>
                         <span>{{ "{:,.0f}".format(vp.base_payout).replace(",", "\u00a0") }} kr</span>
                     </div>
 
@@ -209,6 +220,20 @@
                     </div>
                     {% else %}
                     <p class="transition-note">{{ t.transition_variable_missing_note }}</p>
+                    {% endif %}
+                    {% endif %}
+
+                    {% if vp.years|length > 1 or vp.rule == 'mixed' %}
+                    <p class="transition-breakdown__label">{{ t.transition_years_title }}</p>
+                    {% for y in vp.years %}
+                    <div class="transition-row">
+                        <span>
+                            {{ t.transition_year_row.replace('{start}', y.start|string).replace('{end}', y.end|string) }}
+                            <span class="form-hint">{{ t.transition_year_days.replace('{days}', y.days|string).replace('{earned}', y.earned|string) }} &#215; {{ "%.2f"|format(y.per_day) }} kr{% if vp.rule == 'mixed' %}, {{ t.transition_rule_procent if y.rule == 'procent' else t.transition_rule_sammalone }}{% endif %}{% if y.lump_settled and y.rule != 'procent' %}, {{ t.transition_year_lump_settled }}{% endif %}</span>
+                        </span>
+                        <span>{{ "{:,.0f}".format(y.payout).replace(",", "\u00a0") }} kr</span>
+                    </div>
+                    {% endfor %}
                     {% endif %}
 
                     <div class="transition-row transition-row--total">

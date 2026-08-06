@@ -16,6 +16,47 @@ router = APIRouter()
 
 VERSIONS = [
     {
+        "version": "1.5.0",
+        "date": "2026-08-07",
+        "entries": [
+            {
+                "type": "nyhet",
+                "sv": "Övertagssidan kan nu räkna semesterutlösningen enligt båda reglerna i semesterlagen: sammalöneregeln eller procentregeln på 12%. Vilken som gäller beror på konsultbolagets avtal, så du väljer själv, och valet görs per semesterår. Utbetalningen visas uppdelad per intjänandeår, eftersom dagar från olika år kan vara olika mycket värda",
+                "en": "The transition page can now calculate the vacation payout under either rule in the vacation act: the same-pay rule or the 12% percentage rule. Which one applies depends on the consultant employer's agreement, so it is yours to choose, per vacation year. The payout is shown broken down per earning year, since days from different years can be worth different amounts",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Semesterinställningarna gäller nu ett semesterår i taget. Tidigare ändrade du dem för alla år samtidigt, så ett byte av utbetalningsrutin skrev om historiken bakåt. Ett år utan egna inställningar ärver närmaste tidigare år, så du behöver bara ställa in det som faktiskt ändras",
+                "en": "Vacation settings now apply to one vacation year at a time. Before, changing them rewrote every year at once, so switching payout routine reached back through your history. A year without settings of its own inherits the closest earlier year, so you only configure what actually changes",
+            },
+            {
+                "type": "nyhet",
+                "sv": "Den rörliga delens utbetalningsmånad kan sättas till Semesterårets slut, som följer din brytmånad på samma sätt som Semesterårets start redan gjorde. Fälten för engångsutbetalning visas nu bara när du valt att betala den rörliga delen så",
+                "en": "The variable part's payout month can be set to Vacation year end, which tracks your break month the way Vacation year start already did. The lump sum fields now only show when you have chosen to pay the variable part that way",
+            },
+            {
+                "type": "fix",
+                "sv": "Semesterutlösningen vid övertag räknade fel på flera sätt: semestertillägget krympte till en bråkdel av vad det skulle vara, den rörliga delen blev för hög, och alla dagar värderades efter det senaste intjänandeåret även när de tjänats in tidigare. Sista konsultmånadens rörliga lön föll dessutom bort helt, trots att konsultbolaget betalar ut den",
+                "en": "The transition vacation payout was wrong in several ways: the supplement shrank to a fraction of what it should be, the variable part came out too high, and every day was valued at the most recent earning year's rate even when earned earlier. The final consultant month's variable pay also dropped out entirely, even though the consultant employer pays it",
+            },
+            {
+                "type": "fix",
+                "sv": "Semestertillägget för ett kommande semesterår räknades på dagens lön och dagens satser i stället för de som gäller det året. Har du en löneförhöjning eller nya satser inlagda framåt i tiden syns de nu i prognosen",
+                "en": "The vacation supplement for a future vacation year was calculated on today's salary and today's rates instead of the ones that year runs on. A raise or new rates already on record for a later date now show up in the forecast",
+            },
+            {
+                "type": "fix",
+                "sv": "Ett övertag mitt i ett semesterår belastade den nya anställningen med semesterdagar och rörlig lön från konsulttiden. Semesteråret kunde visa minussaldo för ett år den nya arbetsgivaren inte tjänat in något i",
+                "en": "A transition in the middle of a vacation year charged the new employment with vacation days and variable pay from the consultant period. The vacation year could show a negative balance for a year the new employer had earned nothing in",
+            },
+            {
+                "type": "fix",
+                "sv": "Engångsutbetalningen av den rörliga delen var en fast procent oavsett hur många semesterdagar året gav, så ett delår betalades som om det haft fulla 25 dagar. Den räknas nu fram ur årets egna dagar. Väljer du en månad som ligger före brytmånaden betalas den dessutom i rätt år, inte ett år för tidigt",
+                "en": "The lump sum for the variable part was a flat percentage no matter how many vacation days the year gave, so a part year was paid as if it had a full 25 days. It is now derived from the year's own days. Picking a month that falls before the break month also pays it in the right year now, rather than a year early",
+            },
+        ],
+    },
+    {
         "version": "1.4.0",
         "date": "2026-08-05",
         "entries": [
