@@ -538,17 +538,15 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
         off_dates=off_dates,
     )
 
-    # Calculate vacation pay (semestertillägg) with per-user rates
-    from app.core.rates import get_user_rates
-
-    user_rates = get_user_rates(user)
+    # Calculate vacation pay (semestertillägg). The rates are resolved inside, against
+    # a date in the vacation year: they are versioned through RateHistory, so reading
+    # them undated would answer with whatever is current instead of what that year runs on.
     pay = calculate_vacation_pay(
         user=user,
         entitled_days=entitled_days,
         earning_start=earning_start,
         earning_end=earning_end,
         db=db,
-        vacation_rates=user_rates["vacation"],
     )
 
     # Advance vacation: ICA tops up to the full quota in the first direct-employment year.
@@ -689,7 +687,19 @@ def calculate_vacation_pay(
     # Fixed supplement: 0.8% of monthly salary per vacation day (customizable).
     # A flat amount configured on the user wins: some employers pay a fixed krona
     # amount per vacation day rather than a percentage of the salary.
-    vac = vacation_rates or {"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046}
+    # Rates are versioned through RateHistory, so they are read for the same date the
+    # salary was: a year running on rates set at a transition must not be priced with
+    # the ones that happen to be current today. An explicit argument still wins.
+    if vacation_rates is None:
+        from app.core.rates import DEFAULT_VACATION_RATES, get_user_rates
+
+        try:
+            vacation_rates = get_user_rates(user, session=db, effective_date=wage_date).get("vacation")
+        except Exception:
+            vacation_rates = None
+        vacation_rates = vacation_rates or DEFAULT_VACATION_RATES
+
+    vac = vacation_rates
     settings = vacation_settings_for_year(user, vacation_year)
     flat = settings["fixed_per_day"]
     fixed_per_day = round(float(flat), 2) if flat else round(monthly_salary * vac["fixed_pct"], 2)

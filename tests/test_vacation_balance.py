@@ -593,6 +593,30 @@ class TestCalculateVacationPay:
         # Half the entitlement, same lump: the rule is not per day.
         assert _pay(13)["variable_lump_total"] == 2400.0
 
+    def test_supplement_uses_the_rates_in_force_during_the_vacation_year(self, test_db):
+        """Rates are versioned through RateHistory, so a year running on rates opened at
+        a transition must not be priced with whatever is current on the user row."""
+        from app.core.rates import add_new_rates
+
+        user = _make_user(test_db, person_id=1, wage=30000)
+        user.custom_rates = {"vacation": {"fixed_pct": 0.004, "variable_pct": 0.0, "payout_pct": 0.046}}
+        test_db.commit()
+        # Empty rates from 2026-12-01 mean "back to the agreement's defaults".
+        add_new_rates(test_db, user.id, {}, datetime.date(2026, 12, 1))
+
+        pay = calculate_vacation_pay(
+            user=user,
+            entitled_days=25,
+            # Earning year 2027/28 feeds vacation year 2028, well past the rate change.
+            earning_start=datetime.date(2027, 4, 1),
+            earning_end=datetime.date(2028, 3, 31),
+            db=test_db,
+        )
+
+        # 0.8% of 30000, not the 0.4% still sitting on the user row.
+        assert pay["fixed_pct"] == 0.008
+        assert pay["fixed_per_day"] == 240.0
+
     def test_supplement_uses_the_salary_in_force_during_the_vacation_year(self, test_db):
         """Semesterlagen 16 a bases the supplement on the salary current when the
         vacation is taken, so a future year uses the raise already on record rather
