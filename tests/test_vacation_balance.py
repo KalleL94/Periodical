@@ -29,7 +29,7 @@ from app.core.schedule.vacation import (
     resolve_vacation_year,
 )
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, User, UserRole
+from app.database.database import Absence, AbsenceType, ConsultantSalaryType, User, UserRole
 
 
 def _make_user(db, **kwargs):
@@ -317,6 +317,44 @@ class TestCalculateVacationBalanceIntegration:
         assert balance["projection"]["days_to_save"] == 5
         assert balance["projection"]["days_to_pay_out"] == 20
         assert "supplement_per_day" in balance["pay"]
+
+    def test_days_taken_before_a_transition_do_not_charge_the_direct_employment(self, rotation_session):
+        # A transition mid vacation year splits it between two employers. Days taken
+        # before it came out of the consultant employer's quota and were deducted from
+        # its final payout, so charging them here too leaves a negative balance for a
+        # year the direct employment earned nothing in.
+        from app.database.database import EmploymentTransition
+
+        user = rotation_session.query(User).filter(User.id == 1).first()
+        user.vacation_year_start_month = 4
+        user.vacation_days_per_year = 25
+        user.employment_start_date = datetime.date(2025, 10, 1)
+        user.vacation = {}
+        user.vacation_saved = {}
+        # Four days taken in June 2026, while still a consultant.
+        for day in range(15, 19):
+            rotation_session.add(
+                Absence(user_id=user.id, date=datetime.date(2026, 6, day), absence_type=AbsenceType.VACATION)
+            )
+        rotation_session.add(
+            EmploymentTransition(
+                user_id=user.id,
+                transition_date=datetime.date(2026, 12, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        rotation_session.commit()
+        rotation_session.refresh(user)
+
+        balance = calculate_vacation_balance(user, 2026, rotation_session)
+
+        # Earning year 2025/26 predates the transition, so the direct employment earned
+        # nothing for this vacation year, and nothing was taken from it either.
+        assert balance["entitled_days"] == 0
+        assert balance["used_days"] == 0
+        assert balance["remaining_days"] == 0
 
     def test_past_year_is_auto_closed(self, rotation_session):
         user = rotation_session.query(User).filter(User.id == 1).first()

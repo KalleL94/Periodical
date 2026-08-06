@@ -520,10 +520,18 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
 
     transition = getattr(user, "employment_transition", None)
 
-    # Count used days in this vacation year
+    # Count used days in this vacation year. A transition mid-year splits it between two
+    # employers: days taken before the transition came out of the consultant employer's
+    # quota and were already deducted from its final payout, so counting them here would
+    # charge them twice and leave the direct employment's balance negative. This is the
+    # same boundary entitled_days applies above.
+    used_from = year_start
+    if transition and transition.transition_date > year_start:
+        used_from = transition.transition_date
+
     used = count_vacation_days_used(
         user_id=user.id,
-        year_start=year_start,
+        year_start=used_from,
         year_end=year_end,
         db=db,
         vacation_json=user.vacation,
