@@ -696,6 +696,27 @@ form[data-override-form] input[name="reason"] { width: min(100%, 11rem); }
   text-decoration: line-through;
 }
 
+/* Key to the cell states above. The swatches have to keep matching them, so they
+   are declared here next to the states rather than in a page's own style block. */
+.vac-legend {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.vac-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+.vac-swatch-vacation { background: var(--accent); }
+.vac-swatch-parental { background: var(--blue); }
+.vac-swatch-off { background: var(--text); opacity: 0.35; }
+
 
 @media (pointer: coarse), (max-width: 760px) {
   .vacation-day-calendar { overflow-x: auto; }

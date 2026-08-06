@@ -193,22 +193,26 @@ def get_vacation_year_boundaries(reference_year: int, start_month: int) -> tuple
     return year_start, year_end
 
 
-def _count_weekdays_in_vacation_weeks(
+def _vacation_dates_in_weeks(
     weeks: list[int],
     iso_year: int,
     period_start: datetime.date,
     period_end: datetime.date,
     off_dates: set[datetime.date] | None = None,
-) -> int:
+) -> set[datetime.date]:
     """
-    Count vacation days consumed by the given ISO weeks within [period_start, period_end].
+    The dates consumed by the given ISO weeks within [period_start, period_end].
+
+    Returns the dates rather than a count so callers can tell whether a day-level
+    vacation record falls on a day a vacation week already consumed; counting both
+    sources separately would charge that day twice.
 
     When off_dates is provided, a week consumes only the days the employee was actually
     scheduled to work (all seven weekdays minus OFF-shift days), so week-based vacation is
     counted the same way as day-level vacation. Without off_dates it falls back to a flat
     Mon-Fri (5 days/week).
     """
-    count = 0
+    dates: set[datetime.date] = set()
     # With a known schedule, consider all 7 days and drop the OFF ones; otherwise Mon-Fri.
     day_range = range(1, 8) if off_dates is not None else range(1, 6)
     for week in weeks:
@@ -221,8 +225,8 @@ def _count_weekdays_in_vacation_weeks(
                 continue
             if off_dates is not None and d in off_dates:
                 continue
-            count += 1
-    return count
+            dates.add(d)
+    return dates
 
 
 def _scheduled_off_dates(user, start: datetime.date, end: datetime.date) -> set[datetime.date]:
@@ -269,8 +273,8 @@ def count_vacation_days_used(
 
     vacation_json = vacation_json or {}
 
-    # Count weekdays from week-based vacation
-    week_based = 0
+    # Collect the dates covered by week-based vacation
+    week_dates: set[datetime.date] = set()
     # The vacation year may span two calendar years, so check both
     calendar_years = set()
     d = year_start
@@ -285,7 +289,8 @@ def count_vacation_days_used(
     for cal_year in calendar_years:
         weeks = vacation_json.get(str(cal_year), []) or []
         if weeks:
-            week_based += _count_weekdays_in_vacation_weeks(weeks, cal_year, year_start, year_end, off_dates)
+            week_dates |= _vacation_dates_in_weeks(weeks, cal_year, year_start, year_end, off_dates)
+    week_based = len(week_dates)
 
     # Count day-level vacation from absences (exclude OFF-shift days)
     absences = (
@@ -300,10 +305,15 @@ def count_vacation_days_used(
     )
     # A VACATION day marked counts_as_vacation_day=False keeps its SEM shift on the
     # schedule but does not consume a vacation day, so it is excluded here too.
+    # A date a vacation week already covers is skipped as well: the vacation page
+    # offers both the week picker and the day calendar, so the same day can be
+    # recorded twice, and it must still cost the employee a single day.
     day_level = sum(
         1
         for a in absences
-        if (off_dates is None or a.date not in off_dates) and getattr(a, "counts_as_vacation_day", True)
+        if (off_dates is None or a.date not in off_dates)
+        and a.date not in week_dates
+        and getattr(a, "counts_as_vacation_day", True)
     )
 
     return {
@@ -567,8 +577,14 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
         # Year has ended — check if already closed or auto-close
         if year_key in vacation_saved:
             closed = vacation_saved[year_key]
-        else:
+        elif user.employment_start_date and user.employment_start_date <= year_end:
             closed = close_vacation_year(user, target_year, remaining_own, pay, db)
+        # A year the employee was not around for is never closed. The close writes
+        # to the database, and every view that reads a balance reaches it on a GET,
+        # so without this a user browsing back through past years would mint five
+        # saved days plus a payout for each one — and a user with no employment
+        # start date at all (who falls back to the full quota above) would do it
+        # for every year requested.
     else:
         # Year is open — show projection of what will happen at year-end
         monthly_salary = pay.get("monthly_salary", 0)
@@ -880,6 +896,19 @@ def parse_date_list(raw: str) -> set[datetime.date]:
 
 def is_valid_vacation_year(year: int) -> bool:
     return 2020 <= year <= 2100
+
+
+def resolve_vacation_year(year: int | None) -> int:
+    """The vacation year a request asked for, falling back to the current one.
+
+    The year arrives as a query parameter, and an out-of-range one is worth
+    rejecting before it reaches a balance: the boundaries are built with
+    datetime.date, which raises on a year like 99999, and every balance walks a
+    full year of shifts plus twelve months of summaries to answer.
+    """
+    from app.core.utils import get_today
+
+    return year if year is not None and is_valid_vacation_year(year) else get_today().year
 
 
 def _commit(db) -> None:

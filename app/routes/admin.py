@@ -12,7 +12,6 @@ from app.auth.auth import get_admin_user
 from app.core.schedule import clear_schedule_cache, settings, tax_brackets
 from app.core.schedule import vacation as vacation_core
 from app.core.schedule.vacation import calculate_vacation_balance
-from app.core.utils import get_today
 from app.database.database import Absence, AbsenceType, RotationEra, User, get_db
 from app.routes.shared import render
 
@@ -441,8 +440,7 @@ async def admin_vacation(
     db: Session = Depends(get_db),
 ):
     """Admin: team vacation overview with heatmap and balance table."""
-    if year is None:
-        year = get_today().year
+    year = vacation_core.resolve_vacation_year(year)
 
     users = db.query(User).filter(User.is_active == 1, User.id != 0).order_by(User.person_id).all()
 
@@ -497,8 +495,7 @@ async def admin_vacation_user(
     db: Session = Depends(get_db),
 ):
     """Admin: edit vacation for a specific user."""
-    if year is None:
-        year = get_today().year
+    year = vacation_core.resolve_vacation_year(year)
 
     edit_user = db.query(User).filter(User.id == user_id).first()
     if not edit_user:

@@ -450,8 +450,7 @@ async def vacation_page(
     db: Session = Depends(get_db),
 ):
     """Show vacation management page."""
-    if year is None:
-        year = get_today().year
+    year = vacation_core.resolve_vacation_year(year)
 
     return render(
         "vacation.html",
