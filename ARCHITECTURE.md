@@ -30,7 +30,8 @@ pip install -r requirements.txt
 ```bash
 python migrations/migrate_to_db.py
 ```
-Creates SQLite database, imports persons from `data/persons.json`, and creates default accounts.
+Creates a SQLite database and seeds one account per rotation position plus an admin.
+Deletes the configured database first, so it is for a new installation only.
 
 **Schema updates (existing database):**
 ```bash
@@ -214,7 +215,6 @@ All business logic is data-driven:
 - `data/rotation.json` - 10-week rotation pattern
 - `data/shift_types.json` - Shift definitions (N1/N2/N3/OFF/SEM)
 - `data/settings.json` - Rotation start date, default salary
-- `data/persons.json` - Team members, wages, vacation
 - `data/ob_rules.json` - Base OB rules (evening, night, weekend)
 - `data/tax_brackets.json` - Swedish tax brackets
 
@@ -288,18 +288,9 @@ pytest tests/test_ob_calculation.py -v
 Edit `rotation_start_date` in `data/settings.json` (ISO format "YYYY-MM-DD")
 
 **Add vacation for a person:**
-Edit `data/persons.json`:
-```json
-{
-  "id": 1,
-  "name": "Person 1",
-  "wage": 37000,
-  "vacation": {
-    "2026": [25, 26, 27],
-    "2027": [30, 31]
-  }
-}
-```
+Use `/profile/vacation`, or `/admin/vacation/<user_id>` on someone else's behalf.
+It is stored in `users.vacation` as ISO week numbers per year,
+`{"2026": [25, 26, 27]}`, alongside day-level vacation held as VACATION absences.
 
 **Modify OB rules:**
 - Static rules: Edit `data/ob_rules.json`

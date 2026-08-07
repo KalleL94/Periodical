@@ -59,12 +59,3 @@ class TaxBracket(BaseModel):
     lon_fran: float
     lon_till: float | None = None
     prel_skatt: float
-
-
-class Person(BaseModel):
-    """Person/employee definition with salary and vacation information."""
-
-    id: int
-    name: str
-    wage: int
-    vacation: dict[str, list[int]] | None = None  # key is year, value is list of weeks

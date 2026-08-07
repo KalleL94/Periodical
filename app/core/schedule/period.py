@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from datetime import time as dt_time
 from typing import NamedTuple
 
-from app.core.constants import PERSON_IDS
+from app.core.constants import MAX_PERSONS, PERSON_IDS, placeholder_person_name
 from app.core.oncall import _cached_oncall_rules as get_oncall_rules
 from app.core.oncall import calculate_oncall_pay, calculate_oncall_pay_for_period
-from app.core.storage import load_persons
 from app.core.time_utils import parse_ot_times
 
 from .core import (
@@ -33,7 +32,6 @@ from .wages import get_all_user_wages
 class DayLookupContext:
     """Pre-fetched period-wide data, static across all days in a schedule generation call."""
 
-    persons: list
     vacation_dates: dict
     parental_dates: dict
     ot_shift_map: dict | None
@@ -84,7 +82,6 @@ def build_week_data(
     monday = datetime.date.fromisocalendar(year, week, 1)
     sunday = monday + datetime.timedelta(days=6)
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
-    persons = load_persons()
 
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
@@ -121,7 +118,6 @@ def build_week_data(
     )
 
     ctx = DayLookupContext(
-        persons=persons,
         vacation_dates=vacation_dates,
         parental_dates=parental_dates,
         ot_shift_map=ot_shift_map,
@@ -297,11 +293,9 @@ def generate_period_data(
     )
 
     # Generera dagdata
-    persons = load_persons()
     settings = get_settings()
 
     ctx = DayLookupContext(
-        persons=persons,
         vacation_dates=vacation_dates,
         parental_dates=parental_dates,
         ot_shift_map=ot_shift_map,
@@ -1054,7 +1048,6 @@ def build_substitute_month_summaries(
     if exclude_linked_attributed and session:
         from app.database.database import User
 
-        persons = load_persons()
         for sub in substitutes:
             if not sub.user_id:
                 continue
@@ -1063,7 +1056,7 @@ def build_substitute_month_summaries(
                 continue
             linked_user_names[sub.id] = user.name
             position = user.rotation_person_id
-            if not (1 <= position <= len(persons)):
+            if not (1 <= position <= MAX_PERSONS):
                 continue
             current = start_date
             while current <= end_date:
@@ -1073,7 +1066,7 @@ def build_substitute_month_summaries(
                 # shift or overtime, with no absence overriding it.
                 counted = key in ot_by_date or (entry is not None and entry.shift_code in ("N1", "N2", "N3"))
                 if counted and key not in absence_by_date:
-                    _, attributed = _resolve_day_person(session, position, current, persons, None)
+                    _, attributed = _resolve_day_person(session, position, current, None)
                     if attributed:
                         excluded_days.add(key)
                 current += datetime.timedelta(days=1)
@@ -1499,9 +1492,7 @@ def _build_person_day_basic(
     rotation_length = get_rotation_length_for_date(date)
 
     # Get person name via PersonHistory and whether the date precedes employment.
-    person_name, show_off_before_employment = _resolve_day_person(
-        session, person_id, date, ctx.persons, employment_start
-    )
+    person_name, show_off_before_employment = _resolve_day_person(session, person_id, date, employment_start)
 
     # If date is before current person's employment, show OFF - unless a linked
     # substitute has activity on the date (issue #290): same injection layer as
@@ -1582,7 +1573,6 @@ def _resolve_day_person(
     session,
     person_id: int,
     current_day: datetime.date,
-    persons,
     employment_start: datetime.date | None,
 ) -> tuple[str, bool]:
     """Resolve (person_name, show_off_before_employment) for a position on a date.
@@ -1590,7 +1580,7 @@ def _resolve_day_person(
     Uses PersonHistory to find who held the position on the date, falling back to the current
     holder, and flags before-employment when the date precedes their start (or the viewer's).
     """
-    person_name = persons[person_id - 1].name  # Default fallback
+    person_name = placeholder_person_name(person_id)  # Default fallback
     show_off_before_employment = False
 
     if session:
@@ -1907,7 +1897,6 @@ def _populate_single_person_day(
     vacation_dates = ctx.vacation_dates
     combined_ob_rules = ctx.combined_ob_rules
     user_wages = ctx.user_wages
-    persons = ctx.persons
     settings = ctx.settings
     ot_shift_map = ctx.ot_shift_map
     absence_map = ctx.absence_map
@@ -1920,9 +1909,7 @@ def _populate_single_person_day(
     shift_types = get_shift_types()
 
     # Get person name via PersonHistory (shows correct person for this specific date)
-    person_name, show_off_before_employment = _resolve_day_person(
-        session, person_id, current_day, persons, employment_start
-    )
+    person_name, show_off_before_employment = _resolve_day_person(session, person_id, current_day, employment_start)
 
     # If date is before current person's employment, show OFF - unless a linked
     # substitute has activity on the date (issue #290), in which case the

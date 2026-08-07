@@ -64,7 +64,6 @@ def validate_required_data_files():
         "data/shift_types.json",
         "data/rotation.json",
         "data/settings.json",
-        "data/persons.json",
         "data/ob_rules.json",
         "data/oncall_rules.json",
         # The release notes, and with them the version /health and the footer report

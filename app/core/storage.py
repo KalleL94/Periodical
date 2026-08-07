@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.core.models import ObRule, OnCallRule, Person, Rotation, Settings, ShiftType, TaxBracket
+from app.core.models import ObRule, OnCallRule, Rotation, Settings, ShiftType, TaxBracket
 
 logger = logging.getLogger(__name__)
 
@@ -133,12 +133,6 @@ def calculate_tax_bracket(income: float, tax_brackets: list[TaxBracket]) -> floa
         if bracket.lon_till is None or income <= bracket.lon_till:
             return bracket.prel_skatt
     return 0.0  # Default if no bracket matches
-
-
-@cache
-def load_persons() -> list[Person]:
-    """Load person definitions from data file."""
-    return _load_list("persons.json", Person, "persons")
 
 
 # Bounded rather than @cache: the year reaches this from user data (a payment year

@@ -152,7 +152,6 @@ This ensures:
 
 All business logic is data-driven via JSON files in `data/`:
 
-- `persons.json` - Team members, wages, vacation weeks
 - `rotation.json` - 10-week rotation pattern
 - `shift_types.json` - Shift definitions (N1/N2/N3/OFF/SEM/OC/OT)
 - `settings.json` - Rotation start date, default salary

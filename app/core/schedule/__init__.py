@@ -4,7 +4,7 @@ Schedule module - schemahantering och löneberäkningar.
 Exporterar alla publika funktioner för bakåtkompatibilitet.
 """
 
-from app.core.storage import load_ob_rules, load_persons, load_settings, load_tax_brackets
+from app.core.storage import load_ob_rules, load_settings, load_tax_brackets
 
 from .core import (
     calculate_shift_hours,
@@ -66,7 +66,6 @@ from .wages import (
 settings = load_settings()
 tax_brackets = load_tax_brackets()
 ob_rules = load_ob_rules()
-persons = load_persons()
 rotation_start_date = get_rotation_start_date()
 rotation = get_rotation()
 
@@ -132,7 +131,6 @@ __all__ = [
     "settings",
     "tax_brackets",
     "ob_rules",
-    "persons",
     "rotation",
     "rotation_start_date",
     "_cached_special_rules",

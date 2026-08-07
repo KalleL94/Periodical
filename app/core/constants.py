@@ -14,6 +14,17 @@ MAX_PERSONS: Final[int] = 10
 PERSON_IDS: Final[tuple[int, ...]] = tuple(range(1, MAX_PERSONS + 1))
 
 
+def placeholder_person_name(person_id: int) -> str:
+    """Display name for a rotation position with nobody resolvable behind it.
+
+    Reached when there is no session to ask and no PersonHistory or User row for
+    the position. This used to read data/persons.json, a second roster kept
+    beside the users table; after that file was anonymised it held exactly this
+    string, so the file was a lookup that could only ever return its own index.
+    """
+    return f"Person {person_id}"
+
+
 # ==========================
 # Skiftkoder
 # ==========================
@@ -60,7 +71,7 @@ WEEKDAY_NAMES: Final[tuple[str, ...]] = (
 # Semester / frånvaro
 # ==========================
 
-#: Standardkod för semester i persons.json och i schemalogiken.
+#: Standardkod för semester i schemalogiken.
 VACATION_CODE: Final[str] = "SEM"
 
 # ==========================
