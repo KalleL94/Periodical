@@ -26,8 +26,8 @@ fi
 TAG="$MODE"
 
 # The tag must match the version in the repo. A pull request adds its release
-# note to the topmost VERSIONS block while that version is untagged, and only
-# bumps the version when the topmost block has already been released. This
+# note to the topmost block in data/releases.json while that version is untagged,
+# and only bumps the version when the topmost block has already been released. This
 # check is what makes that convention hold: it fails both when the version was
 # bumped without a release and when a release forgot the bump.
 #
@@ -36,12 +36,12 @@ TAG="$MODE"
 # and then tag main without the release on it.
 git fetch -q origin main
 REPO_VERSION=$(git show origin/main:pyproject.toml | grep -m1 '^version = ' | cut -d'"' -f2)
-APP_VERSION=$(git show origin/main:app/routes/changelog.py | grep -m1 '"version":' | cut -d'"' -f4)
+APP_VERSION=$(git show origin/main:data/releases.json | grep -m1 '"version":' | cut -d'"' -f4)
 if [ "$TAG" != "v$REPO_VERSION" ] || [ "$REPO_VERSION" != "$APP_VERSION" ]; then
     echo "Error: version mismatch on origin/main." >&2
     echo "  tag:                    $TAG" >&2
     echo "  pyproject.toml:         v$REPO_VERSION" >&2
-    echo "  changelog.py VERSIONS:  v$APP_VERSION  (this one is what the app displays)" >&2
+    echo "  data/releases.json:     v$APP_VERSION  (this one is what the app displays)" >&2
     echo "  If the release is still on a branch, merge it before tagging." >&2
     exit 1
 fi

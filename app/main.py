@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.csrf_middleware import CSRFMiddleware
 from app.core.logging_config import get_logger, setup_logging
+from app.core.news import get_latest_version
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.sentry_config import init_sentry
 from app.database.database import create_tables, get_db
@@ -66,6 +67,8 @@ def validate_required_data_files():
         "data/persons.json",
         "data/ob_rules.json",
         "data/oncall_rules.json",
+        # The release notes, and with them the version /health and the footer report
+        "data/releases.json",
     ]
 
     for file_path in required_files:
@@ -123,10 +126,9 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down")
 
 
-from app.routes.changelog import VERSIONS as _VERSIONS  # noqa: E402
 from app.routes.shared import templates as _templates  # noqa: E402
 
-_templates.env.globals["app_version"] = _VERSIONS[0]["version"]
+_templates.env.globals["app_version"] = get_latest_version()
 
 
 def _compute_static_version() -> str:
@@ -147,7 +149,7 @@ _templates.env.globals["static_version"] = _compute_static_version()
 app = FastAPI(
     title="Periodical",
     description="Employee shift scheduling and OB pay calculation system",
-    version=_VERSIONS[0]["version"],
+    version=get_latest_version(),
     lifespan=lifespan,
 )
 
@@ -347,10 +349,6 @@ app.include_router(transition_router)
 app.include_router(changelog_router)
 
 
-def _app_version() -> str:
-    return _VERSIONS[0]["version"]
-
-
 @app.get("/health", tags=["health"])
 async def health_check(db: Session = Depends(get_db)):
     """
@@ -368,7 +366,7 @@ async def health_check(db: Session = Depends(get_db)):
             content={
                 "status": "healthy",
                 "service": "periodical",
-                "version": _app_version(),
+                "version": get_latest_version(),
                 "database": "connected",
             },
         )

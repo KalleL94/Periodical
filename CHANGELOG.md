@@ -7,18 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries here are written in English; this file documents the project for
 developers. User-facing release notes are separate and bilingual: they live in
-`VERSIONS` in `app/routes/changelog.py`, which renders in the language the user
+`data/releases.json`, which renders in the language the user
 has selected. Add both when a change is worth telling users about.
 
 A version is a release, not a pull request. While the topmost version here has
 no git tag yet, add your entry to it instead of starting a new one; the version
 number is bumped by the pull request that follows a release, not by every
 change. `scripts/release.sh` refuses to tag when the tag, `pyproject.toml` and
-`VERSIONS` disagree.
+`data/releases.json` disagree.
 
 A version number exists so a user can match what they see to a release note, so
 a change with no user-facing behaviour does not get one. Those land under
-`## [Unreleased]` here with no bump and no `VERSIONS` entry, and ship either with
+`## [Unreleased]` here with no bump and no `data/releases.json` entry, and ship either with
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
@@ -31,8 +31,10 @@ something to tell users about, whose pull request renames the heading.
 - `__all__` in `app/core/schedule/__init__.py` listed `"rotationrotation_start_date"`, two names run together, so `from app.core.schedule import *` raised `AttributeError`. The names are `rotation` and `rotation_start_date`, and both are exported now
 
 ### Changed
+- The user-facing release notes moved from a 1200-line `VERSIONS` literal inside `app/routes/changelog.py` to `data/releases.json`, loaded by `app/core/news.py` like every other file in `data/` and validated at startup with them. A route module was the place both `news.py` and `main.py` reached into for the application's version number, which is what forced the import in `news.py` to be function-local to break the resulting cycle; that hack is gone, and `main.py` imports the version with its other imports rather than after the lifespan handler. `scripts/release.sh` reads the version from the JSON now, the same `grep`/`cut` against a different path. `app/routes/changelog.py` is 24 lines and holds only its route
 - Passwords are hashed by calling `bcrypt` directly instead of through passlib's `CryptContext`. The app has only ever used one scheme, and passlib has been unmaintained since 2020 to the point of logging a traceback on every import, reading a `bcrypt.__about__` attribute that no longer exists. Same `$2b$` format at the same cost factor 12, so stored hashes keep verifying and nobody has to reset a password; `tests/test_auth_primitives.py` pins a passlib-written hash as a literal to hold that. A hash bcrypt cannot parse is now a failed login rather than a 500, which is what a corrupt value in the column used to produce
 - Access tokens are signed and validated with `hmac` from the standard library instead of python-jose, which pulled in ecdsa, rsa, pyasn1 and six to serve one symmetric algorithm with one key, and whose algorithm-confusion advisories were all in the asymmetric and JWE paths this app never used. The wire format is unchanged, so sessions issued before the swap keep working and the deploy logs nobody out; a jose-issued token is pinned as a literal in the tests. The HS256 header is a constant rather than something read from the token, which is what makes `"alg": "none"` and HS256/RS256 confusion impossible here rather than merely checked for, and `exp`, the signature and the `sub` type are all validated as jose validated them. `exp` is computed with `calendar.timegm` because `utcnow()` returns naive UTC and `datetime.timestamp()` would read it as local time, shifting every expiry by the Stockholm offset
+- `period.py`, `summary.py`, `cowork.py` and `ob.py` each kept their own module-level lazy singleton over the same config loaders, five copies of `_x = None; if _x is None: _x = load_x()`. The loaders carry `@cache` now and the copies are gone. `load_tax_table` drops its hand-rolled per-year dict for `lru_cache`, bounded rather than unbounded because the year arrives from user data
 - Schema migrations are one script instead of one file per change. `migrations/migrate_schema.py` reads the SQLAlchemy models, creates the tables the database is missing and adds the columns an existing table is missing, deriving the DDL (including the `NOT NULL DEFAULT` that SQLite requires to add a column to a table with rows in it) from the model itself. It is idempotent, takes `--dry-run`, and targets whatever `DATABASE_URL` points at, so it can run on every deploy rather than being remembered. Adding a column to a model no longer needs a migration file at all. A NOT NULL column whose model default cannot supply a value for existing rows stops the run instead of guessing one. Migrations that rewrite existing rows are still one-off scripts in their own file, since only their author knows what the rewrite means
 
 ### Removed

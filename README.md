@@ -159,6 +159,7 @@ All business logic is data-driven via JSON files in `data/`:
 - `ob_rules.json` - Base OB rules (evening, night, weekend)
 - `oncall_rules.json` - On-call pay calculation rules
 - `tax_brackets.json` - Swedish tax brackets
+- `releases.json` - Bilingual user-facing release notes, newest first; the top entry is the authoritative version
 
 ## Project Structure
 
@@ -513,8 +514,8 @@ git tag
 git log --oneline --decorate
 ```
 
-The authoritative version is the first entry of `VERSIONS` in
-[app/routes/changelog.py](app/routes/changelog.py); it is what `/health` reports
+The authoritative version is the first entry of
+[data/releases.json](data/releases.json); it is what `/health` reports
 and what the in-app changelog page shows. Release notes live in
 [CHANGELOG.md](CHANGELOG.md).
 

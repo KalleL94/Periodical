@@ -14,22 +14,39 @@ counts as unseen -- on the first deploy every user is pointed at the notes once,
 which is the entire reason the feature exists.
 """
 
+import json
+from functools import cache
+from pathlib import Path
+
 from sqlalchemy.orm import Session
 
 from app.database.database import User
 
+RELEASES_PATH = Path("data/releases.json")
+
+
+@cache
+def load_releases() -> list[dict]:
+    """Return the release notes, newest first.
+
+    They used to be a 1200-line ``VERSIONS`` literal inside
+    ``app/routes/changelog.py``, which made a route module the place both this
+    module and ``main.py`` reached into for the application's version number,
+    and forced the import here to be function-local to break the resulting
+    cycle. As data in ``data/`` they are loaded like every other data file, and
+    ``main.py`` validates the JSON at startup alongside the rest.
+
+    Cached: the file is read-only at runtime, edited by a release and shipped.
+    """
+    return json.loads(RELEASES_PATH.read_text(encoding="utf-8"))
+
 
 def get_latest_version() -> str | None:
-    """Return the newest version in the changelog, or None if it is empty.
-
-    Imported lazily: changelog.py imports render() from routes.shared, which is
-    what calls into this module, so a module-level import would be circular.
-    """
-    from app.routes.changelog import VERSIONS
-
-    if not VERSIONS:
+    """Return the newest version in the changelog, or None if it is empty."""
+    releases = load_releases()
+    if not releases:
         return None
-    return VERSIONS[0]["version"]
+    return releases[0]["version"]
 
 
 def has_unseen_news(user: User | None) -> bool:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "periodical"
-# Keep in sync with the first entry of VERSIONS in app/routes/changelog.py,
+# Keep in sync with the first entry of data/releases.json,
 # which is the authoritative version and what /health reports.
 version = "1.5.0"
 description = "Rotation scheduling and OB pay calculation"
@@ -61,7 +61,6 @@ ignore = ["B008"]  # Allow Depends() in function defaults (FastAPI pattern)
 
 [tool.ruff.lint.per-file-ignores]
 "app/core/translations.py" = ["E501"]  # Long strings in translation dicts are intentional
-"app/routes/changelog.py" = ["E501"]  # Long strings in changelog entries are intentional
 
 [tool.ruff.format]
 quote-style = "double"

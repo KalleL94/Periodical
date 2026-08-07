@@ -88,7 +88,7 @@ When creating new versions:
    ./scripts/release.sh --notag     # deploy current main without a tag
    ```
    - Use semantic versioning: `vMAJOR.MINOR.PATCH`
-   - Bump the version in `VERSIONS` in `app/routes/changelog.py` first; that
+   - Bump the version in the first entry of `data/releases.json` first; that
      entry is the authoritative version and what `/health` reports
 
 ### Example Workflow
@@ -134,8 +134,8 @@ cannot drift instead:
 git tag --sort=-creatordate     # every release, newest first
 ```
 
-- **Authoritative version:** the first entry of `VERSIONS` in
-  `app/routes/changelog.py` (what `/health` and the in-app changelog report)
+- **Authoritative version:** the first entry of `data/releases.json`
+  (what `/health` and the in-app changelog report)
 - **Release notes:** [CHANGELOG.md](CHANGELOG.md) and the in-app changelog page
 
 ## System Architecture
