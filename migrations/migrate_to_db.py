@@ -19,8 +19,9 @@ import json
 import sys
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path. This file used to live at the repository root, where
+# its own directory was the project root; from migrations/ it needs one level up.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.auth.auth import get_password_hash
 from app.database.database import Base, SessionLocal, User, UserRole, engine
