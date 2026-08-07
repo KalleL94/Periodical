@@ -48,6 +48,11 @@ include = ["app", "app.*"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# Ruff 0.16 formats Python inside markdown code blocks. Docs use those blocks to show
+# a call argument or a wide dict spread over lines for readability, and reformatting
+# collapses them onto one 120-column line or reads a keyword argument as an
+# assignment. The prose is not compiled; leave it alone.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP"]
