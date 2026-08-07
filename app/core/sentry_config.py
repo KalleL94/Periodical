@@ -110,56 +110,6 @@ def before_send_hook(event, hint):
     return event
 
 
-def capture_exception(error: Exception, context: dict = None):
-    """
-    Manually capture an exception to Sentry with additional context.
-
-    Args:
-        error: Exception to capture
-        context: Additional context to send with the error
-    """
-    try:
-        import sentry_sdk
-
-        if context:
-            with sentry_sdk.push_scope() as scope:
-                for key, value in context.items():
-                    scope.set_context(key, value)
-                sentry_sdk.capture_exception(error)
-        else:
-            sentry_sdk.capture_exception(error)
-
-    except ImportError:
-        # Sentry not installed, just log
-        logger.error(f"Error occurred: {error}", exc_info=True)
-
-
-def capture_message(message: str, level: str = "info", context: dict = None):
-    """
-    Send a message to Sentry.
-
-    Args:
-        message: Message to send
-        level: Severity level (debug, info, warning, error, fatal)
-        context: Additional context
-    """
-    try:
-        import sentry_sdk
-
-        if context:
-            with sentry_sdk.push_scope() as scope:
-                for key, value in context.items():
-                    scope.set_context(key, value)
-                sentry_sdk.capture_message(message, level=level)
-        else:
-            sentry_sdk.capture_message(message, level=level)
-
-    except ImportError:
-        # Sentry not installed, just log
-        log_level = getattr(logging, level.upper(), logging.INFO)
-        logger.log(log_level, message)
-
-
 def set_user_context(user_id: int, username: str = None, email: str = None):
     """
     Set user context for Sentry events.

@@ -133,7 +133,8 @@ __all__ = [
     "tax_brackets",
     "ob_rules",
     "persons",
-    "rotationrotation_start_date",
+    "rotation",
+    "rotation_start_date",
     "_cached_special_rules",
     "_select_ob_rules_for_date",
 ]

@@ -67,8 +67,6 @@ Place the certificate files in `/etc/ssl/certs/` and `/etc/ssl/private/`
 
 #### Step 3: Nginx configuration
 
-See `deployment/nginx-example.conf` for the full configuration.
-
 **Key settings:**
 ```nginx
 # Force HTTPS
@@ -126,8 +124,7 @@ sudo systemctl enable nginx  # Auto-start on boot
 ### Option 2: Traefik as reverse proxy
 
 Traefik is simpler for Docker environments and has built-in Let's Encrypt integration.
-
-See `deployment/traefik.yml` for the Docker Compose configuration.
+Production does not run it; see the Traefik documentation for the static configuration.
 
 **Advantages of Traefik:**
 - ✅ Automatic SSL certificates from Let's Encrypt
@@ -265,19 +262,11 @@ sudo journalctl -u ica-schedule -f  # Logs
 
 ### Option 2: Docker (ALL PLATFORMS)
 
-See `deployment/Dockerfile` and `deployment/docker-compose.yml`
+The root `Dockerfile` and `docker-compose.yml` build the development container.
+There is no production Docker setup; production runs under systemd (Option 1).
 
-**Note:** use the files in the `deployment/` directory, not the root Dockerfile.
-
-**Advantages:**
-- ✅ Consistent environment
-- ✅ Simple deployment
-- ✅ Isolation
-- ✅ Scalable
-
-**Start:**
+**Start the dev container:**
 ```bash
-cd deployment
 docker-compose up -d
 ```
 
@@ -883,9 +872,9 @@ python3 migrations/migrate_to_db.py
 python3 migrations/migrate_add_password_change.py
 ```
 
-**5. Configure nginx:**
+**5. Configure nginx:** write the server block from "Option 1: Nginx as reverse
+proxy" above to `/etc/nginx/sites-available/ica-schedule`, then:
 ```bash
-sudo cp deployment/nginx-example.conf /etc/nginx/sites-available/ica-schedule
 sudo ln -s /etc/nginx/sites-available/ica-schedule /etc/nginx/sites-enabled/
 sudo nginx -t
 ```

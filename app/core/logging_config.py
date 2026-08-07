@@ -204,33 +204,3 @@ def get_logger(name: str) -> logging.Logger:
         Logger instance
     """
     return logging.getLogger(name)
-
-
-# Convenience function for adding extra context to logs
-class LogContext:
-    """
-    Context manager for adding extra fields to log records.
-
-    Usage:
-        with LogContext(user_id=123, action="login"):
-            logger.info("User logged in")
-    """
-
-    def __init__(self, **kwargs):
-        self.extra_fields = kwargs
-        self.old_factory = None
-
-    def __enter__(self):
-        self.old_factory = logging.getLogRecordFactory()
-
-        def record_factory(*args, **kwargs):
-            record = self.old_factory(*args, **kwargs)
-            for key, value in self.extra_fields.items():
-                setattr(record, key, value)
-            return record
-
-        logging.setLogRecordFactory(record_factory)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        logging.setLogRecordFactory(self.old_factory)

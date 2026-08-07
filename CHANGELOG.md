@@ -28,6 +28,16 @@ something to tell users about, whose pull request renames the heading.
 - The deploy shipped the previous release and reported success when a release tag was repointed. `deploy.sh` fetched with `git fetch --tags`, which refuses to move a tag the host already has and says so as a warning rather than an error, so the `git checkout "$TAG"` that follows resolved the stale local tag. The service restarted, the health check passed and the deploy went green with prod still on the old commit. Fetching with `--force` is the whole fix; the warning is easy to miss in a log that is otherwise all pip output
 - `release.sh` read `pyproject.toml` and `changelog.py` from the working tree and then checked out main and tagged that, so it validated one tree and tagged another. Run from an unmerged release branch the check passed against the branch's own bumped version and tagged main without the release on it, producing a deploy of the previous release under the new tag. It now reads both versions from `origin/main` and says to merge first when they do not match
 - Every shell script under `scripts/` except `release.sh` has been mode `100644` since it was added, so a fresh clone leaves them non-executable and `./scripts/dev.sh` fails with "Permission denied". The exec bit is set in git now, not just on whichever working copy someone chmodded
+- `__all__` in `app/core/schedule/__init__.py` listed `"rotationrotation_start_date"`, two names run together, so `from app.core.schedule import *` raised `AttributeError`. The names are `rotation` and `rotation_start_date`, and both are exported now
+
+### Removed
+- `app/core/types.py`: 116 lines of `NewType` aliases and `TypedDict`s (`PersonId`, `DayInfo`, `MonthSummary`, `NavigationDates` and the rest) that no module imported
+- `app/core/config.py`: the OB divisor and time-format constants in it had no users at all, and its one live constant, `DATE_FORMAT_ISO`, was a `strptime` format for a date already in ISO form. The single call site uses `date.fromisoformat` instead
+- Unused constants from `app/core/constants.py`: the per-code `SHIFT_CODE_*` aliases, `SHIFT_CODES`, `OB_CODES`, `OB_CODES_FOR_SUMMARY`, `DAYS_PER_WEEK`, `HOURS_PER_DAY`, `SECONDS_PER_HOUR` and `WEEK_START_WEEKDAY`. `WORK_SHIFT_CODES` and `VACATION_CODE` were the only readers of the aliases and now hold the literals
+- `capture_exception()` and `capture_message()` from `sentry_config.py`, `LogContext` from `logging_config.py`, `log_security_event()` from `request_logging.py`, and the `OvertimeShiftCreate`/`OvertimeShiftResponse` models: no callers, and the Sentry pair only forwarded to the SDK
+- Four templates nothing renders: `admin_rotation.html`, `admin_shift_types.html`, `index.html`, `test_today.html`
+- The Docker, Traefik and nginx files under `deployment/`, plus its README. Production runs under systemd on bare metal, the root `Dockerfile`/`docker-compose.yml` build the dev container, and these described a Traefik deployment on `your-domain.com` that has never existed. `deployment/ica-schedule.service` stays, since that path is real. The nginx server block DEPLOYMENT.md pointed at is spelled out in DEPLOYMENT.md itself
+- `benchmark.sh`: hand-rolled curl timing, referenced by no target, workflow or document
 
 ## [1.4.0] - 2026-08-05
 

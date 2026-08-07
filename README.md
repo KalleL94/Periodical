@@ -184,7 +184,7 @@ Periodical/
 │   │   │   └── holidays_ob.py  # Holiday OB rules
 │   │   ├── calendar_export.py  # ICS calendar generation
 │   │   ├── holidays.py         # Swedish holiday calculations
-│   │   ├── config.py           # Constants and configuration
+│   │   ├── constants.py        # Shared constants
 │   │   ├── logging_config.py   # Structured logging setup
 │   │   ├── sentry_config.py    # Sentry error tracking
 │   │   ├── request_logging.py  # Request/response logging middleware
@@ -204,13 +204,8 @@ Periodical/
 │   │   └── css/                # Modular CSS files (base, calendar, components, layout, navigation, tables)
 │   └── templates/              # Jinja2 HTML templates
 ├── data/                       # JSON configuration files
-├── deployment/                 # Docker, nginx, systemd configs
-│   ├── docker-compose.yml      # Docker deployment
-│   ├── Dockerfile              # Container image
-│   ├── nginx-example.conf      # Nginx reverse proxy config
-│   ├── traefik.yml             # Traefik reverse proxy config
-│   ├── ica-schedule.service    # Systemd service file
-│   └── README.md               # Deployment documentation
+├── deployment/                 # Production configs
+│   └── ica-schedule.service    # Systemd service file
 ├── docs/                       # Additional documentation
 │   ├── CORS.md                 # CORS configuration guide
 │   ├── LOGGING.md              # Logging setup and usage
@@ -269,21 +264,19 @@ sudo cp deployment/ica-schedule.service /etc/systemd/system/
 sudo systemctl enable ica-schedule
 sudo systemctl start ica-schedule
 
-# 5. Setup nginx reverse proxy (see deployment/nginx-example.conf)
-sudo cp deployment/nginx-example.conf /etc/nginx/sites-available/ica-schedule
+# 5. Setup nginx reverse proxy (server block in DEPLOYMENT.md)
 sudo ln -s /etc/nginx/sites-available/ica-schedule /etc/nginx/sites-enabled/
 sudo certbot --nginx -d your-domain.com
 sudo systemctl restart nginx
 ```
 
-### Docker Deployment
+### Docker
+
+The root `Dockerfile` and `docker-compose.yml` build the development container.
+Production runs under systemd, not Docker.
 
 ```bash
-# Build and run with docker-compose
-docker-compose -f deployment/docker-compose.yml up -d
-
-# View logs
-docker-compose -f deployment/docker-compose.yml logs -f
+docker-compose up -d
 ```
 
 ### CI/CD Pipeline

@@ -4,7 +4,6 @@ import datetime
 from functools import cache
 from typing import TYPE_CHECKING
 
-from app.core.config import DATE_FORMAT_ISO
 from app.core.constants import VACATION_CODE, WEEKDAY_NAMES
 from app.core.storage import load_rotation, load_settings, load_shift_types
 from app.database import database as db_module
@@ -30,7 +29,7 @@ def _ensure_loaded() -> None:
         _shift_types = load_shift_types()
         _rotation = load_rotation()
         _settings = load_settings()
-        _rotation_start_date = datetime.datetime.strptime(_settings.rotation_start_date, DATE_FORMAT_ISO).date()
+        _rotation_start_date = datetime.date.fromisoformat(_settings.rotation_start_date)
 
 
 def get_shift_types() -> list["ShiftType"]:
