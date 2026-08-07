@@ -217,7 +217,7 @@
             {% for key, label, default, pct in vac_fields %}
             <div>
                 <label class="rate-vac-label">{{ label }} (std: {{ pct }})</label>
-                <input type="number" step="0.001" name="rate_vac_{{ key }}" min="0" max="1"
+                <input type="number" step="0.0001" name="rate_vac_{{ key }}" min="0" max="1"
                        value="{{ custom_rates.get('vacation', {}).get(key, '') }}"
                        placeholder="{{ default }}"
                        class="input rate-input--full">
