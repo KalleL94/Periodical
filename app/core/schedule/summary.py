@@ -18,23 +18,6 @@ from .wages import (
 
 logger = get_logger(__name__)
 
-_tax_brackets = None
-_persons = None
-
-
-def _get_tax_brackets():
-    global _tax_brackets
-    if _tax_brackets is None:
-        _tax_brackets = load_tax_brackets()
-    return _tax_brackets
-
-
-def _get_persons():
-    global _persons
-    if _persons is None:
-        _persons = load_persons()
-    return _persons
-
 
 def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: int | None = None) -> float:
     """
@@ -63,7 +46,7 @@ def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: in
             logger.warning(f"Failed to calculate tax from table {tax_table}: {e}. Using fallback.")
 
     # Fallback to legacy tax-bracket system
-    return calculate_tax_bracket(brutto, _get_tax_brackets())
+    return calculate_tax_bracket(brutto, load_tax_brackets())
 
 
 def _attach_calendar_day_breakdown(days_out: list[dict]) -> None:
@@ -268,7 +251,7 @@ def summarize_month_for_person(
     """
     combined_rules = get_combined_rules_for_year(year)
     settings = get_settings()
-    persons = _get_persons()
+    persons = load_persons()
 
     # Resolve wage for this specific month using the first day of the month
     from datetime import date as dt_date

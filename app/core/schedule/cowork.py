@@ -7,15 +7,6 @@ from app.core.storage import load_persons
 
 from .period import generate_year_data
 
-_persons = None
-
-
-def _get_persons():
-    global _persons
-    if _persons is None:
-        _persons = load_persons()
-    return _persons
-
 
 def _viewer_active_ranges(session, employment_user_id, position_id: int, year: int):
     """Return the date ranges the viewed user held a position during the year.
@@ -69,7 +60,7 @@ def _get_person_name_from_db(person_id: int) -> str:
         if user:
             return user.name
         # Final fallback: JSON file
-        return _get_persons()[person_id - 1].name
+        return load_persons()[person_id - 1].name
     finally:
         db.close()
 

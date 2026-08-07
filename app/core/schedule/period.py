@@ -28,8 +28,6 @@ from .person_history import get_current_person_for_position, get_person_for_date
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
-_persons = None
-
 
 @dataclass
 class DayLookupContext:
@@ -56,13 +54,6 @@ class DayLookupContext:
     linked_sub_shift_map: dict | None = None
     linked_sub_absence_map: dict | None = None
     linked_sub_ot_map: dict | None = None
-
-
-def _get_persons():
-    global _persons
-    if _persons is None:
-        _persons = load_persons()
-    return _persons
 
 
 def build_week_data(
@@ -93,7 +84,7 @@ def build_week_data(
     monday = datetime.date.fromisocalendar(year, week, 1)
     sunday = monday + datetime.timedelta(days=6)
     person_ids = [person_id] if person_id is not None else list(PERSON_IDS)
-    persons = _get_persons()
+    persons = load_persons()
 
     rotation_to_user_id = _build_rotation_to_user_map(session, person_ids)
 
@@ -306,7 +297,7 @@ def generate_period_data(
     )
 
     # Generera dagdata
-    persons = _get_persons()
+    persons = load_persons()
     settings = get_settings()
 
     ctx = DayLookupContext(
@@ -1063,7 +1054,7 @@ def build_substitute_month_summaries(
     if exclude_linked_attributed and session:
         from app.database.database import User
 
-        persons = _get_persons()
+        persons = load_persons()
         for sub in substitutes:
             if not sub.user_id:
                 continue
