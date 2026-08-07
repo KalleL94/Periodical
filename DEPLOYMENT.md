@@ -654,8 +654,8 @@ source venv/bin/activate
 # 6. Install/update dependencies
 pip install .
 
-# 7. Run any migrations (if there are new ones)
-# python migrations/migrate_*.py
+# 7. Bring the schema up to the models (idempotent, safe to run every time)
+python migrations/migrate_schema.py
 
 # 8. Restart the service
 sudo systemctl restart ica-schedule
@@ -868,8 +868,11 @@ rm /tmp/secret.txt
 
 **4. Run the migrations:**
 ```bash
+# Fresh install: seed the database with accounts
 python3 migrations/migrate_to_db.py
-python3 migrations/migrate_add_password_change.py
+
+# Existing install: bring the schema up to the models
+python3 migrations/migrate_schema.py
 ```
 
 **5. Configure nginx:** write the server block from "Option 1: Nginx as reverse

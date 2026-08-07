@@ -28,9 +28,17 @@ pip install -r requirements.txt
 
 **Database migration (initial setup):**
 ```bash
-python migrate_to_db.py
+python migrations/migrate_to_db.py
 ```
 Creates SQLite database, imports persons from `data/persons.json`, and creates default accounts.
+
+**Schema updates (existing database):**
+```bash
+python migrations/migrate_schema.py
+```
+Adds tables and columns the models declare but the database lacks. Idempotent, so
+it is safe to run on every deploy. Migrations that rewrite existing rows are still
+written as their own one-off script.
 
 **Run tests:**
 ```bash

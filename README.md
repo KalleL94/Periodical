@@ -64,7 +64,6 @@ pip install ".[dev]"
 
 # Run database migration (creates DB and default users)
 python migrations/migrate_to_db.py
-python migrations/migrate_add_password_change.py
 
 # Start development server
 uvicorn app.main:app --reload
