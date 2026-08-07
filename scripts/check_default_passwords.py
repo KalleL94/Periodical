@@ -8,14 +8,21 @@ hashes directly against the values that used to be in the repository.
 
 Read-only: opens the database with `mode=ro` and never writes to it.
 
+--db is required on purpose. It defaulted to /opt/Periodical/... once, which is
+a path that exists on more than one host: on a decommissioned server it silently
+answered for a stale copy of the database instead of the one the app is serving.
+A credential check that quietly tests the wrong database is worse than no check,
+so the caller names the file and the report repeats back the host, the row count
+and the last write for it to be checked against.
+
 Usage:
-    venv/bin/python3 scripts/check_default_passwords.py
-    venv/bin/python3 scripts/check_default_passwords.py --db path/to/other.db
+    venv/bin/python3 scripts/check_default_passwords.py --db app/database/schedule.db
 
 Exit codes: 0 nothing exposed, 1 at least one account exposed, 2 could not run.
 """
 
 import argparse
+import socket
 import sqlite3
 import sys
 from datetime import datetime
@@ -28,7 +35,6 @@ except ImportError:
     print("  venv/bin/python3 scripts/check_default_passwords.py", file=sys.stderr)
     sys.exit(2)
 
-DEFAULT_DB = "/opt/Periodical/app/database/schedule.db"
 DEFAULT_OUT = "/tmp/periodical-default-password-check.txt"
 
 # Passwords that were committed to the public repository before they were
@@ -72,16 +78,21 @@ def check(db_path: str) -> tuple[int, list[str]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--db", default=DEFAULT_DB, help=f"Database to check (default: {DEFAULT_DB})")
+    parser.add_argument("--db", required=True, help="Database to check. Required: see the module docstring")
     parser.add_argument("--out", default=DEFAULT_OUT, help=f"Write the report here (default: {DEFAULT_OUT})")
     args = parser.parse_args()
 
+    db_path = Path(args.db)
     header = [
         "Periodical - committed-password exposure check",
-        f"Run:      {datetime.now().isoformat(timespec='seconds')}",
-        f"Database: {args.db}",
-        "",
+        f"Run:       {datetime.now().isoformat(timespec='seconds')}",
+        f"Host:      {socket.gethostname()}",
+        f"Database:  {db_path.resolve()}",
     ]
+    if db_path.exists():
+        modified = datetime.fromtimestamp(db_path.stat().st_mtime).isoformat(timespec="seconds")
+        header.append(f"Last write: {modified}   <- confirm this is the live database, not a stale copy")
+    header.append("")
 
     try:
         total, findings = check(args.db)
