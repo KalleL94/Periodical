@@ -84,10 +84,11 @@ Every account is created with `must_change_password=1`, so the initial password
 is only usable once: the first login forces a change before anything else is
 reachable.
 
-The initial passwords are set in
-[migrations/migrate_to_db.py](migrations/migrate_to_db.py) (`DEFAULT_PASSWORD`
-and the admin literal). Change them there before running the migration on
-anything that is not a local development database.
+The initial passwords are generated per run by
+[migrations/migrate_to_db.py](migrations/migrate_to_db.py) and printed once when
+it finishes. Copy them then: they are not stored anywhere and cannot be
+recovered afterwards. An admin resetting a password from `/admin/users` gets a
+freshly generated one shown the same way.
 
 ## Configuration
 

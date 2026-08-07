@@ -13,6 +13,7 @@ Usage:
     python migrations/migrate_to_db.py
 """
 
+import secrets
 import sys
 from pathlib import Path
 
@@ -44,7 +45,15 @@ ADMIN_ACCOUNT = {
     "wage": 0,
 }
 
-DEFAULT_PASSWORD = "London1"  # ÄNDRA DETTA I PRODUKTION
+#: Shared initial password for the seeded accounts, generated per run rather
+#: than committed. Every account is created with must_change_password=1, so it
+#: is usable exactly once each. Printed at the end of the run: copy it then, it
+#: is not recoverable afterwards.
+DEFAULT_PASSWORD = secrets.token_urlsafe(12)
+
+#: The admin account gets its own, so a user account's password does not also
+#: unlock admin. This was the committed literal "Banan1" until the CSO audit.
+ADMIN_PASSWORD = secrets.token_urlsafe(12)
 
 
 def delete_existing_db():
@@ -124,7 +133,7 @@ def migrate():
         admin = User(
             id=0,
             username=ADMIN_ACCOUNT["username"],
-            password_hash=get_password_hash("Banan1"),
+            password_hash=get_password_hash(ADMIN_PASSWORD),
             name=ADMIN_ACCOUNT["name"],
             role=UserRole.ADMIN,
             wage=ADMIN_ACCOUNT["wage"],
@@ -141,7 +150,9 @@ def migrate():
         print("\n" + "=" * 50)
         print("MIGRATION COMPLETE")
         print("=" * 50)
-        print(f"DEFAULT PASSWORD FOR ALL USERS: {DEFAULT_PASSWORD}")
+        print(f"USER PASSWORD (user01-user{MAX_PERSONS:02d}): {DEFAULT_PASSWORD}")
+        print(f"ADMIN PASSWORD (admin):            {ADMIN_PASSWORD}")
+        print("[WARNING] COPY THESE NOW - they are generated per run and not stored")
         print("[WARNING] CHANGE PASSWORDS AFTER FIRST LOGIN!")
         print("=" * 50)
 

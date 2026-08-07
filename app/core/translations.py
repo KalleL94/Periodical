@@ -290,7 +290,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "admin_col_wage": "Lön",
         "admin_edit": "Redigera",
         "admin_reset_password": "Återställ lösenord",
-        "admin_reset_password_confirm": "Återställ lösenord för {name} till London1?",
+        "admin_reset_password_confirm": "Återställ lösenordet för {name}? Ett nytt slumpat lösenord visas en gång.",
         # ── Admin: User edit ───────────────────────────────────────
         "admin_edit_title": "Redigera: {name}",
         "admin_back": "← Tillbaka",
@@ -1429,7 +1429,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "admin_col_wage": "Wage",
         "admin_edit": "Edit",
         "admin_reset_password": "Reset password",
-        "admin_reset_password_confirm": "Reset password for {name} to London1?",
+        "admin_reset_password_confirm": "Reset the password for {name}? A new random password is shown once.",
         # ── Admin: User edit ───────────────────────────────────────
         "admin_edit_title": "Edit: {name}",
         "admin_back": "← Back",
