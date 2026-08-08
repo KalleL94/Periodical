@@ -28,9 +28,18 @@ pip install -r requirements.txt
 
 **Database migration (initial setup):**
 ```bash
-python migrate_to_db.py
+python migrations/migrate_to_db.py
 ```
-Creates SQLite database, imports persons from `data/persons.json`, and creates default accounts.
+Creates a SQLite database and seeds one account per rotation position plus an admin.
+Deletes the configured database first, so it is for a new installation only.
+
+**Schema updates (existing database):**
+```bash
+python migrations/migrate_schema.py
+```
+Adds tables and columns the models declare but the database lacks. Idempotent, so
+it is safe to run on every deploy. Migrations that rewrite existing rows are still
+written as their own one-off script.
 
 **Run tests:**
 ```bash
@@ -80,7 +89,7 @@ When creating new versions:
    ./scripts/release.sh --notag     # deploy current main without a tag
    ```
    - Use semantic versioning: `vMAJOR.MINOR.PATCH`
-   - Bump the version in `VERSIONS` in `app/routes/changelog.py` first; that
+   - Bump the version in the first entry of `data/releases.json` first; that
      entry is the authoritative version and what `/health` reports
 
 ### Example Workflow
@@ -126,8 +135,8 @@ cannot drift instead:
 git tag --sort=-creatordate     # every release, newest first
 ```
 
-- **Authoritative version:** the first entry of `VERSIONS` in
-  `app/routes/changelog.py` (what `/health` and the in-app changelog report)
+- **Authoritative version:** the first entry of `data/releases.json`
+  (what `/health` and the in-app changelog report)
 - **Release notes:** [CHANGELOG.md](CHANGELOG.md) and the in-app changelog page
 
 ## System Architecture
@@ -206,7 +215,6 @@ All business logic is data-driven:
 - `data/rotation.json` - 10-week rotation pattern
 - `data/shift_types.json` - Shift definitions (N1/N2/N3/OFF/SEM)
 - `data/settings.json` - Rotation start date, default salary
-- `data/persons.json` - Team members, wages, vacation
 - `data/ob_rules.json` - Base OB rules (evening, night, weekend)
 - `data/tax_brackets.json` - Swedish tax brackets
 
@@ -280,18 +288,9 @@ pytest tests/test_ob_calculation.py -v
 Edit `rotation_start_date` in `data/settings.json` (ISO format "YYYY-MM-DD")
 
 **Add vacation for a person:**
-Edit `data/persons.json`:
-```json
-{
-  "id": 1,
-  "name": "Person 1",
-  "wage": 37000,
-  "vacation": {
-    "2026": [25, 26, 27],
-    "2027": [30, 31]
-  }
-}
-```
+Use `/profile/vacation`, or `/admin/vacation/<user_id>` on someone else's behalf.
+It is stored in `users.vacation` as ISO week numbers per year,
+`{"2026": [25, 26, 27]}`, alongside day-level vacation held as VACATION absences.
 
 **Modify OB rules:**
 - Static rules: Edit `data/ob_rules.json`

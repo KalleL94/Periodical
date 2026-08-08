@@ -142,24 +142,3 @@ def log_auth_event(
         logger.info(f"Auth event: {event_type} - {username} - SUCCESS", extra=extra)
     else:
         logger.warning(f"Auth event: {event_type} - {username} - FAILED", extra=extra)
-
-
-def log_security_event(event_type: str, details: dict, level: str = "warning") -> None:
-    """
-    Log security-related events.
-
-    Args:
-        event_type: Type of security event
-        details: Event details
-        level: Log level (info, warning, error)
-    """
-    extra = {"extra_fields": {"event_type": event_type, **details}}
-
-    message = f"Security event: {event_type}"
-
-    if level == "error":
-        logger.error(message, extra=extra)
-    elif level == "warning":
-        logger.warning(message, extra=extra)
-    else:
-        logger.info(message, extra=extra)

@@ -2,8 +2,9 @@
 
 from typing import NamedTuple
 
+from app.core.constants import placeholder_person_name
 from app.core.logging_config import get_logger
-from app.core.storage import load_persons, load_tax_brackets
+from app.core.storage import load_tax_brackets
 
 from .core import get_settings, weekday_names
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
@@ -17,23 +18,6 @@ from .wages import (
 )
 
 logger = get_logger(__name__)
-
-_tax_brackets = None
-_persons = None
-
-
-def _get_tax_brackets():
-    global _tax_brackets
-    if _tax_brackets is None:
-        _tax_brackets = load_tax_brackets()
-    return _tax_brackets
-
-
-def _get_persons():
-    global _persons
-    if _persons is None:
-        _persons = load_persons()
-    return _persons
 
 
 def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: int | None = None) -> float:
@@ -63,7 +47,7 @@ def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: in
             logger.warning(f"Failed to calculate tax from table {tax_table}: {e}. Using fallback.")
 
     # Fallback to legacy tax-bracket system
-    return calculate_tax_bracket(brutto, _get_tax_brackets())
+    return calculate_tax_bracket(brutto, load_tax_brackets())
 
 
 def _attach_calendar_day_breakdown(days_out: list[dict]) -> None:
@@ -133,7 +117,7 @@ def build_range_breakdown_days(
     return days_out
 
 
-def _resolve_person_name(session, person_id: int, on_date, persons) -> str:
+def _resolve_person_name(session, person_id: int, on_date) -> str:
     """Resolve the display name for a rotation position on a date via the history system."""
     if session:
         from app.core.schedule.person_history import get_person_for_date
@@ -141,7 +125,7 @@ def _resolve_person_name(session, person_id: int, on_date, persons) -> str:
         person_info = get_person_for_date(session, person_id, on_date)
         if person_info:
             return person_info["name"]
-    return persons[person_id - 1].name
+    return placeholder_person_name(person_id)
 
 
 def _apply_absence_info_to_totals(totals: dict, absence_info: dict) -> list:
@@ -268,7 +252,6 @@ def summarize_month_for_person(
     """
     combined_rules = get_combined_rules_for_year(year)
     settings = get_settings()
-    persons = _get_persons()
 
     # Resolve wage for this specific month using the first day of the month
     from datetime import date as dt_date
@@ -425,7 +408,7 @@ def summarize_month_for_person(
     # Calculate net pay using the user's tax table for the payment year
     netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
 
-    person_name = _resolve_person_name(session, person_id, month_start_date, persons)
+    person_name = _resolve_person_name(session, person_id, month_start_date)
 
     return {
         "year": year,

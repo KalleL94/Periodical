@@ -1,50 +1,43 @@
 # migrate_to_db.py
 """
-Migration script: Import persons from JSON to SQLite database.
+Seed a fresh database with one account per rotation position, plus an admin.
 
-Run this once to set up the database with existing person data.
-Creates usernames based on names (lowercase, no spaces).
+For a new installation only. It DELETES the configured database first, so it is
+not a migration in the sense migrate_schema.py is: run that one against a
+database with data in it.
+
+Every account is created with must_change_password=1, so the shared initial
+password below is usable exactly once each.
 
 Usage:
-    python migrate_to_db.py
-
-This will:
-1. Delete existing database (if any)
-2. Create fresh tables
-3. Import all persons as regular users
-4. Create a separate admin account
+    python migrations/migrate_to_db.py
 """
 
-import json
+import secrets
 import sys
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path. This file used to live at the repository root, where
+# its own directory was the project root; from migrations/ it needs one level up.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.auth.auth import get_password_hash
-from app.database.database import Base, SessionLocal, User, UserRole, engine
+from app.core.constants import MAX_PERSONS
+from app.database.database import DATABASE_URL, Base, SessionLocal, User, UserRole, engine
 
+#: Starting wage for a seeded account, in SEK per month. Every account gets the
+#: same one; real wages are set per user afterwards, and the wage history takes
+#: over from the first revision.
+DEFAULT_WAGE = 30000
 
-def load_persons_json():
-    """Load persons from JSON file."""
-    persons_path = Path("data/persons.json")
-    if not persons_path.exists():
-        # Try alternative location
-        persons_path = Path("persons.json")
-
-    if not persons_path.exists():
-        raise FileNotFoundError("Could not find persons.json")
-
-    with open(persons_path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-try:
-    persons = load_persons_json()
-    print(f"   [OK] Found {len(persons)} persons")
-except FileNotFoundError as e:
-    print(f"   [ERROR] {e}")
+#: One account per rotation position. This used to be read from
+#: data/persons.json, which after anonymisation held exactly these rows: userNN,
+#: "Person N", the same wage and no vacation. The file was a fixture pretending
+#: to be configuration, so the fixture lives here now, at its only reader.
+PERSONS = [
+    {"id": pid, "username": f"user{pid:02d}", "name": f"Person {pid}", "wage": DEFAULT_WAGE}
+    for pid in range(1, MAX_PERSONS + 1)
+]
 
 ADMIN_ACCOUNT = {
     "username": "admin",
@@ -52,12 +45,30 @@ ADMIN_ACCOUNT = {
     "wage": 0,
 }
 
-DEFAULT_PASSWORD = "London1"  # ÄNDRA DETTA I PRODUKTION
+#: Shared initial password for the seeded accounts, generated per run rather
+#: than committed. Every account is created with must_change_password=1, so it
+#: is usable exactly once each. Printed at the end of the run: copy it then, it
+#: is not recoverable afterwards.
+DEFAULT_PASSWORD = secrets.token_urlsafe(12)
+
+#: The admin account gets its own, so a user account's password does not also
+#: unlock admin. This was the committed literal "Banan1" until the CSO audit.
+ADMIN_PASSWORD = secrets.token_urlsafe(12)
 
 
 def delete_existing_db():
-    """Delete existing database"""
-    db_path = Path("app/database/schedule.db")
+    """Delete the configured SQLite database file, if there is one.
+
+    Reads the path off the engine rather than hardcoding
+    app/database/schedule.db: the app honours DATABASE_URL, and a seeder that
+    deleted a different file than the one it then writes to would wipe the
+    wrong database.
+    """
+    if engine.url.get_backend_name() != "sqlite" or not engine.url.database:
+        print(f" Not a SQLite file database, nothing to delete: {DATABASE_URL}")
+        return
+
+    db_path = Path(engine.url.database)
     if db_path.exists():
         db_path.unlink()
         print(f" Deleted existing database: {db_path}")
@@ -71,31 +82,10 @@ def create_tables():
     print("Created tables")
 
 
-def load_vacation_from_json() -> dict:
-    """Läs semester från persons.json om den finns."""
-    persons_path = Path("data/persons.json")
-    if not persons_path.exists():
-        return {}
-
-    try:
-        data = json.loads(persons_path.read_text(encoding="utf-8"))
-        return {p["id"]: p.get("vacation", {}) for p in data}
-    except Exception as e:
-        print(f"  Varning: Kunde inte läsa semester från persons.json: {e}")
-        return {}
-
-
-def create_username(name: str) -> str:
-    """Create a username from a name."""
-    # Lowercase, replace spaces with nothing
-    username = name.lower().replace(" ", "").replace("å", "a").replace("ä", "a").replace("ö", "o")
-    return username
-
-
 def migrate():
     """Run the migration."""
     print("\n" + "=" * 50)
-    print("MIGRATION: persons.json -> SQLite")
+    print("MIGRATION: seed accounts -> SQLite")
     print("=" * 50 + "\n")
 
     delete_existing_db()
@@ -105,7 +95,6 @@ def migrate():
     create_tables()
     print("   [OK] Tables created")
 
-    vacation_data = load_vacation_from_json()
     # Create database session
     db = SessionLocal()
 
@@ -126,9 +115,7 @@ def migrate():
         print("\n3. Importing users...")
 
         created_users = []
-        for person in persons:
-            vacation = vacation_data.get(person["id"])
-
+        for person in PERSONS:
             user = User(
                 id=person["id"],
                 username=person["username"],
@@ -136,7 +123,7 @@ def migrate():
                 name=person["name"],
                 role=UserRole.USER,
                 wage=person["wage"],
-                vacation=vacation,
+                vacation={},
                 must_change_password=1,  # Force password change on first login
             )
             created_users.append(user)
@@ -146,7 +133,7 @@ def migrate():
         admin = User(
             id=0,
             username=ADMIN_ACCOUNT["username"],
-            password_hash=get_password_hash("Banan1"),
+            password_hash=get_password_hash(ADMIN_PASSWORD),
             name=ADMIN_ACCOUNT["name"],
             role=UserRole.ADMIN,
             wage=ADMIN_ACCOUNT["wage"],
@@ -163,7 +150,9 @@ def migrate():
         print("\n" + "=" * 50)
         print("MIGRATION COMPLETE")
         print("=" * 50)
-        print(f"DEFAULT PASSWORD FOR ALL USERS: {DEFAULT_PASSWORD}")
+        print(f"USER PASSWORD (user01-user{MAX_PERSONS:02d}): {DEFAULT_PASSWORD}")
+        print(f"ADMIN PASSWORD (admin):            {ADMIN_PASSWORD}")
+        print("[WARNING] COPY THESE NOW - they are generated per run and not stored")
         print("[WARNING] CHANGE PASSWORDS AFTER FIRST LOGIN!")
         print("=" * 50)
 

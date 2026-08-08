@@ -8,15 +8,10 @@ from app.core.models import ObRule
 from app.core.storage import load_ob_rules
 from app.core.time_utils import subtract_covered
 
-_ob_rules: list[ObRule] | None = None
-
 
 def get_ob_rules() -> list[ObRule]:
-    """Returns the base OB rules."""
-    global _ob_rules
-    if _ob_rules is None:
-        _ob_rules = load_ob_rules()
-    return _ob_rules
+    """Returns the base OB rules. Cached by load_ob_rules."""
+    return load_ob_rules()
 
 
 @lru_cache(maxsize=10)

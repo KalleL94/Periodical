@@ -6,13 +6,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
+from app.core.constants import placeholder_person_name
 from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.schedule import (
     _cached_special_rules,
     ob_rules,
     summarize_year_for_person,
 )
-from app.core.schedule import persons as person_list
 from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.utils import get_safe_today
 from app.database.database import User, UserRole, get_db
@@ -64,7 +64,7 @@ async def statistics_view(
                 person_name = holder.name
             else:
                 holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else person_list[rotation_position - 1].name
+                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Fetch year data. For user-scoped views (a User resolved) filter months to
     # the viewed user's employment period regardless of the viewer's role.

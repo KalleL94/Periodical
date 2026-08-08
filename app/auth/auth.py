@@ -4,15 +4,17 @@ Authentication and authorization utilities.
 """
 
 import base64
+import calendar
 import hashlib
+import hmac
+import json
 import os
 from datetime import datetime, timedelta
 
+import bcrypt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.database.database import LoginAttempt, User, UserRole, get_db, utcnow
@@ -100,49 +102,128 @@ def clear_login_attempts(db: Session, username: str, ip: str) -> None:
     db.commit()
 
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing. bcrypt is called directly rather than through passlib's
+# CryptContext: the app has only ever used one scheme, and passlib has been
+# unmaintained since 2020 to the point of logging a traceback on import because
+# it reads a bcrypt attribute that no longer exists. The hashes are the same
+# `$2b$12$` strings at the same cost factor, so stored hashes keep verifying.
+_BCRYPT_ROUNDS = 12
 
 # Token scheme
 security = HTTPBearer(auto_error=False)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash.
+
+    A hash bcrypt cannot parse counts as a failed login rather than an error:
+    a corrupt or foreign value in the column should not turn the login page
+    into a 500.
     """
-    Verify a passowrd against its hash
-    """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """Generate password hash."""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
 
 
 # Precomputed hash used to equalise authentication timing when the username does not exist,
 # so an attacker cannot tell valid usernames apart by measuring response time.
-_DUMMY_PASSWORD_HASH = pwd_context.hash("timing-equalisation-placeholder")
+_DUMMY_PASSWORD_HASH = get_password_hash("timing-equalisation-placeholder")
+
+
+# --- JWT (HS256) ---
+#
+# Signed with SECRET_KEY the same way the CSRF token is, using hmac from the
+# standard library. This replaced python-jose, which pulled in ecdsa, rsa,
+# pyasn1 and six to serve one symmetric algorithm with one key, and has a
+# history of algorithm-confusion advisories in the parts this app never used.
+# The wire format is unchanged, so tokens issued before the swap still validate
+# and nobody is logged out by deploying it.
+#
+# The header is a fixed constant rather than something parsed and honoured: the
+# algorithm is chosen here, never taken from the token, which is what makes
+# "alg": "none" and HS256/RS256 confusion impossible by construction.
+_JWT_HEADER = '{"alg":"HS256","typ":"JWT"}'
+
+
+def _b64url_encode(raw: bytes) -> str:
+    """Base64url without padding, as JWT requires."""
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(segment: str) -> bytes:
+    """Reverse of _b64url_encode, restoring the padding it stripped."""
+    return base64.urlsafe_b64decode(segment.encode("ascii") + b"=" * (-len(segment) % 4))
+
+
+def _jwt_signature(signing_input: str) -> bytes:
+    """HMAC-SHA256 over "<header>.<payload>", the bytes actually sent."""
+    return hmac.new(SECRET_KEY.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
-    if expires_delta:
-        expire = utcnow() + expires_delta
-    else:
-        expire = utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    expire = utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    # utcnow() is naive UTC, so the timestamp has to be read as UTC. datetime.timestamp()
+    # would read a naive value as local time and shift every expiry by the Stockholm offset.
+    to_encode["exp"] = calendar.timegm(expire.utctimetuple())
+
+    header = _b64url_encode(_JWT_HEADER.encode("ascii"))
+    payload = _b64url_encode(json.dumps(to_encode, separators=(",", ":")).encode("utf-8"))
+    signing_input = f"{header}.{payload}"
+    return f"{signing_input}.{_b64url_encode(_jwt_signature(signing_input))}"
 
 
 def decode_token(token: str) -> dict | None:
-    """Decode and validate a JWT token."""
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
+    """Decode and validate a JWT token, returning None if it is not usable.
+
+    Rejects anything that is not a well-formed HS256 token signed with this
+    deployment's SECRET_KEY, whose `exp` has not passed and whose `sub` is a
+    string. A token without `exp` is accepted, which is what the tokens issued
+    for tests rely on.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
         return None
+    header_b64, payload_b64, signature_b64 = parts
+
+    try:
+        header = json.loads(_b64url_decode(header_b64))
+        signature = _b64url_decode(signature_b64)
+    except (ValueError, UnicodeError):
+        return None
+
+    if not isinstance(header, dict) or header.get("alg") != ALGORITHM:
+        return None
+
+    expected = _jwt_signature(f"{header_b64}.{payload_b64}")
+    if not hmac.compare_digest(expected, signature):
+        return None
+
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
+    except (ValueError, UnicodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    exp = payload.get("exp")
+    if exp is not None:
+        if not isinstance(exp, (int, float)) or isinstance(exp, bool):
+            return None
+        if calendar.timegm(utcnow().utctimetuple()) >= exp:
+            return None
+
+    if "sub" in payload and not isinstance(payload["sub"], str):
+        return None
+
+    return payload
 
 
 def get_user_by_username(db: Session, username: str) -> User | None:

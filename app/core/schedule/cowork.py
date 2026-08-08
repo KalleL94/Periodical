@@ -2,19 +2,9 @@
 
 import datetime
 
-from app.core.constants import PERSON_IDS
-from app.core.storage import load_persons
+from app.core.constants import PERSON_IDS, placeholder_person_name
 
 from .period import generate_year_data
-
-_persons = None
-
-
-def _get_persons():
-    global _persons
-    if _persons is None:
-        _persons = load_persons()
-    return _persons
 
 
 def _viewer_active_ranges(session, employment_user_id, position_id: int, year: int):
@@ -68,8 +58,8 @@ def _get_person_name_from_db(person_id: int) -> str:
         user = db.query(User).filter(User.id == person_id).first()
         if user:
             return user.name
-        # Final fallback: JSON file
-        return _get_persons()[person_id - 1].name
+        # Final fallback: nobody holds this position
+        return placeholder_person_name(person_id)
     finally:
         db.close()
 

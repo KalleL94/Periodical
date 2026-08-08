@@ -1,6 +1,4 @@
-from datetime import date, datetime
-
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class ShiftType(BaseModel):
@@ -61,37 +59,3 @@ class TaxBracket(BaseModel):
     lon_fran: float
     lon_till: float | None = None
     prel_skatt: float
-
-
-class Person(BaseModel):
-    """Person/employee definition with salary and vacation information."""
-
-    id: int
-    name: str
-    wage: int
-    vacation: dict[str, list[int]] | None = None  # key is year, value is list of weeks
-
-
-class OvertimeShiftCreate(BaseModel):
-    """Data for creating an overtime shift."""
-
-    user_id: int
-    date: date
-    start_time: str  # "HH:MM" format
-    end_time: str  # "HH:MM" format
-    hours: float = 8.5  # Default 8.5 hours
-
-
-class OvertimeShiftResponse(BaseModel):
-    """Overtime shift response model."""
-
-    id: int
-    user_id: int
-    date: date
-    start_time: str
-    end_time: str
-    hours: float
-    ot_pay: float
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)

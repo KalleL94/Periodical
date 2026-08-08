@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
+from app.core.constants import placeholder_person_name
 from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.logging_config import get_logger
@@ -39,9 +40,6 @@ from app.core.schedule import (
     settings,
     summarize_year_for_person,
     weekday_names,
-)
-from app.core.schedule import (
-    persons as person_list,
 )
 from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.schedule.vacation import (
@@ -137,7 +135,7 @@ async def show_day_for_person(
         if holder:
             person_name = holder.name
         else:
-            person_name = person_list[rotation_position - 1].name
+            person_name = placeholder_person_name(rotation_position)
 
     # Use temporal wage query for the specific date being viewed
     # Use user_id_for_wages for wage lookup
@@ -671,7 +669,7 @@ async def show_range_for_person(
             person_name = current_user.name
         else:
             holder = db.query(User).filter(User.person_id == rotation_position).first()
-            person_name = holder.name if holder else person_list[rotation_position - 1].name
+            person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     range_employment_start = None
     range_employment_end = None
@@ -793,7 +791,7 @@ async def show_month_for_person(
                 person_name = holder.name
             else:
                 holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else person_list[rotation_position - 1].name
+                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Use rotation_position for schedule calculation
     # For user_id lookups, pass the user's own employment start/end so dates
@@ -1099,7 +1097,7 @@ async def year_view(
             else:
                 # Fallback: legacy user where user_id == person_id
                 holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else person_list[rotation_position - 1].name
+                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Use rotation_position for schedule-related calculations. Scope the cowork
     # stats to the viewed user's own employment window so a successor's days at
@@ -1229,7 +1227,7 @@ async def cowork_view(
                 person_name = holder.name
             else:
                 holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else person_list[rotation_position - 1].name
+                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Scope the cowork stats to the viewed user's own employment window so a
     # successor's days at the same position are not attributed to a departed

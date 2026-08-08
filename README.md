@@ -64,7 +64,6 @@ pip install ".[dev]"
 
 # Run database migration (creates DB and default users)
 python migrations/migrate_to_db.py
-python migrations/migrate_add_password_change.py
 
 # Start development server
 uvicorn app.main:app --reload
@@ -85,10 +84,11 @@ Every account is created with `must_change_password=1`, so the initial password
 is only usable once: the first login forces a change before anything else is
 reachable.
 
-The initial passwords are set in
-[migrations/migrate_to_db.py](migrations/migrate_to_db.py) (`DEFAULT_PASSWORD`
-and the admin literal). Change them there before running the migration on
-anything that is not a local development database.
+The initial passwords are generated per run by
+[migrations/migrate_to_db.py](migrations/migrate_to_db.py) and printed once when
+it finishes. Copy them then: they are not stored anywhere and cannot be
+recovered afterwards. An admin resetting a password from `/admin/users` gets a
+freshly generated one shown the same way.
 
 ## Configuration
 
@@ -153,13 +153,13 @@ This ensures:
 
 All business logic is data-driven via JSON files in `data/`:
 
-- `persons.json` - Team members, wages, vacation weeks
 - `rotation.json` - 10-week rotation pattern
 - `shift_types.json` - Shift definitions (N1/N2/N3/OFF/SEM/OC/OT)
 - `settings.json` - Rotation start date, default salary
 - `ob_rules.json` - Base OB rules (evening, night, weekend)
 - `oncall_rules.json` - On-call pay calculation rules
 - `tax_brackets.json` - Swedish tax brackets
+- `releases.json` - Bilingual user-facing release notes, newest first; the top entry is the authoritative version
 
 ## Project Structure
 
@@ -184,7 +184,7 @@ Periodical/
 │   │   │   └── holidays_ob.py  # Holiday OB rules
 │   │   ├── calendar_export.py  # ICS calendar generation
 │   │   ├── holidays.py         # Swedish holiday calculations
-│   │   ├── config.py           # Constants and configuration
+│   │   ├── constants.py        # Shared constants
 │   │   ├── logging_config.py   # Structured logging setup
 │   │   ├── sentry_config.py    # Sentry error tracking
 │   │   ├── request_logging.py  # Request/response logging middleware
@@ -204,13 +204,8 @@ Periodical/
 │   │   └── css/                # Modular CSS files (base, calendar, components, layout, navigation, tables)
 │   └── templates/              # Jinja2 HTML templates
 ├── data/                       # JSON configuration files
-├── deployment/                 # Docker, nginx, systemd configs
-│   ├── docker-compose.yml      # Docker deployment
-│   ├── Dockerfile              # Container image
-│   ├── nginx-example.conf      # Nginx reverse proxy config
-│   ├── traefik.yml             # Traefik reverse proxy config
-│   ├── ica-schedule.service    # Systemd service file
-│   └── README.md               # Deployment documentation
+├── deployment/                 # Production configs
+│   └── ica-schedule.service    # Systemd service file
 ├── docs/                       # Additional documentation
 │   ├── CORS.md                 # CORS configuration guide
 │   ├── LOGGING.md              # Logging setup and usage
@@ -269,21 +264,19 @@ sudo cp deployment/ica-schedule.service /etc/systemd/system/
 sudo systemctl enable ica-schedule
 sudo systemctl start ica-schedule
 
-# 5. Setup nginx reverse proxy (see deployment/nginx-example.conf)
-sudo cp deployment/nginx-example.conf /etc/nginx/sites-available/ica-schedule
+# 5. Setup nginx reverse proxy (server block in DEPLOYMENT.md)
 sudo ln -s /etc/nginx/sites-available/ica-schedule /etc/nginx/sites-enabled/
 sudo certbot --nginx -d your-domain.com
 sudo systemctl restart nginx
 ```
 
-### Docker Deployment
+### Docker
+
+The root `Dockerfile` and `docker-compose.yml` build the development container.
+Production runs under systemd, not Docker.
 
 ```bash
-# Build and run with docker-compose
-docker-compose -f deployment/docker-compose.yml up -d
-
-# View logs
-docker-compose -f deployment/docker-compose.yml logs -f
+docker-compose up -d
 ```
 
 ### CI/CD Pipeline
@@ -521,8 +514,8 @@ git tag
 git log --oneline --decorate
 ```
 
-The authoritative version is the first entry of `VERSIONS` in
-[app/routes/changelog.py](app/routes/changelog.py); it is what `/health` reports
+The authoritative version is the first entry of
+[data/releases.json](data/releases.json); it is what `/health` reports
 and what the in-app changelog page shows. Release notes live in
 [CHANGELOG.md](CHANGELOG.md).
 

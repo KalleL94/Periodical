@@ -5,14 +5,24 @@ Data loading and persistence layer for configuration files.
 
 import json
 import logging
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from app.core.models import ObRule, OnCallRule, Person, Rotation, Settings, ShiftType, TaxBracket
+from app.core.models import ObRule, OnCallRule, Rotation, Settings, ShiftType, TaxBracket
 
 logger = logging.getLogger(__name__)
+
+# The loaders below that read files nothing writes at runtime are cached here with
+# @cache. Callers used to each keep their own module-level "_x = None; if _x is
+# None: _x = load_x()" global, five copies of the same lazy singleton across
+# period.py, summary.py, cowork.py and ob.py. Caching at the loader gives every
+# caller the same behaviour without any of them owning state.
+#
+# They return the loaded list itself rather than a copy, exactly as the module
+# globals did. No caller mutates these; they are configuration.
 
 
 class StorageError(Exception):
@@ -93,6 +103,7 @@ def load_settings() -> Settings:
     return _load_obj("settings.json", Settings, "settings")
 
 
+@cache
 def load_ob_rules() -> list[ObRule]:
     """Load OB (unsocial hours) rules from data file."""
     return _load_list("ob_rules.json", ObRule, "OB rules")
@@ -103,6 +114,7 @@ def load_oncall_rules() -> list[OnCallRule]:
     return _load_list("oncall_rules.json", OnCallRule, "on-call rules")
 
 
+@cache
 def load_tax_brackets() -> list[TaxBracket]:
     """Load tax bracket definitions from data file."""
     return _load_list("tax_brackets.json", TaxBracket, "tax brackets")
@@ -123,15 +135,11 @@ def calculate_tax_bracket(income: float, tax_brackets: list[TaxBracket]) -> floa
     return 0.0  # Default if no bracket matches
 
 
-def load_persons() -> list[Person]:
-    """Load person definitions from data file."""
-    return _load_list("persons.json", Person, "persons")
-
-
-# Cache for tax table data - now per year
-_tax_table_cache = {}
-
-
+# Bounded rather than @cache: the year reaches this from user data (a payment year
+# on a payslip), so the key is not drawn from a fixed set. A handful of years is
+# all that is ever asked for. lru_cache does not cache exceptions, so a missing
+# tax table keeps raising rather than being remembered as a failure.
+@lru_cache(maxsize=16)
 def load_tax_table(year: int | None = None) -> dict[str, list[dict]]:
     """
     Load Swedish tax table from CSV file for a specific year.
@@ -150,15 +158,9 @@ def load_tax_table(year: int | None = None) -> dict[str, list[dict]]:
     Raises:
         StorageError: If file cannot be loaded or parsed
     """
-    global _tax_table_cache
-
     # Default to 2026 if no year specified
     if year is None:
         year = 2026
-
-    # Check cache
-    if year in _tax_table_cache:
-        return _tax_table_cache[year]
 
     file_path = Path(f"data/skattetabell{year}.csv")
 
@@ -169,8 +171,6 @@ def load_tax_table(year: int | None = None) -> dict[str, list[dict]]:
             fallback_path = Path(f"data/skattetabell{fallback_year}.csv")
             if fallback_path.exists():
                 logger.warning("Tax table for %d not found, falling back to %d", year, fallback_year)
-                if fallback_year in _tax_table_cache:
-                    return _tax_table_cache[fallback_year]
                 file_path = fallback_path
                 year = fallback_year
                 break
@@ -223,7 +223,6 @@ def load_tax_table(year: int | None = None) -> dict[str, list[dict]]:
         for table_nr in tax_tables:
             tax_tables[table_nr].sort(key=lambda x: x["from"])
 
-        _tax_table_cache[year] = tax_tables
         logger.info("Loaded tax tables for year %d with %d table numbers", year, len(tax_tables))
         return tax_tables
 

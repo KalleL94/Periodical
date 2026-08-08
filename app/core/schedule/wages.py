@@ -145,15 +145,16 @@ def get_all_user_wages(session) -> dict[int, int]:
     Returns:
         Dict med user_id -> lön
     """
-    from app.core.storage import load_persons
-
     from .core import get_settings
 
     settings = get_settings()
 
     if not session:
-        persons = load_persons()
-        return {p.id: p.wage for p in persons}
+        # No database to ask: fall back to the configured default for every
+        # position, the same answer the session path gives for a position whose
+        # user row is missing. This used to read the wages in data/persons.json,
+        # a roster that has been placeholder rows since the file was anonymised.
+        return dict.fromkeys(PERSON_IDS, settings.monthly_salary)
 
     from app.database.database import User, WageType
 

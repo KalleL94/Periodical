@@ -5,11 +5,10 @@ from unittest.mock import patch
 import pytest
 
 from app.auth.auth import create_access_token
-from app.core.news import get_latest_version, has_unseen_news, mark_seen
+from app.core.news import get_latest_version, has_unseen_news, load_releases, mark_seen
 from app.database.database import User
-from app.routes.changelog import VERSIONS
 
-LATEST = VERSIONS[0]["version"]
+LATEST = load_releases()[0]["version"]
 
 
 def _set_auth_cookie(client, user) -> None:
@@ -25,7 +24,7 @@ def test_latest_version_is_the_first_changelog_entry():
 
 
 def test_pyproject_version_matches_the_changelog():
-    """pyproject.toml only claims to mirror VERSIONS[0]; this makes the claim enforceable."""
+    """pyproject.toml only claims to mirror the first release; this makes the claim enforceable."""
     import tomllib
     from pathlib import Path
 
@@ -35,7 +34,7 @@ def test_pyproject_version_matches_the_changelog():
 
 def test_empty_changelog_reports_no_news(test_user):
     """A changelog with no releases must not render an indicator pointing at nothing."""
-    with patch("app.routes.changelog.VERSIONS", []):
+    with patch("app.core.news.load_releases", return_value=[]):
         assert get_latest_version() is None
         assert has_unseen_news(test_user) is False
 
@@ -76,7 +75,7 @@ def test_mark_seen_is_a_no_op_without_a_user(test_db):
 
 
 def test_mark_seen_on_empty_changelog_records_nothing(test_db, test_user):
-    with patch("app.routes.changelog.VERSIONS", []):
+    with patch("app.core.news.load_releases", return_value=[]):
         mark_seen(test_db, test_user)
     assert test_user.seen_release is None
 
