@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.auth.auth import get_admin_user, get_password_hash, get_user_by_username
+from app.auth.auth import get_admin_user, get_password_hash, get_user_by_username, set_password
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
@@ -201,7 +201,7 @@ async def admin_update_user(
     edit_user.tax_table = tax_table if tax_table else None
 
     if new_password:
-        edit_user.password_hash = get_password_hash(new_password)
+        set_password(edit_user, new_password)
         edit_user.must_change_password = 1
 
     try:
@@ -235,7 +235,7 @@ async def admin_reset_password(
     # Shown once here and nowhere else; the reset also sets
     # must_change_password, so it is usable exactly once.
     default_password = secrets.token_urlsafe(12)
-    reset_user.password_hash = get_password_hash(default_password)
+    set_password(reset_user, default_password)
     reset_user.must_change_password = 1
     try:
         db.commit()

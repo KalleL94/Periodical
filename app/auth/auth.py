@@ -131,6 +131,21 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
 
 
+def set_password(user, password: str) -> None:
+    """Set a user's password and stamp when it happened.
+
+    The stamp is what ends sessions that were already open: tokens carry the
+    second they were issued, and get_current_user_from_cookie refuses any that
+    predate this value. Every route that CHANGES an existing password goes
+    through here, so a new one cannot forget the stamp and quietly leave old
+    sessions alive. Account creation still builds User(password_hash=...)
+    directly: a user who did not exist a moment ago has no session to end, and
+    the stamp gets set the first time the password is actually changed.
+    """
+    user.password_hash = get_password_hash(password)
+    user.password_changed_at = utcnow()
+
+
 # Precomputed hash used to equalise authentication timing when the username does not exist,
 # so an attacker cannot tell valid usernames apart by measuring response time.
 _DUMMY_PASSWORD_HASH = get_password_hash("timing-equalisation-placeholder")
@@ -173,6 +188,10 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     # utcnow() is naive UTC, so the timestamp has to be read as UTC. datetime.timestamp()
     # would read a naive value as local time and shift every expiry by the Stockholm offset.
     to_encode["exp"] = calendar.timegm(expire.utctimetuple())
+    # Issued-at, so a password change can refuse every token minted before it.
+    # Standard claim rather than something user-specific, which keeps this
+    # function free of any need to know whose token it is.
+    to_encode["iat"] = calendar.timegm(utcnow().utctimetuple())
 
     header = _b64url_encode(_JWT_HEADER.encode("ascii"))
     payload = _b64url_encode(json.dumps(to_encode, separators=(",", ":")).encode("utf-8"))
@@ -274,6 +293,20 @@ async def get_current_user_from_cookie(request: Request, db: Session = Depends(g
         return None
 
     user = get_user_by_id(db, int(user_id))
+    if user is None:
+        return None
+
+    changed_at = getattr(user, "password_changed_at", None)
+    if changed_at is not None:
+        issued_at = payload.get("iat")
+        # A token with no iat predates this check, and there is no way to tell
+        # whether it also predates the password change, so it does not get the
+        # benefit of the doubt.
+        if not isinstance(issued_at, (int, float)) or isinstance(issued_at, bool):
+            return None
+        if issued_at < calendar.timegm(changed_at.utctimetuple()):
+            return None
+
     return user
 
 
