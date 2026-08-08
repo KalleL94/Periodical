@@ -140,15 +140,26 @@ def test_set_password_stamps_and_rehashes(test_db, test_user):
 
 def test_an_api_key_keeps_working_after_a_password_change(test_client, test_db, test_user):
     """The key is a separate credential with its own lifecycle; a password change
-    is not a statement about it, and revoking it has its own button."""
+    is not a statement about it, and revoking it has its own button.
+
+    The assertion is "not 401" rather than "200" on purpose. 401 is what a
+    rejected credential looks like and it is the only outcome this test is
+    about; what the endpoint answers once it has authenticated depends on
+    whether there is schedule data behind it, which is a different test's job.
+    Asserting 200 passed locally against a populated development database and
+    failed in CI against an empty one, which is the test being wrong rather than
+    the code.
+    """
     from app.auth.auth import hash_api_key
 
     test_user.api_key = hash_api_key("a-real-api-key")
     _stamp(test_user, test_db, utcnow() + timedelta(seconds=60))
 
-    resp = test_client.get(
-        f"/api/v1/users/{test_user.id}/next-shift",
-        headers={"Authorization": "Bearer a-real-api-key"},
-    )
+    url = f"/api/v1/users/{test_user.id}/next-shift"
+    accepted = test_client.get(url, headers={"Authorization": "Bearer a-real-api-key"})
+    rejected = test_client.get(url, headers={"Authorization": "Bearer not-the-key"})
 
-    assert resp.status_code == 200
+    # The pair is the point: 401 is reachable on this endpoint, and the real key
+    # does not get it even though the password changed a minute into the future.
+    assert rejected.status_code == 401
+    assert accepted.status_code != 401
