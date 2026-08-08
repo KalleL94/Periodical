@@ -14,10 +14,10 @@ jobs:
       
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.2.5
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         id: deploy
         with:
           host: ${{ secrets.PROD_HOST }}
@@ -30,7 +30,7 @@ jobs:
 
       - name: Notify Success
         if: success()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             github.rest.repos.createCommitComment({
@@ -42,7 +42,7 @@ jobs:
 
       - name: Notify Failure
         if: failure()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             github.rest.repos.createCommitComment({
