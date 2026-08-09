@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.auth.auth import decrypt_api_key, encrypt_api_key, get_current_user, get_password_hash, hash_api_key
+from app.auth.auth import decrypt_api_key, encrypt_api_key, get_current_user, hash_api_key, set_password
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule import vacation as vacation_core
 from app.core.utils import get_today
@@ -119,7 +119,7 @@ async def change_password(
     if len(new_password) < 8:
         return _profile_error("Nytt lösenord måste vara minst 8 tecken")
 
-    current_user.password_hash = get_password_hash(new_password)
+    set_password(current_user, new_password)
     try:
         db.commit()
     except Exception:
