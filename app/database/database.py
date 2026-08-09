@@ -138,6 +138,11 @@ class User(Base):
     must_change_password = Column(
         Integer, default=1, nullable=False
     )  # 1=True, 0=False (SQLite uses integers for booleans)
+    # When the password was last set. Tokens issued before this are refused, so a
+    # password change ends every session that was already open. NULL means the
+    # password has not been changed since the column was added, which keeps the
+    # sessions that were live at deploy time working.
+    password_changed_at = Column(DateTime, nullable=True)
     person_id = Column(
         Integer, nullable=True
     )  # Rotation position (1-10). If NULL, defaults to user.id for legacy compatibility

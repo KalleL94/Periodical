@@ -17,10 +17,10 @@ from app.auth.auth import (
     get_current_user_allow_pwd_change,
     get_current_user_from_cookie,
     get_current_user_optional,
-    get_password_hash,
     is_login_locked,
     record_failed_login,
     set_auth_cookie,
+    set_password,
 )
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
@@ -227,7 +227,7 @@ async def change_password_submit(
             status_code=400,
         )
 
-    current_user.password_hash = get_password_hash(new_password)
+    set_password(current_user, new_password)
     was_forced = current_user.must_change_password == 1
     current_user.must_change_password = 0
 
