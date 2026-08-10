@@ -184,9 +184,9 @@ async def admin_report_xlsx(
 ):
     """Download the monthly report as an Excel workbook.
 
-    The first sheet is the consolidated report (same columns as the CSV). Each agent
-    (rotation positions 1-10) then gets its own sheet, formatted exactly like the
-    per-person month export.
+    The first sheet is the consolidated report (same columns as the CSV). Each holder
+    of a rotation position during the month then gets its own sheet, formatted exactly
+    like the per-person month export.
     """
     if not _has_report_access(current_user, token):
         raise HTTPException(status_code=403, detail="Åtkomst nekad")
@@ -194,7 +194,7 @@ async def admin_report_xlsx(
     from openpyxl.styles import Alignment, Font, PatternFill
 
     from app.core.schedule import build_substitute_month_summaries
-    from app.core.schedule.summary import summarize_month_for_person
+    from app.core.schedule.summary import build_month_position_summaries
     from app.routes.excel_shared import REPORT_COL_HEADERS, autofit_columns, populate_month_sheet
 
     year, month = _resolve_year_month(year, month)
@@ -216,20 +216,17 @@ async def admin_report_xlsx(
         ws.append([row.get(key, "") for key, _ in CSV_COLUMNS])
     autofit_columns(ws)
 
-    # One sheet per agent (rotation positions 1-10), identical to the /month/{id} export.
+    # One sheet per position holder, identical to the /month/{id} export. Same rows
+    # as the summary sheet, so a mid-month person change gets one tab per holder.
     used_titles = {ws.title}
-    for pid in range(1, 11):
-        summary = summarize_month_for_person(year, month, pid, session=db, payment_year=year)
-        title = _safe_sheet_title(summary.get("person_name") or f"Agent {pid}", used_titles)
+    for summary in build_month_position_summaries(year, month, db):
+        title = _safe_sheet_title(summary.get("person_name") or f"Agent {summary.get('person_id')}", used_titles)
         used_titles.add(title)
         agent_ws = wb.create_sheet(title=title)
         populate_month_sheet(agent_ws, summary, year, month, headers=REPORT_COL_HEADERS, split_oncall_overtime=False)
 
     # One sheet per substitute with activity in the month, same layout as the agent tabs.
-    # Linked substitutes' attributed days live on the user's own sheet (issue #290).
-    for sub_summary in build_substitute_month_summaries(
-        year, month, db, include_overtime=True, exclude_linked_attributed=True
-    ):
+    for sub_summary in build_substitute_month_summaries(year, month, db, include_overtime=True):
         title = _safe_sheet_title(sub_summary.get("person_name") or "Vikarie", used_titles)
         used_titles.add(title)
         sub_ws = wb.create_sheet(title=title)
