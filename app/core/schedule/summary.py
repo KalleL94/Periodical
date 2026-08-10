@@ -1548,10 +1548,66 @@ def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
     }
 
 
-def build_month_report(year: int, month: int, session, fetch_tax_table: bool = False) -> list[dict]:
-    """Build one report row per agent (rotation positions 1-10) plus substitutes.
+def build_month_position_summaries(
+    year: int, month: int, session, fetch_tax_table: bool = False, user_wages: dict | None = None
+) -> list[dict]:
+    """Month summaries for rotation positions 1-10, one per holder segment.
 
-    Reuses summarize_month_for_person for agents and build_substitute_month_summaries
+    Follows PersonHistory the same way the team month view does: a position that
+    changes hands mid-month yields one summary per holder, each masked to their own
+    tenure, and a position vacant for the whole month yields none. Positions with no
+    history at all keep the legacy single unmasked summary.
+
+    Masking is what keeps a departing holder's row free of days that are not theirs,
+    including a successor's pre-employment linked-substitute days (issue #290): those
+    stay on the substitute's own row.
+    """
+    import calendar
+    import datetime as dt
+
+    from app.core.schedule.person_history import get_position_holder_segments, has_position_history
+
+    if user_wages is None:
+        user_wages = get_all_user_wages(session)
+    month_start = dt.date(year, month, 1)
+    month_end = dt.date(year, month, calendar.monthrange(year, month)[1])
+
+    summaries = []
+    for pid in range(1, 11):
+        segments = get_position_holder_segments(session, pid, month_start, month_end) if session else []
+        if not segments:
+            if session and has_position_history(session, pid):
+                continue  # Vacant for the whole month: no row.
+            segments = [None]  # Legacy position without history: one unmasked row.
+
+        # One row per segment. A user who held two DIFFERENT positions during the
+        # month (a mid-month swap) therefore gets one row per position rather than
+        # the single merged column the team month view builds.
+        for seg in segments:
+            month_days = generate_month_data(year, month, pid, session=session, user_wages=user_wages)
+            if seg is not None:
+                month_days = mask_days_to_employment(month_days, seg["from_date"], seg["to_date"])
+            summary = summarize_month_for_person(
+                year,
+                month,
+                pid,
+                session=session,
+                user_wages=user_wages,
+                year_days=month_days,
+                fetch_tax_table=fetch_tax_table,
+                payment_year=year,
+            )
+            if seg is not None:
+                summary["person_name"] = seg["name"]
+            summaries.append(summary)
+
+    return summaries
+
+
+def build_month_report(year: int, month: int, session, fetch_tax_table: bool = False) -> list[dict]:
+    """Build one report row per position holder (rotation positions 1-10) plus substitutes.
+
+    Reuses build_month_position_summaries for agents and build_substitute_month_summaries
     for substitutes, returning a flat list of rows ready for the report table / CSV.
     The report tracks time only, so tax lookups are skipped by default.
     """
@@ -1559,26 +1615,14 @@ def build_month_report(year: int, month: int, session, fetch_tax_table: bool = F
 
     user_wages = get_all_user_wages(session)
 
-    rows = []
-    for pid in range(1, 11):
-        month_days = generate_month_data(year, month, pid, session=session, user_wages=user_wages)
-        summary = summarize_month_for_person(
-            year,
-            month,
-            pid,
-            session=session,
-            user_wages=user_wages,
-            year_days=month_days,
-            fetch_tax_table=fetch_tax_table,
-            payment_year=year,
+    rows = [
+        _report_row_from_summary(summary, is_substitute=False)
+        for summary in build_month_position_summaries(
+            year, month, session, fetch_tax_table=fetch_tax_table, user_wages=user_wages
         )
-        rows.append(_report_row_from_summary(summary, is_substitute=False))
+    ]
 
-    # exclude_linked_attributed: a linked substitute's worked/OT days already
-    # count in the linked user's row above (issue #290 double-count guard).
-    for sub_summary in build_substitute_month_summaries(
-        year, month, session, include_overtime=True, exclude_linked_attributed=True
-    ):
+    for sub_summary in build_substitute_month_summaries(year, month, session, include_overtime=True):
         rows.append(_report_row_from_summary(sub_summary, is_substitute=True))
 
     return rows
