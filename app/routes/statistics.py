@@ -79,7 +79,7 @@ async def statistics_view(
     months = year_data["months"]
     year_summary = year_data["year_summary"]
 
-    show_salary = can_see_salary(current_user, rotation_position)
+    show_salary = can_see_salary(current_user, user_id_for_wages)
 
     if not show_salary:
         months = [strip_salary_data(m) for m in months]

@@ -468,6 +468,8 @@ async def show_month_all(
                 payment_year=year,
             )
             summary["holder_user_id"] = pid
+            # No history means no holder to key on, so the legacy identity
+            # user_id == person_id is who this column's pay belongs to.
             if not can_see_salary(current_user, pid):
                 summary = strip_salary_data(summary)
             persons.append(summary)

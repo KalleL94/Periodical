@@ -2250,12 +2250,121 @@ def test_year_view_hides_fully_vacant_position(month_env):
     assert "Vakant" not in resp.text and "Vacant" not in resp.text
 
 
-def test_year_totals_api_rejects_foreign_user_id(month_env):
-    """Non-admin totals scoping is limited to legitimate holders of the position.
+def test_a_position_swap_leaves_each_holder_reading_only_their_own_pay(month_env):
+    """Regression: keyed on the rotation position, a swap crossed the salary gate.
 
-    A non-admin viewer at position 3 who passes ?user_id pointing at a user who
-    never held position 3 gets 403 (otherwise they could back out that user's
-    wage level). The request for the real holder still returns totals.
+    Okan and Rickard traded positions on 1 October. Okan's own pages resolved to the
+    position he no longer holds and his current position matched Rickard's history, so
+    from October he lost his own salary everywhere and could read Rickard's on every
+    page that predates the swap. Checked in both directions and on both sides of the
+    swap date, since the pair is symmetric and each month resolves its own position.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _make_user(session, 8, "okan1", "Okan", person_id=3)
+    rickard = _make_user(session, 11, "rickard1", "Rickard", person_id=8)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 8, 3, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    def _brutto(viewer, target, month):
+        client.cookies.set("access_token", f"Bearer {create_access_token(data={'sub': str(viewer.id)})}")
+        resp = client.get(f"/month/{target.id}?year=2026&month={month}")
+        assert resp.status_code == 200
+        return "brutto" in resp.text.lower() and "kr" in resp.text
+
+    for month in (6, 11):  # before and after the swap
+        assert _brutto(okan, okan, month), f"Okan lost his own salary in month {month}"
+        assert _brutto(rickard, rickard, month), f"Rickard lost his own salary in month {month}"
+        assert not _brutto(okan, rickard, month), f"Okan could read Rickard's salary in month {month}"
+        assert not _brutto(rickard, okan, month), f"Rickard could read Okan's salary in month {month}"
+
+
+def test_dashboard_follows_the_position_held_on_each_date(month_env):
+    """Regression: the dashboard read User.rotation_person_id, which only knows today.
+
+    It has no id in its URL to resolve from, so it took the position off the User row
+    and used it for every week and month it rendered. After a swap that row names the
+    new position, so every date before the change came from the swap partner's rotation:
+    Okan's dashboard showed Rickard's week and hid his own, both ways round, from the
+    moment the swap was recorded rather than from the date it takes effect.
+    """
+    from app.routes.dashboard import _days_following_positions
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _make_user(session, 8, "okan1", "Okan", person_id=3)
+    rickard = _make_user(session, 11, "rickard1", "Rickard", person_id=8)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 8, 3, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    def _codes(user, monday):
+        days = _days_following_positions(session, user, monday, monday + datetime.timedelta(days=6))
+        return [d["shift"].code if d["shift"] else "-" for d in days]
+
+    def _position(person_id, monday):
+        days = generate_period_data(monday, monday + datetime.timedelta(days=6), person_id, session=session)
+        return [d["shift"].code if d["shift"] else "-" for d in days]
+
+    before = datetime.date(2026, 8, 10)  # a week wholly before the swap
+    assert _codes(okan, before) == _position(8, before)
+    assert _codes(rickard, before) == _position(3, before)
+
+    after = datetime.date(2026, 10, 5)  # a week wholly after it
+    assert _codes(okan, after) == _position(3, after)
+    assert _codes(rickard, after) == _position(8, after)
+
+    # The week the swap lands in splits on the date itself, not on the week boundary.
+    across = datetime.date(2026, 9, 28)  # Monday; the swap is that Thursday
+    assert _codes(okan, across) == _position(8, across)[:3] + _position(3, across)[3:]
+
+    # A week before the user existed has no tenure to build from, so it stays empty
+    # instead of falling back to whatever position the User row happens to name.
+    assert _codes(okan, datetime.date(2025, 6, 2)) == []
+
+
+def test_range_spanning_a_swap_shows_shifts_from_both_positions(month_env):
+    """Regression: a range is long enough to outlive a position change.
+
+    The view resolved one position for the whole range, at its start, and masked to
+    that tenure. Okan's 10-week range from 31 August therefore stopped dead on 30
+    September: his tenure at position 8 ended there and the days after it, which he
+    worked at position 3, belonged to a position the view was not asking about.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _make_user(session, 8, "okan1", "Okan", person_id=3)
+    rickard = _make_user(session, 11, "rickard1", "Rickard", person_id=8)
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 8, 3, datetime.date(2026, 10, 1), created_by=admin.id)
+
+    for viewer in (okan, rickard):
+        client.cookies.set("access_token", f"Bearer {create_access_token(data={'sub': str(viewer.id)})}")
+        resp = client.get(f"/range/{viewer.id}?weeks=10&from=2026-08-31")
+
+        assert resp.status_code == 200
+        # Every day of the range is rendered, both sides of the swap date.
+        for day in ("2026-09-29", "2026-10-01", "2026-11-08"):
+            assert day in resp.text, f"{viewer.name}: {day} missing from the range"
+
+        # And both tenures carry real shifts, in the pay breakdown as well as the
+        # calendar: the breakdown was built for one position over the whole range too.
+        shift_dates = re.findall(r'ob-row-shift">\s*<td class="td_left num">(\d{4}-\d\d-\d\d)</td>', resp.text)
+        assert any(d < "2026-10-01" for d in shift_dates), f"{viewer.name}: no shifts before the swap"
+        assert any(d >= "2026-10-01" for d in shift_dates), f"{viewer.name}: no shifts after the swap"
+
+
+def test_year_totals_api_gives_a_non_admin_only_their_own_totals(month_env):
+    """The team year view lazy-loads one column per holder, so a non-admin asks this
+    endpoint about other people as a matter of course. Those columns come back null,
+    the same answer the page renders as a dash, rather than a 403 whose presence would
+    itself say whether the named user holds that position.
+
+    A request for their own totals at a position they never held is still 403: it is
+    not a column the page can produce, and the holder check is what stops the endpoint
+    being used to price a position from the outside.
     """
     client, session = month_env
     admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
@@ -2268,14 +2377,18 @@ def test_year_totals_api_rejects_foreign_user_id(month_env):
     token = create_access_token(data={"sub": str(peter.id)})
     client.cookies.set("access_token", f"Bearer {token}")
 
-    # Foreign holder: forbidden.
-    forbidden = client.get("/api/year/2026/totals/3?user_id=13")
-    assert forbidden.status_code == 403
+    # Somebody else's column: no totals, no error.
+    other = client.get("/api/year/2026/totals/3?user_id=13")
+    assert other.status_code == 200
+    assert other.json()["total_ob"] is None
 
-    # Legitimate holder (Peter himself): totals returned.
+    # Own totals at a position Peter never held: refused outright.
+    assert client.get("/api/year/2026/totals/5?user_id=12").status_code == 403
+
+    # Own column at his own position: totals returned.
     allowed = client.get("/api/year/2026/totals/3?user_id=12")
     assert allowed.status_code == 200
-    assert "total_ob" in allowed.json()
+    assert allowed.json()["total_ob"] is not None
 
 
 def test_month_redirects_departed_user_to_team_view(month_env):

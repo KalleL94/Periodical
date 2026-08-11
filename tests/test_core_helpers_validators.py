@@ -141,16 +141,33 @@ class TestCanSeeSalary:
         assert can_see_salary(None, 1) is False
 
     def test_admin_allowed(self):
-        admin = SimpleNamespace(role=UserRole.ADMIN, rotation_person_id=None)
+        admin = SimpleNamespace(id=99, role=UserRole.ADMIN)
         assert can_see_salary(admin, 5) is True
 
-    def test_user_own_position_allowed(self):
-        user = SimpleNamespace(role=UserRole.USER, rotation_person_id=3)
-        assert can_see_salary(user, 3) is True
+    def test_user_own_pay_allowed(self):
+        user = SimpleNamespace(id=8, role=UserRole.USER)
+        assert can_see_salary(user, 8) is True
 
-    def test_user_other_position_denied(self):
-        user = SimpleNamespace(role=UserRole.USER, rotation_person_id=3)
-        assert can_see_salary(user, 4) is False
+    def test_another_users_pay_denied(self):
+        user = SimpleNamespace(id=8, role=UserRole.USER)
+        assert can_see_salary(user, 11) is False
+
+    def test_a_position_swap_does_not_hand_over_the_other_users_pay(self):
+        """Okan (user 8) and Rickard (user 11) swapped rotation positions: Okan took
+        position 3 and Rickard took position 8. Keyed on the position, each of them
+        matched the other's pages and stopped matching their own, so Okan read
+        Rickard's salary and lost his own. The identity is the user."""
+        okan = SimpleNamespace(id=8, role=UserRole.USER, rotation_person_id=3)
+        rickard = SimpleNamespace(id=11, role=UserRole.USER, rotation_person_id=8)
+
+        assert can_see_salary(okan, 8) is True  # his own pay, at either position
+        assert can_see_salary(okan, 11) is False  # Rickard's, at either position
+        assert can_see_salary(rickard, 11) is True
+        assert can_see_salary(rickard, 8) is False
+
+    def test_no_target_denied(self):
+        # A position with no holder resolves to None rather than to everyone.
+        assert can_see_salary(SimpleNamespace(id=8, role=UserRole.USER), None) is False
 
 
 class TestStripSalaryData:
