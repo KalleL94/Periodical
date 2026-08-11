@@ -216,6 +216,38 @@ class TestWageHistoryCrud:
         test_db.refresh(user)
         assert user.wage == 30000
 
+    def test_a_back_dated_wage_slots_in_behind_the_later_one(self, test_db):
+        """Recording a wage that starts before an existing one is an ordinary
+        correction. It used to close whichever row was open against the new, earlier
+        date, leaving a row that ends a year before it begins: get_user_wage filters on
+        effective_from <= date <= effective_to, so that row matched nothing and the wage
+        it held disappeared from every date at once."""
+        user = _make_user(test_db, wage=30000)
+        add_new_wage(test_db, user.id, 42000, datetime.date(2026, 10, 1))
+
+        add_new_wage(test_db, user.id, 37000, datetime.date(2025, 10, 1))
+
+        history = sorted(get_wage_history(test_db, user.id), key=lambda h: h["effective_from"])
+        assert [(h["wage"], h["effective_from"], h["effective_to"]) for h in history] == [
+            (37000, datetime.date(2025, 10, 1), datetime.date(2026, 9, 30)),
+            (42000, datetime.date(2026, 10, 1), None),
+        ]
+        # Every date resolves to exactly one of them, the boundary days included.
+        assert get_user_wage(test_db, user.id, effective_date=datetime.date(2026, 9, 30)) == 37000
+        assert get_user_wage(test_db, user.id, effective_date=datetime.date(2026, 10, 1)) == 42000
+        assert get_user_wage(test_db, user.id, effective_date=datetime.date(2027, 6, 1)) == 42000
+
+    def test_a_back_dated_wage_does_not_become_todays_snapshot(self, test_db):
+        # The later row still covers today, so User.wage must not fall back to the
+        # older figure just because the row was written last.
+        user = _make_user(test_db, wage=30000)
+        add_new_wage(test_db, user.id, 42000, get_today() - datetime.timedelta(days=1))
+
+        add_new_wage(test_db, user.id, 37000, datetime.date(2020, 1, 1))
+
+        test_db.refresh(user)
+        assert user.wage == 42000
+
     def test_get_current_wage_record(self, test_db):
         user = _make_user(test_db, wage=30000)
         add_new_wage(test_db, user.id, 30000, datetime.date(2024, 1, 1))
