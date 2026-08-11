@@ -1356,6 +1356,7 @@ def set_vacation_settings(
     variable_payout_month: str | None = None,
     variable_lump_lag_months: str | None = None,
     variable_lump_pct: str | None = None,
+    variable_share: str | None = None,
     payout_rule: str | None = None,
     settings_target: str | None = None,
 ) -> None:
@@ -1432,6 +1433,16 @@ def set_vacation_settings(
             _set("variable_lump_lag_months", int(lag))
 
     if variable_lump_pct is not None:
+        # The form asks one question with three answers and stores them in one field:
+        # the statutory rate is the absence of a value, so the mode decides what reaches
+        # the field and only "own rate" passes the number through. Keeping the storage a
+        # single number is what lets the payout and the running supplement read one
+        # setting rather than a mode plus a number.
+        if variable_share == "statutory":
+            variable_lump_pct = ""
+        elif variable_share == "twelve":
+            variable_lump_pct = "12"
+
         # Entered as a percentage, stored as a share. Blank clears it, which puts the
         # year back on the statutory 0.5% per paid day.
         raw = variable_lump_pct.replace(",", ".").strip()

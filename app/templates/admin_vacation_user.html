@@ -322,7 +322,7 @@
                     {% endif %}
                 </div>
                 {% endif %}
-                <div class="form-group avu-field">
+                <div class="form-group avu-field payout-rule-group">
                     <label class="form-label avu-label">{{ t.vacation_payout_rule }}</label>
                     <select name="vacation_payout_rule" class="form-input">
                         <option value="sammalone" {% if vacation_settings.payout_rule != 'procent' %}selected{% endif %}>
@@ -332,7 +332,10 @@
                             {{ t.vacation_rule_procent }}
                         </option>
                     </select>
-                    <div class="form-hint">{{ t.vacation_payout_rule_hint }}</div>
+                    {# One hint per rule rather than both at once: :has() reads the live
+                       select value, the same way the lump-only fields are revealed. #}
+                    <div class="form-hint rule-hint rule-hint--sammalone">{{ t.vacation_rule_hint_sammalone }}</div>
+                    <div class="form-hint rule-hint rule-hint--procent">{{ t.vacation_rule_hint_procent }}</div>
                 </div>
                 <div class="form-group avu-field">
                     <label class="form-label avu-label">{{ t.vacation_flat_per_day }}</label>
@@ -364,13 +367,34 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group avu-field">
-                    <label class="form-label avu-label">{{ t.vacation_lump_pct }}</label>
+                {# Three answers to one question. The percentage is stored in a single
+                   field where blank means "derive it", so the mode picks what the
+                   route writes there and the number only shows for a custom rate. #}
+                {% set _share = 'custom' if vacation_settings.variable_lump_pct not in (none, 0.12) else ('twelve' if vacation_settings.variable_lump_pct == 0.12 else 'statutory') %}
+                <div class="form-group avu-field variable-share-group">
+                    <label class="form-label avu-label">{{ t.vacation_share_label }}</label>
+                    <label class="form-radio">
+                        <input type="radio" name="vacation_variable_share" value="statutory" {% if _share == 'statutory' %}checked{% endif %}>
+                        <span>{{ t.vacation_share_statutory }}</span>
+                    </label>
+                    <label class="form-radio">
+                        <input type="radio" name="vacation_variable_share" value="twelve" {% if _share == 'twelve' %}checked{% endif %}>
+                        <span>{{ t.vacation_share_twelve }}</span>
+                    </label>
+                    <label class="form-radio">
+                        <input type="radio" name="vacation_variable_share" value="custom" {% if _share == 'custom' %}checked{% endif %}>
+                        <span>{{ t.vacation_share_custom }}</span>
+                    </label>
                     <input type="number" name="vacation_variable_lump_pct" step="0.01" min="0" max="100"
-                        value="{{ "%.2f"|format(vacation_settings.variable_lump_pct * 100) if vacation_settings.variable_lump_pct is not none else '' }}"
-                        placeholder="{{ "%.2f"|format(balance.pay.variable_lump_pct * 100) }}"
-                        class="form-input">
-                    <div class="form-hint">{{ t.vacation_lump_pct_hint.replace('{days}', balance.entitled_days|string).replace('{pct}', "%.2f"|format(balance.pay.variable_pct * 100)) }}</div>
+                        value="{{ "%g"|format(vacation_settings.variable_lump_pct * 100) if vacation_settings.variable_lump_pct is not none else '' }}"
+                        placeholder="{{ "%g"|format(balance.pay.variable_lump_pct * 100) }}"
+                        class="form-input custom-share-only">
+                    <div class="form-hint">
+                        {{ t.vacation_share_hint
+                            .replace('{pct}', "%g"|format(balance.pay.variable_lump_pct * 100))
+                            .replace('{base}', "{:,.0f}".format(balance.pay.variable_lump_base).replace(",", " "))
+                            .replace('{total}', "{:,.0f}".format(balance.pay.variable_lump_total).replace(",", " ")) }}
+                    </div>
                 </div>
                 <div class="form-group avu-field">
                     <label class="form-label avu-label">{{ t.vacation_lump_lag }}</label>

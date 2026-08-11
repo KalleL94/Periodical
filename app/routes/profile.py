@@ -534,6 +534,7 @@ async def update_vacation_settings(
     vacation_variable_payout_month: str = Form(""),
     vacation_variable_lump_lag_months: str = Form(""),
     vacation_variable_lump_pct: str = Form(""),
+    vacation_variable_share: str = Form(""),
     vacation_payout_rule: str = Form(""),
     vacation_settings_target: str = Form(""),
     current_user: User = Depends(get_current_user),
@@ -553,6 +554,7 @@ async def update_vacation_settings(
         variable_payout_month=vacation_variable_payout_month,
         variable_lump_lag_months=vacation_variable_lump_lag_months,
         variable_lump_pct=vacation_variable_lump_pct,
+        variable_share=vacation_variable_share,
         payout_rule=vacation_payout_rule,
         settings_target=vacation_core.resolve_settings_target(vacation_settings_target, current_user),
     )
