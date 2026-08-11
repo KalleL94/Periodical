@@ -91,6 +91,7 @@ def _stub_years(monkeypatch, *rows, lump_settled=False, rule=SAME_PAY_RULE):
             "total_pay": total_pay,
             "lump_settled": settled,
             "rule": year_rule,
+            "variable_pct_configured": None,
         }
         for (days, earned, variable, total_pay), settled, year_rule in zip(rows, flags, rules, strict=True)
     ]
@@ -395,12 +396,15 @@ class TestCalculateConsultantVacationPayout:
 
 
 class TestEarningYearVariableWindows:
-    """The windows the variable pay is summed over must tile the whole engagement.
+    """The windows the pay is summed over must tile the whole engagement, exactly once.
 
-    Variable pay lags a month, so each year's window shifts back. The final year is the
-    exception: the engagement ends there and the consultant employer settles the last
-    months along with everything else, so its window runs to the last consultant day. A
-    gap between the years would silently drop a month of variable pay from the payout.
+    Pay lags a month, so each year's window shifts back. Salary and variable parts ride
+    the same payslip and share one window: the percentage rule takes 12% of the two
+    together, and windows that disagree would have it work on a sum that never fell due
+    in one piece. The final year is the exception at its end: the engagement stops there
+    and the consultant employer settles the last months along with everything else, so
+    its window runs to the last consultant day. A gap between the years would silently
+    drop a month of pay from the payout.
     """
 
     def _windows(self, test_db, monkeypatch, user, transition):
@@ -412,8 +416,7 @@ class TestEarningYearVariableWindows:
 
         monkeypatch.setattr("app.core.schedule.transition._pay_for_window", _record)
         get_earning_years(user, transition, session=test_db)
-        # Each row asks for the shifted variable window first, then the unshifted base one.
-        return calls[::2]
+        return calls
 
     def test_final_year_runs_to_the_last_consultant_day(self, test_db, monkeypatch):
         user = _make_user(test_db, employment_start_date=datetime.date(2025, 10, 1), person_id=1)
@@ -422,11 +425,23 @@ class TestEarningYearVariableWindows:
         windows = self._windows(test_db, monkeypatch, user, transition)
 
         assert windows == [
-            # earning year 2025/26, shifted a month back at both ends
-            (datetime.date(2025, 9, 1), datetime.date(2026, 2, 28)),
+            # earning year 2025/26: the shifted start would reach back to September, a
+            # month with no payslip at all, so it stops at the employment start.
+            (datetime.date(2025, 10, 1), datetime.date(2026, 2, 28)),
             # final year: shifted start, but the end stays on the last consultant day
             (datetime.date(2026, 3, 1), datetime.date(2026, 11, 30)),
         ]
+
+    def test_the_first_window_never_reaches_back_past_the_employment(self, test_db, monkeypatch):
+        """summarize_month_for_person reports a full monthly salary for any month asked
+        of it, employed or not, so a window shifted past the employment start would
+        credit the first earning year with a salary that was never paid."""
+        user = _make_user(test_db, employment_start_date=datetime.date(2025, 10, 1), person_id=1)
+        transition = _make_transition(transition_date=datetime.date(2026, 12, 1))
+
+        first_start, _ = self._windows(test_db, monkeypatch, user, transition)[0]
+
+        assert first_start == user.employment_start_date
 
     def test_windows_leave_no_gap_between_the_years(self, test_db, monkeypatch):
         user = _make_user(test_db, employment_start_date=datetime.date(2024, 1, 1), person_id=1)
@@ -529,6 +544,52 @@ class TestShiftMonths:
 
     def test_clamps_a_day_the_target_month_does_not_have(self):
         assert _shift_months(datetime.date(2026, 3, 31), 1) == datetime.date(2026, 2, 28)
+
+
+class TestConfiguredVariableShare:
+    """An employer that settles the variable part at a flat share pays that same share
+    for the days it never got round to.
+
+    Agiremus runs the same-pay rule on the salary and the percentage rule on the
+    variable part, which no single statutory rule expresses. Paying 12% of the variable
+    pay monthly and 0.5% per day on the way out would settle one earning year at two
+    different rates.
+    """
+
+    def test_the_configured_share_prices_the_unused_days(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=37000)
+        transition = _make_transition(transition_date=datetime.date(2026, 10, 1))
+        years = _stub_years(monkeypatch, (13, 13, 99484.87, 356435.87))
+        years[0]["variable_pct_configured"] = 0.12
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        # 37000 x 5.03% = 1861.10 base, plus 12% of 99484.87 spread over the 13 days
+        # the year earned = 918.32. The same-pay rule's own 0.5% would give 497.42.
+        assert result["years"][0]["per_day"] == 2779.42
+        assert result["total"] == 36132.46
+
+    def test_without_a_configured_share_the_statutory_rate_still_applies(self, test_db, monkeypatch):
+        user = _make_user(test_db, wage=37000)
+        transition = _make_transition(transition_date=datetime.date(2026, 10, 1))
+        _stub_years(monkeypatch, (13, 13, 99484.87, 356435.87))
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        # 1861.10 + 0.5% x 99484.87 = 2358.52, unchanged by the configurable share.
+        assert result["years"][0]["per_day"] == 2358.52
+
+    def test_a_settled_lump_still_beats_the_configured_share(self, test_db, monkeypatch):
+        # The money is out the door; which percentage produced it does not bring it back.
+        user = _make_user(test_db, wage=37000)
+        transition = _make_transition(transition_date=datetime.date(2026, 10, 1))
+        years = _stub_years(monkeypatch, (5, 13, 21377.99, 206377.99), lump_settled=True)
+        years[0]["variable_pct_configured"] = 0.12
+
+        result = calculate_consultant_vacation_payout(transition, user, test_db)
+
+        assert result["years"][0]["per_day"] == 1861.10
+        assert result["variable_payout"] == 0.0
 
 
 class TestPercentageRulePayout:
