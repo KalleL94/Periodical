@@ -490,6 +490,7 @@ async def admin_vacation_user(
     request: Request,
     user_id: int,
     year: int | None = None,
+    settings: str | None = Query(None),
     success: str | None = Query(None),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
@@ -501,6 +502,8 @@ async def admin_vacation_user(
     if not edit_user:
         return RedirectResponse(url="/admin/vacation", status_code=302)
 
+    target = vacation_core.resolve_settings_target(settings, edit_user)
+
     return render(
         "admin_vacation_user.html",
         {
@@ -510,7 +513,7 @@ async def admin_vacation_user(
             "year": year,
             "success": success,
             "month_names": MONTH_NAMES_SV,
-            **vacation_core.build_vacation_page_context(db, edit_user, year),
+            **vacation_core.build_vacation_page_context(db, edit_user, year, settings_target=target),
         },
     )
 
@@ -679,8 +682,9 @@ async def admin_update_vacation_settings(
     vacation_variable_payout: str = Form("per_day"),
     vacation_variable_payout_month: str = Form(""),
     vacation_variable_lump_lag_months: str = Form(""),
+    vacation_variable_lump_pct: str = Form(""),
     vacation_payout_rule: str = Form(""),
-    vacation_settings_year: str = Form(""),
+    vacation_settings_target: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Admin: update vacation settings for a user."""
@@ -698,8 +702,9 @@ async def admin_update_vacation_settings(
         variable_payout=vacation_variable_payout,
         variable_payout_month=vacation_variable_payout_month,
         variable_lump_lag_months=vacation_variable_lump_lag_months,
+        variable_lump_pct=vacation_variable_lump_pct,
         payout_rule=vacation_payout_rule,
-        settings_year=int(vacation_settings_year) if vacation_settings_year.strip().lstrip("-").isdigit() else None,
+        settings_target=vacation_core.resolve_settings_target(vacation_settings_target, edit_user),
     )
 
     return RedirectResponse(

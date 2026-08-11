@@ -446,11 +446,13 @@ async def export_calendar(
 async def vacation_page(
     request: Request,
     year: int | None = None,
+    settings: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Show vacation management page."""
     year = vacation_core.resolve_vacation_year(year)
+    target = vacation_core.resolve_settings_target(settings, current_user)
 
     return render(
         "vacation.html",
@@ -458,7 +460,7 @@ async def vacation_page(
             "request": request,
             "user": current_user,
             "year": year,
-            **vacation_core.build_vacation_page_context(db, current_user, year),
+            **vacation_core.build_vacation_page_context(db, current_user, year, settings_target=target),
         },
     )
 
@@ -531,8 +533,9 @@ async def update_vacation_settings(
     vacation_variable_payout: str = Form("per_day"),
     vacation_variable_payout_month: str = Form(""),
     vacation_variable_lump_lag_months: str = Form(""),
+    vacation_variable_lump_pct: str = Form(""),
     vacation_payout_rule: str = Form(""),
-    vacation_settings_year: str = Form(""),
+    vacation_settings_target: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -549,8 +552,9 @@ async def update_vacation_settings(
         variable_payout=vacation_variable_payout,
         variable_payout_month=vacation_variable_payout_month,
         variable_lump_lag_months=vacation_variable_lump_lag_months,
+        variable_lump_pct=vacation_variable_lump_pct,
         payout_rule=vacation_payout_rule,
-        settings_year=int(vacation_settings_year) if vacation_settings_year.strip().lstrip("-").isdigit() else None,
+        settings_target=vacation_core.resolve_settings_target(vacation_settings_target, current_user),
     )
     return RedirectResponse(url="/profile/vacation", status_code=302)
 

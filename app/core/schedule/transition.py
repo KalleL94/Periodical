@@ -102,25 +102,33 @@ def get_earning_years(
     last_day = transition.transition_date - datetime.timedelta(days=1)
 
     def _row(start, end, earned, used, vacation_year_start, is_final):
-        lag = _payroll_lag_months(user, vacation_year_start)
+        settings = _settings_for(user, vacation_year_start)
+        lag = settings["variable_lump_lag_months"]
+        lag = int(lag) if lag is not None else 1
 
-        # Variable pay is paid the month after it is worked, so the pay that *fell due*
-        # inside the earning year is the pay worked in the window shifted back by the
-        # payroll lag. The monthly salary does not lag, so its window stays put. This
-        # matches the shifted window vacation.py already computes the variable lump on.
+        # A month's pay falls due `lag` months after it is worked, so the pay that fell
+        # due inside the earning year is the pay worked in the window shifted back by
+        # the lag. Salary and variable parts ride the same payslip and so share one
+        # window: Semesterlagen 16 b takes 12% of everything that fell due in the year,
+        # and summing a six-month salary against a two-month variable total would give
+        # that percentage nothing real to work on. This matches the shifted window
+        # vacation.py computes the variable lump on.
         #
         # The final year is not shifted at its end: the engagement stops there, and the
-        # last months' variable pay is settled by the consultant employer along with
-        # everything else it still owes. Shifting that end would leave it in no earning
-        # year at all, even though it is paid out.
+        # last months' pay is settled by the consultant employer along with everything
+        # else it still owes. Shifting that end would leave it in no earning year at
+        # all, even though it is paid out.
+        # Shifting the first year's start reaches back past the employment, where there
+        # was no payslip at all. summarize_month_for_person still reports a full monthly
+        # salary for such a month, so the window has to stop at the employment start or
+        # the year is credited with pay that never fell due.
         if session:
-            variable, _ = _pay_for_window(
+            variable, base = _pay_for_window(
                 user,
                 session,
-                _shift_months(start, lag),
+                max(_shift_months(start, lag), user.employment_start_date),
                 end if is_final else _shift_months(end, lag, to_month_end=True),
             )
-            _, base = _pay_for_window(user, session, start, end)
         else:
             variable, base = 0.0, 0.0
 
@@ -134,7 +142,10 @@ def get_earning_years(
             "variable": variable,
             "total_pay": round(base + variable, 2),
             "lump_settled": _lump_already_paid(user, vacation_year_start, transition.transition_date),
-            "rule": _settings_for(user, vacation_year_start)["payout_rule"],
+            "rule": settings["payout_rule"],
+            # Carried rather than re-resolved at payout time so the rate that prices an
+            # unused day is the one that year was actually run on.
+            "variable_pct_configured": settings["variable_lump_pct"],
         }
 
     # Manual override: single custom earning period (legacy / admin-configured)
@@ -244,16 +255,14 @@ def _lump_already_paid(user: "User", vacation_year_start, transition_date) -> bo
 
 
 def _settings_for(user: "User", vacation_year_start: datetime.date) -> dict:
-    """The payout settings in force for the vacation year an earning year feeds."""
+    """The payout settings in force for the vacation year an earning year feeds.
+
+    Every earning year this module builds ends the day before the transition, so they
+    all belong to the consultant employer and resolve against its entry.
+    """
     from app.core.schedule.vacation import vacation_settings_for_year
 
-    return vacation_settings_for_year(user, vacation_year_start.year)
-
-
-def _payroll_lag_months(user: "User", vacation_year_start: datetime.date) -> int:
-    """How many months variable pay lags the month it was worked in."""
-    lag = _settings_for(user, vacation_year_start)["variable_lump_lag_months"]
-    return int(lag) if lag is not None else 1
+    return vacation_settings_for_year(user, vacation_year_start.year, consultant=True)
 
 
 def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.date) -> tuple[float, float]:
@@ -262,8 +271,9 @@ def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.d
 
     Variable pay is OB supplement + on-call compensation + overtime. Base pay is the
     rest of the month's brutto, i.e. the monthly salary net of absence deductions.
-    Callers combine the two across different windows, which is why they come apart
-    here rather than as one total.
+    They come apart because the two statutory rules need different things from the
+    same window: the same-pay rule prices only the variable half, the percentage rule
+    takes 12% of both together.
 
     Months are summed whole and scaled at the window edges: summarize_month_for_person
     always reports a full monthly salary even for a month the person was not employed
@@ -384,7 +394,8 @@ def calculate_consultant_vacation_payout(
     """
     Calculates the vacation payout at the end of the consultant engagement.
 
-    Both statutory rules are supported; `transition.vacation_payout_rule` picks one.
+    Both statutory rules are supported; each earning year follows the one its own
+    settings resolve to, which for these years is the consultant employer's entry.
 
     SAME_PAY (Semesterlagen 16 a), per unused day:
         Base:     monthly_salary × (payout_pct + supplement_pct)
@@ -422,6 +433,7 @@ def calculate_consultant_vacation_payout(
         Each entry in "years" adds "payout" and "per_day" to the get_earning_years dict.
     """
     from app.core.rates import DEFAULT_VACATION_RATES
+    from app.core.schedule.vacation import resolve_variable_pct
     from app.core.schedule.wages import get_effective_monthly_wage
 
     earning_start, earning_end = get_earning_year(transition)
@@ -468,16 +480,27 @@ def calculate_consultant_vacation_payout(
             base_payout += year["payout"]
             continue
 
-        # 0.5% of each year's own variable pay: an older day is worth what its own
+        # A share of each year's own variable pay: an older day is worth what its own
         # earning year paid, not what the most recent one did. A year whose variable
         # supplement was already settled as a lump gets nothing here, or it would be
         # paid twice. An explicit override still wins: it is a stated intent.
+        #
+        # The share comes from the same place the running supplement takes it, so an
+        # employer settling the variable part at a flat percentage pays that same
+        # percentage for the days it never got round to. Statutory default aside, an
+        # employer paying 12% while employed and 0.5% per day on the way out would be
+        # settling one earning year at two different rates.
         if override is not None:
             var_per_day = override
         elif year["lump_settled"]:
             var_per_day = 0.0
         else:
-            var_per_day = variable_pct * year["variable"]
+            pct = resolve_variable_pct(
+                {"variable_lump_pct": year["variable_pct_configured"], "payout_rule": year["rule"]},
+                year["earned"],
+                variable_pct,
+            )
+            var_per_day = pct * year["variable"] / year["earned"] if year["earned"] else 0.0
 
         year["per_day"] = round(base_with_supplement_per_day + var_per_day, 2)
         year["payout"] = round(year["per_day"] * year["days"], 2)
@@ -497,7 +520,10 @@ def calculate_consultant_vacation_payout(
         base_per_day = 0.0
         base_with_supplement_per_day = 0.0
 
-    total = round(base_payout + variable_payout, 2)
+    # Summed from the rounded per-year rows, not from the components: the rows are the
+    # itemisation the payout is checked against, and a total that does not add up to
+    # what is printed above it reads as an error even when it is two öre of rounding.
+    total = round(sum(year["payout"] for year in years), 2)
 
     return {
         "rule": rule,

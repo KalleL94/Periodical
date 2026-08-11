@@ -5,6 +5,7 @@ import math
 
 from app.core.constants import PERSON_IDS
 from app.core.logging_config import get_logger
+from app.core.schedule.transition import PERCENTAGE_RULE, PERCENTAGE_RULE_PCT
 
 logger = get_logger(__name__)
 
@@ -707,7 +708,11 @@ def calculate_vacation_pay(
         vacation_rates = vacation_rates or DEFAULT_VACATION_RATES
 
     vac = vacation_rates
-    settings = vacation_settings_for_year(user, vacation_year)
+    # An earning year that ends before the transition was run entirely by the consultant
+    # employer, so it settles on that employer's terms. One that contains the transition
+    # is clipped to start there (below), leaving the direct employment's terms to govern
+    # what is left of it.
+    settings = vacation_settings_for_year(user, vacation_year, consultant=is_consultant_period(user, earning_end))
     flat = settings["fixed_per_day"]
     fixed_per_day = round(float(flat), 2) if flat else round(monthly_salary * vac["fixed_pct"], 2)
 
@@ -788,8 +793,14 @@ def calculate_vacation_pay(
     lump_parts = (ob_total, ot_total, oncall_total)
     lump_base = variable_total
 
-    # Variable supplement: 0.5% of total variable earnings, per vacation day (customizable)
-    variable_per_day = round(variable_total * vac["variable_pct"], 2)
+    # Variable supplement per vacation day. Derived it is 0.5% of the year's variable
+    # earnings, the statutory rate. A configured share is a figure for the whole year, so
+    # it is spread over the days that year granted; a year that granted none keeps the
+    # rate itself, since there is no day to spread it over.
+    variable_share = resolve_variable_pct(settings, entitled_days, vac["variable_pct"])
+    variable_per_day = round(
+        variable_share * variable_total / entitled_days if entitled_days else variable_total * vac["variable_pct"], 2
+    )
 
     # Paying the variable part as a lump sum takes it out of the per-day figure,
     # or a taken vacation day would be paid its share twice. full_supplement_per_day
@@ -798,8 +809,8 @@ def calculate_vacation_pay(
     # schedules the variable part while employed.
     lump = settings["variable_payout"] == "lump"
 
-    # The lump is the same money as the per-day supplement, settled once instead of
-    # spread over the days, so it scales with the days the year actually earned:
+    # Derived, the lump is the same money as the per-day supplement settled once instead
+    # of spread over the days, so it scales with the days the year actually earned:
     # 0.5% each, i.e. the familiar 12.5% at a full 25-day entitlement but less for a
     # part year. A flat percentage would pay a 9-day year as if it had 25.
     # The lump is owed by whoever was the employer in its payout month, for the days
@@ -811,7 +822,7 @@ def calculate_vacation_pay(
     if transition and accrued_days is not None and lump_already_paid(user, year_start, transition.transition_date):
         lump_days = accrued_days
 
-    lump_pct = round(vac["variable_pct"] * lump_days, 6)
+    lump_pct = resolve_variable_pct(settings, lump_days, vac["variable_pct"])
     lump_total = round(lump_base * lump_pct, 2) if lump else 0.0
 
     supplement_per_day = round(fixed_per_day if lump else fixed_per_day + variable_per_day, 2)
@@ -877,19 +888,42 @@ def _lump_payout_month(configured_month, user) -> int:
 # The payout settings that are versioned per vacation year, and the User column each
 # one falls back to. The columns hold what was configured before per-year settings
 # existed, so an unconfigured year keeps behaving exactly as it did.
-VACATION_SETTING_FALLBACKS = {
-    "fixed_per_day": "vacation_fixed_per_day",
-    "variable_payout": "vacation_variable_payout",
-    "variable_payout_month": "vacation_variable_payout_month",
-    "variable_lump_lag_months": "vacation_variable_lump_lag_months",
-    "payout_rule": None,  # no column; the statutory default is the same-pay rule
-}
-
 DEFAULT_VACATION_PAYOUT_RULE = "sammalone"
 VACATION_PAYOUT_RULE_VALUES = ("sammalone", "procent")
 
+# field -> (User column to fall back to, default when there is no column)
+VACATION_SETTING_FALLBACKS = {
+    "fixed_per_day": ("vacation_fixed_per_day", None),
+    "variable_payout": ("vacation_variable_payout", None),
+    "variable_payout_month": ("vacation_variable_payout_month", None),
+    "variable_lump_lag_months": ("vacation_variable_lump_lag_months", None),
+    "payout_rule": (None, DEFAULT_VACATION_PAYOUT_RULE),
+    # Deliberately no column. users.vacation_variable_lump_pct is NOT NULL with a 0.12
+    # default, so it cannot say "not configured", and it predates the per-day figure
+    # below. None means derive: 0.5% per paid day is what Semesterlagen 16 a states, so
+    # only an employer that says otherwise gets anything else.
+    "variable_lump_pct": (None, None),
+}
 
-def vacation_settings_for_year(user, vacation_year: int) -> dict:
+# The consultant employer's own entry in User.vacation_settings, stored beside the
+# vacation-year keys. Not a year, so the year-inheritance walk skips it.
+CONSULTANT_SETTINGS_KEY = "consultant"
+
+
+def is_consultant_period(user, period_end: datetime.date | None) -> bool:
+    """Whether a period that ends on `period_end` was run by the consultant employer.
+
+    The engagement ends the day before the transition, so a period ending before that
+    date belongs entirely to the consultant employer. Both sides of the app already
+    clip their earning years at the transition (get_earning_years stops there,
+    calculate_vacation_pay moves its start there), so no period straddles it and this
+    stays a boolean rather than a split.
+    """
+    transition = getattr(user, "employment_transition", None)
+    return bool(transition and period_end and period_end < transition.transition_date)
+
+
+def vacation_settings_for_year(user, vacation_year: int, *, consultant: bool = False) -> dict:
     """
     The payout settings in force for one vacation year.
 
@@ -899,9 +933,15 @@ def vacation_settings_for_year(user, vacation_year: int) -> dict:
     with no earlier entry at all it falls back to the User columns, which is what
     every year used before these settings were versioned.
 
+    `consultant` asks for the settings of a period the consultant employer ran, which
+    take precedence field by field. Which statutory rule applies, and how the variable
+    part is settled, follow the agreement rather than the calendar, and the agreement
+    changes at the transition date. That date does not land on a vacation year break,
+    so the earning year it falls in needs two answers and a year key can only hold one.
+
     Returns:
         {fixed_per_day, variable_payout, variable_payout_month,
-         variable_lump_lag_months, payout_rule}
+         variable_lump_lag_months, payout_rule, variable_lump_pct}
     """
     stored = getattr(user, "vacation_settings", None) or {}
 
@@ -910,15 +950,45 @@ def vacation_settings_for_year(user, vacation_year: int) -> dict:
     if earlier:
         inherited = stored.get(str(max(earlier))) or {}
 
+    if consultant:
+        # Field by field, so a consultant entry that only states the rule still lets
+        # the rest resolve the way it did before the entry existed.
+        inherited = {**inherited, **(stored.get(CONSULTANT_SETTINGS_KEY) or {})}
+
     resolved = {}
-    for field, column in VACATION_SETTING_FALLBACKS.items():
+    for field, (column, default) in VACATION_SETTING_FALLBACKS.items():
         if field in inherited:
             resolved[field] = inherited[field]
         elif column:
             resolved[field] = getattr(user, column, None)
         else:
-            resolved[field] = DEFAULT_VACATION_PAYOUT_RULE
+            resolved[field] = default
     return resolved
+
+
+def resolve_variable_pct(settings: dict, days, statutory_per_day: float) -> float:
+    """The share of an earning year's variable pay that the variable part comes to.
+
+    Three answers, in order:
+
+    - a configured percentage. Employers differ on this and the statute is only the
+      floor, so an agreement that states its own figure is taken at its word. It is a
+      flat share of the year's variable pay: the shorter window a part year has is
+      already the whole of its reduction, and scaling by the days on top of that applies
+      the same cut twice.
+    - the percentage rule, 12% flat, since Semesterlagen 16 b spreads nothing per day.
+    - derived: `statutory_per_day` per paid day, which is 16 a's 0.5%.
+
+    One definition because the same figure is paid twice over the life of an earning
+    year: monthly (or as a yearly lump) while employed, and per unused day when the
+    employment ends. Two copies would eventually disagree about the same year.
+    """
+    configured = settings.get("variable_lump_pct")
+    if configured is not None:
+        return float(configured)
+    if settings.get("payout_rule") == PERCENTAGE_RULE:
+        return PERCENTAGE_RULE_PCT
+    return round(statutory_per_day * (days or 0), 6)
 
 
 def lump_payout_date(user, vacation_year: int, configured_month=None) -> datetime.date:
@@ -943,8 +1013,11 @@ def lump_already_paid(user, vacation_year_start: datetime.date, transition_date:
     year in one month of the vacation year that follows it. Which employer that was
     decides who owes the lump, and a lump that landed before a transition was paid by
     the employer the person had then.
+
+    Only a lump that landed before the transition answers yes here, so the schedule it
+    was paid on is by construction the consultant employer's.
     """
-    settings = vacation_settings_for_year(user, vacation_year_start.year)
+    settings = vacation_settings_for_year(user, vacation_year_start.year, consultant=True)
     if settings["variable_payout"] != "lump":
         return False
 
@@ -963,10 +1036,14 @@ def is_variable_lump_month(user, month: int, year: int) -> bool:
     Reads the user's own settings, nothing else. Callers use it to decide whether
     the far more expensive calculate_vacation_balance (it summarises twelve
     months) is worth running for a month that has no vacation days in it.
+
+    A month before the transition is paid on the consultant employer's schedule, so it
+    resolves against that entry: the two employers can settle the variable part in
+    different months, and this decides which month to look in.
     """
     target = datetime.date(year, month, 1)
     vacation_year = vacation_year_of(target, user)
-    settings = vacation_settings_for_year(user, vacation_year)
+    settings = vacation_settings_for_year(user, vacation_year, consultant=is_consultant_period(user, target))
     if settings["variable_payout"] != "lump":
         return False
     return lump_payout_date(user, vacation_year, settings["variable_payout_month"]) == target
@@ -1067,6 +1144,20 @@ def is_valid_vacation_year(year: int) -> bool:
     return 2020 <= year <= 2100
 
 
+def resolve_settings_target(raw: str | None, user) -> str | None:
+    """The User.vacation_settings key a request asked to read or write.
+
+    A vacation year as digits, or "consultant" for the entry covering the periods the
+    consultant employer ran. The consultant key is only offered to users who have a
+    transition, so an entry can never be written where nothing would ever read it.
+    Anything else is None, which leaves callers on their own default.
+    """
+    raw = (raw or "").strip()
+    if raw == CONSULTANT_SETTINGS_KEY:
+        return raw if getattr(user, "employment_transition", None) else None
+    return raw if raw.lstrip("-").isdigit() else None
+
+
 def resolve_vacation_year(year: int | None) -> int:
     """The vacation year a request asked for, falling back to the current one.
 
@@ -1091,7 +1182,7 @@ def _commit(db) -> None:
     clear_schedule_cache()
 
 
-def build_vacation_page_context(db, user, year: int) -> dict:
+def build_vacation_page_context(db, user, year: int, settings_target: str | None = None) -> dict:
     """Build the shared template context for a user's vacation year.
 
     Walks the calendar year once to collect the user's OFF days (which the
@@ -1126,12 +1217,22 @@ def build_vacation_page_context(db, user, year: int) -> dict:
             .all()
         )
 
+    # The settings form edits one entry at a time: the vacation year on screen, or the
+    # consultant employer's, which covers every earning year before the transition.
+    transition = getattr(user, "employment_transition", None)
+    consultant = settings_target == CONSULTANT_SETTINGS_KEY and transition is not None
+    target = CONSULTANT_SETTINGS_KEY if consultant else str(year)
+    stored_settings = getattr(user, "vacation_settings", None) or {}
+
     return {
         "vacation_weeks": sorted((user.vacation or {}).get(str(year), [])),
-        # The payout settings in force for this vacation year, so the form edits the
-        # year on screen rather than one global setting shared by every year.
-        "vacation_settings": vacation_settings_for_year(user, year),
-        "vacation_settings_own": bool((getattr(user, "vacation_settings", None) or {}).get(str(year))),
+        # The payout settings in force for the entry on screen, so the form edits that
+        # one rather than one global setting shared by every year and every employer.
+        "vacation_settings": vacation_settings_for_year(user, year, consultant=consultant),
+        "vacation_settings_own": bool(stored_settings.get(target)),
+        "vacation_settings_target": target,
+        "vacation_settings_consultant": consultant,
+        "vacation_settings_transition": transition.transition_date if transition else None,
         "balance": calculate_vacation_balance(user, year, db, off_dates=off_days),
         "day_absences": _absences(AbsenceType.VACATION),
         "parental_absences": _absences(AbsenceType.PARENTAL),
@@ -1254,8 +1355,9 @@ def set_vacation_settings(
     variable_payout: str | None = None,
     variable_payout_month: str | None = None,
     variable_lump_lag_months: str | None = None,
+    variable_lump_pct: str | None = None,
     payout_rule: str | None = None,
-    settings_year: int | None = None,
+    settings_target: str | None = None,
 ) -> None:
     """Update vacation settings. Out-of-range values are ignored, as is a
     malformed date; an empty date string clears the employment start date.
@@ -1266,9 +1368,11 @@ def set_vacation_settings(
     meaningful answer for two of them: it clears the flat amount and falls the
     lump back to the vacation year's start month.
 
-    The payout settings are written to `settings_year` in User.vacation_settings, so
-    changing one year leaves the others alone. Later years without an entry of their
-    own inherit it; earlier ones keep whatever they had.
+    The payout settings are written to `settings_target` in User.vacation_settings, so
+    changing one entry leaves the others alone. A vacation year is inherited forward by
+    later years without an entry of their own; earlier ones keep whatever they had. The
+    "consultant" entry is not a year and inherits nowhere: it applies to exactly the
+    periods that employer ran, which is every earning year before the transition.
     """
     if employment_start_date.strip():
         try:
@@ -1284,15 +1388,18 @@ def set_vacation_settings(
     if days_per_year is not None and 0 <= days_per_year <= 40:
         user.vacation_days_per_year = days_per_year
 
-    # Everything below is versioned per vacation year. Start from what that year
-    # already resolves to, so a form that only submits some fields does not silently
-    # drop the rest of the year's settings.
+    # Everything below is versioned per entry. Start from what that entry already
+    # resolves to, so a form that only submits some fields does not silently drop the
+    # rest of it.
     from app.core.utils import get_today
 
-    year = settings_year if settings_year is not None else vacation_year_of(get_today(), user)
-    resolved = vacation_settings_for_year(user, year)
+    current_year = vacation_year_of(get_today(), user)
+    target = settings_target or str(current_year)
+    consultant = target == CONSULTANT_SETTINGS_KEY
+    year = current_year if consultant else int(target)
+    resolved = vacation_settings_for_year(user, year, consultant=consultant)
     stored = dict(getattr(user, "vacation_settings", None) or {})
-    entry = dict(stored.get(str(year)) or {})
+    entry = dict(stored.get(target) or {})
 
     def _set(field, value):
         entry[field] = value
@@ -1324,13 +1431,24 @@ def set_vacation_settings(
         if lag.isdigit() and 0 <= int(lag) <= 6:
             _set("variable_lump_lag_months", int(lag))
 
+    if variable_lump_pct is not None:
+        # Entered as a percentage, stored as a share. Blank clears it, which puts the
+        # year back on the statutory 0.5% per paid day.
+        raw = variable_lump_pct.replace(",", ".").strip()
+        try:
+            pct = float(raw) / 100 if raw else None
+        except ValueError:
+            pct = resolved["variable_lump_pct"]
+        if pct is None or 0 <= pct <= 1:
+            _set("variable_lump_pct", pct)
+
     if payout_rule in VACATION_PAYOUT_RULE_VALUES:
         _set("payout_rule", payout_rule)
 
     if entry:
         from sqlalchemy.orm.attributes import flag_modified
 
-        stored[str(year)] = entry
+        stored[target] = entry
         user.vacation_settings = stored
         flag_modified(user, "vacation_settings")
 
