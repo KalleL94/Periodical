@@ -1,5 +1,66 @@
 [
   {
+    "version": "1.6.0",
+    "date": "2026-08-11",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Två som bytt rotationsplats med varandra såg varandras lön i stället för sin egen. Behörigheten utgick från vilken plats du har i rotationen, vilket är samma sak som vem du är ända tills två personer byter plats: från bytesdagen matchade var och en den andres historik. Nu utgår den från vem du är",
+        "en": "Two people who swapped rotation positions saw each other's salary instead of their own. Access was decided by which position you hold, which is the same thing as who you are right up until two people trade places: from the swap date each of them matched the other's history. It now goes by who you are"
+      },
+      {
+        "type": "fix",
+        "sv": "Startsidan visade fel persons schema efter ett platsbyte. Den läste din nuvarande rotationsplats och använde den för varje vecka och månad den visade, så alla datum före bytet kom från den andres rotation, och det slog till redan när bytet registrerades i stället för när det träder i kraft. Veckan och sökningen efter nästa pass följer nu de platser du faktiskt hade, och delar på bytesdagen i stället för vid veckoskiftet",
+        "en": "The start page showed the wrong person's schedule after a position swap. It read your current rotation position and used it for every week and month it displayed, so every date before the swap came from the other person's rotation, and it took effect the moment the swap was recorded rather than on the date it applies. The week and the next-shift search now follow the positions you actually held, splitting on the swap date rather than at the week boundary"
+      },
+      {
+        "type": "fix",
+        "sv": "Intervallvyn tog slut vid ett platsbyte. Den låste sig vid platsen du hade när intervallet började, så tio veckor från slutet av augusti visade ingenting efter bytesdagen, varken pass eller lön. Nu byggs intervallet ett innehav i taget",
+        "en": "The range view stopped dead at a position change. It locked on to the position you held when the range started, so ten weeks from the end of August showed nothing after the swap date, neither shifts nor pay. The range is now built one tenure at a time"
+      },
+      {
+        "type": "fix",
+        "sv": "Semestertilläggets rörliga del kunde bli för låg. Betalar din arbetsgivare den som en andel av årets rörliga lön skalade appen ändå ner andelen efter hur många semesterdagar året gav, vilket drog av samma sak två gånger för den som varit anställd en del av året",
+        "en": "The variable part of the vacation supplement could come out too low. If your employer pays it as a share of the year's variable pay, the app still scaled that share by how many vacation days the year granted, which applied the same reduction twice for anyone employed part of a year"
+      },
+      {
+        "type": "fix",
+        "sv": "Semesterutlösningen vid övertag räknade månadslön och rörlig lön över olika perioder och lade ihop dem. Ett intjänandeår kunde bära sex månaders lön mot två månaders rörlig lön. Nu läses båda över samma period, och perioden sträcker sig inte längre bakåt förbi anställningens början",
+        "en": "The transition vacation payout counted monthly salary and variable pay over different periods and added them together. An earning year could carry six months of salary against two months of variable pay. Both are now read over the same period, and it no longer reaches back past the start of your employment"
+      },
+      {
+        "type": "nyhet",
+        "sv": "Hur den rörliga delen av semesterlönen räknas går nu att ställa in. Lämnar du fältet tomt gäller semesterlagens 0,5% per betald semesterdag; anger du en egen siffra, till exempel 12% platt, används den både löpande och för det som betalas ut för outtagna dagar",
+        "en": "How the variable part of the vacation pay is calculated can now be set. Leave the field blank for the vacation act's 0.5% per paid vacation day, or enter your own figure, such as a flat 12%, which is then used both while employed and for what is paid out for unused days"
+      },
+      {
+        "type": "nyhet",
+        "sv": "Semesterinställningarna kan sättas per arbetsgivare och inte bara per semesterår. Har du en registrerad övergång från konsultbolag till direktanställning kan du ställa in konsultarbetsgivaren för sig, eftersom avtalet byts på övergångsdatumet och det sällan sammanfaller med semesterårets brytdag",
+        "en": "Vacation settings can be set per employer as well as per vacation year. If you have a recorded transition from a consultant employer to direct employment, the consultant employer can be configured on its own, since the agreement changes on the transition date and that rarely lines up with the vacation year break"
+      },
+      {
+        "type": "fix",
+        "sv": "Månadsrapporten skrev en avgående medarbetares rad med vikariens pass. En plats som bytte innehavare mitt i månaden slogs ihop till en rad med fel namn, och vikariens egna dagar försvann från vikariens rad. Rapporten följer nu anställningsperioderna, en rad per innehavare",
+        "en": "The monthly report credited a departing employee's row with the substitute's shifts. A position that changed hands mid-month was merged into one row under the wrong name, and the substitute's own days went missing from their row. The report now follows the employment periods, one row per holder"
+      },
+      {
+        "type": "fix",
+        "sv": "En vikaries övertid räknades två gånger när den låg på en dag som också hade ett schemalagt pass, vilket blåste upp både timmarna och antalet pass",
+        "en": "A substitute's overtime counted twice when it fell on a day that also had a scheduled shift, inflating both the hours and the shift count"
+      },
+      {
+        "type": "förbättring",
+        "sv": "Byter du lösenord loggas du nu ut överallt annars. Tidigare fortsatte en redan öppen session att fungera i upp till en vecka, vilket gjorde lösenordsbytet verkningslöst som åtgärd om någon annan var inne på kontot",
+        "en": "Changing your password now signs you out everywhere else. Before, an already open session kept working for up to a week, which made changing your password useless as a remedy if somebody else was in the account"
+      },
+      {
+        "type": "förbättring",
+        "sv": "Nya och återställda lösenord slumpas fram per gång i stället för att vara samma kända ord för alla. Det nya lösenordet visas en gång för administratören som återställer det",
+        "en": "New and reset passwords are randomly generated each time instead of being one known word for everybody. The new password is shown once to the administrator who resets it"
+      }
+    ]
+  },
+  {
     "version": "1.5.0",
     "date": "2026-08-07",
     "entries": [
