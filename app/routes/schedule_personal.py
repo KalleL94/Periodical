@@ -317,7 +317,7 @@ async def show_day_for_person(
         .first()
     )
 
-    show_salary = can_see_salary(current_user, rotation_position)
+    show_salary = can_see_salary(current_user, user_id_for_wages)
 
     # Build deduplicated ordered list of all on-call type codes+labels for the override form
     _all_oc_rules = _get_oncall_rules(year)
@@ -612,6 +612,46 @@ async def show_week_for_person(
     )
 
 
+def _range_segments(db, target_user, rotation_position: int, start, end) -> list[dict]:
+    """The tenures to build a range from: one per position the viewed user held in it.
+
+    Falls back to a single segment covering the whole range at `rotation_position` for
+    anyone without PersonHistory, which is the legacy behaviour: their position comes
+    from their User row and never changed. A resolved user with history but no segment
+    overlapping the range (they had left before it, or start later) gets no segments and
+    so no days, which is the same empty range the single-position path produced.
+    """
+    from app.core.schedule.person_history import get_employment_period, get_user_position_segments
+
+    if target_user is None:
+        return [
+            {
+                "person_id": rotation_position,
+                "from_date": start,
+                "to_date": end,
+                "effective_from": None,
+                "effective_to": None,
+            }
+        ]
+
+    segments = get_user_position_segments(db, target_user.id, start, end)
+    if segments:
+        return segments
+
+    emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
+    if emp_start is None and emp_end is None:
+        return [
+            {
+                "person_id": rotation_position,
+                "from_date": start,
+                "to_date": end,
+                "effective_from": None,
+                "effective_to": None,
+            }
+        ]
+    return []
+
+
 @router.get("/range/{person_id}", response_class=HTMLResponse, name="range_person")
 async def show_range_for_person(
     request: Request,
@@ -671,50 +711,60 @@ async def show_range_for_person(
             holder = db.query(User).filter(User.person_id == rotation_position).first()
             person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
-    range_employment_start = None
-    range_employment_end = None
-    if target_user is not None:
-        from app.core.schedule.person_history import get_employment_period
-
-        emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
-        range_employment_start = emp_start
-        range_employment_end = emp_end
+    # A range is the one personal view long enough to span a position change, so it
+    # cannot resolve a single position for the whole of it: a user who swapped
+    # positions mid-range holds one before the change and another after, and pinning
+    # either one leaves the rest of the range empty. One tenure at a time, each built
+    # against the position it was actually held at.
+    segments = _range_segments(db, target_user, rotation_position, start, end)
 
     # Build days week-by-week then filter to exact range (reuses build_week_data incl. coworkers)
     days_in_range = []
+    weeks_shown: set[tuple[int, int]] = set()
     current_monday = start - timedelta(days=start.weekday())
-    seen_weeks: set[tuple[int, int]] = set()
     while current_monday <= end:
         iso_year, iso_week, _ = current_monday.isocalendar()
-        if (iso_year, iso_week) not in seen_weeks:
-            seen_weeks.add((iso_year, iso_week))
+        week_end = current_monday + timedelta(days=6)
+        weeks_shown.add((iso_year, iso_week))
+        for seg in segments:
+            if seg["from_date"] > week_end or seg["to_date"] < current_monday:
+                continue
             week_days = build_week_data(
                 iso_year,
                 iso_week,
-                person_id=rotation_position,
+                person_id=seg["person_id"],
                 session=db,
                 include_coworkers=True,
-                employment_start=range_employment_start,
-                employment_end=range_employment_end,
+                # The real employment edges, not the segment's window-clamped ones, so
+                # a tenure that genuinely starts or ends inside the range still renders
+                # its before/after-employment days rather than being silently trimmed.
+                employment_start=seg["effective_from"],
+                employment_end=seg["effective_to"],
             )
-            for d in week_days:
-                if start <= d["date"] <= end:
-                    days_in_range.append(d)
+            days_in_range.extend(
+                d for d in week_days if start <= d["date"] <= end and seg["from_date"] <= d["date"] <= seg["to_date"]
+            )
         current_monday += timedelta(days=7)
+    days_in_range.sort(key=lambda d: d["date"])
 
     breakdown_days = None
-    if can_see_salary(current_user, rotation_position):
+    if can_see_salary(current_user, user_id_for_wages):
         from app.core.schedule.summary import build_range_breakdown_days
 
-        breakdown_days = build_range_breakdown_days(
-            start,
-            end,
-            rotation_position,
-            session=db,
-            wage_user_id=user_id_for_wages,
-            employment_start=range_employment_start,
-            employment_end=range_employment_end,
-        )
+        breakdown_days = []
+        for seg in segments:
+            breakdown_days.extend(
+                build_range_breakdown_days(
+                    max(seg["from_date"], start),
+                    min(seg["to_date"], end),
+                    seg["person_id"],
+                    session=db,
+                    wage_user_id=user_id_for_wages,
+                    employment_start=seg["effective_from"],
+                    employment_end=seg["effective_to"],
+                )
+            )
+        breakdown_days.sort(key=lambda d: d["date"])
 
     years_in_range = {d["date"].year for d in days_in_range}
     storhelg_dates: set = set()
@@ -733,7 +783,7 @@ async def show_range_for_person(
             "start_date": start,
             "end_date": end,
             "days": days_in_range,
-            "num_weeks": len(seen_weeks),
+            "num_weeks": len(weeks_shown),
             "active_weeks": active_weeks,
             "prev_from": (start - timedelta(weeks=active_weeks)).isoformat() if active_weeks else None,
             "next_from": (start + timedelta(weeks=active_weeks)).isoformat() if active_weeks else None,
@@ -829,7 +879,7 @@ async def show_month_for_person(
     days_in_month = calendar_data["summary"]
     calendar_grid = calendar_data["grid"]
 
-    show_salary = can_see_salary(current_user, rotation_position)
+    show_salary = can_see_salary(current_user, user_id_for_wages)
 
     if not show_salary:
         days_in_month = strip_salary_data(days_in_month)
@@ -967,7 +1017,7 @@ async def export_month_excel(
     ):
         return redirect
 
-    if not can_see_salary(current_user, rotation_position):
+    if not can_see_salary(current_user, user_id_for_wages):
         raise HTTPException(status_code=403, detail="Åtkomst nekad")
 
     # When resolved as a user, mask days outside their own employment window
@@ -1134,7 +1184,7 @@ async def year_view(
     special_rules = _cached_special_rules(year)
     combined_rules = ob_rules + special_rules
 
-    show_salary = can_see_salary(current_user, rotation_position)
+    show_salary = can_see_salary(current_user, user_id_for_wages)
 
     if not show_salary:
         months = [strip_salary_data(m) for m in months]

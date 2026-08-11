@@ -37,21 +37,30 @@ def contrast_color(hex_color: str) -> str:
     return "#000" if lum > 0.5 else "#fff"
 
 
-def can_see_salary(current_user: User | None, target_person_id: int) -> bool:
+def can_see_salary(current_user: User | None, target_user_id: int | None) -> bool:
     """
-    Check if current user can see salary data for target person.
+    Check whether current_user may see the pay of the user with target_user_id.
+
+    Pay belongs to a user, not to a rotation position: it is their wage, their rates,
+    their employment period. Matching the viewer's current position against the viewed
+    one gave the same answer right up until two users swapped positions, at which point
+    each of them matched the other's history and stopped matching their own: the swap
+    partner's pay was readable and their own was not.
 
     Rules:
-    - Not logged in: No access
-    - Admin: Full access to all
-    - Regular user: Only own rotation position's data
+    - Not logged in: no access
+    - Admin: full access to all
+    - Everyone else: their own pay only
+
+    A position with no PersonHistory at all keeps the legacy identity
+    user_id == person_id, so the callers that only have such a position pass its number
+    here unchanged and resolve to the same user they always did.
     """
-    if current_user is None:
+    if current_user is None or target_user_id is None:
         return False
     if current_user.role == UserRole.ADMIN:
         return True
-    # Use rotation_person_id to support users like Rickard (user_id=11, person_id=3)
-    return current_user.rotation_person_id == target_person_id
+    return current_user.id == target_user_id
 
 
 def can_see_data_for_date(

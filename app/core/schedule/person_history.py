@@ -806,23 +806,12 @@ def get_position_vacancy(session: Session, person_id: int, check_date: date) -> 
     return None
 
 
-def get_position_holder_segments(session: Session, person_id: int, start_date: date, end_date: date) -> list[dict]:
-    """
-    Return the employment segments overlapping a date window for a position.
-
-    Each segment is a dict with user_id, name, username, from_date and to_date,
-    where the dates are clamped to [start_date, end_date]. Segments are ordered
-    by effective_from ascending. Positions without overlapping history return
-    an empty list; combine with has_position_history to distinguish a vacant
-    position from a legacy position that never had history records.
-
-    Used by team views to render one column/row per holder when a person
-    change happens mid-period.
-    """
+def _segments_in_window(session: Session, start_date: date, end_date: date, *filters) -> list[dict]:
+    """Employment segments overlapping a window, clamped to it, oldest first."""
     records = (
         session.query(PersonHistory)
         .filter(
-            PersonHistory.person_id == person_id,
+            *filters,
             PersonHistory.effective_from <= end_date,
             (PersonHistory.effective_to.is_(None)) | (PersonHistory.effective_to >= start_date),
         )
@@ -832,17 +821,51 @@ def get_position_holder_segments(session: Session, person_id: int, start_date: d
     return [
         {
             "user_id": r.user_id,
+            "person_id": r.person_id,
             "name": r.name,
             "username": r.username,
             "from_date": max(r.effective_from, start_date),
             "to_date": min(r.effective_to, end_date) if r.effective_to else end_date,
-            # Raw (unclamped) employment start. Consumers use this to tell a
+            # Raw (unclamped) employment dates. Consumers use these to tell a
             # genuinely future-dated tenure from a segment merely clamped to the
-            # window start (e.g. an ongoing holder viewed in a later year).
+            # window start (e.g. an ongoing holder viewed in a later year), and to
+            # mask the real employment edges rather than the window's.
             "effective_from": r.effective_from,
+            "effective_to": r.effective_to,
         }
         for r in records
     ]
+
+
+def get_position_holder_segments(session: Session, person_id: int, start_date: date, end_date: date) -> list[dict]:
+    """
+    Return the employment segments overlapping a date window for a position.
+
+    Each segment is a dict with user_id, person_id, name, username, from_date and
+    to_date, where from_date/to_date are clamped to [start_date, end_date]. Segments
+    are ordered by effective_from ascending. Positions without overlapping history
+    return an empty list; combine with has_position_history to distinguish a vacant
+    position from a legacy position that never had history records.
+
+    Used by team views to render one column/row per holder when a person
+    change happens mid-period.
+    """
+    return _segments_in_window(session, start_date, end_date, PersonHistory.person_id == person_id)
+
+
+def get_user_position_segments(session: Session, user_id: int, start_date: date, end_date: date) -> list[dict]:
+    """
+    Return the positions one user held during a date window, one segment each.
+
+    The mirror of get_position_holder_segments: same shape, asked of a user rather
+    than of a position. A personal view spanning a position change needs this, since
+    resolving a single position for the whole window shows the user's shifts only for
+    the part of it they still held that position, and nothing for the rest.
+
+    Empty for a user with no PersonHistory at all, who has no position but the one on
+    their User row; callers fall back to that as they did before.
+    """
+    return _segments_in_window(session, start_date, end_date, PersonHistory.user_id == user_id)
 
 
 def has_position_history(session: Session, person_id: int) -> bool:

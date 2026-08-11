@@ -16,7 +16,6 @@ from app.core.logging_config import get_logger
 from app.core.rates import get_user_rates
 from app.core.schedule import (
     _cached_special_rules,
-    build_week_data,
     generate_period_data,
     get_effective_monthly_wage,
     get_overtime_shifts_for_month,
@@ -24,6 +23,7 @@ from app.core.schedule import (
     rotation_start_date,
 )
 from app.core.schedule.ob import compute_day_ob_pay
+from app.core.schedule.person_history import get_user_person_id
 from app.core.schedule.summary import day_worked_hours
 from app.core.schedule.wages import (
     KARENS_HOURS,
@@ -68,6 +68,43 @@ def _query_absence_and_deduction(
                 user_wage, absence.absence_type.value, shift_hours, absent_hours=absent_hours
             )
     return absence, deduction
+
+
+def _days_following_positions(db: Session, user: User, start, end, user_rates=None) -> list[dict]:
+    """Canonical day dicts over [start, end], each built at the position held that day.
+
+    The dashboard renders whichever week it is pointed at, and User.rotation_person_id
+    only knows the position held today, so after a position swap every date on the other
+    side of the change came from the swap partner's rotation: today's dashboard showed
+    the partner's shifts and hid the viewer's own. The personal views already resolve per
+    tenure; this does the same for the one page that had no id in its URL to resolve from.
+
+    A window with no tenure in it is empty rather than falling back to a position, which
+    is what a week before employment (or after leaving) should look like. Users with no
+    PersonHistory at all keep the single position from their User row.
+    """
+    from app.core.schedule.person_history import get_user_history, get_user_position_segments
+
+    segments = get_user_position_segments(db, user.id, start, end)
+    if not segments:
+        if get_user_history(db, user.id):
+            return []
+        segments = [{"person_id": user.rotation_person_id, "from_date": start, "to_date": end}]
+
+    days: list[dict] = []
+    for seg in segments:
+        pid = seg["person_id"]
+        days.extend(
+            generate_period_data(
+                max(seg["from_date"], start),
+                min(seg["to_date"], end),
+                person_id=pid,
+                session=db,
+                user_rates_map={pid: user_rates} if user_rates else None,
+            )
+        )
+    days.sort(key=lambda d: d["date"])
+    return days
 
 
 def _compute_month_summary(
@@ -154,9 +191,6 @@ async def read_root(
     prev_month_url = f"/?month={prev_m}&year={prev_m_y}"
     next_month_url = f"/?month={next_m}&year={next_m_y}"
 
-    # Get user's rotation position (person_id field, or fallback to user.id)
-    person_id = current_user.rotation_person_id
-
     user_wage = get_effective_monthly_wage(db, current_user.id)
     _user_rates = get_user_rates(current_user, session=db)
     show_salary = can_see_salary(current_user, current_user.id)
@@ -165,13 +199,7 @@ async def read_root(
     # year summaries use: its day dicts already carry on-call, overtime and OB, so the
     # dashboard sums them below instead of recomputing the rules a fourth time.
     view_week_sunday = view_week_monday + timedelta(days=6)
-    week_data = generate_period_data(
-        view_week_monday,
-        view_week_sunday,
-        person_id=person_id,
-        session=db,
-        user_rates_map={person_id: _user_rates} if _user_rates else None,
-    )
+    week_data = _days_following_positions(db, current_user, view_week_monday, view_week_sunday, _user_rates)
 
     # Create compact week schedule for dashboard display
     week_schedule = []
@@ -205,17 +233,17 @@ async def read_root(
     next_oncall_shift = None
 
     # Check up to 11 weeks ahead for upcoming shifts (covers full rotation cycle)
-    weeks_to_check = []
-    for week_offset in range(11):
-        check_date = safe_today + dt.timedelta(days=7 * week_offset)
-        weeks_to_check.append((check_date.isocalendar()[0], check_date.isocalendar()[1]))
+    first_monday = safe_today - dt.timedelta(days=safe_today.weekday())
+    weeks_to_check = [first_monday + dt.timedelta(days=7 * offset) for offset in range(11)]
 
-    for check_year, check_week in weeks_to_check:
+    for check_monday in weeks_to_check:
         # Stop searching if we found both types of shifts
         if next_shift and next_oncall_shift:
             break
 
-        check_week_data = build_week_data(check_year, check_week, person_id=person_id, session=db)
+        # Per week rather than one 11-week span, so the search still stops at the first
+        # week that answers instead of building the whole rotation cycle every load.
+        check_week_data = _days_following_positions(db, current_user, check_monday, check_monday + timedelta(days=6))
 
         for day in check_week_data:
             if day["date"] < safe_today:
@@ -299,11 +327,19 @@ async def read_root(
             "absence_deduction": absence_deduction,
         }
 
+    # The position held during the month being summarised, not the one on the User
+    # row: after a swap that row names the new position for every month, including the
+    # ones worked at the old one. Same resolution /month/{id} does, and it shares that
+    # view's limitation, a change landing mid-month attributes the rest of it to the
+    # position resolved on the 1st.
+    def _month_position(y: int, m: int) -> int:
+        return get_user_person_id(db, current_user.id, on_date=date(y, m, 1)) or current_user.rotation_person_id
+
     # Calculate month summary for the viewed month
     month_summary = _compute_month_summary(
         view_year,
         view_month,
-        person_id,
+        _month_position(view_year, view_month),
         current_user,
         show_salary,
         db,
@@ -325,7 +361,7 @@ async def read_root(
             last_month_data = _compute_month_summary(
                 last_month_year,
                 last_month,
-                person_id,
+                _month_position(last_month_year, last_month),
                 current_user,
                 show_salary,
                 db,
