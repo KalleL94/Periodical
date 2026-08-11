@@ -285,14 +285,20 @@ def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.d
     import calendar
 
     from app.core.schedule.summary import summarize_month_for_person
+    from app.core.schedule.vacation import position_held_in_month
 
-    person_id = user.rotation_person_id
-    if not person_id or not (1 <= person_id <= 10):
+    if not user.rotation_person_id:
         return 0.0, 0.0
 
     variable = 0.0
     base = 0.0
     for year, month in _iter_months(start, end):
+        # Per month, not from the User row: someone who has since moved to another
+        # rotation position would otherwise have their whole engagement priced on
+        # whoever holds that position now.
+        person_id = position_held_in_month(session, user, datetime.date(year, month, 1))
+        if not person_id or not (1 <= person_id <= 10):
+            continue
         try:
             summary = summarize_month_for_person(
                 year=year,

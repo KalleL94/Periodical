@@ -2280,6 +2280,59 @@ def test_a_position_swap_leaves_each_holder_reading_only_their_own_pay(month_env
         assert not _brutto(rickard, okan, month), f"Rickard could read Okan's salary in month {month}"
 
 
+def test_vacation_pay_prices_each_month_at_the_position_held_then(month_env):
+    """Regression: the earning year was summarised at the position held today.
+
+    calculate_vacation_pay took the position off the User row and used it for every
+    month of the window, so moving to another rotation position replaced every earlier
+    month of your own OB, on-call and overtime with whoever holds your new position.
+    It surfaced as an on-call total 878 kr short of the months it claimed to sum, and it
+    feeds the supplement, the lump and the consultant payout base alike.
+    """
+    from app.core.schedule.vacation import calculate_vacation_pay
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak", person_id=None)
+    kalle = _make_user(session, 6, "kalle1", "Kalle", person_id=5)  # moved to Isak's old slot
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, kalle.id, 6, "Kalle", "kalle1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, end_date=datetime.date(2026, 8, 31))
+    end_employment(session, kalle.id, 6, end_date=datetime.date(2026, 8, 31))
+    start_employment(session, kalle.id, 5, "Kalle", "kalle1", datetime.date(2026, 9, 1), created_by=admin.id)
+    session.commit()
+    session.refresh(kalle)
+
+    asked = []
+    real = summarize_month_for_person
+
+    def _spy(**kw):
+        asked.append((kw["year"], kw["month"], kw["person_id"]))
+        return real(**kw)
+
+    import app.core.schedule.summary as summod
+
+    summod.summarize_month_for_person = _spy
+    try:
+        calculate_vacation_pay(
+            user=kalle,
+            entitled_days=25,
+            earning_start=datetime.date(2026, 1, 1),
+            earning_end=datetime.date(2026, 12, 31),
+            db=session,
+            vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+        )
+    finally:
+        summod.summarize_month_for_person = real
+
+    positions = {(y, m): pid for y, m, pid in asked}
+    # His own months at position 6, and only the months from the move at position 5.
+    assert positions[(2026, 2)] == 6, "February was priced on somebody else's position"
+    assert positions[(2026, 8)] == 6
+    assert positions[(2026, 9)] == 5
+    assert positions[(2026, 12)] == 5
+
+
 def test_dashboard_follows_the_position_held_on_each_date(month_env):
     """Regression: the dashboard read User.rotation_person_id, which only knows today.
 
