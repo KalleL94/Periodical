@@ -391,7 +391,7 @@ class TestVacationSettings:
                 "employment_start_date": "",
                 "vacation_year_start_month": 4,
                 "vacation_days_per_year": 25,
-                "vacation_settings_year": "2027",
+                "vacation_settings_target": "2027",
                 "vacation_fixed_per_day": "159.10",
                 "vacation_variable_payout": "lump",
                 "vacation_variable_payout_month": "6",
@@ -419,7 +419,7 @@ class TestVacationSettings:
                 "employment_start_date": "",
                 "vacation_year_start_month": 4,
                 "vacation_days_per_year": 25,
-                "vacation_settings_year": "2027",
+                "vacation_settings_target": "2027",
                 "vacation_variable_payout": "lump",
                 "vacation_payout_rule": "procent",
             },
@@ -446,7 +446,7 @@ class TestVacationSettings:
                 "employment_start_date": "",
                 "vacation_year_start_month": 4,
                 "vacation_days_per_year": 25,
-                "vacation_settings_year": "2027",
+                "vacation_settings_target": "2027",
                 "vacation_fixed_per_day": "",
                 "vacation_variable_payout": "per_day",
                 "vacation_variable_payout_month": "",
@@ -466,7 +466,7 @@ class TestVacationSettings:
             "/profile/vacation/settings",
             data={
                 "employment_start_date": "",
-                "vacation_settings_year": "2027",
+                "vacation_settings_target": "2027",
                 "vacation_fixed_per_day": "159.10",
                 "vacation_variable_payout": "lump",
                 "vacation_variable_payout_month": "6",
@@ -480,6 +480,90 @@ class TestVacationSettings:
         assert settings["fixed_per_day"] == 159.10
         assert settings["variable_payout"] == "lump"
         assert settings["variable_payout_month"] == 6
+
+    def test_admin_writes_the_consultant_entry_without_touching_the_years(self, admin_client, test_db, test_user):
+        """The consultant employer's agreement changed at the transition date, which is
+        not a vacation year break, so the entry has to live beside the year keys rather
+        than inside one of them."""
+        from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+        test_user.vacation_settings = {"2027": {"payout_rule": "sammalone"}}
+        test_db.add(
+            EmploymentTransition(
+                user_id=test_user.id,
+                transition_date=datetime.date(2026, 10, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        test_db.commit()
+        test_db.refresh(test_user)
+
+        resp = admin_client.post(
+            f"/admin/vacation/{test_user.id}/settings",
+            data={
+                "employment_start_date": "",
+                "vacation_year_start_month": 4,
+                "vacation_days_per_year": 25,
+                "vacation_settings_target": "consultant",
+                "vacation_payout_rule": "procent",
+                "vacation_variable_payout": "lump",
+                "vacation_variable_payout_month": "7",
+            },
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 303
+        test_db.refresh(test_user)
+        assert test_user.vacation_settings["consultant"]["payout_rule"] == "procent"
+        # Vacation year 2027 is still the direct employment's, unchanged.
+        assert test_user.vacation_settings["2027"]["payout_rule"] == "sammalone"
+        assert vacation_settings_for_year(test_user, 2027)["payout_rule"] == "sammalone"
+        # The same year asked for as a consultant period answers with the new entry.
+        assert vacation_settings_for_year(test_user, 2027, consultant=True)["payout_rule"] == "procent"
+
+    def test_the_variable_share_is_entered_as_a_percentage_and_cleared_by_blank(self, admin_client, test_db, test_user):
+        """Entered as 12, stored as 0.12. Blank puts the year back on the statutory
+        derivation, which is the difference between "the agreement says 12%" and "nobody
+        has said", and the two pay different amounts for a part year."""
+
+        def _save(pct):
+            admin_client.post(
+                f"/admin/vacation/{test_user.id}/settings",
+                data={
+                    "employment_start_date": "",
+                    "vacation_year_start_month": 4,
+                    "vacation_days_per_year": 25,
+                    "vacation_settings_target": "2027",
+                    "vacation_variable_lump_pct": pct,
+                },
+                follow_redirects=False,
+            )
+            test_db.refresh(test_user)
+            return vacation_settings_for_year(test_user, 2027)["variable_lump_pct"]
+
+        assert _save("12") == 0.12
+        assert _save("12,5") == 0.125  # a Swedish decimal comma is what the keyboard gives
+        assert _save("") is None
+
+    def test_the_consultant_entry_is_refused_without_a_transition(self, admin_client, test_db, test_user):
+        """Nothing would ever read it, and it would silently shadow the year the form
+        looked like it was editing."""
+        admin_client.post(
+            f"/admin/vacation/{test_user.id}/settings",
+            data={
+                "employment_start_date": "",
+                "vacation_year_start_month": 4,
+                "vacation_days_per_year": 25,
+                "vacation_settings_target": "consultant",
+                "vacation_payout_rule": "procent",
+            },
+            follow_redirects=False,
+        )
+
+        test_db.refresh(test_user)
+        assert "consultant" not in (test_user.vacation_settings or {})
 
     def test_profile_save_leaves_the_admin_only_settings_alone(self, user_client, test_db, test_user):
         """Self-service does not post the break month or days per year, so saving
@@ -534,6 +618,37 @@ class TestVacationPages:
         resp = admin_client.get(f"/admin/vacation/{test_user.id}?year=2026")
 
         assert resp.status_code == 200
+
+    def test_settings_card_switches_to_the_consultant_entry(self, admin_client, test_db, test_user):
+        """The card edits one entry at a time, and the form has to post the target it is
+        showing or a consultant edit lands on the vacation year instead."""
+        from app.database.database import ConsultantSalaryType, EmploymentTransition
+
+        test_db.add(
+            EmploymentTransition(
+                user_id=test_user.id,
+                transition_date=datetime.date(2026, 10, 1),
+                consultant_salary_type=ConsultantSalaryType.TRAILING,
+                consultant_vacation_days=0.0,
+                consultant_supplement_pct=0.0043,
+            )
+        )
+        test_db.commit()
+        test_db.expire_all()
+
+        toggle = f'href="/admin/vacation/{test_user.id}?year=2026&settings=consultant"'
+        year_page = admin_client.get(f"/admin/vacation/{test_user.id}?year=2026")
+        consultant_page = admin_client.get(f"/admin/vacation/{test_user.id}?year=2026&settings=consultant")
+
+        assert 'name="vacation_settings_target" value="2026"' in year_page.text
+        assert toggle in year_page.text
+        assert 'name="vacation_settings_target" value="consultant"' in consultant_page.text
+
+    def test_the_consultant_card_is_hidden_without_a_transition(self, admin_client, test_user):
+        page = admin_client.get(f"/admin/vacation/{test_user.id}?year=2026&settings=consultant")
+
+        assert 'name="vacation_settings_target" value="2026"' in page.text
+        assert f'href="/admin/vacation/{test_user.id}?year=2026&settings=consultant"' not in page.text
 
     def test_admin_vacation_page_unknown_user_redirects(self, admin_client):
         resp = admin_client.get("/admin/vacation/9999", follow_redirects=False)

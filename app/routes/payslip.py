@@ -82,7 +82,7 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
 
     target_user, rotation_position, wage_user_id = _resolve_target(db, person_id, year, month)
 
-    if not can_see_salary(current_user, rotation_position):
+    if not can_see_salary(current_user, wage_user_id):
         # A payslip is the most sensitive page in the app: never fall through.
         raise HTTPException(status_code=403, detail="Åtkomst nekad")
 

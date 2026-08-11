@@ -301,10 +301,29 @@
                         class="form-input">
                 </div>
                 {# How your employer settles the supplement. Same fields the admin
-                   page has: this is your own pay, so you can set it yourself. #}
-                <input type="hidden" name="vacation_settings_year" value="{{ year }}">
+                   page has: this is your own pay, so you can set it yourself. The form
+                   edits one entry: this vacation year, or the consultant employer,
+                   whose agreement changed at a date that is not a year break. #}
+                <input type="hidden" name="vacation_settings_target" value="{{ vacation_settings_target }}">
+                {% if vacation_settings_consultant %}
+                <p class="form-section-title">{{ t.vacation_settings_for_consultant }}</p>
+                <div class="form-hint">
+                    {{ (t.vacation_settings_consultant_own if vacation_settings_own else t.vacation_settings_consultant_hint)
+                       .replace('{date}', vacation_settings_transition | date_format) }}
+                </div>
+                {% else %}
                 <p class="form-section-title">{{ t.vacation_settings_for_year.replace('{year}', year|string) }}</p>
                 <div class="form-hint">{{ t.vacation_settings_year_hint if not vacation_settings_own else t.vacation_settings_year_own }}</div>
+                {% endif %}
+                {% if vacation_settings_transition %}
+                <div class="form-hint">
+                    {% if vacation_settings_consultant %}
+                    <a href="/profile/vacation?year={{ year }}">{{ t.vacation_settings_switch_year.replace('{year}', year|string) }}</a>
+                    {% else %}
+                    <a href="/profile/vacation?year={{ year }}&settings=consultant">{{ t.vacation_settings_switch_consultant }}</a>
+                    {% endif %}
+                </div>
+                {% endif %}
                 <div class="form-group">
                     <label class="form-label">{{ t.vacation_payout_rule }}</label>
                     <select name="vacation_payout_rule" class="form-input">
@@ -350,9 +369,12 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group lump-only">
+                <div class="form-group">
                     <label class="form-label">{{ t.vacation_lump_pct }}</label>
-                    <div class="form-input form-input--readonly">{{ "%.1f"|format(balance.pay.variable_lump_pct * 100) }}%</div>
+                    <input type="number" name="vacation_variable_lump_pct" step="0.01" min="0" max="100"
+                        value="{{ "%.2f"|format(vacation_settings.variable_lump_pct * 100) if vacation_settings.variable_lump_pct is not none else '' }}"
+                        placeholder="{{ "%.2f"|format(balance.pay.variable_lump_pct * 100) }}"
+                        class="form-input">
                     <div class="form-hint">{{ t.vacation_lump_pct_hint.replace('{days}', balance.entitled_days|string).replace('{pct}', "%.2f"|format(balance.pay.variable_pct * 100)) }}</div>
                 </div>
                 <div class="form-group">

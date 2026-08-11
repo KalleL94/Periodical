@@ -35,8 +35,9 @@ async def get_year_totals(
 
     person_id = validate_person_id(person_id)
 
-    # Check if user can see salary for this person
-    if not can_see_salary(current_user, person_id):
+    # Whose pay this is. With a holder it is that user; without one the column is a
+    # legacy position with no PersonHistory, where user_id == person_id still holds.
+    if not can_see_salary(current_user, user_id if user_id is not None else person_id):
         return {"total_ob": None}
 
     if user_id is not None:

@@ -423,6 +423,103 @@ class TestVacationSettingsPerYear:
         assert settings["fixed_per_day"] == 159.10
 
 
+class TestResolveVariablePct:
+    """One definition of what share of an earning year's variable pay the variable part
+    comes to, because the same figure is paid twice: monthly or as a yearly lump while
+    employed, and per unused day when the employment ends. Employers differ here and the
+    statute is only the floor, so a stated figure wins over both derivations."""
+
+    def test_a_configured_share_wins_over_everything(self):
+        from app.core.schedule.vacation import resolve_variable_pct
+
+        settings = {"variable_lump_pct": 0.12, "payout_rule": "sammalone"}
+
+        # Flat: a part year's shorter window is already the whole of its reduction, so
+        # scaling by its days on top of that would apply the same cut twice.
+        assert resolve_variable_pct(settings, 13, 0.005) == 0.12
+        assert resolve_variable_pct(settings, 25, 0.005) == 0.12
+
+    def test_the_percentage_rule_is_a_flat_twelve_percent(self):
+        from app.core.schedule.vacation import resolve_variable_pct
+
+        assert resolve_variable_pct({"payout_rule": "procent"}, 13, 0.005) == 0.12
+
+    def test_nothing_configured_derives_the_statutory_rate(self):
+        from app.core.schedule.vacation import resolve_variable_pct
+
+        # Semesterlagen 16 a: 0.5% per paid day, the familiar 12.5% at a full 25 days.
+        assert resolve_variable_pct({}, 25, 0.005) == 0.125
+        assert resolve_variable_pct({}, 13, 0.005) == 0.065
+        assert resolve_variable_pct({}, 0, 0.005) == 0.0
+
+    def test_a_configured_zero_is_configured_and_not_absent(self):
+        from app.core.schedule.vacation import resolve_variable_pct
+
+        assert resolve_variable_pct({"variable_lump_pct": 0.0}, 25, 0.005) == 0.0
+
+
+class TestConsultantSettingsEntry:
+    """Which statutory rule applies follows the agreement, not the calendar.
+
+    The agreement changes at the transition date, and that date does not land on a
+    vacation year break: the earning year containing it is run by the consultant
+    employer up to the transition and by the direct employer after it. A year key can
+    only hold one answer, so the consultant employer gets an entry of its own.
+    """
+
+    def test_the_consultant_entry_wins_over_the_year_for_a_consultant_period(self, test_db):
+        user = _make_user(
+            test_db,
+            vacation_settings={
+                "2027": {"payout_rule": "sammalone"},
+                "consultant": {"payout_rule": "procent"},
+            },
+        )
+
+        assert vacation_settings_for_year(user, 2027)["payout_rule"] == "sammalone"
+        assert vacation_settings_for_year(user, 2027, consultant=True)["payout_rule"] == "procent"
+
+    def test_a_field_the_consultant_entry_omits_still_resolves(self, test_db):
+        # Entries are partial the same way year entries are: an employer that only
+        # differs on the rule must not lose the rest of the year's settings.
+        user = _make_user(
+            test_db,
+            vacation_settings={
+                "2027": {"payout_rule": "sammalone", "variable_payout": "lump"},
+                "consultant": {"payout_rule": "procent"},
+            },
+        )
+
+        settings = vacation_settings_for_year(user, 2027, consultant=True)
+
+        assert settings["payout_rule"] == "procent"
+        assert settings["variable_payout"] == "lump"
+
+    def test_the_consultant_key_is_not_a_year_to_inherit_from(self, test_db):
+        # The inheritance walk reads the year keys; a non-numeric key it picked up as a
+        # year would shadow every later year for everyone.
+        user = _make_user(
+            test_db,
+            vacation_settings={"consultant": {"payout_rule": "procent"}},
+            vacation_variable_payout="per_day",
+        )
+
+        assert vacation_settings_for_year(user, 2027)["payout_rule"] == "sammalone"
+        assert vacation_settings_for_year(user, 2027)["variable_payout"] == "per_day"
+
+    def test_only_periods_ending_before_the_transition_are_the_consultants(self):
+        from app.core.schedule.vacation import is_consultant_period
+
+        assert is_consultant_period(SimpleNamespace(), datetime.date(2026, 9, 30)) is False
+
+        user = SimpleNamespace(employment_transition=SimpleNamespace(transition_date=datetime.date(2026, 10, 1)))
+
+        assert is_consultant_period(user, datetime.date(2026, 9, 30)) is True
+        # The transition day itself is the direct employment's first day.
+        assert is_consultant_period(user, datetime.date(2026, 10, 1)) is False
+        assert is_consultant_period(user, datetime.date(2027, 3, 31)) is False
+
+
 class TestCalculateVacationBalanceIntegration:
     """End-to-end §9 pipeline against a real rotation era (rotation_session fixture)."""
 
@@ -653,6 +750,38 @@ class TestCalculateVacationPay:
         part = _pay(13)
         assert part["variable_lump_pct"] == 0.065  # 13 x 0.5%
         assert part["variable_lump_total"] == 1300.0
+
+    def test_percentage_rule_pays_a_flat_12_pct_lump(self, test_db, monkeypatch):
+        """Under the percentage rule (Semesterlagen 16 b) the variable part is 12% of the
+        pay in the window, flat. It must not be scaled by the days the year earned the
+        way the same-pay rule's 0.5%-per-day figure is, or a part year is paid twice
+        over: once by the shorter window it has, once by its shorter entitlement."""
+        user = _make_user(test_db, person_id=1, wage=30000)
+        user.vacation_variable_payout = "lump"
+        # Earning year ending Feb 2026 belongs to vacation year 2025 (April break).
+        user.vacation_settings = {"2025": {"variable_payout": "lump", "payout_rule": "procent"}}
+        test_db.commit()
+
+        # Two months of the earning year, 10 000 kr variable pay each.
+        monkeypatch.setattr(
+            "app.core.schedule.summary.summarize_month_for_person",
+            lambda **kwargs: {"ob_pay": {"OB1": 6000.0}, "ot_pay": 3000.0, "oncall_pay": 1000.0},
+        )
+
+        def _pay(entitled_days):
+            return calculate_vacation_pay(
+                user=user,
+                entitled_days=entitled_days,
+                earning_start=datetime.date(2026, 1, 1),
+                earning_end=datetime.date(2026, 2, 28),
+                db=test_db,
+                vacation_rates={"fixed_pct": 0.008, "variable_pct": 0.005, "payout_pct": 0.046},
+            )
+
+        assert _pay(25)["variable_lump_pct"] == 0.12
+        assert _pay(25)["variable_lump_total"] == 2400.0  # 20000 * 0.12
+        # A part year keeps the same percentage; only its window is smaller.
+        assert _pay(13)["variable_lump_total"] == 2400.0
 
     def test_a_lump_paid_before_a_transition_settles_the_consultant_accrual(self, test_db, monkeypatch):
         """A transition zeroes the direct employment's share of an earlier year, but the
