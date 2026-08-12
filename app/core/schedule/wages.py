@@ -612,9 +612,28 @@ def add_new_wage(session: Session, user_id: int, new_wage: int, effective_from: 
 
     from app.database.database import User, WageHistory
 
-    # Close previous wage history (set effective_to to day before new wage starts)
+    # The row the new one is inserted in front of, if any. Back-dating a wage is a
+    # normal correction (an employment start moved, a raise recorded late), and it used
+    # to close whichever row was open against the new, earlier date: a row ending a year
+    # before it begins. get_user_wage filters on effective_from <= date <= effective_to,
+    # so such a row matches nothing at all and the wage it holds silently disappears.
+    next_wage = (
+        session.query(WageHistory)
+        .filter(WageHistory.user_id == user_id, WageHistory.effective_from > effective_from)
+        .order_by(WageHistory.effective_from.asc())
+        .first()
+    )
+
+    # Close the row the new one takes over from: the open one, unless it starts later,
+    # in which case the new row belongs behind it and closes against it instead.
     previous_wage = (
-        session.query(WageHistory).filter(WageHistory.user_id == user_id, WageHistory.effective_to.is_(None)).first()
+        session.query(WageHistory)
+        .filter(
+            WageHistory.user_id == user_id,
+            WageHistory.effective_to.is_(None),
+            WageHistory.effective_from < effective_from,
+        )
+        .first()
     )
 
     if previous_wage:
@@ -626,15 +645,17 @@ def add_new_wage(session: Session, user_id: int, new_wage: int, effective_from: 
         user_id=user_id,
         wage=new_wage,
         effective_from=effective_from,
-        effective_to=None,  # NULL = current/future wage
+        # NULL = current/future wage, unless a later row already covers what follows
+        effective_to=next_wage.effective_from - timedelta(days=1) if next_wage else None,
         created_by=created_by,
     )
 
     session.add(new_wage_history)
 
-    # Update User.wage for current wage (for backwards compatibility and performance)
-    # Only update if this is the current or future wage
-    if effective_from <= get_today():
+    # Update User.wage for current wage (for backwards compatibility and performance).
+    # A back-dated row that a later one supersedes is not today's wage, so the snapshot
+    # keeps whatever still is.
+    if effective_from <= get_today() and (next_wage is None or next_wage.effective_from > get_today()):
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             user.wage = new_wage

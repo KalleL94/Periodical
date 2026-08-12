@@ -230,17 +230,30 @@ def _vacation_dates_in_weeks(
     return dates
 
 
-def _scheduled_off_dates(user, start: datetime.date, end: datetime.date) -> set[datetime.date]:
-    """Return the OFF-shift dates for a user across [start, end] based on the rotation."""
+def _scheduled_off_dates(user, start: datetime.date, end: datetime.date, session=None) -> set[datetime.date]:
+    """Return the OFF-shift dates for a user across [start, end] based on the rotation.
+
+    Per tenure rather than per user: OFF days decide which vacation days count, so a
+    window spanning a position change would otherwise count a colleague's days off as
+    this person's.
+    """
     from app.core.schedule.core import determine_shift_for_date
+    from app.core.schedule.person_history import position_segments_for_window
+
+    if session is None:
+        segments = [{"person_id": user.rotation_person_id, "from_date": start, "to_date": end}]
+    else:
+        segments = position_segments_for_window(session, user, start, end)
 
     off: set[datetime.date] = set()
-    d = start
-    while d <= end:
-        shift, _ = determine_shift_for_date(d, user.rotation_person_id)
-        if shift and shift.code == "OFF":
-            off.add(d)
-        d += datetime.timedelta(days=1)
+    for seg in segments:
+        d = max(seg["from_date"], start)
+        last = min(seg["to_date"], end)
+        while d <= last:
+            shift, _ = determine_shift_for_date(d, seg["person_id"])
+            if shift and shift.code == "OFF":
+                off.add(d)
+            d += datetime.timedelta(days=1)
     return off
 
 
@@ -494,7 +507,7 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
     # the employee's OFF-shift days. Compute the OFF days for the vacation year when the
     # caller did not supply them, so every entry point counts consistently.
     if off_dates is None:
-        off_dates = _scheduled_off_dates(user, year_start, year_end)
+        off_dates = _scheduled_off_dates(user, year_start, year_end, session=db)
 
     # Earning year is the year before the vacation year
     earning_start, earning_end = get_vacation_year_boundaries(target_year - 1, start_month)
@@ -746,12 +759,21 @@ def calculate_vacation_pay(
 
     # Per month, per component: the views break the earning year down into OB,
     # overtime and on-call, so the components have to survive the pass.
+    #
+    # The position is resolved per month rather than taken from the User row, which only
+    # knows the one held today. A person who moves to another rotation position would
+    # otherwise have every earlier month of the earning year priced on whoever holds
+    # their new position now: their own OB, on-call and overtime replaced by a
+    # colleague's, silently, in the supplement, the lump and the payout base alike.
     per_month: dict[tuple[int, int], tuple[float, float, float]] = {}
-    person_id = user.rotation_person_id
-    if person_id and 1 <= person_id <= 10:
+    if user.rotation_person_id:
         current = min(earning_start, lump_start)
         loop_end = max(earning_end, lump_end)
         while current <= loop_end:
+            person_id = position_held_in_month(db, user, current)
+            if not person_id or not (1 <= person_id <= 10):
+                current = _shift_month(current, 1)
+                continue
             try:
                 summary = summarize_month_for_person(
                     year=current.year,
@@ -908,6 +930,25 @@ VACATION_SETTING_FALLBACKS = {
 # The consultant employer's own entry in User.vacation_settings, stored beside the
 # vacation-year keys. Not a year, so the year-inheritance walk skips it.
 CONSULTANT_SETTINGS_KEY = "consultant"
+
+
+def position_held_in_month(session, user, month_start: datetime.date) -> int | None:
+    """The rotation position this user held in the month starting on `month_start`.
+
+    Pay is summarised a whole month at a time against one position, so this answers on
+    the first of the month, the same resolution the personal month view uses. A position
+    change landing mid-month therefore attributes the whole month to the position held
+    on the 1st.
+
+    Without PersonHistory the User row is the only answer there is. get_user_person_id
+    is not asked in that case: its legacy fallback assumes user_id == person_id and so
+    answers with the user's own id, ignoring a User.person_id that says otherwise.
+    """
+    from app.core.schedule.person_history import get_user_history, get_user_person_id
+
+    if not get_user_history(session, user.id):
+        return user.rotation_person_id
+    return get_user_person_id(session, user.id, on_date=month_start) or user.rotation_person_id
 
 
 def is_consultant_period(user, period_end: datetime.date | None) -> bool:
@@ -1193,16 +1234,23 @@ def build_vacation_page_context(db, user, year: int, settings_target: str | None
 
     off_days: set[datetime.date] = set()
     day_colors: dict[str, str] = {}
-    day = datetime.date(year, 1, 1)
+    # Per tenure: a calendar year straddling a position change would otherwise paint the
+    # months before it with the rotation of whoever holds that position now.
+    from app.core.schedule.person_history import position_segments_for_window
+
+    year_start = datetime.date(year, 1, 1)
     year_end = datetime.date(year, 12, 31)
-    while day <= year_end:
-        shift, _ = determine_shift_for_date(day, user.rotation_person_id)
-        if shift:
-            if shift.code == "OFF":
-                off_days.add(day)
-            if shift.color:
-                day_colors[day.isoformat()] = shift.color
-        day += datetime.timedelta(days=1)
+    for seg in position_segments_for_window(db, user, year_start, year_end):
+        day = max(seg["from_date"], year_start)
+        last = min(seg["to_date"], year_end)
+        while day <= last:
+            shift, _ = determine_shift_for_date(day, seg["person_id"])
+            if shift:
+                if shift.code == "OFF":
+                    off_days.add(day)
+                if shift.color:
+                    day_colors[day.isoformat()] = shift.color
+            day += datetime.timedelta(days=1)
 
     def _absences(absence_type):
         return (
@@ -1356,6 +1404,7 @@ def set_vacation_settings(
     variable_payout_month: str | None = None,
     variable_lump_lag_months: str | None = None,
     variable_lump_pct: str | None = None,
+    variable_share: str | None = None,
     payout_rule: str | None = None,
     settings_target: str | None = None,
 ) -> None:
@@ -1432,6 +1481,16 @@ def set_vacation_settings(
             _set("variable_lump_lag_months", int(lag))
 
     if variable_lump_pct is not None:
+        # The form asks one question with three answers and stores them in one field:
+        # the statutory rate is the absence of a value, so the mode decides what reaches
+        # the field and only "own rate" passes the number through. Keeping the storage a
+        # single number is what lets the payout and the running supplement read one
+        # setting rather than a mode plus a number.
+        if variable_share == "statutory":
+            variable_lump_pct = ""
+        elif variable_share == "twelve":
+            variable_lump_pct = "12"
+
         # Entered as a percentage, stored as a share. Blank clears it, which puts the
         # year back on the statutory 0.5% per paid day.
         raw = variable_lump_pct.replace(",", ".").strip()

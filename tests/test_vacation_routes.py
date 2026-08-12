@@ -547,6 +547,32 @@ class TestVacationSettings:
         assert _save("12,5") == 0.125  # a Swedish decimal comma is what the keyboard gives
         assert _save("") is None
 
+    def test_the_share_question_maps_its_three_answers_onto_one_field(self, admin_client, test_db, test_user):
+        """The form asks one question with three answers and stores them in one number,
+        where the statutory rate is the absence of a value. The number field keeps
+        whatever was typed in it, so picking a preset must not let a stale custom rate
+        through, and picking "own rate" back again must still send the number."""
+
+        def _save(mode, pct):
+            admin_client.post(
+                f"/admin/vacation/{test_user.id}/settings",
+                data={
+                    "employment_start_date": "",
+                    "vacation_year_start_month": 4,
+                    "vacation_days_per_year": 25,
+                    "vacation_settings_target": "2027",
+                    "vacation_variable_share": mode,
+                    "vacation_variable_lump_pct": pct,
+                },
+                follow_redirects=False,
+            )
+            test_db.refresh(test_user)
+            return vacation_settings_for_year(test_user, 2027)["variable_lump_pct"]
+
+        assert _save("twelve", "7.5") == 0.12  # the preset wins over the stale number
+        assert _save("custom", "7.5") == 0.075
+        assert _save("statutory", "7.5") is None
+
     def test_the_consultant_entry_is_refused_without_a_transition(self, admin_client, test_db, test_user):
         """Nothing would ever read it, and it would silently shadow the year the form
         looked like it was editing."""

@@ -1179,5 +1179,32 @@ form:not(:has(select[name="vacation_variable_payout"] option[value="lump"]:check
     display: none;
 }
 
+/* One hint per statutory rule, and the free percentage only under "own rate". Same
+   :has() reading of a live control as above, so the form explains the choice that is
+   actually selected rather than every choice at once. */
+.rule-hint { display: none; }
+.payout-rule-group:has(option[value="sammalone"]:checked) .rule-hint--sammalone,
+.payout-rule-group:has(option[value="procent"]:checked) .rule-hint--procent {
+    display: block;
+}
+
+.variable-share-group:not(:has(input[value="custom"]:checked)) .custom-share-only {
+    display: none;
+}
+
+/* A radio and its answer on one line, under the question they belong to. Quieter than
+   the field labels above them: an answer is not a heading, and inheriting the label
+   size made the options shout over the questions. */
+.form-radio {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0;
+    cursor: pointer;
+    font-weight: normal;
+    font-size: 0.875rem;
+}
+.form-radio input { margin: 0; flex-shrink: 0; }
+
 /* A derived value shown where an input used to sit: same box, not editable. */
 .form-input--readonly { background: transparent; border-color: transparent; padding-left: 0; }

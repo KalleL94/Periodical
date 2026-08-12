@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_admin_api_user, get_api_user
 from app.core.schedule.core import determine_shift_for_date, get_shift_types
 from app.core.schedule.ob import compute_day_ob_pay, get_combined_rules_for_year
-from app.core.schedule.period import generate_period_data
+from app.core.schedule.period import _build_user_position_resolver, generate_period_data
 from app.core.utils import APP_TIMEZONE, get_today
 from app.database.database import (
     Absence,
@@ -97,8 +97,12 @@ def _build_coworkers(
     all_users: list[User],
     absent_ids: set[int],
     overtime_map: dict[int, datetime.time],
+    resolve_pos,
 ) -> list[dict]:
     """Who else is working that day.
+
+    `resolve_pos` is the caller's (user_id, date) -> position resolver, built once for
+    the whole range from a single PersonHistory read.
 
     NOTE: this is the one place left in the module that reads the rotation directly
     instead of the canonical path, so a co-worker's swap or shift override is not
@@ -116,7 +120,7 @@ def _build_coworkers(
             code, label = _find_shift_for_overtime(overtime_map[u.id])
             result.append({"id": u.id, "name": u.name, "shift_code": code, "shift_label": label})
             continue
-        shift, _ = determine_shift_for_date(date, u.rotation_person_id)
+        shift, _ = determine_shift_for_date(date, resolve_pos(u.id, date))
         if shift and shift.code != "OFF":
             result.append({"id": u.id, "name": u.name, "shift_code": shift.code, "shift_label": shift.label})
     return result
@@ -228,9 +232,14 @@ def _build_period(
     block); do not reintroduce shadow calculations on top of them. A new override
     layer belongs in period.py, where it reaches every view at once.
     """
-    canonical_days = {
-        day["date"]: day for day in generate_period_data(start, end, person_id=target.rotation_person_id, session=db)
-    }
+    from app.core.schedule.person_history import position_segments_for_window
+
+    canonical_days = {}
+    for seg in position_segments_for_window(db, target, start, end):
+        for day in generate_period_data(
+            max(seg["from_date"], start), min(seg["to_date"], end), person_id=seg["person_id"], session=db
+        ):
+            canonical_days[day["date"]] = day
     absences = {
         a.date: a
         for a in db.query(Absence).filter(Absence.user_id == target.id, Absence.date.between(start, end)).all()
@@ -249,6 +258,12 @@ def _build_period(
         all_users = db.query(User).filter(User.is_active == 1).all()
         absent_by_date = _absent_ids_by_date(start, end, db)
         overtime_by_date = _overtime_by_date(start, end, db)
+        # Built once for the whole range rather than per day, and from PersonHistory
+        # rather than each User row: a co-worker who has since moved would otherwise
+        # appear on their new position's rotation for days they worked another one.
+        resolve_pos = _build_user_position_resolver(
+            db, [u.id for u in all_users], {u.id: u.rotation_person_id for u in all_users}
+        )
 
     days = []
     ob_sum = 0.0
@@ -259,7 +274,7 @@ def _build_period(
         if with_coworkers:
             # The viewed user counts as absent for co-worker matching too.
             absent_ids = absent_by_date.get(d, set()) | ({target.id} if absence else set())
-            coworkers = _build_coworkers(target.id, d, all_users, absent_ids, overtime_by_date.get(d, {}))
+            coworkers = _build_coworkers(target.id, d, all_users, absent_ids, overtime_by_date.get(d, {}), resolve_pos)
         day = _build_day(
             canonical_days.get(d, {}),
             d,
@@ -540,11 +555,12 @@ async def get_user_pay_month(
         raise HTTPException(status_code=400, detail="Ogiltigt månadsvärde (1-12)")
 
     from app.core.schedule.summary import summarize_month_for_person
+    from app.core.schedule.vacation import position_held_in_month
 
     summary = summarize_month_for_person(
         year,
         month,
-        target.rotation_person_id,
+        position_held_in_month(db, target, datetime.date(year, month, 1)),
         session=db,
         wage_user_id=target.id,
         payment_year=year,
