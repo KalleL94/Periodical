@@ -17,7 +17,7 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     # Password hashing. Called directly rather than through passlib, which was
     # unmaintained and wrapped a single scheme (app/auth/auth.py).
-    "bcrypt>=4.3,<4.4",
+    "bcrypt>=5,<5.1",
     # Direct dependency: Fernet encryption of API keys at rest (app/auth/auth.py).
     # JWTs are signed with hmac from the standard library, not a JOSE library.
     "cryptography>=42.0",
