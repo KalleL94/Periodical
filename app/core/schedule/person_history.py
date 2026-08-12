@@ -868,6 +868,35 @@ def get_user_position_segments(session: Session, user_id: int, start_date: date,
     return _segments_in_window(session, start_date, end_date, PersonHistory.user_id == user_id)
 
 
+def position_segments_for_window(session: Session, user, start_date: date, end_date: date) -> list[dict]:
+    """The positions a user held across a window, ready to build a schedule from.
+
+    get_user_position_segments with the legacy answer folded in: a user with no
+    PersonHistory at all gets one segment covering the whole window at the position on
+    their User row, which is the only answer there is for them and the behaviour every
+    caller had before positions were tracked per date.
+
+    Anything that walks dates or months for one person wants this rather than
+    User.rotation_person_id, which knows only the position held today and so hands a
+    colleague's shifts to anyone who has since moved.
+    """
+    segments = get_user_position_segments(session, user.id, start_date, end_date)
+    if segments:
+        return segments
+    if get_user_history(session, user.id):
+        return []  # has history, none of it covers this window
+    return [
+        {
+            "user_id": user.id,
+            "person_id": user.rotation_person_id,
+            "from_date": start_date,
+            "to_date": end_date,
+            "effective_from": None,
+            "effective_to": None,
+        }
+    ]
+
+
 def has_position_history(session: Session, person_id: int) -> bool:
     """Check whether a position has any PersonHistory records at all."""
     return session.query(PersonHistory.id).filter(PersonHistory.person_id == person_id).first() is not None

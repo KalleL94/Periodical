@@ -2333,6 +2333,58 @@ def test_vacation_pay_prices_each_month_at_the_position_held_then(month_env):
     assert positions[(2026, 12)] == 5
 
 
+def test_calendar_feed_and_api_follow_the_position_held_on_each_date(month_env):
+    """The same defect as the vacation base, in the two places a person reads their own
+    schedule without a position in the URL: the iCal feed they subscribe to and the v1
+    schedule API. Both took the position off the User row, so a month worked at the old
+    position came back as whoever holds the new one now.
+    """
+    from app.core.calendar_export import generate_ical_for_user
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 5, "isak1", "Isak")
+    kalle = _make_user(session, 6, "kalle1", "Kalle", person_id=5)
+    kalle.employment_start_date = datetime.date(2026, 1, 2)
+    start_employment(session, isak.id, 5, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, kalle.id, 6, "Kalle", "kalle1", datetime.date(2026, 1, 2), created_by=admin.id)
+    end_employment(session, isak.id, 5, end_date=datetime.date(2026, 8, 31))
+    end_employment(session, kalle.id, 6, end_date=datetime.date(2026, 8, 31))
+    start_employment(session, kalle.id, 5, "Kalle", "kalle1", datetime.date(2026, 9, 1), created_by=admin.id)
+    session.commit()
+    session.refresh(kalle)
+
+    def _codes(days_source):
+        return [d["shift"].code if d.get("shift") else "-" for d in days_source]
+
+    week_before = datetime.date(2026, 2, 2)  # a Monday well before the move
+    own = generate_period_data(week_before, week_before + datetime.timedelta(days=6), 6, session=session)
+    other = generate_period_data(week_before, week_before + datetime.timedelta(days=6), 5, session=session)
+    assert _codes(own) != _codes(other), "fixture too weak: the two positions work the same week"
+
+    # The iCal feed a subscriber's calendar app pulls.
+    ical = generate_ical_for_user(
+        kalle, week_before, week_before + datetime.timedelta(days=6), session=session, as_feed=True
+    )
+    worked = {c for c in _codes(own) if c not in ("-", "OFF")}
+    assert worked, "fixture too weak: no worked shifts that week"
+    assert any(code in ical for code in worked), "the feed carried the other position's week"
+
+    # The v1 schedule API for the same week. It authenticates by key, not cookie.
+    from app.auth.auth import hash_api_key
+
+    kalle.api_key = hash_api_key("sweep-key")
+    session.commit()
+    resp = client.get(
+        f"/api/v1/users/{kalle.id}/schedule"
+        f"?from_date={week_before}&to_date={week_before + datetime.timedelta(days=6)}",
+        headers={"Authorization": "Bearer sweep-key"},
+    )
+    assert resp.status_code == 200
+    api_codes = [d.get("shift", {}).get("code") if d.get("shift") else "-" for d in resp.json()["days"]]
+    assert api_codes == _codes(own), "the API returned the position held today, not the one held then"
+
+
 def test_dashboard_follows_the_position_held_on_each_date(month_env):
     """Regression: the dashboard read User.rotation_person_id, which only knows today.
 

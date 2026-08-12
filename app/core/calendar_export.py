@@ -79,18 +79,27 @@ def generate_ical_for_user(
     as_feed: bool = False,
 ) -> str:
     """Generates iCal for a user's actual schedule via the canonical path."""
-    position = user.rotation_person_id
-    emp_start, emp_end = get_employment_period(session, user.id, position)
-    days = generate_period_data(
-        start_date,
-        end_date,
-        person_id=position,
-        session=session,
-        employment_start=emp_start,
-    )
-    days = mask_days_to_employment(
-        days, emp_start or datetime.date.min, emp_end or datetime.date.max, keep_substitute_days=True
-    )
+    # One tenure at a time. A feed covers months on both sides of a position change, and
+    # taking the position off the User row would fill the months before it with whoever
+    # holds that position now: a colleague's shifts, in the subscriber's own calendar.
+    from app.core.schedule.person_history import position_segments_for_window
+
+    days = []
+    for seg in position_segments_for_window(session, user, start_date, end_date):
+        emp_start, emp_end = get_employment_period(session, user.id, seg["person_id"])
+        seg_days = generate_period_data(
+            max(seg["from_date"], start_date),
+            min(seg["to_date"], end_date),
+            person_id=seg["person_id"],
+            session=session,
+            employment_start=emp_start,
+        )
+        days.extend(
+            mask_days_to_employment(
+                seg_days, emp_start or datetime.date.min, emp_end or datetime.date.max, keep_substitute_days=True
+            )
+        )
+    days.sort(key=lambda d: d["date"])
     return build_ical(days, user_id=user.id, lang=lang, as_feed=as_feed)
 
 

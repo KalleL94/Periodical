@@ -230,17 +230,30 @@ def _vacation_dates_in_weeks(
     return dates
 
 
-def _scheduled_off_dates(user, start: datetime.date, end: datetime.date) -> set[datetime.date]:
-    """Return the OFF-shift dates for a user across [start, end] based on the rotation."""
+def _scheduled_off_dates(user, start: datetime.date, end: datetime.date, session=None) -> set[datetime.date]:
+    """Return the OFF-shift dates for a user across [start, end] based on the rotation.
+
+    Per tenure rather than per user: OFF days decide which vacation days count, so a
+    window spanning a position change would otherwise count a colleague's days off as
+    this person's.
+    """
     from app.core.schedule.core import determine_shift_for_date
+    from app.core.schedule.person_history import position_segments_for_window
+
+    if session is None:
+        segments = [{"person_id": user.rotation_person_id, "from_date": start, "to_date": end}]
+    else:
+        segments = position_segments_for_window(session, user, start, end)
 
     off: set[datetime.date] = set()
-    d = start
-    while d <= end:
-        shift, _ = determine_shift_for_date(d, user.rotation_person_id)
-        if shift and shift.code == "OFF":
-            off.add(d)
-        d += datetime.timedelta(days=1)
+    for seg in segments:
+        d = max(seg["from_date"], start)
+        last = min(seg["to_date"], end)
+        while d <= last:
+            shift, _ = determine_shift_for_date(d, seg["person_id"])
+            if shift and shift.code == "OFF":
+                off.add(d)
+            d += datetime.timedelta(days=1)
     return off
 
 
@@ -494,7 +507,7 @@ def calculate_vacation_balance(user, target_year: int, db, off_dates: set[dateti
     # the employee's OFF-shift days. Compute the OFF days for the vacation year when the
     # caller did not supply them, so every entry point counts consistently.
     if off_dates is None:
-        off_dates = _scheduled_off_dates(user, year_start, year_end)
+        off_dates = _scheduled_off_dates(user, year_start, year_end, session=db)
 
     # Earning year is the year before the vacation year
     earning_start, earning_end = get_vacation_year_boundaries(target_year - 1, start_month)
@@ -1221,16 +1234,23 @@ def build_vacation_page_context(db, user, year: int, settings_target: str | None
 
     off_days: set[datetime.date] = set()
     day_colors: dict[str, str] = {}
-    day = datetime.date(year, 1, 1)
+    # Per tenure: a calendar year straddling a position change would otherwise paint the
+    # months before it with the rotation of whoever holds that position now.
+    from app.core.schedule.person_history import position_segments_for_window
+
+    year_start = datetime.date(year, 1, 1)
     year_end = datetime.date(year, 12, 31)
-    while day <= year_end:
-        shift, _ = determine_shift_for_date(day, user.rotation_person_id)
-        if shift:
-            if shift.code == "OFF":
-                off_days.add(day)
-            if shift.color:
-                day_colors[day.isoformat()] = shift.color
-        day += datetime.timedelta(days=1)
+    for seg in position_segments_for_window(db, user, year_start, year_end):
+        day = max(seg["from_date"], year_start)
+        last = min(seg["to_date"], year_end)
+        while day <= last:
+            shift, _ = determine_shift_for_date(day, seg["person_id"])
+            if shift:
+                if shift.code == "OFF":
+                    off_days.add(day)
+                if shift.color:
+                    day_colors[day.isoformat()] = shift.color
+            day += datetime.timedelta(days=1)
 
     def _absences(absence_type):
         return (

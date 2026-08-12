@@ -351,8 +351,11 @@ def calculate_variable_avg_daily(
         Average variable pay per day in SEK, or None if data is missing.
     """
     from app.core.schedule.period import generate_period_data
+    from app.core.schedule.vacation import position_held_in_month
 
-    person_id = user.rotation_person_id
+    # The position held when the earning year started, not the one held today: this
+    # walks that year's days, and a later move would price them on a colleague.
+    person_id = position_held_in_month(session, user, datetime.date(earning_start.year, earning_start.month, 1))
     if not person_id or not (1 <= person_id <= 10):
         return None
 
@@ -645,8 +648,13 @@ def calculate_transition_month_summary(
     if transition.consultant_salary_type == ConsultantSalaryType.TRAILING:
         trailing_base = float(consultant_monthly)
 
-        # Variable components from the last consultant month
-        person_id = user.rotation_person_id
+        # Variable components from the last consultant month, at the position held in
+        # that month rather than the one held today.
+        from app.core.schedule.vacation import position_held_in_month
+
+        person_id = position_held_in_month(
+            session, user, datetime.date(last_consultant_day.year, last_consultant_day.month, 1)
+        )
         if person_id and 1 <= person_id <= 10:
             try:
                 last_summary = summarize_month_for_person(
