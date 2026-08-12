@@ -61,6 +61,12 @@ ROW_ORDER = (
 # days instead, which is where the supplement is actually derived from.
 NON_OVERRIDABLE_KEYS = frozenset({"vacation_fixed", "vacation_variable", "vacation_variable_lump"})
 
+# Override key reserved for the month's preliminary tax. Tax is not a payslip
+# row (the rows sum to gross, tax is taken off it afterwards), so it is stored
+# as an override like any other but pulled out before the rows are built:
+# left among them it would be added as a row and then taxed as pay.
+TAX_OVERRIDE_KEY = "tax"
+
 # Row keys the payslip groups differently from the way this app splits them.
 # Both sides are summed per bucket before being compared, so a payslip that
 # lists "Sjukavdrag", "Sjuklön" and "Karensavdrag" as three lines is not
@@ -445,7 +451,48 @@ def _bucket_aggregate(entries: list[tuple]) -> dict[str, dict]:
     return out
 
 
-def compare_to_upload(slip: Payslip, parsed_rows: list) -> dict:
+def _compare_totals(computed: dict | None, uploaded: dict | None) -> list[dict]:
+    """Diff the three bottom-line figures: gross, preliminary tax and net.
+
+    A month can match line by line and still pay the wrong amount, because the
+    tax comes from a table and a personal adjustment this app does not know
+    about, so the bottom line needs a diff of its own rather than being implied
+    by the rows above it.
+
+    Both sides are given as positive amounts here, but the payslip prints tax as
+    a negative, so the uploaded tax is compared as a magnitude. A figure the
+    parser could not find on the payslip stays None rather than becoming a zero
+    that would report the whole amount as a diff.
+    """
+    if not computed:
+        return []
+    uploaded = uploaded or {}
+
+    lines = []
+    for key in ("gross", "tax", "net"):
+        ours = float(computed.get(key) or 0.0)
+        raw = uploaded.get(key)
+        theirs = None if raw is None else (abs(float(raw)) if key == "tax" else float(raw))
+        diff = None if theirs is None else theirs - ours
+        lines.append(
+            {
+                "bucket": key,
+                "computed": ours,
+                "uploaded": theirs,
+                "diff": diff,
+                "matched": diff is not None and abs(diff) <= MATCH_TOLERANCE,
+                "missing_there": theirs is None,
+            }
+        )
+    return lines
+
+
+def compare_to_upload(
+    slip: Payslip,
+    parsed_rows: list,
+    computed_totals: dict | None = None,
+    uploaded_totals: dict | None = None,
+) -> dict:
     """Compare the computed payslip against an uploaded one, bucket by bucket.
 
     Comparing per bucket rather than per row is what makes this usable: an
@@ -461,6 +508,10 @@ def compare_to_upload(slip: Payslip, parsed_rows: list) -> dict:
     `parsed_rows` are the Row objects from app/core/payslip_import.py. Returns
     per-bucket lines plus the totals, each with a signed `diff` (uploaded minus
     computed) and a `matched` flag.
+
+    `computed_totals` and `uploaded_totals` are {"gross", "tax", "net"} dicts
+    (the parser's own output fits the second one as it is); given both, the
+    result carries a "totals" list diffing them the same way.
     """
     computed = _bucket_aggregate([(COMPARE_BUCKETS.get(r.key, r.key), r.qty, r.unit, r.amount) for r in slip.rows])
 
@@ -516,7 +567,11 @@ def compare_to_upload(slip: Payslip, parsed_rows: list) -> dict:
             }
         )
 
-    return {"lines": lines, "unknown_rows": unknown_rows}
+    return {
+        "lines": lines,
+        "unknown_rows": unknown_rows,
+        "totals": _compare_totals(computed_totals, uploaded_totals),
+    }
 
 
 def _bucket_sort_key(bucket: str) -> int:

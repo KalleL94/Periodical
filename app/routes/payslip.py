@@ -18,9 +18,16 @@ from app.core.logging_config import get_logger
 from app.core.payslip_import import parse_payslip_pdf
 from app.core.rates import get_user_rates
 from app.core.schedule import build_calendar_grid_for_month, clear_schedule_cache, rotation_start_date
-from app.core.schedule.payslip import NON_OVERRIDABLE_KEYS, ROW_ORDER, add_vacation_rows, compare_to_upload
+from app.core.schedule.payslip import (
+    NON_OVERRIDABLE_KEYS,
+    ROW_ORDER,
+    TAX_OVERRIDE_KEY,
+    add_vacation_rows,
+    compare_to_upload,
+)
 from app.core.schedule.vacation import (
     calculate_vacation_balance,
+    fold_vacation_supplement_into_pay,
     is_variable_lump_month,
     vacation_supplement_for_month,
     vacation_year_of,
@@ -119,7 +126,17 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
 
     slip = summary["payslip"]
     vacation_days = summary.get("vacation_days", 0)
-    add_vacation_rows(slip, _vacation_supplement(db, target_user, year, month, vacation_days), vacation_days)
+    supplement = _vacation_supplement(db, target_user, year, month, vacation_days)
+    add_vacation_rows(slip, supplement, vacation_days)
+
+    # Gross is what the rows above add up to, supplement included. Net follows it
+    # the same way the month and year views do: the supplement is folded in
+    # outside summarize_month_for_person and taxed at the month's own ratio. A
+    # manual tax figure is the tax and is never rescaled.
+    brutto, netto = fold_vacation_supplement_into_pay(
+        summary.get("brutto_pay", 0.0), summary.get("netto_pay", 0.0), supplement.get("total", 0.0)
+    )
+    tax = summary.get("tax", 0.0) if summary.get("tax_overridden") else brutto - netto
 
     person_name = target_user.name if target_user is not None else summary.get("person_name")
 
@@ -137,6 +154,13 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
         "year": year,
         "month": month,
         "slip": slip,
+        "slip_gross": slip.total,
+        "slip_tax": tax,
+        "slip_net": slip.total - tax,
+        "tax_table_amount": summary.get("tax_computed", 0.0),
+        "tax_overridden": summary.get("tax_overridden", False),
+        "tax_reason": summary.get("tax_reason"),
+        "tax_override_key": TAX_OVERRIDE_KEY,
         "brutto_pay": summary.get("brutto_pay", 0.0),
         "can_edit": current_user is not None
         and (current_user.role == UserRole.ADMIN or current_user.id == wage_user_id),
@@ -321,7 +345,17 @@ async def compare_payslip(
                 else None
             )
             parsed = parse_payslip_pdf(data, rates)
-            context["comparison"] = compare_to_upload(context["slip"], parsed["rows"])
+            context["comparison"] = compare_to_upload(
+                context["slip"],
+                parsed["rows"],
+                computed_totals={
+                    "gross": context["slip_gross"],
+                    "tax": context["slip_tax"],
+                    "net": context["slip_net"],
+                },
+                # The parser's output already carries gross, tax and net.
+                uploaded_totals=parsed,
+            )
             context["parsed"] = parsed
         except Exception:
             logger.warning(

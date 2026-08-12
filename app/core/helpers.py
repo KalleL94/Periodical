@@ -115,6 +115,8 @@ def strip_salary_data(data: dict) -> dict:
     result = data.copy()
     result["brutto_pay"] = None
     result["netto_pay"] = None
+    result["tax"] = None
+    result["tax_computed"] = None
     result["ob_pay"] = {}
     result["ob_hours"] = {}
     result["total_ob"] = None

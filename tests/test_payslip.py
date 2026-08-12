@@ -397,6 +397,58 @@ def test_vacation_rows_are_added_once():
     assert round(slip.total, 2) == round(37000.0 + 1484.0, 2)
 
 
+def test_totals_are_compared_and_tax_sign_is_ignored():
+    """Gross, tax and net get their own diff, tax as a magnitude on both sides.
+
+    The payslip prints tax as a negative, this app carries it as a positive
+    deduction, so comparing the raw numbers would report double the tax as a diff
+    on a month that is actually correct.
+    """
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [PayslipRow(key="base", amount=42583.99)]
+
+    result = compare_to_upload(
+        slip,
+        [],
+        computed_totals={"gross": 42583.99, "tax": 9000.0, "net": 33583.99},
+        uploaded_totals={"gross": 42583.99, "tax": -9250.0, "net": 33333.99},
+    )
+    totals = {line["bucket"]: line for line in result["totals"]}
+
+    assert totals["gross"]["matched"] is True
+    assert totals["tax"]["uploaded"] == 9250.0
+    assert totals["tax"]["diff"] == 250.0
+    assert totals["tax"]["matched"] is False
+    assert round(totals["net"]["diff"], 2) == -250.00
+
+
+def test_totals_missing_from_the_pdf_are_not_reported_as_a_full_diff():
+    """A figure the parser could not find is blank, not a zero worth the whole amount."""
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [PayslipRow(key="base", amount=37000.0)]
+
+    result = compare_to_upload(
+        slip,
+        [],
+        computed_totals={"gross": 37000.0, "tax": 9000.0, "net": 28000.0},
+        uploaded_totals={"gross": 37000.0, "tax": None, "net": None},
+    )
+    totals = {line["bucket"]: line for line in result["totals"]}
+
+    assert totals["tax"]["missing_there"] is True
+    assert totals["tax"]["uploaded"] is None
+    assert totals["tax"]["diff"] is None
+    assert totals["tax"]["matched"] is False
+
+
+def test_totals_are_absent_without_computed_figures():
+    """The row diff must keep working on its own: totals are opt-in."""
+    slip = Payslip(period="20260601-20260630")
+    slip.rows = [PayslipRow(key="base", amount=37000.0)]
+
+    assert compare_to_upload(slip, [])["totals"] == []
+
+
 def test_vacation_lump_row_carries_no_quantity():
     """The lump settles the whole year, not the days taken in the month it lands in."""
     slip = build_payslip_rows(_totals(), [_day()], base_salary=37000.0, is_hourly=False, year=2026, month=6)

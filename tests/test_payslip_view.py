@@ -184,6 +184,53 @@ def test_override_is_removed_by_an_empty_amount(test_client, monthly_user, test_
     assert test_db.query(PayslipOverride).count() == 0
 
 
+def test_tax_override_changes_net_pay_without_touching_gross(test_client, monthly_user, test_db):
+    """Tax is entered as a payslip figure but is not a pay row.
+
+    It must reach net pay in every view (summarize_month_for_person is the one
+    place net is computed) while leaving gross and the rows alone, and it must
+    accept the payslip's own negative formatting.
+    """
+    _login(test_client, monthly_user)
+    from app.core.schedule.summary import summarize_month_for_person
+
+    before = summarize_month_for_person(2026, 6, 5, session=test_db, wage_user_id=5, fetch_tax_table=False)
+
+    response = test_client.post(
+        "/month/5/payslip/override",
+        data={"year": 2026, "month": 6, "row_key": "tax", "amount": "-9 250,00", "reason": "enligt lönespec"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    after = summarize_month_for_person(2026, 6, 5, session=test_db, wage_user_id=5, fetch_tax_table=False)
+    assert after["tax"] == 9250.0
+    assert after["tax_overridden"] is True
+    assert after["tax_computed"] == before["tax"]
+    assert after["brutto_pay"] == before["brutto_pay"]
+    assert "tax" not in after["payslip"].by_key()
+    assert round(after["netto_pay"], 2) == round(after["brutto_pay"] - 9250.0, 2)
+
+    page = test_client.get("/month/5/payslip?year=2026&month=6")
+    assert "Preliminärskatt" in page.text
+    assert "Nettolön" in page.text
+    assert "Manuell" in page.text
+
+
+def test_tax_override_is_removed_by_an_empty_amount(test_client, monthly_user, test_db):
+    """Clearing the field goes back to the tax table, like any other override."""
+    _login(test_client, monthly_user)
+    from app.core.schedule.summary import summarize_month_for_person
+
+    payload = {"year": 2026, "month": 6, "row_key": "tax"}
+    test_client.post("/month/5/payslip/override", data={**payload, "amount": "9250"})
+    test_client.post("/month/5/payslip/override", data={**payload, "amount": ""})
+
+    after = summarize_month_for_person(2026, 6, 5, session=test_db, wage_user_id=5, fetch_tax_table=False)
+    assert after["tax_overridden"] is False
+    assert after["tax"] == after["tax_computed"]
+
+
 def test_add_row_for_a_pay_type_the_month_never_produced(test_client, monthly_user, test_db):
     """build_payslip_rows skips rows that compute to zero, so an OB level the
     month had none of has no row to edit. Adding one must still work."""
@@ -296,6 +343,10 @@ def test_upload_compares_a_real_payslip_pdf(test_client, monthly_user):
     assert response.status_code == 200
     assert "Jämförelse" in response.text
     assert "Lönespec" in response.text
+    # The bottom line is compared too: gross, preliminary tax and net.
+    assert "Bruttolön" in response.text
+    assert "Preliminärskatt" in response.text
+    assert "Nettolön" in response.text
 
 
 def test_upload_of_a_broken_file_shows_an_error_not_a_500(test_client, monthly_user):
