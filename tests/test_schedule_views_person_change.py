@@ -2376,8 +2376,7 @@ def test_calendar_feed_and_api_follow_the_position_held_on_each_date(month_env):
     kalle.api_key = hash_api_key("sweep-key")
     session.commit()
     resp = client.get(
-        f"/api/v1/users/{kalle.id}/schedule"
-        f"?from_date={week_before}&to_date={week_before + datetime.timedelta(days=6)}",
+        f"/api/v1/users/{kalle.id}/schedule?from_date={week_before}&to_date={week_before + datetime.timedelta(days=6)}",
         headers={"Authorization": "Bearer sweep-key"},
     )
     assert resp.status_code == 200
