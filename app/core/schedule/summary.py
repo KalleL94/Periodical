@@ -382,6 +382,7 @@ def summarize_month_for_person(
     # function, and an override that only reached one of them would make the
     # views disagree about the same month's pay.
     from app.core.schedule.payslip import (
+        TAX_OVERRIDE_KEY,
         apply_payslip_overrides,
         build_payslip_rows,
         get_payslip_overrides,
@@ -398,15 +399,26 @@ def summarize_month_for_person(
         year=year,
         month=month,
     )
-    override_deltas = apply_payslip_overrides(payslip, get_payslip_overrides(session, uid_for_wages, year, month))
+    overrides = get_payslip_overrides(session, uid_for_wages, year, month)
+    # Tax is not a pay row: it is taken off gross rather than added to it, so it
+    # is pulled out here instead of being handed to the row builder. See
+    # TAX_OVERRIDE_KEY.
+    tax_override = overrides.pop(TAX_OVERRIDE_KEY, None)
+    override_deltas = apply_payslip_overrides(payslip, overrides)
     totals["brutto_pay"] += sum(override_deltas.values())
     # Route the deltas into the itemised totals (absence deduction, sick-pay OB)
     # so the sick-leave figures on the month and year views follow the override,
     # not just the gross total.
     route_override_deltas(totals, override_deltas)
 
-    # Calculate net pay using the user's tax table for the payment year
-    netto_pay = totals["brutto_pay"] - _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
+    # Calculate net pay using the user's tax table for the payment year. A manual
+    # tax figure wins over the table: the table cannot know about a jämkning, an
+    # adjustment decision or an employer that simply taxes differently. Entered
+    # here, it reaches every view that shows net pay, not only the payslip page.
+    tax_computed = _calculate_tax(totals["brutto_pay"], tax_table, payment_year=payment_year)
+    # A payslip prints tax as a negative amount; either sign means the same deduction.
+    tax = abs(float(tax_override["amount"] or 0.0)) if tax_override else tax_computed
+    netto_pay = totals["brutto_pay"] - tax
 
     person_name = _resolve_person_name(session, person_id, month_start_date)
 
@@ -450,6 +462,12 @@ def summarize_month_for_person(
         "override_deltas": totals.get("override_deltas", {}),
         "brutto_pay": totals["brutto_pay"],
         "netto_pay": netto_pay,
+        "tax": tax,
+        # What the tax table gave, kept so an overridden figure can be shown
+        # next to the computed one rather than silently replacing it.
+        "tax_computed": tax_computed,
+        "tax_overridden": tax_override is not None,
+        "tax_reason": tax_override.get("reason") if tax_override else None,
         "base_salary": base_salary,
         "wage_type": user.wage_type if user else None,
         "tax_table": tax_table,

@@ -93,7 +93,49 @@
             <tfoot>
                 <tr>
                     <td class="td_left" colspan="5"><strong>{{ t.month_payslip_total }}</strong></td>
-                    <td class="td_right num"><strong>{{ kr(slip.total) }}</strong></td>
+                    <td class="td_right num"><strong>{{ kr(slip_gross) }}</strong></td>
+                    {% if can_edit %}<td></td>{% endif %}
+                </tr>
+                <tr>
+                    <td class="td_left" colspan="5">
+                        {{ t.payslip_total_labels.tax }}
+                        {% if tax_overridden %}
+                            <span class="badge badge-warning" title="{{ tax_reason or '' }}">{{ t.payslip_overridden }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="td_right num">
+                        -{{ kr(slip_tax) }}
+                        {% if tax_overridden %}
+                            <div class="text-muted">{{ t.payslip_computed }}: -{{ kr(tax_table_amount) }}</div>
+                        {% endif %}
+                    </td>
+                    {% if can_edit %}
+                    <td class="td_left">
+                        <details>
+                            <summary class="cursor-pointer">{{ t.payslip_override_edit }}</summary>
+                            {# No data-override-form: this form has no quantity or a-price to
+                               multiply, tax is entered as an amount and nothing else. #}
+                            <form method="post" action="/month/{{ person_id }}/payslip/override" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="year" value="{{ year }}">
+                                <input type="hidden" name="month" value="{{ month }}">
+                                <input type="hidden" name="row_key" value="{{ tax_override_key }}">
+                                <input class="form-input form-input--sm" type="text" inputmode="decimal" name="amount"
+                                       value="{{ "%.2f"|format(slip_tax) }}"
+                                       aria-label="{{ t.payslip_override_amount }}" placeholder="{{ t.payslip_override_amount }}">
+                                <input class="form-input form-input--sm" type="text" name="reason"
+                                       value="{{ tax_reason or '' }}" maxlength="255"
+                                       aria-label="{{ t.payslip_override_reason }}" placeholder="{{ t.payslip_override_reason }}">
+                                <button type="submit" class="btn secondary btn-sm">{{ t.payslip_override_save }}</button>
+                                <span class="form-hint">{{ t.payslip_tax_override_hint }}</span>
+                            </form>
+                        </details>
+                    </td>
+                    {% endif %}
+                </tr>
+                <tr>
+                    <td class="td_left" colspan="5"><strong>{{ t.payslip_total_labels.net }}</strong></td>
+                    <td class="td_right num"><strong>{{ kr(slip_net) }}</strong></td>
                     {% if can_edit %}<td></td>{% endif %}
                 </tr>
             </tfoot>
@@ -159,9 +201,6 @@
         {% if comparison %}
         <div class="section-mt">
             <h3 class="h-mb">{{ t.payslip_compare_title }}</h3>
-            {% if parsed and parsed.gross %}
-            <p class="text-muted">{{ t.payslip_parsed_gross }}: <span class="num">{{ kr(parsed.gross) }}</span></p>
-            {% endif %}
             <div class="scroll-x">
                 <table class="breakdown-table">
                     <thead>
@@ -207,6 +246,28 @@
                         </tr>
                         {% endfor %}
                     </tbody>
+                    {# The bottom line: a month can match row by row and still pay the
+                       wrong amount when the tax differs. #}
+                    <tfoot>
+                        {% for line in comparison.totals %}
+                        <tr class="{% if line.matched %}text-muted{% endif %}">
+                            <td class="td_left"><strong>{{ t.payslip_total_labels.get(line.bucket, line.bucket) }}</strong></td>
+                            <td colspan="4"></td>
+                            <td class="td_right num">{{ kr(line.computed) }}</td>
+                            <td class="td_right num">{% if line.uploaded is not none %}{{ kr(line.uploaded) }}{% endif %}</td>
+                            <td class="td_right num">
+                                {% if line.matched %}0{% elif line.diff is not none %}<span class="text-danger">{{ "%+.0f"|format(line.diff) }}</span>{% endif %}
+                            </td>
+                            <td class="td_left">
+                                {% if line.matched %}
+                                    {{ t.payslip_compare_ok }}
+                                {% elif line.missing_there %}
+                                    <span class="text-danger">{{ t.payslip_compare_missing_there }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tfoot>
                 </table>
             </div>
 
