@@ -379,3 +379,14 @@ def _attestation_object(private, credential_id: bytes) -> bytes:
             _cbor_text("authData") + _cbor_bytes(auth_data),
         ]
     )
+
+
+def test_profile_page_lists_registered_passkeys(test_client, test_db, test_user):
+    _register_credential(test_db, test_user)
+    _login(test_client, test_user)
+
+    response = test_client.get("/profile")
+
+    assert response.status_code == 200
+    assert "Testnyckel" in response.text
+    assert "/static/js/passkey.js" in response.text

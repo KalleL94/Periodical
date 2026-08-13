@@ -287,6 +287,61 @@
         </div>
     </section>
 
+    <!-- Passkeys -->
+    <section class="section-mt">
+        <h2>{{ t.profile_passkey_title }}</h2>
+        <div class="card">
+            <p class="text-muted form-card-title">{{ t.profile_passkey_desc }}</p>
+
+            {% if passkeys %}
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>{{ t.profile_passkey_name }}</th>
+                        <th>{{ t.profile_passkey_created }}</th>
+                        <th>{{ t.profile_passkey_last_used }}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for passkey in passkeys %}
+                    <tr>
+                        <td>{{ passkey.name }}</td>
+                        <td>{{ passkey.created_at.strftime('%Y-%m-%d') }}</td>
+                        <td>
+                            {% if passkey.last_used_at %}
+                                {{ passkey.last_used_at.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                {{ t.profile_passkey_never_used }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="/profile/passkey/{{ passkey.id }}/delete"
+                                  class="inline-form"
+                                  onsubmit="return confirm('{{ t.profile_passkey_delete_confirm }}');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-danger">{{ t.profile_passkey_delete }}</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted">{{ t.profile_passkey_none }}</p>
+            {% endif %}
+
+            <div class="profile-actions">
+                <input type="text" id="passkey-name" class="profile-api-input"
+                       placeholder="{{ t.profile_passkey_name }}" maxlength="100">
+                <button type="button" id="passkey-register" class="btn btn-primary" hidden
+                        data-error-message="{{ t.profile_passkey_add_failed }}">
+                    {{ t.profile_passkey_add }}
+                </button>
+            </div>
+        </div>
+    </section>
+
     <!-- Kalenderprenumeration -->
     <section class="section-mt">
         <h2>{{ t.profile_calendar_feed_title }}</h2>
@@ -368,5 +423,7 @@
     .profile-wage-grid { grid-template-columns: 1fr; }
 }
 </style>
+
+<script src="/static/js/passkey.js" defer></script>
 
 {% endblock %}
