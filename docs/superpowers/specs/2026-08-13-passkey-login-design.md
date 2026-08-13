@@ -48,9 +48,10 @@ registration and assertion verification share one parser and one code path.
 The WebAuthn user handle is `str(user.id)`. It is stable, opaque enough for this
 application and needs no extra column or backfill.
 
-Migration script `migrations/migrate_add_passkeys.py`, following the existing
-migration pattern. Per the project's deploy rules it must be run by hand on prod
-before tagging a release.
+No new migration script is needed. `migrations/migrate_schema.py` already creates
+any table present in the models but missing from the database, so declaring the
+model is the whole migration. Per the project's deploy rules it must still be run
+by hand on prod before tagging a release, since deploy does not run migrations.
 
 ## `app/auth/webauthn.py`
 
@@ -109,9 +110,12 @@ New module `app/routes/passkey_routes.py`.
 and the pending-password-change redirect still applies. There is no second
 session-issuing path that could drift from the first.
 
-All of these are POST requests and therefore carry the CSRF token, sent as a
-form field for the delete route and in the JSON request for the fetch-based
-routes.
+All of these are POST requests and therefore carry the CSRF token. `CSRFMiddleware`
+only reads the token out of urlencoded and multipart bodies, and fails closed on
+any other content type, so the fetch-based routes post
+`application/x-www-form-urlencoded` bodies carrying a `csrf_token` field and a
+`credential` field holding the serialised credential JSON. The routes read them
+with `Form(...)` like every other route in the app. No middleware change.
 
 Failed passkey attempts are not rate-limited. Forging an assertion requires
 forging a signature, so the `LoginAttempt` counter that protects password login
