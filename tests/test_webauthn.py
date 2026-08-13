@@ -1,9 +1,13 @@
 # tests/test_webauthn.py
 """Tests for app/auth/webauthn.py, the hand-rolled WebAuthn verifier."""
 
+import json
+import time
+
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
+from app.auth import webauthn
 from app.auth.webauthn import WebAuthnError, cbor_decode, load_cose_key
 
 
@@ -85,6 +89,96 @@ def test_load_cose_key_rejects_an_unsupported_algorithm():
 
     with pytest.raises(WebAuthnError):
         load_cose_key(cose)
+
+
+def test_new_challenge_round_trips_through_its_cookie():
+    challenge, cookie = webauthn.new_challenge()
+    assert webauthn.challenge_from_cookie(cookie) == challenge
+
+
+def test_challenge_cookie_with_a_tampered_nonce_is_rejected():
+    _, cookie = webauthn.new_challenge()
+    _, expiry, signature = cookie.split(".")
+    with pytest.raises(WebAuthnError):
+        webauthn.challenge_from_cookie(f"tampered.{expiry}.{signature}")
+
+
+def test_expired_challenge_cookie_is_rejected():
+    challenge, cookie = webauthn.new_challenge()
+    nonce, _, _ = cookie.split(".")
+    past = int(time.time()) - 1
+    forged = f"{nonce}.{past}.{webauthn._sign_challenge(nonce, past)}"
+    assert nonce == challenge
+    with pytest.raises(WebAuthnError):
+        webauthn.challenge_from_cookie(forged)
+
+
+def test_missing_challenge_cookie_is_rejected():
+    with pytest.raises(WebAuthnError):
+        webauthn.challenge_from_cookie(None)
+
+
+def test_valid_client_data_passes():
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, "https://example.test")
+
+    webauthn.verify_client_data(client_data, "webauthn.get", challenge, "example.test", "https://example.test")
+
+
+def test_client_data_with_the_wrong_type_is_rejected():
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.create", challenge, "https://example.test")
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_client_data(client_data, "webauthn.get", challenge, "example.test", "https://example.test")
+
+
+def test_client_data_with_the_wrong_challenge_is_rejected():
+    challenge, _ = webauthn.new_challenge()
+    other, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", other, "https://example.test")
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_client_data(client_data, "webauthn.get", challenge, "example.test", "https://example.test")
+
+
+def test_client_data_from_another_origin_is_rejected():
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, "https://evil.test")
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_client_data(client_data, "webauthn.get", challenge, "example.test", "https://example.test")
+
+
+def test_plain_http_origin_is_rejected_off_localhost():
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, "http://example.test")
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_client_data(client_data, "webauthn.get", challenge, "example.test", "http://example.test")
+
+
+def test_plain_http_localhost_origin_is_allowed():
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, "http://localhost:8000")
+
+    webauthn.verify_client_data(client_data, "webauthn.get", challenge, "localhost", "http://localhost:8000")
+
+
+def test_origin_header_that_disagrees_with_client_data_is_rejected():
+    """The browser sends both; they must agree, or something is proxying."""
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, "https://example.test")
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_client_data(client_data, "webauthn.get", challenge, "example.test", "https://other.test")
+
+
+def _client_data(data_type: str, challenge: str, origin: str) -> bytes:
+    """Build a clientDataJSON blob the way a browser would."""
+    return json.dumps({"type": data_type, "challenge": challenge, "origin": origin, "crossOrigin": False}).encode(
+        "utf-8"
+    )
 
 
 # --- helpers that build COSE_Key structures the way an authenticator would ---

@@ -13,9 +13,19 @@ verified and no certificate chains need parsing. That is the recommended setting
 for an application that does not restrict which authenticator models may enrol.
 """
 
+import base64
+import hashlib
+import hmac
+import json
+import secrets
+import time
+from urllib.parse import urlparse
+
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
+
+from app.auth.auth import SECRET_KEY
 
 
 class WebAuthnError(Exception):
@@ -156,3 +166,128 @@ def verify_signature(public_key, signed_bytes: bytes, signature: bytes) -> None:
             public_key.verify(signature, signed_bytes, padding.PKCS1v15(), hashes.SHA256())
     except InvalidSignature as error:
         raise WebAuthnError("Signature verification failed") from error
+
+
+# --- base64url ---
+#
+# WebAuthn sends every binary field base64url encoded, and browsers strip the
+# padding. Both directions are needed, so both live here rather than being
+# re-derived at each call site.
+
+
+def b64url_encode(raw: bytes) -> str:
+    """Base64url without padding, matching what browsers send."""
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def b64url_decode(value: str) -> bytes:
+    """Reverse of b64url_encode, restoring the padding the browser stripped."""
+    try:
+        return base64.urlsafe_b64decode(value.encode("ascii") + b"=" * (-len(value) % 4))
+    except (ValueError, UnicodeError) as error:
+        raise WebAuthnError("Malformed base64url value") from error
+
+
+# --- Challenges ---
+#
+# The server keeps no copy of the challenge it issued. It hands the browser a
+# random nonce and puts "<nonce>.<expiry>.<signature>" in a short-lived cookie,
+# signed with SECRET_KEY the way csrf.py signs its token. Verification re-signs
+# what the cookie claims and compares. No table, no cleanup job, no session
+# store, and a challenge cannot outlive its expiry even if the cookie does.
+
+CHALLENGE_COOKIE_NAME = "webauthn_challenge"
+CHALLENGE_TTL_SECONDS = 300
+
+_CHALLENGE_BYTES = 32
+
+
+def _sign_challenge(nonce: str, expiry: int) -> str:
+    """Return the HMAC-SHA256 signature binding a nonce and expiry to this server."""
+    message = f"{nonce}.{expiry}".encode()
+    return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def new_challenge() -> tuple[str, str]:
+    """Return (challenge for the browser, value for the challenge cookie)."""
+    nonce = b64url_encode(secrets.token_bytes(_CHALLENGE_BYTES))
+    expiry = int(time.time()) + CHALLENGE_TTL_SECONDS
+    return nonce, f"{nonce}.{expiry}.{_sign_challenge(nonce, expiry)}"
+
+
+def challenge_from_cookie(cookie_value: str | None) -> str:
+    """Return the challenge a cookie vouches for, or raise WebAuthnError."""
+    if not cookie_value:
+        raise WebAuthnError("Missing challenge cookie")
+
+    parts = cookie_value.split(".")
+    if len(parts) != 3:
+        raise WebAuthnError("Malformed challenge cookie")
+    nonce, expiry_text, signature = parts
+
+    try:
+        expiry = int(expiry_text)
+    except ValueError as error:
+        raise WebAuthnError("Malformed challenge expiry") from error
+
+    if not hmac.compare_digest(signature, _sign_challenge(nonce, expiry)):
+        raise WebAuthnError("Challenge cookie signature does not verify")
+    if time.time() >= expiry:
+        raise WebAuthnError("Challenge has expired")
+
+    return nonce
+
+
+# --- Client data ---
+
+
+def _origin_is_secure(parsed) -> bool:
+    """True when an origin is one WebAuthn will operate on.
+
+    https always, plus http on localhost, which browsers treat as a secure
+    context so the app can be exercised in development.
+    """
+    if parsed.scheme == "https":
+        return True
+    return parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")
+
+
+def verify_client_data(
+    client_data_json: bytes,
+    expected_type: str,
+    expected_challenge: str,
+    rp_id: str,
+    origin: str | None,
+) -> None:
+    """Check the collected client data against what this server asked for.
+
+    The origin is validated against what the browser signed rather than
+    reconstructed from the request URL: a reverse proxy rewrites the scheme the
+    application sees, while clientDataJSON carries the origin the browser
+    actually used. When the request also carried an Origin header, the two must
+    agree.
+    """
+    try:
+        client_data = json.loads(client_data_json)
+    except (ValueError, UnicodeError) as error:
+        raise WebAuthnError("Malformed clientDataJSON") from error
+    if not isinstance(client_data, dict):
+        raise WebAuthnError("clientDataJSON is not an object")
+
+    if client_data.get("type") != expected_type:
+        raise WebAuthnError("Unexpected clientData type")
+
+    challenge = client_data.get("challenge")
+    if not isinstance(challenge, str) or not hmac.compare_digest(challenge, expected_challenge):
+        raise WebAuthnError("Challenge does not match")
+
+    client_origin = client_data.get("origin")
+    if not isinstance(client_origin, str):
+        raise WebAuthnError("clientData carries no origin")
+    parsed = urlparse(client_origin)
+    if parsed.hostname != rp_id:
+        raise WebAuthnError("Origin does not belong to this relying party")
+    if not _origin_is_secure(parsed):
+        raise WebAuthnError("Origin is not a secure context")
+    if origin is not None and origin != client_origin:
+        raise WebAuthnError("Origin header disagrees with clientData")
