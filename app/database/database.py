@@ -201,6 +201,7 @@ class User(Base):
     employment_transition = relationship(
         "EmploymentTransition", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    passkeys = relationship("Passkey", back_populates="user", cascade="all, delete-orphan")
 
 
 class OvertimeShift(Base):
@@ -612,6 +613,34 @@ class LoginAttempt(Base):
 
     def __repr__(self):
         return f"<LoginAttempt(username={self.username!r}, ip={self.ip!r}, at={self.created_at})>"
+
+
+class Passkey(Base):
+    """A WebAuthn credential registered by a user for passwordless login.
+
+    One row per authenticator. `public_key` holds the raw COSE_Key bytes exactly
+    as the authenticator sent them, base64url encoded, so registration and
+    assertion verification share a single parser.
+    """
+
+    __tablename__ = "passkeys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    credential_id = Column(String(255), unique=True, nullable=False, index=True)
+    public_key = Column(Text, nullable=False)
+    # The authenticator's signature counter. Authenticators that do not implement
+    # one always send 0, so the replay check only applies once a non-zero value
+    # has been seen.
+    sign_count = Column(Integer, default=0, nullable=False)
+    name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="passkeys")
+
+    def __repr__(self):
+        return f"<Passkey(user_id={self.user_id}, name={self.name!r})>"
 
 
 def create_tables():
