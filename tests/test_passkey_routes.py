@@ -9,9 +9,9 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.auth import webauthn
-from app.auth.auth import create_access_token
+from app.auth.auth import create_access_token, verify_password
 from app.auth.webauthn import CHALLENGE_COOKIE_NAME
-from app.database.database import Passkey
+from app.database.database import Passkey, User
 
 # TestClient issues requests against http://testserver, so that is the RP ID and
 # origin the routes will derive and the browser stand-in must claim. "testserver"
@@ -254,7 +254,7 @@ def test_deleting_a_passkey_removes_it(test_client, test_db, test_user):
 
 
 def test_cannot_delete_another_users_passkey(test_client, test_db, test_user):
-    from app.database.database import User, UserRole
+    from app.database.database import UserRole
 
     other = User(
         username="otheruser",
@@ -390,3 +390,79 @@ def test_profile_page_lists_registered_passkeys(test_client, test_db, test_user)
     assert response.status_code == 200
     assert "Testnyckel" in response.text
     assert "/static/js/passkey.js" in response.text
+
+
+# --- admin credential resets revoke passkeys ---
+#
+# Resetting a password is the existing lever for "cut this account off". Without
+# this, a passkey survives the reset and the lever silently stops working.
+
+
+def _admin_login(client):
+    client.post("/login", data={"username": "admin", "password": "adminpass123"})
+
+
+def test_admin_password_reset_revokes_the_users_passkeys(test_client, test_db, admin_user, test_user):
+    _register_credential(test_db, test_user)
+    _admin_login(test_client)
+
+    response = test_client.post(f"/admin/users/{test_user.id}/reset-password", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert test_db.query(Passkey).filter(Passkey.user_id == test_user.id).count() == 0
+
+
+def test_admin_setting_a_password_on_edit_revokes_the_users_passkeys(test_client, test_db, admin_user, test_user):
+    _register_credential(test_db, test_user)
+    _admin_login(test_client)
+
+    response = test_client.post(
+        f"/admin/users/{test_user.id}",
+        data={
+            "name": test_user.name,
+            "role": test_user.role.value,
+            "new_password": "a-brand-new-password",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert test_db.query(Passkey).filter(Passkey.user_id == test_user.id).count() == 0
+
+
+def test_admin_edit_without_a_new_password_leaves_passkeys_alone(test_client, test_db, admin_user, test_user):
+    """Editing a name is not a credential reset."""
+    _register_credential(test_db, test_user)
+    _admin_login(test_client)
+
+    response = test_client.post(
+        f"/admin/users/{test_user.id}",
+        data={"name": "Renamed User", "role": test_user.role.value},
+        follow_redirects=False,
+    )
+
+    # Assert the edit actually went through: a request that 404s would leave the
+    # passkey in place too, and pass this test for the wrong reason.
+    assert response.status_code == 302
+    test_db.expire_all()
+    assert test_db.query(User).filter(User.id == test_user.id).one().name == "Renamed User"
+    assert test_db.query(Passkey).filter(Passkey.user_id == test_user.id).count() == 1
+
+
+def test_changing_your_own_password_keeps_your_passkeys(test_client, test_db, test_user):
+    """Self-service password changes are routine, not a revocation."""
+    _register_credential(test_db, test_user)
+    _login(test_client, test_user)
+
+    response = test_client.post(
+        "/profile/password",
+        data={"current_password": "testpass123", "new_password": "another-password"},
+        follow_redirects=False,
+    )
+
+    # Same guard: prove the password really changed, so the surviving passkey
+    # means "not revoked" rather than "the request never got that far".
+    assert response.status_code == 302
+    test_db.expire_all()
+    assert verify_password("another-password", test_db.query(User).filter(User.id == test_user.id).one().password_hash)
+    assert test_db.query(Passkey).filter(Passkey.user_id == test_user.id).count() == 1

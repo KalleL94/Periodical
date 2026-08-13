@@ -14,7 +14,7 @@ from app.auth.auth import get_admin_user, get_password_hash, get_user_by_usernam
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
-from app.database.database import User, UserRole, WageType, get_db, utcnow
+from app.database.database import Passkey, User, UserRole, WageType, get_db, utcnow
 from app.routes.shared import _parse_rates_form, render
 
 logger = get_logger(__name__)
@@ -203,6 +203,7 @@ async def admin_update_user(
     if new_password:
         set_password(edit_user, new_password)
         edit_user.must_change_password = 1
+        revoke_passkeys(db, edit_user)
 
     try:
         db.commit()
@@ -214,6 +215,18 @@ async def admin_update_user(
     clear_schedule_cache()
 
     return RedirectResponse(url="/admin/users", status_code=302)
+
+
+def revoke_passkeys(db: Session, user: User) -> int:
+    """Delete every passkey belonging to `user`, returning how many were removed.
+
+    Called wherever an admin sets someone else's password. That is the lever for
+    "cut this account off", and a passkey that survives it keeps letting the
+    holder in: a departing employee's phone, or a lost device, would otherwise be
+    revocable only by whoever is holding it. A password the user changes
+    themselves is routine and leaves their passkeys alone.
+    """
+    return db.query(Passkey).filter(Passkey.user_id == user.id).delete(synchronize_session=False)
 
 
 @router.post("/admin/users/{user_id}/reset-password", name="admin_reset_password")
@@ -237,6 +250,7 @@ async def admin_reset_password(
     default_password = secrets.token_urlsafe(12)
     set_password(reset_user, default_password)
     reset_user.must_change_password = 1
+    revoked = revoke_passkeys(db, reset_user)
     try:
         db.commit()
     except Exception:
@@ -249,7 +263,11 @@ async def admin_reset_password(
         username=reset_user.username,
         user_id=reset_user.id,
         success=True,
-        details={"reset_by": current_user.username, "reset_by_id": current_user.id},
+        details={
+            "reset_by": current_user.username,
+            "reset_by_id": current_user.id,
+            "passkeys_revoked": revoked,
+        },
     )
 
     from urllib.parse import quote
