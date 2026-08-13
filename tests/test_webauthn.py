@@ -1,10 +1,12 @@
 # tests/test_webauthn.py
 """Tests for app/auth/webauthn.py, the hand-rolled WebAuthn verifier."""
 
+import hashlib
 import json
 import time
 
 import pytest
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from app.auth import webauthn
@@ -233,3 +235,179 @@ def _rs256_cose(n: int, e: int) -> bytes:
             (_cbor_int(-2), _cbor_bytes(e.to_bytes((e.bit_length() + 7) // 8, "big"))),
         ]
     )
+
+
+# --- registration and assertion ---
+
+RP_ID = "example.test"
+ORIGIN = "https://example.test"
+
+FLAG_UP = 0x01
+FLAG_UV = 0x04
+FLAG_AT = 0x40
+
+
+def _auth_data(flags: int, sign_count: int, attested: bytes = b"") -> bytes:
+    """Build authenticatorData for RP_ID."""
+    return hashlib.sha256(RP_ID.encode()).digest() + bytes([flags]) + sign_count.to_bytes(4, "big") + attested
+
+
+def _attested_credential_data(credential_id: bytes, cose_key: bytes) -> bytes:
+    """Build the attested credential data block appended during registration."""
+    return b"\x00" * 16 + len(credential_id).to_bytes(2, "big") + credential_id + cose_key
+
+
+def _cbor_text(value: str) -> bytes:
+    raw = value.encode("utf-8")
+    return _cbor_uint(3, len(raw)) + raw
+
+
+def _attestation_object(auth_data: bytes) -> bytes:
+    """Wrap authData in an attestationObject with fmt "none"."""
+    return _cbor_map(
+        [
+            (_cbor_text("fmt"), _cbor_text("none")),
+            (_cbor_text("attStmt"), _cbor_map([])),
+            (_cbor_text("authData"), _cbor_bytes(auth_data)),
+        ]
+    )
+
+
+def _make_registration(flags: int = FLAG_UP | FLAG_UV | FLAG_AT, sign_count: int = 0):
+    """Return (private key, credential_id bytes, client_data, attestation_object, challenge)."""
+    private = ec.generate_private_key(ec.SECP256R1())
+    numbers = private.public_key().public_numbers()
+    cose = _es256_cose(numbers.x, numbers.y)
+    credential_id = b"credential-id-0001"
+
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.create", challenge, ORIGIN)
+    auth_data = _auth_data(flags, sign_count, _attested_credential_data(credential_id, cose))
+    return private, credential_id, client_data, _attestation_object(auth_data), challenge
+
+
+def _sign_assertion(private, auth_data: bytes, client_data: bytes) -> bytes:
+    """Sign authData || sha256(clientDataJSON) the way an authenticator does."""
+    return private.sign(auth_data + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
+
+
+def _registered(private_and_parts):
+    """Run verify_registration over what _make_registration produced."""
+    _, _, client_data, attestation, challenge = private_and_parts
+    return webauthn.verify_registration(client_data, attestation, challenge, RP_ID, ORIGIN)
+
+
+def test_registration_returns_the_credential():
+    parts = _make_registration()
+    _, credential_id, client_data, attestation, challenge = parts
+
+    result = webauthn.verify_registration(client_data, attestation, challenge, RP_ID, ORIGIN)
+
+    assert result.credential_id == webauthn.b64url_encode(credential_id)
+    assert result.sign_count == 0
+    # The stored key round-trips back through the COSE loader.
+    assert load_cose_key(webauthn.b64url_decode(result.public_key)) is not None
+
+
+def test_registration_without_user_verification_is_rejected():
+    _, _, client_data, attestation, challenge = _make_registration(flags=FLAG_UP | FLAG_AT)
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_registration(client_data, attestation, challenge, RP_ID, ORIGIN)
+
+
+def test_registration_without_user_presence_is_rejected():
+    _, _, client_data, attestation, challenge = _make_registration(flags=FLAG_UV | FLAG_AT)
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_registration(client_data, attestation, challenge, RP_ID, ORIGIN)
+
+
+def test_registration_without_attested_credential_data_is_rejected():
+    _, _, client_data, attestation, challenge = _make_registration(flags=FLAG_UP | FLAG_UV)
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_registration(client_data, attestation, challenge, RP_ID, ORIGIN)
+
+
+def test_registration_for_another_relying_party_is_rejected():
+    _, _, client_data, attestation, challenge = _make_registration()
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_registration(client_data, attestation, challenge, "other.test", ORIGIN)
+
+
+def test_assertion_verifies_and_returns_the_new_sign_count():
+    parts = _make_registration()
+    private = parts[0]
+    registered = _registered(parts)
+
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, ORIGIN)
+    auth_data = _auth_data(FLAG_UP | FLAG_UV, 5)
+    signature = _sign_assertion(private, auth_data, client_data)
+
+    new_count = webauthn.verify_assertion(
+        client_data, auth_data, signature, registered.public_key, 0, challenge, RP_ID, ORIGIN
+    )
+
+    assert new_count == 5
+
+
+def test_assertion_with_a_forged_signature_is_rejected():
+    registered = _registered(_make_registration())
+
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, ORIGIN)
+    auth_data = _auth_data(FLAG_UP | FLAG_UV, 5)
+    # Signed by a different key entirely.
+    other = ec.generate_private_key(ec.SECP256R1())
+    signature = _sign_assertion(other, auth_data, client_data)
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_assertion(client_data, auth_data, signature, registered.public_key, 0, challenge, RP_ID, ORIGIN)
+
+
+def test_replayed_sign_count_is_rejected():
+    parts = _make_registration()
+    private = parts[0]
+    registered = _registered(parts)
+
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, ORIGIN)
+    auth_data = _auth_data(FLAG_UP | FLAG_UV, 5)
+    signature = _sign_assertion(private, auth_data, client_data)
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_assertion(client_data, auth_data, signature, registered.public_key, 5, challenge, RP_ID, ORIGIN)
+
+
+def test_sign_count_of_zero_is_accepted_repeatedly():
+    """Authenticators without a counter always send 0, so 0 cannot be a replay."""
+    parts = _make_registration()
+    private = parts[0]
+    registered = _registered(parts)
+
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, ORIGIN)
+    auth_data = _auth_data(FLAG_UP | FLAG_UV, 0)
+    signature = _sign_assertion(private, auth_data, client_data)
+
+    assert (
+        webauthn.verify_assertion(client_data, auth_data, signature, registered.public_key, 0, challenge, RP_ID, ORIGIN)
+        == 0
+    )
+
+
+def test_assertion_without_user_verification_is_rejected():
+    parts = _make_registration()
+    private = parts[0]
+    registered = _registered(parts)
+
+    challenge, _ = webauthn.new_challenge()
+    client_data = _client_data("webauthn.get", challenge, ORIGIN)
+    auth_data = _auth_data(FLAG_UP, 5)
+    signature = _sign_assertion(private, auth_data, client_data)
+
+    with pytest.raises(WebAuthnError):
+        webauthn.verify_assertion(client_data, auth_data, signature, registered.public_key, 0, challenge, RP_ID, ORIGIN)

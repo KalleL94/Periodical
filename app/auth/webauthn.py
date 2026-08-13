@@ -19,6 +19,7 @@ import hmac
 import json
 import secrets
 import time
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from cryptography.exceptions import InvalidSignature
@@ -291,3 +292,124 @@ def verify_client_data(
         raise WebAuthnError("Origin is not a secure context")
     if origin is not None and origin != client_origin:
         raise WebAuthnError("Origin header disagrees with clientData")
+
+
+# --- Authenticator data ---
+#
+# Fixed binary layout from the WebAuthn spec: 32-byte RP ID hash, one flags
+# byte, a big-endian 4-byte signature counter, then, when the AT flag is set,
+# the attested credential data (16-byte AAGUID, 2-byte credential ID length,
+# the credential ID, and the COSE public key filling the rest).
+
+_RP_ID_HASH_LENGTH = 32
+_FLAGS_OFFSET = 32
+_SIGN_COUNT_OFFSET = 33
+_ATTESTED_DATA_OFFSET = 37
+_AAGUID_LENGTH = 16
+
+FLAG_USER_PRESENT = 0x01
+FLAG_USER_VERIFIED = 0x04
+FLAG_ATTESTED_CREDENTIAL_DATA = 0x40
+
+
+@dataclass
+class RegisteredCredential:
+    """What a verified registration yields, ready to store on a Passkey row."""
+
+    credential_id: str
+    public_key: str
+    sign_count: int
+
+
+def _check_authenticator_data(authenticator_data: bytes, rp_id: str) -> tuple[int, int]:
+    """Validate the fixed part of authenticatorData, returning (flags, sign count).
+
+    User verification is required rather than merely preferred: a passkey here
+    stands in for a password, so an authenticator that only proves someone
+    touched it is not enough.
+    """
+    if len(authenticator_data) < _ATTESTED_DATA_OFFSET:
+        raise WebAuthnError("Truncated authenticator data")
+
+    if not hmac.compare_digest(authenticator_data[:_RP_ID_HASH_LENGTH], hashlib.sha256(rp_id.encode("utf-8")).digest()):
+        raise WebAuthnError("Authenticator data is for a different relying party")
+
+    flags = authenticator_data[_FLAGS_OFFSET]
+    if not flags & FLAG_USER_PRESENT:
+        raise WebAuthnError("User presence flag is not set")
+    if not flags & FLAG_USER_VERIFIED:
+        raise WebAuthnError("User verification flag is not set")
+
+    sign_count = int.from_bytes(authenticator_data[_SIGN_COUNT_OFFSET:_ATTESTED_DATA_OFFSET], "big")
+    return flags, sign_count
+
+
+def verify_registration(
+    client_data_json: bytes,
+    attestation_object: bytes,
+    expected_challenge: str,
+    rp_id: str,
+    origin: str | None,
+) -> RegisteredCredential:
+    """Verify a navigator.credentials.create() response and return what to store."""
+    verify_client_data(client_data_json, "webauthn.create", expected_challenge, rp_id, origin)
+
+    attestation, rest = cbor_decode(attestation_object)
+    if rest:
+        raise WebAuthnError("Trailing bytes after attestationObject")
+    if not isinstance(attestation, dict):
+        raise WebAuthnError("attestationObject is not a map")
+
+    authenticator_data = attestation.get("authData")
+    if not isinstance(authenticator_data, bytes):
+        raise WebAuthnError("attestationObject carries no authData")
+
+    flags, sign_count = _check_authenticator_data(authenticator_data, rp_id)
+    if not flags & FLAG_ATTESTED_CREDENTIAL_DATA:
+        raise WebAuthnError("Registration carries no attested credential data")
+
+    attested = authenticator_data[_ATTESTED_DATA_OFFSET:]
+    if len(attested) < _AAGUID_LENGTH + 2:
+        raise WebAuthnError("Truncated attested credential data")
+
+    id_length = int.from_bytes(attested[_AAGUID_LENGTH : _AAGUID_LENGTH + 2], "big")
+    id_start = _AAGUID_LENGTH + 2
+    credential_id = attested[id_start : id_start + id_length]
+    if len(credential_id) != id_length:
+        raise WebAuthnError("Truncated credential ID")
+
+    cose_bytes = attested[id_start + id_length :]
+    # Parsed and discarded: this proves the stored bytes are a key this server can
+    # actually verify with later, rather than finding out at the first login.
+    load_cose_key(cose_bytes)
+
+    return RegisteredCredential(
+        credential_id=b64url_encode(credential_id),
+        public_key=b64url_encode(cose_bytes),
+        sign_count=sign_count,
+    )
+
+
+def verify_assertion(
+    client_data_json: bytes,
+    authenticator_data: bytes,
+    signature: bytes,
+    stored_public_key: str,
+    stored_sign_count: int,
+    expected_challenge: str,
+    rp_id: str,
+    origin: str | None,
+) -> int:
+    """Verify a navigator.credentials.get() response, returning the new sign count."""
+    verify_client_data(client_data_json, "webauthn.get", expected_challenge, rp_id, origin)
+    _, sign_count = _check_authenticator_data(authenticator_data, rp_id)
+
+    # A counter that did not advance means the assertion was replayed, or the
+    # credential was cloned. Authenticators that implement no counter send 0
+    # every time, and 0 against a stored 0 is the normal case for them.
+    if (sign_count != 0 or stored_sign_count != 0) and sign_count <= stored_sign_count:
+        raise WebAuthnError("Signature counter did not advance")
+
+    public_key = load_cose_key(b64url_decode(stored_public_key))
+    verify_signature(public_key, authenticator_data + hashlib.sha256(client_data_json).digest(), signature)
+    return sign_count
