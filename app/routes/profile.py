@@ -14,7 +14,7 @@ from app.auth.auth import decrypt_api_key, encrypt_api_key, get_current_user, ha
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule import vacation as vacation_core
 from app.core.utils import get_today
-from app.database.database import Absence, AbsenceType, User, UserRole, WageType, get_db
+from app.database.database import Absence, AbsenceType, Passkey, User, UserRole, WageType, get_db
 from app.routes.shared import _parse_rates_form, render
 
 router = APIRouter(tags=["profile"])
@@ -42,6 +42,7 @@ async def profile_page(request: Request, current_user: User = Depends(get_curren
             "rate_history": get_rate_history(db, current_user.id),
             "api_key_plain": decrypt_api_key(current_user.api_key_encrypted),
             "calendar_token_plain": decrypt_api_key(current_user.calendar_token_encrypted),
+            "passkeys": db.query(Passkey).filter(Passkey.user_id == current_user.id).order_by(Passkey.created_at).all(),
         },
     )
 

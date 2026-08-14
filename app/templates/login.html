@@ -24,7 +24,7 @@
 
             <div class="login-field">
                 <label for="username">{{ t.login_username }}</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
+                <input type="text" id="username" name="username" required autocomplete="username webauthn">
             </div>
 
             <div class="login-field">
@@ -34,7 +34,15 @@
 
             <button type="submit" class="btn login-submit">{{ t.login_button }}</button>
         </form>
+
+        {# Outside the form on purpose: inside it, a click would submit the login form. #}
+        <button type="button" id="passkey-login" class="btn btn-secondary login-submit" hidden
+                data-error-message="{{ t.login_passkey_failed }}">
+            {{ t.login_passkey_button }}
+        </button>
     </div>
 </div>
+
+<script src="/static/js/passkey.js" defer></script>
 
 {% endblock %}
