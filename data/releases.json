@@ -1,5 +1,51 @@
 [
   {
+    "version": "1.7.0",
+    "date": "2026-08-14",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Du kan logga in med passkey i stället för lösenord. Lägg till en på profilsidan, sedan räcker Face ID, Touch ID, Windows Hello, en säkerhetsnyckel eller din lösenordshanterare, utan att skriva användarnamn. Lösenordet fungerar precis som förut och försvinner inte, så du kan aldrig låsa ut dig genom att tappa en enhet. En passkey hör ihop med adressen du registrerade den på, och kräver https, så registrera den där du faktiskt loggar in",
+        "en": "You can sign in with a passkey instead of a password. Add one from your profile page and then Face ID, Touch ID, Windows Hello, a security key or your password manager is enough, with no username to type. Your password keeps working exactly as before and does not go away, so losing a device can never lock you out. A passkey belongs to the address you registered it on and needs https, so register it where you actually sign in"
+      },
+      {
+        "type": "nyhet",
+        "sv": "När en administratör återställer eller sätter någons lösenord tas den personens passkeys bort samtidigt. Att återställa lösenordet är sättet att stänga av ett konto, och en passkey som överlevde det hade fortsatt släppa in innehavaren. Byter du ditt eget lösenord påverkas dina passkeys inte",
+        "en": "When an administrator resets or sets someone's password, that person's passkeys are removed at the same time. Resetting a password is how an account gets cut off, and a passkey that survived it would have kept letting the holder in. Changing your own password leaves your passkeys alone"
+      },
+      {
+        "type": "nyhet",
+        "sv": "Jämförelsen mot lönespecen jämför nu även slutsummorna, inte bara raderna. Bruttolön, preliminärskatt och nettolön får varsin rad under raddiffen, så en månad där varje ersättningsslag stämmer men beloppet ändå blir fel säger ifrån. En siffra som inte gick att läsa ur PDF:en lämnas tom i stället för att bli en nolla som ser ut som hela beloppet i differens",
+        "en": "The payslip comparison now diffs the totals as well as the rows. Gross pay, preliminary tax and net pay each get their own line below the row diff, so a month where every compensation type matches but the amount is still wrong says so. A figure that could not be read from the PDF is left blank rather than becoming a zero that looks like the whole amount in difference"
+      },
+      {
+        "type": "nyhet",
+        "sv": "Preliminärskatten kan sättas för hand för en månad, på lönespecssidan intill siffran den ersätter. Skattetabellen kan inte känna till en jämkning, ett beslut om ändrad beräkning eller en arbetsgivare som helt enkelt drar annorlunda, och nettolönen var den enda siffran på sidan som inte gick att rätta. Den slår igenom överallt nettolönen räknas: månadsvyn, årsvyn, startsidan och statistiken. Fältet tar lönespecens egen formatering, och tömmer du det går det tillbaka till tabellen",
+        "en": "Preliminary tax can be set by hand for a month, on the payslip page next to the figure it replaces. The tax table cannot know about an adjustment decision or an employer that simply withholds differently, and net pay was the one figure on the page with no way to correct it. It applies everywhere net pay is worked out: the month view, the year view, the start page and the statistics page. The field accepts the payslip's own formatting, and clearing it goes back to the tax table"
+      },
+      {
+        "type": "fix",
+        "sv": "Semesterunderlaget räknades på den rotationsplats du har idag, inte den du hade varje månad. Att byta plats skrev därmed om alla tidigare månader av intjänandeåret med någon annans OB, beredskap och övertid, både i tillägget per dag, i årsklumpen och i utbetalningsunderlaget. Det syntes som en beredskapssumma 878 kr lägre än månaderna listade strax ovanför på samma sida",
+        "en": "The vacation base was worked out at the rotation position you hold today, not the one you held in each month. Changing position therefore rewrote every earlier month of the earning year with someone else's unsocial-hours pay, on-call and overtime, in the supplement per day, the yearly lump sum and the payout base alike. It showed up as an on-call total 878 kr lower than the months listed just above it on the same page"
+      },
+      {
+        "type": "fix",
+        "sv": "Samma fel svepte igenom resten av appen: kalenderprenumerationen, schema-API:et, kollegalistan, semestersidans lediga dagar och färger, de lediga dagar saldot räknar semester mot, och konsultberäkningens rörliga lön läste allihop den rotationsplats du har nu och svarade därför för fel person på datum du inte hade den platsen. Alla följer nu de platser du faktiskt hade",
+        "en": "The same defect ran through the rest of the app: the calendar subscription, the schedule API, the co-worker list, the vacation page's days off and colours, the days off the balance counts vacation against, and the consultant calculation's variable pay all read the rotation position you hold now, and so answered for the wrong person on dates when you did not hold it. They all follow the positions you actually held now"
+      },
+      {
+        "type": "fix",
+        "sv": "En lön som registrerades med startdatum före en befintlig lämnade en rad som slutade ett år innan den började, och slutade då gälla helt. På ett konto slog en höjning från 37 000 till 42 000 aldrig igenom, tyst och utan felmeddelande när den sparades. En ny lön stänger nu bara en rad som börjar före den, och tar sitt eget slutdatum från nästa rad som börjar efter",
+        "en": "A wage recorded with a start date before an existing one left a row that ended a year before it began, and then stopped applying at all. On one account a raise from 37,000 to 42,000 never took effect, silently and with no error when it was saved. A new wage now closes only a row that starts before it, and takes its own end date from the next row that starts after it"
+      },
+      {
+        "type": "förbättring",
+        "sv": "Kortet för semesterinställningar ställer två frågor där det förut ställde en. Beräkningsregeln styrde både hur utbetalningen räknas och hur stor den rörliga delen är, så ett tomt procentfält betydde 0,5 % per betald dag under en regel och 12 % under den andra: samma tomma ruta, två olika belopp, utan att något på skärmen sa vilket. Nu frågas de var för sig, och procentfältet visas bara när du valt en egen procentsats",
+        "en": "The vacation settings card asks two questions where it used to ask one. The calculation rule governed both how the payout is worked out and how large the variable part is, so an empty percentage field meant 0.5% per paid day under one rule and 12% under the other: the same empty box, two different amounts, with nothing on screen saying which. They are now asked separately, and the percentage field appears only when you have chosen your own rate"
+      }
+    ]
+  },
+  {
     "version": "1.6.0",
     "date": "2026-08-11",
     "entries": [
