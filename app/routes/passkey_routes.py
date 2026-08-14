@@ -41,9 +41,53 @@ router = APIRouter(tags=["passkey"])
 
 RP_NAME = "Periodical"
 
-# Default label for a newly registered passkey when the browser offers nothing
-# better. The user can name it when adding it.
+# Default label for a newly registered passkey when nothing better can be worked
+# out. The user can name it when adding it.
 DEFAULT_PASSKEY_NAME = "Passkey"
+
+# Substring tables for labelling an unnamed passkey from the User-Agent.
+#
+# The authenticator's own identity would be better, and WebAuthn carries it as
+# the AAGUID, but registration asks for `attestation: "none"` and the client
+# then replaces the AAGUID with sixteen zero bytes. Asking for attestation to
+# recover a display label would mean handling certificate chains and sending
+# the authenticator model to the server, which is a poor trade for a name the
+# user can type.
+#
+# Order matters in both tables and is the whole reason they are lists rather
+# than dicts: Edge's User-Agent contains "Chrome", Chrome's contains "Safari",
+# and iPadOS calls itself "Mac OS X". First match wins, most specific first.
+_BROWSER_MARKERS = [
+    ("Edg/", "Edge"),
+    ("OPR/", "Opera"),
+    ("Firefox/", "Firefox"),
+    ("Chrome/", "Chrome"),
+    ("Safari/", "Safari"),
+]
+
+_PLATFORM_MARKERS = [
+    ("iPhone", "iPhone"),
+    ("iPad", "iPad"),
+    ("Android", "Android"),
+    ("Windows", "Windows"),
+    ("Mac OS X", "macOS"),
+    ("Linux", "Linux"),
+]
+
+
+def device_label(user_agent: str) -> str:
+    """Return a display name like "Chrome (macOS)" for an unnamed passkey.
+
+    Falls back to DEFAULT_PASSKEY_NAME unless both halves are recognised: half a
+    label ("Chrome" with no platform) is worse than a plain one when someone is
+    looking at a list trying to work out which device to revoke. Product names
+    are not translated, so the label reads the same in both languages.
+    """
+    browser = next((name for marker, name in _BROWSER_MARKERS if marker in user_agent), None)
+    platform = next((name for marker, name in _PLATFORM_MARKERS if marker in user_agent), None)
+    if browser is None or platform is None:
+        return DEFAULT_PASSKEY_NAME
+    return f"{browser} ({platform})"
 
 
 def _rp_id(request: Request) -> str:
@@ -115,7 +159,10 @@ async def passkey_register_options(
 async def passkey_register(
     request: Request,
     credential: str = Form(...),
-    name: str = Form(DEFAULT_PASSKEY_NAME),
+    # Empty rather than DEFAULT_PASSKEY_NAME: FastAPI treats an empty form value as
+    # missing and substitutes the default, so a name default here would mask the
+    # blank field the device label is meant to fill in.
+    name: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -143,7 +190,7 @@ async def passkey_register(
             credential_id=registered.credential_id,
             public_key=registered.public_key,
             sign_count=registered.sign_count,
-            name=(name or DEFAULT_PASSKEY_NAME).strip()[:100] or DEFAULT_PASSKEY_NAME,
+            name=name.strip()[:100] or device_label(request.headers.get("user-agent", "")),
         )
     )
     db.commit()

@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.7.1",
+    "date": "2026-08-14",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Knappen för att logga in med passkey såg inte ut som inloggningsknappen ovanför. Texten låg vänsterställd i stället för centrerad, hörnen var rundare, texten fetare och knappen något högre, och de två satt ihop utan mellanrum. Nu matchar de varandra, men passkey-knappen behåller sin ram så det syns vilken av dem som är huvudvalet",
+        "en": "The passkey button did not look like the sign-in button above it. Its label sat to the left instead of centred, the corners were rounder, the text heavier and the button slightly taller, and the two sat flush with no gap. They match now, while the passkey button keeps its outline so it stays clear which one is the main choice"
+      },
+      {
+        "type": "fix",
+        "sv": "Lämnar du namnfältet tomt när du lägger till en passkey får den namn efter webbläsare och enhet, till exempel \"Chrome (Windows)\" eller \"Safari (iPhone)\", i stället för att alla hette \"Passkey\" och blev omöjliga att skilja åt i listan du tar bort från. Fältet är märkt som valfritt nu. Går det inte att avgöra både webbläsare och enhet heter den fortfarande \"Passkey\"",
+        "en": "Leaving the name field empty when you add a passkey now names it after your browser and device, such as \"Chrome (Windows)\" or \"Safari (iPhone)\", instead of every one being called \"Passkey\" and impossible to tell apart in the list you delete from. The field is marked optional now. When the browser and device cannot both be worked out it is still called \"Passkey\""
+      }
+    ]
+  },
+  {
     "version": "1.7.0",
     "date": "2026-08-14",
     "entries": [
