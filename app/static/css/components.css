@@ -74,6 +74,18 @@
   margin-bottom: 16px;
 }
 .login-submit { width: 100%; }
+/* The passkey button sits directly under the submit button, so it has to read as
+   the same control in a quieter register. .btn-secondary is built for inline use:
+   it centres nothing (the flex item shrinks to its text and lands left), rounds
+   more, and weighs more. Pull those back to the submit button's geometry and add
+   the gap the stacked pair needs. */
+.login-passkey {
+  width: 100%;
+  justify-content: center;
+  border-radius: 6px;
+  font-weight: 400;
+  margin-top: 0.75rem;
+}
 
 @media (max-width: 800px) {
   .login-shell { min-height: 50vh; padding: 2rem 0.75rem; }

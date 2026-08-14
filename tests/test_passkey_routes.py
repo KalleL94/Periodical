@@ -12,6 +12,7 @@ from app.auth import webauthn
 from app.auth.auth import create_access_token, verify_password
 from app.auth.webauthn import CHALLENGE_COOKIE_NAME
 from app.database.database import Passkey, User
+from app.routes.passkey_routes import DEFAULT_PASSKEY_NAME, device_label
 
 # TestClient issues requests against http://testserver, so that is the RP ID and
 # origin the routes will derive and the browser stand-in must claim. "testserver"
@@ -466,3 +467,110 @@ def test_changing_your_own_password_keeps_your_passkeys(test_client, test_db, te
     test_db.expire_all()
     assert verify_password("another-password", test_db.query(User).filter(User.id == test_user.id).one().password_hash)
     assert test_db.query(Passkey).filter(Passkey.user_id == test_user.id).count() == 1
+
+
+# --- device labels for unnamed passkeys ---
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "expected"),
+    [
+        (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
+            "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+            "Safari (iPhone)",
+        ),
+        (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Chrome (macOS)",
+        ),
+        (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+            "Edge (Windows)",
+        ),
+        (
+            "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
+            "Firefox (Linux)",
+        ),
+        (
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Mobile Safari/537.36",
+            "Chrome (Android)",
+        ),
+        (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+            "(KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+            "Safari (macOS)",
+        ),
+        ("", DEFAULT_PASSKEY_NAME),
+        ("something nobody has ever shipped", DEFAULT_PASSKEY_NAME),
+    ],
+)
+def test_device_label_reads_the_user_agent(user_agent, expected):
+    """Edge and Chrome both claim Safari, and Chrome claims Safari too, so order matters."""
+    assert device_label(user_agent) == expected
+
+
+def test_registering_without_a_name_uses_the_device_label(test_client, test_db, test_user):
+    _login(test_client, test_user)
+    options = test_client.post("/passkey/register/options").json()
+
+    private = ec.generate_private_key(ec.SECP256R1())
+    client_data = _client_data("webauthn.create", options["challenge"], TEST_ORIGIN)
+    attestation = _attestation_object(private, b"unnamed-credential")
+
+    response = test_client.post(
+        "/passkey/register",
+        data={
+            "name": "",
+            "credential": json.dumps(
+                {
+                    "id": webauthn.b64url_encode(b"unnamed-credential"),
+                    "response": {
+                        "clientDataJSON": webauthn.b64url_encode(client_data),
+                        "attestationObject": webauthn.b64url_encode(attestation),
+                    },
+                }
+            ),
+        },
+        headers={
+            "Origin": TEST_ORIGIN,
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert test_db.query(Passkey).one().name == "Chrome (Windows)"
+
+
+def test_a_typed_name_still_wins_over_the_device_label(test_client, test_db, test_user):
+    _login(test_client, test_user)
+    options = test_client.post("/passkey/register/options").json()
+
+    private = ec.generate_private_key(ec.SECP256R1())
+    client_data = _client_data("webauthn.create", options["challenge"], TEST_ORIGIN)
+    attestation = _attestation_object(private, b"named-credential")
+
+    test_client.post(
+        "/passkey/register",
+        data={
+            "name": "Jobbtelefonen",
+            "credential": json.dumps(
+                {
+                    "id": webauthn.b64url_encode(b"named-credential"),
+                    "response": {
+                        "clientDataJSON": webauthn.b64url_encode(client_data),
+                        "attestationObject": webauthn.b64url_encode(attestation),
+                    },
+                }
+            ),
+        },
+        headers={"Origin": TEST_ORIGIN, "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/126.0.0.0"},
+    )
+
+    assert test_db.query(Passkey).one().name == "Jobbtelefonen"

@@ -22,6 +22,12 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.7.1] - 2026-08-14
+
+### Fixed
+- The passkey button on the login page did not match the button above it. It carried `.btn-secondary`, which is built for inline use: `display: inline-flex` with no `justify-content` left the label hugging the left edge of a full-width button, and it rounded to 8px and weighed 500 against the submit button's 6px and 400, standing 2px taller for the border. The pair also sat flush with no gap. A `.login-passkey` rule pulls the geometry back to the submit button's and adds the spacing, keeping the outline that makes it read as the quieter of the two
+- A passkey registered with the name field left blank is now labelled from the browser and platform, "Chrome (Windows)" or "Safari (iPhone)", rather than all of them being called "Passkey" and indistinguishable in the list you revoke from. The authenticator's own identity would be better and WebAuthn carries it as the AAGUID, but registration asks for `attestation: "none"` and the client then zeroes the AAGUID, so recovering it would mean handling attestation certificate chains for the sake of a label. The label falls back to "Passkey" unless both halves are recognised, since half a name is worse than a plain one. Fixing this also meant fixing why the fallback could never fire: the `name` form field defaulted to "Passkey", and FastAPI treats an empty form value as missing and substitutes the default, so the blank field the label was meant to fill never arrived as blank
+
 ## [1.7.0] - 2026-08-14
 
 ### Added
