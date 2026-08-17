@@ -80,6 +80,56 @@ def test_substitute_full_flow(test_client, test_db, admin_user):
     assert shifts == {date(2026, 7, 7): "OC"}
 
 
+def test_substitute_absence_shows_in_week_view(rotation_session):
+    """A substitute's absence renders on the team week view, with or without a scheduled shift."""
+    from app.core.schedule import clear_schedule_cache
+    from app.core.schedule.period import build_week_data
+    from app.database.database import Absence, AbsenceType
+
+    sick_day = date(2026, 7, 6)  # Monday
+    off_day = date(2026, 7, 8)  # no SubstituteShift at all
+
+    sub = Substitute(name="SjukVikarie", is_active=1)
+    rotation_session.add(sub)
+    rotation_session.commit()
+    rotation_session.add(SubstituteShift(substitute_id=sub.id, date=sick_day, shift_code="N1"))
+    rotation_session.add(Absence(substitute_id=sub.id, date=sick_day, absence_type=AbsenceType.SICK))
+    rotation_session.add(Absence(substitute_id=sub.id, date=off_day, absence_type=AbsenceType.VAB))
+    rotation_session.commit()
+    clear_schedule_cache()
+
+    iso_year, iso_week, _ = sick_day.isocalendar()
+    days = build_week_data(iso_year, iso_week, session=rotation_session)
+    by_date = {
+        d["date"]: next(p for p in d["persons"] if p.get("substitute_id") == sub.id)
+        for d in days
+        if any(p.get("substitute_id") == sub.id for p in d["persons"])
+    }
+
+    assert by_date[sick_day]["shift"].code == "SICK"
+    assert by_date[off_day]["shift"].code == "VAB"
+
+
+def test_substitute_absence_only_shows_in_day_view(rotation_session):
+    """A substitute absent on a day with no shift must not be listed as a working coworker."""
+    from app.core.schedule import clear_schedule_cache
+    from app.core.schedule.period import generate_period_data
+    from app.database.database import Absence, AbsenceType
+
+    day = date(2026, 7, 9)
+    sub = Substitute(name="FrånvaroVikarie", is_active=1)
+    rotation_session.add(sub)
+    rotation_session.commit()
+    rotation_session.add(SubstituteShift(substitute_id=sub.id, date=day, shift_code="N1"))
+    rotation_session.add(Absence(substitute_id=sub.id, date=day, absence_type=AbsenceType.SICK))
+    rotation_session.commit()
+    clear_schedule_cache()
+
+    data = generate_period_data(day, day, person_id=None, session=rotation_session, include_substitutes=True)
+    cell = next(p for p in data[0]["persons"] if p.get("substitute_id") == sub.id)
+    assert cell["shift"].code == "SICK"
+
+
 def test_substitute_shown_as_coworker_in_personal_month(rotation_session):
     """A substitute working the same shift appears as a coworker in the personal month calendar."""
     from app.core.schedule import clear_schedule_cache

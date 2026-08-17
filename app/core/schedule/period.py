@@ -102,9 +102,14 @@ def build_week_data(
         session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
     )
 
-    # Substitutes (vikarier) are only included in the all-persons view
-    substitutes = _get_substitutes_with_shifts(session, monday, sunday) if person_id is None else []
+    # Substitutes (vikarier) are only included in the all-persons view. An absence
+    # counts as activity on its own (it renders as a day shift), so a substitute
+    # absent on a day they had no scheduled shift still gets a row.
+    substitutes = (
+        _get_substitutes_with_activity(session, monday, sunday, include_overtime=False) if person_id is None else []
+    )
     substitute_shift_map = _fetch_substitute_shifts(session, [s.id for s in substitutes], monday, sunday)
+    substitute_absence_map = _fetch_substitute_absences_by_date(session, [s.id for s in substitutes], monday, sunday)
     sub_shift_types = get_shift_types() if substitutes else []
 
     years_week = _get_years_in_range(monday, sunday)
@@ -143,7 +148,8 @@ def build_week_data(
 
         if person_id is None:
             day_info["persons"] = [_build_person_day_basic(current_date, pid, ctx, session) for pid in person_ids] + [
-                _build_substitute_day(current_date, s, substitute_shift_map, sub_shift_types) for s in substitutes
+                _build_substitute_day(current_date, s, substitute_shift_map, sub_shift_types, substitute_absence_map)
+                for s in substitutes
             ]
         else:
             day_info.update(_build_person_day_basic(current_date, person_id, ctx, session, employment_start))
@@ -250,11 +256,14 @@ def generate_period_data(
 
     # Substitutes (vikarier): only when explicitly requested and building the all-persons view
     substitutes = (
-        _get_substitutes_with_shifts(session, effective_start, end_date)
+        _get_substitutes_with_activity(session, effective_start, end_date, include_overtime=False)
         if include_substitutes and person_id is None
         else []
     )
     substitute_shift_map = _fetch_substitute_shifts(session, [s.id for s in substitutes], effective_start, end_date)
+    substitute_absence_map = _fetch_substitute_absences_by_date(
+        session, [s.id for s in substitutes], effective_start, end_date
+    )
     sub_shift_types = get_shift_types() if substitutes else []
 
     # Bygg mappning rotation_position -> user_id (hanterar Peter/Rickard som har olika user_id)
@@ -326,7 +335,8 @@ def generate_period_data(
 
         if person_id is None:
             day_info["persons"] = [_build_person_day_basic(current_day, pid, ctx, session) for pid in person_ids] + [
-                _build_substitute_day(current_day, s, substitute_shift_map, sub_shift_types) for s in substitutes
+                _build_substitute_day(current_day, s, substitute_shift_map, sub_shift_types, substitute_absence_map)
+                for s in substitutes
             ]
         else:
             _populate_single_person_day(
