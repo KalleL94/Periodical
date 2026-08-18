@@ -22,6 +22,11 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.7.2] - 2026-08-18
+
+### Fixed
+- A substitute's absence never reached the team week view. `_build_substitute_day` has always handled absences (absence beats overtime, which beats the scheduled shift), but neither caller in `app/core/schedule/period.py` passed it an absence map, so a substitute who called in sick still rendered with their scheduled shift and one whose only entry that day was the absence got no row at all. Both callers now select substitutes by activity rather than by scheduled shift, so an absence counts on its own, and pass `_fetch_substitute_absences_by_date` through. Fixing it at the shared call sites rather than in the week route covers the sibling callers too: `/handover`, and the co-worker lists built from `generate_period_data(include_substitutes=True)` in the day view and the personal month calendar, where a sick substitute was listed as working. Overtime is deliberately left out: the week view still passes no OT map, so a substitute with overtime only is still missing from the board
+
 ## [1.7.1] - 2026-08-14
 
 ### Fixed
