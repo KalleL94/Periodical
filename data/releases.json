@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.7.2",
+    "date": "2026-08-18",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Frånvaro för vikarier syns nu i veckovyn för alla. En vikarie som sjukanmält sig stod kvar med sitt inbokade pass, och den som var frånvarande en dag utan inbokat pass saknades helt i vyn. Samma fel gjorde att en sjuk vikarie räknades som arbetande i kollegalistan på dagsidan och i den personliga månadskalendern",
+        "en": "A substitute's absence now shows on the team week view. A substitute who called in sick still appeared with their booked shift, and one who was absent on a day with no booked shift was missing from the view entirely. The same fault listed a sick substitute as working in the co-worker list on the day page and in the personal month calendar"
+      }
+    ]
+  },
+  {
     "version": "1.7.1",
     "date": "2026-08-14",
     "entries": [
