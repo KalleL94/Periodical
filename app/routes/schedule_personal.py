@@ -418,18 +418,11 @@ async def show_day_for_person(
     # Sort by 2nd item (shift code), then by name
     persons_today_with_shift.sort(key=lambda x: (x[1], x[0]))
 
-    # Determine shift code for coworker matching
-    actual_shift_obj = shift
-    if actual_shift_obj and actual_shift_obj.code == "OT":
-        # If target has OT, use original_shift if it's a work shift, else use "OT"
-        if original_shift and original_shift.code in ("N1", "N2", "N3"):
-            shift_code_for_matching = original_shift.code
-        else:
-            shift_code_for_matching = "OT"
-    else:
-        # Use actual_shift directly - if this person has a swap, actual_shift_obj
-        # already reflects the swapped shift code.
-        shift_code_for_matching = actual_shift_obj.code if actual_shift_obj else "OFF"
+    # Determine shift code for coworker matching. "OT" is passed through as-is
+    # so the matching is time-based: an overtime shift is not necessarily worked
+    # at the hours of the shift it replaced (a vacation day given up for a night
+    # shift keeps N2 as its original_shift while actually being worked 22-06.30).
+    shift_code_for_matching = shift.code if shift else "OFF"
 
     # Use rotation_position for coworker matching (schedule-based)
     coworkers = get_coworkers_for_day(rotation_position, shift_code_for_matching, persons_today, start_dt, end_dt)
