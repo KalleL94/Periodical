@@ -70,6 +70,7 @@ async def admin_create_user(
     db: Session = Depends(get_db),
 ):
     """Admin: create new user."""
+    username = username.strip()
     if get_user_by_username(db, username):
         return render(
             "admin_user_create.html",

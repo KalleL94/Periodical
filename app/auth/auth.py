@@ -68,12 +68,21 @@ def _login_window_start() -> datetime:
     return utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
 
 
+def _attempt_key(username: str) -> str:
+    """The username under which attempts are counted.
+
+    Folded to lowercase so alternating capitalisation cannot buy a fresh set of
+    guesses against the same account.
+    """
+    return username.strip().lower()
+
+
 def is_login_locked(db: Session, username: str, ip: str) -> bool:
     """Return True when (username, ip) has reached the failed-attempt limit in the window."""
     recent = (
         db.query(LoginAttempt)
         .filter(
-            LoginAttempt.username == username,
+            LoginAttempt.username == _attempt_key(username),
             LoginAttempt.ip == ip,
             LoginAttempt.created_at >= _login_window_start(),
         )
@@ -84,9 +93,9 @@ def is_login_locked(db: Session, username: str, ip: str) -> bool:
 
 def record_failed_login(db: Session, username: str, ip: str) -> None:
     """Record a failed attempt and prune attempts for this key that fell out of the window."""
-    db.add(LoginAttempt(username=username, ip=ip))
+    db.add(LoginAttempt(username=_attempt_key(username), ip=ip))
     db.query(LoginAttempt).filter(
-        LoginAttempt.username == username,
+        LoginAttempt.username == _attempt_key(username),
         LoginAttempt.ip == ip,
         LoginAttempt.created_at < _login_window_start(),
     ).delete(synchronize_session=False)
@@ -96,7 +105,7 @@ def record_failed_login(db: Session, username: str, ip: str) -> None:
 def clear_login_attempts(db: Session, username: str, ip: str) -> None:
     """Clear recorded attempts for a key, called after a successful login."""
     db.query(LoginAttempt).filter(
-        LoginAttempt.username == username,
+        LoginAttempt.username == _attempt_key(username),
         LoginAttempt.ip == ip,
     ).delete(synchronize_session=False)
     db.commit()
@@ -246,8 +255,15 @@ def decode_token(token: str) -> dict | None:
 
 
 def get_user_by_username(db: Session, username: str) -> User | None:
-    """Get user by username."""
-    return db.query(User).filter(User.username == username).first()
+    """Get user by username, matching case-insensitively.
+
+    A username is an identity, not a secret: Kalle and kalle are the same person,
+    and a phone keyboard capitalises the first letter without being asked. The
+    stored spelling is preserved for display, only the comparison is folded.
+    """
+    # ponytail: SQLite's NOCASE folds ASCII only, so "Åke" and "åke" stay two
+    # names. Move to a stored lowercase column if a non-ASCII username appears.
+    return db.query(User).filter(User.username.collate("NOCASE") == username.strip()).first()
 
 
 def get_user_by_id(db: Session, user_id: int) -> User | None:
