@@ -22,6 +22,12 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.7.3] - 2026-08-26
+
+### Fixed
+- An overtime shift listed the coworkers of the shift it replaced rather than the people actually on the floor at the same time. `original_shift` was preferred over time-based matching whenever it resolved to N1/N2/N3, so giving up a vacation day to cover 22:00-06:30 still showed the N2 crew working 14:00-22:30. The same twelve lines sat in three places (`app/routes/schedule_personal.py`, `app/core/schedule/period.py`, `app/core/schedule/summary.py`), all replaced by passing the day's own shift code through, which leaves "OT" intact and lets `get_coworkers_for_day` match on time overlap. The mirror case in `app/core/schedule/cowork.py`, where somebody else's overtime matched the viewer's regular shift through its `original_shift`, is gone too. Overtime that only extends a shift (`is_extension`) is unaffected: it keeps its N1/N2/N3 code and never enters the OT branch
+- Usernames were compared byte for byte, so `Kalle` and `kalle` were different accounts. A capital first letter from a phone keyboard produced "wrong username or password" on entirely correct credentials, and the same name could be registered twice under a different case. `get_user_by_username` now compares under SQLite's NOCASE collation and trims its input, which covers login, token lookups and the duplicate checks on user creation in one place. The stored spelling is untouched and passwords stay case-sensitive. The brute-force limiter was keyed on the raw username, so alternating capitalisation bought a fresh set of five guesses per spelling; all three helpers now key on a lowercased username. NOCASE folds ASCII only, so a non-ASCII username would still need a stored lowercase column
+
 ## [1.7.2] - 2026-08-18
 
 ### Fixed
