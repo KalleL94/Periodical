@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.7.3",
+    "date": "2026-08-26",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Ett övertidspass visar nu de kollegor du faktiskt jobbar med, inte de som går passet du bytte bort. Tar du ett nattpass 22:00-06:30 i stället för ditt schemalagda kvällspass listades kvällsgänget som dina kollegor. Rättningen gäller dagsvyn, veckovyn och den personliga månadskalendern, och åt båda hållen: den som går ett vanligt pass ser inte längre någon som tagit övertid på andra tider",
+        "en": "An overtime shift now shows the coworkers you actually work alongside, not the crew on the shift you gave up. Taking a night shift 22:00-06:30 instead of your scheduled evening shift listed the evening crew as your coworkers. The fix covers the day view, the week view and the personal month calendar, and works both ways: someone on a regular shift no longer sees a colleague whose overtime falls at different hours"
+      },
+      {
+        "type": "fix",
+        "sv": "Användarnamnet är inte längre skiftlägeskänsligt vid inloggning. Skrev du Kalle i stället för kalle, vilket mobiltangentbord gärna gör åt dig, fick du felaktigt veta att användarnamnet eller lösenordet var fel. Lösenordet är fortsatt skiftlägeskänsligt",
+        "en": "Usernames are no longer case-sensitive at login. Typing Kalle instead of kalle, which a phone keyboard happily does for you, wrongly reported a bad username or password. Passwords remain case-sensitive"
+      }
+    ]
+  },
+  {
     "version": "1.7.2",
     "date": "2026-08-18",
     "entries": [

@@ -472,12 +472,11 @@ def get_coworkers_for_day(
                     if overlap >= 4.0:
                         is_match = True
         elif actual_shift.code == "OT":
-            # Person has OT, target has regular shift: check if original_shift matches, or if times overlap
-            original_shift = person_data.get("original_shift")
-            if original_shift and original_shift.code == target_shift_code:
-                # OT replacing a shift that matches target
-                is_match = True
-            elif target_start and target_end:
+            # Person has OT, target has a regular shift. Match on time only: the
+            # overtime shift replaced their rotation shift but is not necessarily
+            # worked at its hours, so original_shift says nothing about whether
+            # the two are on the floor together.
+            if target_start and target_end:
                 # Check time overlap
                 other_start = person_data.get("start")
                 other_end = person_data.get("end")

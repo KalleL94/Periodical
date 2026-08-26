@@ -177,20 +177,11 @@ def build_week_data(
             current_date = day_info["date"]
             actual_shift = day_info.get("shift")
 
-            # For OT shifts with time-based matching, use a special marker
-            # For regular shifts, use original_shift if available, otherwise actual shift
-            if actual_shift and actual_shift.code == "OT":
-                # Use OT as shift_code to trigger time-based matching
-                original_shift = day_info.get("original_shift")
-                # If original_shift is a work shift, use it; otherwise use "OT" for time matching
-                if original_shift and original_shift.code in ("N1", "N2", "N3"):
-                    shift_code = original_shift.code
-                else:
-                    shift_code = "OT"  # Will use time-based matching
-            else:
-                # Use actual_shift directly - if this person has a swap, actual_shift
-                # already reflects the swapped shift code.
-                shift_code = actual_shift.code if actual_shift else "OFF"
+            # "OT" is passed through as-is so the matching is time-based: an
+            # overtime shift is not necessarily worked at the hours of the shift
+            # it replaced. A swap needs no special handling either, actual_shift
+            # already carries the swapped code.
+            shift_code = actual_shift.code if actual_shift else "OFF"
 
             persons_today = persons_by_date.get(current_date, [])
             target_start = day_info.get("start")
