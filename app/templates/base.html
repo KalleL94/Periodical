@@ -5,6 +5,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{% block title %}Periodical{% endblock %}</title>
+        <link rel="icon" href="/static/favicon.svg?v={{ static_version }}" type="image/svg+xml">
         {# static_version is a hash of the CSS files' contents (computed at startup,
            see app/main.py), not the changelog version, so the cache-busting query
            string changes on every CSS edit even when a release has no changelog

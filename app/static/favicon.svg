@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Periodical">
+  <!-- Schedule rows on a dark plate: reads as a small timetable at 16px and
+       keeps its own background, so it stays legible on light and dark tabs. -->
+  <rect width="32" height="32" rx="7" fill="#16191c"/>
+  <rect x="6" y="7" width="20" height="4" rx="2" fill="#4d8a9a"/>
+  <rect x="6" y="14" width="13" height="4" rx="2" fill="#e6e8ea"/>
+  <rect x="6" y="21" width="17" height="4" rx="2" fill="#8f9599"/>
+</svg>
