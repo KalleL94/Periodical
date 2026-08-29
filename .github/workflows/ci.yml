@@ -33,17 +33,16 @@ jobs:
           ruff format --check .
 
       - name: Audit dependencies for known vulnerabilities
-        # Reports without failing the build, because the pinned set already has
-        # 25 advisories across 7 packages (cryptography, starlette, idna, pypdf,
-        # python-dotenv, python-multipart, urllib3) and a step that blocks every
-        # unrelated pull request from day one is a step someone deletes. Drop
-        # this line once the backlog is cleared, so a new advisory blocks.
-        continue-on-error: true
         run: |
-          # Audits the pinned runtime set, not the CI environment: a CVE in a
-          # test-only tool does not reach production. Renovate keeps versions
-          # current; this is what shouts when a pinned one turns out vulnerable.
           pip install pip-audit
+          # Two different sets, and both matter. The environment is what the
+          # step above resolved from the ">=" ranges in pyproject.toml, which
+          # is how production installs too (scripts/deploy.sh runs pip install
+          # .), so this is the audit that maps to what actually ships.
+          pip-audit
+          # requirements.txt is a lockfile nothing installs from; Renovate
+          # maintains it as the record of a known-good resolution. Auditing it
+          # is what catches it going stale, which it had.
           pip-audit --requirement requirements.txt
 
       - name: Run Tests
