@@ -32,6 +32,19 @@ jobs:
           ruff check .
           ruff format --check .
 
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          pip install pip-audit
+          # Two different sets, and both matter. The environment is what the
+          # step above resolved from the ">=" ranges in pyproject.toml, which
+          # is how production installs too (scripts/deploy.sh runs pip install
+          # .), so this is the audit that maps to what actually ships.
+          pip-audit
+          # requirements.txt is a lockfile nothing installs from; Renovate
+          # maintains it as the record of a known-good resolution. Auditing it
+          # is what catches it going stale, which it had.
+          pip-audit --requirement requirements.txt
+
       - name: Run Tests
         env:
           # Dummy variables in case the tests load the application configuration

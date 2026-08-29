@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.core.csrf_middleware import CSRFMiddleware
 from app.core.logging_config import get_logger, setup_logging
 from app.core.news import get_latest_version
 from app.core.request_logging import RequestLoggingMiddleware
+from app.core.security_headers import DOC_PATHS, SecurityHeadersMiddleware
 from app.core.sentry_config import init_sentry
 from app.database.database import create_tables, get_db
 from app.routes.admin import router as admin_router
@@ -226,19 +227,9 @@ ERROR_MESSAGES = {
 }
 
 
-_ADMIN_ONLY_PATHS = {
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    "/api/v1/admin/docs",
-    "/api/v1/admin/redoc",
-    "/api/v1/admin/openapi.json",
-}
-
-
 @app.middleware("http")
 async def protect_docs(request: Request, call_next):
-    if request.url.path in _ADMIN_ONLY_PATHS:
+    if request.url.path in DOC_PATHS:
         from app.auth.auth import get_current_user_from_cookie
         from app.database.database import SessionLocal, UserRole
 
@@ -254,6 +245,13 @@ async def protect_docs(request: Request, call_next):
             return RedirectResponse("/login")
 
     return await call_next(request)
+
+
+# Registered after protect_docs, and so after every other middleware: Starlette
+# runs the most recently added one outermost, which is what puts the headers on
+# responses the inner layers return without reaching a route (the redirect
+# above, a CSRF 403) as well as the files served from /static.
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 def _wants_json(request: Request) -> bool:
@@ -348,6 +346,17 @@ app.include_router(admin_users_router)
 app.include_router(admin_router)
 app.include_router(transition_router)
 app.include_router(changelog_router)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots() -> PlainTextResponse:
+    """Keep the app out of search indexes.
+
+    A private tool for one team. The team views answer without a login, so a
+    crawler that found the host could index a real schedule, and nothing here
+    is meant to be findable.
+    """
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
 @app.get("/health", tags=["health"])

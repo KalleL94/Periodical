@@ -22,6 +22,17 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [Unreleased]
+
+### Security
+- The application sent no response security headers at all. A `SecurityHeadersMiddleware` in `app/core/security_headers.py` now adds a Content-Security-Policy, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and a `Permissions-Policy` denying geolocation, camera, microphone and payment. HSTS is sent only when `PRODUCTION=true`, because development runs plain HTTP on localhost and pinning HTTPS there would break every other local service on that hostname. It is registered after `protect_docs`, and so outermost, which is what puts the headers on responses the inner layers return without reaching a route (the docs redirect, a CSRF 403) as well as the files under `/static`. The policy keeps `'unsafe-inline'` for script and style: the templates carry inline `<script>` blocks in 22 files and `onclick` handlers in 21, so a nonce-based policy means moving all of that into static JS first. What it does buy is `default-src 'self'` with no third-party script origin, `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'` and `form-action 'self'`. Swagger UI and ReDoc load their bundle from jsDelivr, so the six admin-only docs paths get that one CDN added rather than the whole app getting a looser default
+- `pip-audit` runs in CI over two sets. The installed environment is what CI resolved from the `>=` ranges in `pyproject.toml`, which is how production installs too (`scripts/deploy.sh` runs `pip install .`), so that audit maps to what actually ships. `requirements.txt` is audited separately: nothing installs from it, Renovate maintains it as the record of a known-good resolution, and auditing it is what catches it going stale
+- `requirements.txt`, last recompiled on 7 August, carried 25 advisories across seven packages (cryptography, starlette, idna, pypdf, python-dotenv, python-multipart, urllib3). Recompiled, which moved fastapi 0.128 to 0.141, starlette 0.50 to 1.6, cryptography 46 to 50, icalendar 6 to 7, python-multipart 0.0.22 to 0.0.32 and bcrypt 4.3 to 5.0, the last of which the lockfile had been contradicting `pyproject.toml`'s `bcrypt>=5,<5.1` pin over. None of this reached production, which resolves fresh at deploy time and audits clean, but the file every tool reads as the project's dependency record said otherwise. The header now reports Python 3.14, matching the Dockerfile, CI and the production venv, rather than the 3.12 it was last compiled under
+
+### Added
+- A favicon. There was none, so browsers fell back to their default icon: `app/static/favicon.svg` draws three schedule rows on a dark plate, which stays legible on light and dark tabs and at 16px
+- `/robots.txt` returns `Disallow: /`. This is a private tool for one team, and the team views answer without a login, so a crawler that found the host could index a real schedule
+
 ## [1.7.3] - 2026-08-26
 
 ### Fixed
