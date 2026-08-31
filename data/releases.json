@@ -1,5 +1,31 @@
 [
   {
+    "version": "1.8.0",
+    "date": "2026-08-31",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Överlämningen har en egen länk i menyn, bredvid År, Månad och Vecka, och den syns även utloggad. Tidigare var sidan bara nåbar från en dagsvy eller genom att skriva adressen för hand",
+        "en": "The handover report has its own entry in the menu, next to Year, Month and Week, and it shows while signed out. The page used to be reachable only from a day view or by typing the address by hand"
+      },
+      {
+        "type": "nyhet",
+        "sv": "En knapp längst ned till höger tar dig tillbaka till toppen av sidan. Den dyker upp så snart du scrollat en bit, vilket sparar en lång resa tillbaka i årsvyn och i månadskalendern på mobil",
+        "en": "A button in the bottom right corner takes you back to the top of the page. It appears once you have scrolled a little, which saves a long trip back in the year view and in the month calendar on a phone"
+      },
+      {
+        "type": "förbättring",
+        "sv": "Håller du muspekaren över ett pass i veckovyn lyser hela personens rad och hela dagens kolumn upp, rubriken inkluderad. Att läsa ut vilka fler som jobbar en viss natt krävde tidigare att du följde en rad och en kolumn med ögat över ett rutnät där alla celler ser likadana ut",
+        "en": "Hovering a shift in the week view lights up that person's whole row and that day's whole column, header included. Working out who else is on a given night used to mean tracking a row and a column by eye across a grid where every cell looks alike"
+      },
+      {
+        "type": "förbättring",
+        "sv": "Din månadskalender visar två eller tre dagar i bredd på mobilen i stället för en dag per rad, så en månad ryms på betydligt mindre scrollande. Varje dag har nu också veckodagen utskriven bredvid datumet",
+        "en": "Your month calendar shows two or three days across on a phone instead of one day per row, so a month fits in far less scrolling. Each day now also spells out its weekday next to the date"
+      }
+    ]
+  },
+  {
     "version": "1.7.3",
     "date": "2026-08-26",
     "entries": [

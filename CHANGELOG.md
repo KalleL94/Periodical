@@ -22,7 +22,7 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
-## [Unreleased]
+## [1.8.0] - 2026-08-31
 
 ### Security
 - The application sent no response security headers at all. A `SecurityHeadersMiddleware` in `app/core/security_headers.py` now adds a Content-Security-Policy, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and a `Permissions-Policy` denying geolocation, camera, microphone and payment. HSTS is sent only when `PRODUCTION=true`, because development runs plain HTTP on localhost and pinning HTTPS there would break every other local service on that hostname. It is registered after `protect_docs`, and so outermost, which is what puts the headers on responses the inner layers return without reaching a route (the docs redirect, a CSRF 403) as well as the files under `/static`. The policy keeps `'unsafe-inline'` for script and style: the templates carry inline `<script>` blocks in 22 files and `onclick` handlers in 21, so a nonce-based policy means moving all of that into static JS first. What it does buy is `default-src 'self'` with no third-party script origin, `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'` and `form-action 'self'`. Swagger UI and ReDoc load their bundle from jsDelivr, so the six admin-only docs paths get that one CDN added rather than the whole app getting a looser default
