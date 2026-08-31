@@ -136,3 +136,39 @@ a.rotation-week-small:hover { color: var(--text); }
   }
   .calendar-day-content { height: auto; }
 }
+
+/* Weekday label inside each month cell: only needed on mobile, where the grid
+   drops its thead (see the card rule in tables.css). */
+.calendar-weekday { display: none; }
+
+/* Personal month grid on mobile: flow the days as cards, two or three across
+   depending on width, instead of one full-width block per day. The personal
+   week/range grids (.week-grid-single) keep the stacked day list. */
+@media (max-width: 800px) {
+  .calendar-grid:not(.week-grid-single) tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 0.35rem;
+  }
+  .calendar-grid:not(.week-grid-single) tbody tr { display: contents; }
+  .calendar-grid:not(.week-grid-single) tbody td { width: auto; border-radius: var(--radius); }
+  .calendar-weekday { display: inline; margin-right: auto; margin-left: 0.4rem; font-size: 0.75rem; color: var(--muted); }
+}
+
+/* Crosshair on the team week grid: hovering a shift lights up that person's row
+   and that day's column (header included). Pure CSS, so one rule per column
+   index; the tint is a background-image so it layers over the today-cell
+   background and its inset accent rails instead of replacing them. */
+@media (hover: hover) {
+  .week-grid-all { --grid-hl: linear-gradient(rgb(var(--accent-rgb) / 0.12), rgb(var(--accent-rgb) / 0.12)); }
+  .week-grid-all tbody tr:hover td { background-image: var(--grid-hl); }
+  .week-grid-all:has(tbody td:nth-child(2):hover) :is(thead th, tbody td):nth-child(2),
+  .week-grid-all:has(tbody td:nth-child(3):hover) :is(thead th, tbody td):nth-child(3),
+  .week-grid-all:has(tbody td:nth-child(4):hover) :is(thead th, tbody td):nth-child(4),
+  .week-grid-all:has(tbody td:nth-child(5):hover) :is(thead th, tbody td):nth-child(5),
+  .week-grid-all:has(tbody td:nth-child(6):hover) :is(thead th, tbody td):nth-child(6),
+  .week-grid-all:has(tbody td:nth-child(7):hover) :is(thead th, tbody td):nth-child(7),
+  .week-grid-all:has(tbody td:nth-child(8):hover) :is(thead th, tbody td):nth-child(8) {
+    background-image: var(--grid-hl);
+  }
+}

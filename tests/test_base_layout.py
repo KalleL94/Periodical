@@ -55,3 +55,15 @@ def test_there_is_only_one_render_path():
     assert not hasattr(helpers, "render_template"), (
         "core.helpers.render_template is back; shared context belongs in routes.shared.render()"
     )
+
+
+def test_handover_link_is_in_the_nav_while_logged_out(test_client):
+    """The handover report sits next to the team views for signed-out visitors.
+
+    It is the one page the night crew opens on a shared terminal, so a nav entry
+    hidden behind the `{% if user %}` block would send them through login for a
+    report that is already public.
+    """
+    response = test_client.get("/login")
+    assert response.status_code == 200
+    assert 'href="/handover" class="nav-link' in response.text

@@ -45,6 +45,7 @@
                         <a href="/year" class="nav-link {% if path == '/year' %}nav-link--active{% endif %}" {% if path == '/year' %}aria-current="page"{% endif %}>{{ t.nav_year }}</a>
                         <a href="/month" class="nav-link {% if path == '/month' %}nav-link--active{% endif %}" {% if path == '/month' %}aria-current="page"{% endif %}>{{ t.nav_month }}</a>
                         <a href="/week" class="nav-link {% if path == '/week' %}nav-link--active{% endif %}" {% if path == '/week' %}aria-current="page"{% endif %}>{{ t.nav_week }}</a>
+                        <a href="/handover" class="nav-link {% if path == '/handover' %}nav-link--active{% endif %}" {% if path == '/handover' %}aria-current="page"{% endif %}>{{ t.handover_title }}</a>
                     </div>
 
                     {% if user %}
@@ -147,6 +148,13 @@
             {% block page_content %}
             {% endblock %}
         </main>
+
+        <button type="button" id="to-top" class="to-top" aria-label="{{ t.to_top }}" title="{{ t.to_top }}"
+                onclick="window.scrollTo({ top: 0, behavior: 'smooth' })">&uarr;</button>
+        <script>
+            const toTop = document.getElementById('to-top');
+            addEventListener('scroll', () => toTop.classList.toggle('to-top--visible', scrollY > 400), { passive: true });
+        </script>
 
         <footer class="app-footer">
             <a href="/changelog" class="app-footer-link" title="Nyheter &amp; versioner">Periodical v{{ app_version }}</a>

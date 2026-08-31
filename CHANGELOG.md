@@ -32,6 +32,12 @@ something to tell users about, whose pull request renames the heading.
 ### Added
 - A favicon. There was none, so browsers fell back to their default icon: `app/static/favicon.svg` draws three schedule rows on a dark plate, which stays legible on light and dark tabs and at 16px
 - `/robots.txt` returns `Disallow: /`. This is a private tool for one team, and the team views answer without a login, so a crawler that found the host could index a real schedule
+- The daily handover report has a nav entry of its own, next to Year, Month and Week, and it is outside the `{% if user %}` block because `/handover` answers without a login. It was reachable only from a day page or by typing the path, which is the wrong shape for the one page the crew opens on a shared terminal at shift change
+- A back-to-top button. The year matrix is a few thousand pixels tall and the month calendar on a phone is a long list of cards, so returning to the navigation meant a long scroll. It sits fixed in the bottom right corner and appears once the page is scrolled past 400px, so it never covers content at the top
+- Hovering a cell in the team week grid lights up that person's row and that day's column, header included. Reading "who else works Thursday night" off an eight by ten grid meant tracking a row and a column by eye across cells that all look alike. It is CSS only, `:has()` per column index, and the highlight is a background image layered over the cell rather than a background colour, so today's column keeps its accent tint and rails underneath. Wrapped in `@media (hover: hover)` so a touch device does not get a highlight stuck under a tap
+
+### Changed
+- The personal month calendar on a phone flows its days two or three across instead of one full-width block each, which turned a month into a screen and a half of scrolling. Under 800px the table body becomes a CSS grid of `minmax(8.5rem, 1fr)` columns with the rows set to `display: contents`, so the count follows the width rather than a breakpoint. Each cell now names its own weekday next to the date, because the card layout drops the table header the weekday used to come from. The personal week and range calendars keep the stacked day list
 
 ## [1.7.3] - 2026-08-26
 
