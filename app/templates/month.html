@@ -166,6 +166,8 @@
                                        class="day-number">
                                         {{ day_data.date.day }}
                                     </a>
+                                    {# Mobile only: the grid drops its thead, so each cell names its own weekday. #}
+                                    <span class="calendar-weekday">{{ weekday_names_short[day_data.date.weekday()] }}</span>
                                     {% if storhelg_dates is defined and day_data.date in storhelg_dates %}
                                         <span class="badge badge-ob5 badge-calendar-marker">S</span>
                                     {% elif holiday_dates is defined and day_data.date in holiday_dates %}

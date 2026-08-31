@@ -13,6 +13,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Base / Navigation ──────────────────────────────────────
         "app_subtitle": "Rotation och OB-ersättning",
         "nav_menu": "Meny",
+        "to_top": "Till toppen",
         "nav_year": "År",
         "nav_month": "Månad",
         "nav_week": "Vecka",
@@ -1181,6 +1182,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Base / Navigation ──────────────────────────────────────
         "app_subtitle": "Rotation and OB compensation",
         "nav_menu": "Menu",
+        "to_top": "Back to top",
         "nav_year": "Year",
         "nav_month": "Month",
         "nav_week": "Week",
