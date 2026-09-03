@@ -100,12 +100,16 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if shift and shift.start_time %}
+                            {% if oncall_time_display %}
+                                {{ oncall_time_display }}
+                            {% elif shift and shift.start_time %}
                                 {{ shift.start_time }} {{ t.day_time_to }} {{ shift.end_time }}
                             {% else %}
                                 -
                             {% endif %}
                         </td>
+                        {# Worked hours. On-call is standby, so an OC day is 0.00 here and
+                           its standby hours are reported in the on-call pay table. #}
                         <td>{{ "%.2f"|format(hours) if hours else "0.00" }}</td>
                     </tr>
                     {% if coworkers %}

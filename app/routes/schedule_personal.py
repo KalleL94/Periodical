@@ -36,6 +36,7 @@ from app.core.schedule import (
     get_rotation_length_for_date,
     get_shift_types,
     ob_rules,
+    oncall_window,
     rotation_start_date,
     settings,
     summarize_year_for_person,
@@ -273,6 +274,14 @@ async def show_day_for_person(
     else:
         is_effective_oc = False
 
+    # The on-call window, for the shift row. A full day reads "00:00 - 24:00"; a
+    # shift shared with a colleague reads only the part this person holds.
+    oncall_time_display = None
+    if is_effective_oc:
+        _oc_start, _oc_end = oncall_window(date_obj, oncall_override)
+        _end_label = "24:00" if _oc_end.date() > date_obj else _oc_end.strftime("%H:%M")
+        oncall_time_display = f"{_oc_start.strftime('%H:%M')} - {_end_label}"
+
     # OB hours and kronor through the same gate the month/year summary uses
     # (manual override wins; OFF/OC/OT days carry no OB). Partial-day absence
     # truncation and full-day absence zeroing are already reflected in the
@@ -492,6 +501,7 @@ async def show_day_for_person(
             "oncall_override": oncall_override,
             "has_rotation_oc": has_rotation_oc,
             "is_effective_oc": is_effective_oc,
+            "oncall_time_display": oncall_time_display,
             "shift_override": shift_override,
             "is_vacation_day": is_vacation_day,
             "day_pay_override": day_pay_override,
