@@ -4,6 +4,7 @@ On-call override management routes - add and remove on-call shifts.
 """
 
 from datetime import date as date_cls
+from datetime import time as time_cls
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
@@ -17,16 +18,45 @@ from app.database.database import OnCallOverride, OnCallOverrideType, User, get_
 router = APIRouter(prefix="/oncall", tags=["oncall"])
 
 
+def _parse_window(start_time: str | None, end_time: str | None) -> tuple[str | None, str | None]:
+    """Validate an optional "HH:MM" on-call window and normalise blanks to None.
+
+    An end of "00:00" means midnight at the end of the day, so it is not compared
+    against the start. Both empty means the whole day.
+    """
+    start = (start_time or "").strip() or None
+    end = (end_time or "").strip() or None
+
+    for value in (start, end):
+        if value is None:
+            continue
+        try:
+            time_cls.fromisoformat(value)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid time: {value}") from None
+
+    if start and end and end != "00:00" and end <= start:
+        raise HTTPException(status_code=400, detail="On-call end time must be after the start time")
+
+    return start, end
+
+
 @router.post("/add")
 async def add_oncall_override(
     user_id: int = Form(...),
     date: date_cls = Form(...),
+    start_time: str = Form(None),
+    end_time: str = Form(None),
     reason: str = Form(None),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Add an on-call shift for a person who doesn't normally have one.
+
+    An optional start_time/end_time window ("HH:MM") limits the shift to part of
+    the day, so two people can share one on-call day. Leave both blank for a full
+    24-hour shift.
 
     Permissions:
     - Admin: can add for any user
@@ -35,6 +65,7 @@ async def add_oncall_override(
     require_own_or_admin(current_user, user_id, "Not authorized to add on-call for other users")
 
     oc_date = date
+    window_start, window_end = _parse_window(start_time, end_time)
 
     # Check if override already exists for this date
     existing = (
@@ -44,6 +75,8 @@ async def add_oncall_override(
     if existing:
         # Update existing override
         existing.override_type = OnCallOverrideType.ADD
+        existing.start_time = window_start
+        existing.end_time = window_end
         existing.reason = reason
         existing.created_by = current_user.id
     else:
@@ -52,6 +85,8 @@ async def add_oncall_override(
             user_id=user_id,
             date=oc_date,
             override_type=OnCallOverrideType.ADD,
+            start_time=window_start,
+            end_time=window_end,
             reason=reason,
             created_by=current_user.id,
         )
@@ -93,6 +128,8 @@ async def remove_oncall_override(
     if existing:
         # Update existing override
         existing.override_type = OnCallOverrideType.REMOVE
+        existing.start_time = None
+        existing.end_time = None
         existing.reason = reason
         existing.created_by = current_user.id
     else:

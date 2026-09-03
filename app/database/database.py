@@ -277,6 +277,11 @@ class OnCallOverride(Base):
     substitute_id = Column(Integer, ForeignKey("substitutes.id"), nullable=True)
     date = Column(Date, nullable=False)
     override_type = Column(SQLEnum(OnCallOverrideType), nullable=False)
+    # Optional "HH:MM" window for a shift shared between two people on the same day.
+    # Both NULL means the whole day, which is how on-call has always worked.
+    # An end of "00:00" means midnight at the end of the day.
+    start_time = Column(String(5), nullable=True)
+    end_time = Column(String(5), nullable=True)
     reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
