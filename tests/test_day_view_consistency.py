@@ -197,6 +197,43 @@ def _expected_ob(canonical, combined_rules):
     return ({r.code: 0.0 for r in combined_rules}, {r.code: 0.0 for r in combined_rules})
 
 
+def test_day_view_shift_row_shows_the_on_call_window(env):
+    """The shift row reports the on-call window, not the OC shift type's 00:00-00:00.
+
+    A shift shared with a colleague shows only the part this person holds, so the
+    day page says which half of the day they are actually on call for.
+    """
+    client, session = env
+    _make_user(session, 1, 1)
+    day = _find_rotation_date(1, lambda c: c == "OC")
+    session.add(
+        OnCallOverride(
+            user_id=1,
+            date=day,
+            override_type=OnCallOverrideType.ADD,
+            start_time="14:00",
+            end_time="00:00",
+        )
+    )
+    session.commit()
+    _login(client, 1)
+
+    row = _shift_row(client.get(f"/day/1/{day.year}/{day.month}/{day.day}").text)
+    assert "14:00 - 24:00" in row
+    # Worked hours stay zero: on-call is standby, and its hours are in the pay table.
+    assert _row_hours(row) == 0.0
+
+
+def test_day_view_shift_row_shows_the_whole_day_without_a_window(env):
+    client, session = env
+    _make_user(session, 1, 1)
+    day = _find_rotation_date(1, lambda c: c == "OC")
+    _login(client, 1)
+
+    row = _shift_row(client.get(f"/day/1/{day.year}/{day.month}/{day.day}").text)
+    assert "00:00 - 24:00" in row
+
+
 def _shift_row(html):
     m = re.search(r"day-shift-row.*?</tr>", html, re.S)
     assert m is not None, "day-shift-row not found in rendered day view"

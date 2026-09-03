@@ -1765,20 +1765,56 @@ def _resolve_effective_shift(
     return _with_ob(result[0], result[1])
 
 
+def oncall_window(current_day: datetime.date, override=None) -> tuple[datetime.datetime, datetime.datetime]:
+    """The on-call period for a day: the whole day, or the override's "HH:MM" window.
+
+    An end of "00:00" means midnight at the end of the day, which is what an
+    <input type="time"> gives for a shift running to 24:00.
+    """
+    day_start = datetime.datetime.combine(current_day, dt_time(0, 0))
+    day_end = datetime.datetime.combine(current_day + datetime.timedelta(days=1), dt_time(0, 0))
+
+    start_str = getattr(override, "start_time", None)
+    end_str = getattr(override, "end_time", None)
+    if not start_str and not end_str:
+        return day_start, day_end
+
+    start = datetime.datetime.combine(current_day, dt_time.fromisoformat(start_str)) if start_str else day_start
+    if end_str and end_str != "00:00":
+        end = datetime.datetime.combine(current_day, dt_time.fromisoformat(end_str))
+    else:
+        end = day_end
+    return start, min(max(end, start), day_end)
+
+
 def _compute_oncall_pay(
-    shift, current_day, person_id, user_wages, settings, oncall_rate_override
+    shift, current_day, person_id, user_wages, settings, oncall_rate_override, oncall_override=None
 ) -> tuple[float, dict]:
     """On-call pay for a day. Returns (pay, details); (0.0, {}) for non-OC shifts."""
     if not (shift and shift.code == "OC"):
         return 0.0, {}
     oncall_rules = get_oncall_rules(current_day.year)
-    oncall_calc = calculate_oncall_pay(
-        current_day,
-        user_wages.get(person_id, settings.monthly_salary),
+    monthly_salary = user_wages.get(person_id, settings.monthly_salary)
+    start, end = oncall_window(current_day, oncall_override)
+    if (start, end) == oncall_window(current_day):
+        oncall_calc = calculate_oncall_pay(
+            current_day,
+            monthly_salary,
+            oncall_rules,
+            rate_overrides=oncall_rate_override,
+        )
+        return oncall_calc["total_pay"], oncall_calc
+
+    calc = calculate_oncall_pay_for_period(
+        start,
+        end,
+        monthly_salary,
         oncall_rules,
         rate_overrides=oncall_rate_override,
     )
-    return oncall_calc["total_pay"], oncall_calc
+    calc = {**calc, "date": current_day, "segments": [], "window": (start, end)}
+    calc["total_pay"] = round(calc["total_pay"], 2)
+    return calc["total_pay"], calc
 
 
 def _compute_overtime_pay(
@@ -1942,7 +1978,7 @@ def _populate_single_person_day(
     # Calculate on-call pay
     _person_rates = (user_rates_map or {}).get(person_id) or {}
     oncall_pay, oncall_details = _compute_oncall_pay(
-        shift, current_day, person_id, user_wages, settings, _person_rates.get("oncall")
+        shift, current_day, person_id, user_wages, settings, _person_rates.get("oncall"), oncall_override
     )
 
     # Kolla övertid - både på aktuell dag (för visning) och föregående dag (för beredskap)
@@ -1957,6 +1993,7 @@ def _populate_single_person_day(
             person_id,
             settings,
             oncall_rate_overrides=_person_rates.get("oncall"),
+            oncall_override=oncall_override,
         )
 
     ot_pay = 0.0
@@ -2020,14 +2057,14 @@ def _recalculate_oncall_before_ot(
     person_id: int,
     settings,
     oncall_rate_overrides: dict[str, int | float] | None = None,
+    oncall_override=None,
 ) -> tuple[float, dict]:
     """Recalculates on-call pay for the period before AND after overtime.
 
-    On-call is paid for 24h minus overtime hours.
+    On-call is paid for the on-call window minus the overtime hours.
     Ex: 24h beredskap - 8.5h övertid = 15.5h beredskapsersättning
     """
-    day_start = datetime.datetime.combine(current_day, dt_time(0, 0))
-    day_end = datetime.datetime.combine(current_day + datetime.timedelta(days=1), dt_time(0, 0))
+    day_start, day_end = oncall_window(current_day, oncall_override)
 
     try:
         # Use ot_shift.date for parsing, not current_day (in case OT crosses midnight)
@@ -2047,56 +2084,33 @@ def _recalculate_oncall_before_ot(
         "total_hours": 0.0,
     }
 
-    # Period 1: Före övertid (00:00 till OT start)
-    if ot_start_dt > day_start:
-        period1 = calculate_oncall_pay_for_period(
-            day_start,
-            ot_start_dt,
+    # Beredskap betalas för fönstret före övertiden och för fönstret efter den.
+    for seg_start, seg_end in (
+        (day_start, min(ot_start_dt, day_end)),
+        (max(ot_end_dt, day_start), day_end),
+    ):
+        if seg_end <= seg_start:
+            continue
+
+        period = calculate_oncall_pay_for_period(
+            seg_start,
+            seg_end,
             monthly_salary,
             oncall_rules,
             rate_overrides=oncall_rate_overrides,
         )
-        total_pay += period1["total_pay"]
+        total_pay += period["total_pay"]
         combined_details["periods"].append(
             {
-                "start": day_start,
-                "end": ot_start_dt,
-                "hours": period1["total_hours"],
-                "pay": period1["total_pay"],
+                "start": seg_start,
+                "end": seg_end,
+                "hours": period["total_hours"],
+                "pay": period["total_pay"],
             }
         )
-        combined_details["total_hours"] += period1["total_hours"]
+        combined_details["total_hours"] += period["total_hours"]
 
-        # Merge breakdown
-        for code, data in period1["breakdown"].items():
-            if code not in combined_breakdown:
-                combined_breakdown[code] = data.copy()
-            else:
-                combined_breakdown[code]["hours"] += data["hours"]
-                combined_breakdown[code]["pay"] += data["pay"]
-
-    # Period 2: Efter övertid (OT slut till 24:00)
-    if ot_end_dt < day_end:
-        period2 = calculate_oncall_pay_for_period(
-            ot_end_dt,
-            day_end,
-            monthly_salary,
-            oncall_rules,
-            rate_overrides=oncall_rate_overrides,
-        )
-        total_pay += period2["total_pay"]
-        combined_details["periods"].append(
-            {
-                "start": ot_end_dt,
-                "end": day_end,
-                "hours": period2["total_hours"],
-                "pay": period2["total_pay"],
-            }
-        )
-        combined_details["total_hours"] += period2["total_hours"]
-
-        # Merge breakdown
-        for code, data in period2["breakdown"].items():
+        for code, data in period["breakdown"].items():
             if code not in combined_breakdown:
                 combined_breakdown[code] = data.copy()
             else:

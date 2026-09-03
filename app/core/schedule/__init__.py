@@ -43,6 +43,7 @@ from .period import (
     generate_month_data,
     generate_period_data,
     generate_year_data,
+    oncall_window,
 )
 from .summary import (
     build_calendar_grid_for_month,
@@ -119,6 +120,7 @@ __all__ = [
     "generate_period_data",
     "generate_year_data",
     "generate_month_data",
+    "oncall_window",
     # summary
     "build_calendar_grid_for_month",
     "summarize_month_for_person",

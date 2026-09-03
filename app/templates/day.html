@@ -100,12 +100,16 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if shift and shift.start_time %}
+                            {% if oncall_time_display %}
+                                {{ oncall_time_display }}
+                            {% elif shift and shift.start_time %}
                                 {{ shift.start_time }} {{ t.day_time_to }} {{ shift.end_time }}
                             {% else %}
                                 -
                             {% endif %}
                         </td>
+                        {# Worked hours. On-call is standby, so an OC day is 0.00 here and
+                           its standby hours are reported in the on-call pay table. #}
                         <td>{{ "%.2f"|format(hours) if hours else "0.00" }}</td>
                     </tr>
                     {% if coworkers %}
@@ -510,6 +514,7 @@
                         <thead>
                             <tr>
                                 <th>{{ t.day_oncall_type_col }}</th>
+                                <th>{{ t.day_oncall_window_col }}</th>
                                 <th>{{ t.day_oncall_reason_col }}</th>
                                 <th></th>
                             </tr>
@@ -521,6 +526,13 @@
                                         <span class="badge badge-added">{{ t.day_oncall_added }}</span>
                                     {% else %}
                                         <span class="badge badge-danger">{{ t.day_oncall_removed }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if oncall_override.start_time or oncall_override.end_time %}
+                                        {{ oncall_override.start_time or '00:00' }}–{{ '24:00' if oncall_override.end_time in (none, '00:00') else oncall_override.end_time }}
+                                    {% else %}
+                                        {{ t.day_oncall_window_full }}
                                     {% endif %}
                                 </td>
                                 <td>{{ oncall_override.reason or '-' }}</td>
@@ -564,6 +576,31 @@
                         <br>
                         {{ t.day_oncall_remove_note }}
                     </p>
+
+                    <form method="POST" action="/oncall/add" class="oncall-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="user_id" value="{{ person_id }}">
+                        <input type="hidden" name="date" value="{{ date }}">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="split_start_time">{{ t.day_oncall_start_label }}</label>
+                                <input type="time" id="split_start_time" name="start_time">
+                            </div>
+                            <div class="form-group">
+                                <label for="split_end_time">{{ t.day_oncall_end_label }}</label>
+                                <input type="time" id="split_end_time" name="end_time">
+                            </div>
+                            <div class="form-group">
+                                <label for="split_reason">{{ t.day_oncall_reason_label }}</label>
+                                <input type="text" id="split_reason" name="reason" placeholder="T.ex. delat pass med kollega">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-secondary">{{ t.day_oncall_split_button }}</button>
+                    </form>
+
+                    <p class="info-text">{{ t.day_oncall_split_note }}</p>
                 {% else %}
                     {# Person har inte OC - visa lägg till-knapp #}
                     <form method="POST" action="/oncall/add" class="oncall-form">
@@ -572,6 +609,14 @@
                         <input type="hidden" name="date" value="{{ date }}">
 
                         <div class="form-row">
+                            <div class="form-group">
+                                <label for="start_time">{{ t.day_oncall_start_label }}</label>
+                                <input type="time" id="start_time" name="start_time">
+                            </div>
+                            <div class="form-group">
+                                <label for="end_time">{{ t.day_oncall_end_label }}</label>
+                                <input type="time" id="end_time" name="end_time">
+                            </div>
                             <div class="form-group">
                                 <label for="reason">{{ t.day_oncall_reason_label }}</label>
                                 <input type="text" id="reason" name="reason" placeholder="T.ex. byte med kollega">
