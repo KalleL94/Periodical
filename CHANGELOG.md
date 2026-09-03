@@ -22,6 +22,12 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.9.0] - 2026-09-04
+
+### Added
+- An on-call shift can now cover part of a day rather than the whole of it, so two people can share one on-call day. `OnCallOverride` carries an optional `start_time`/`end_time` window and `_compute_oncall_pay` switches to `calculate_oncall_pay_for_period` over that window, which keeps each segment priced by the rule that covers it: a window running Friday 17:00 to midnight is weekend rate, the same Friday morning is weekday rate. Overtime during a partial shift is subtracted from the window rather than from the day. Both columns are nullable and both unset means the whole day, which is what every existing row means, so nothing needed backfilling. Run `migrations/migrate_oncall_shift_times.py` before deploying
+- The day page's shift row reports the on-call window. It read its times from the OC shift type, which carries 00:00-00:00, so every on-call day rendered "00:00 to 00:00" and a shared day gave no hint of which half the person held. It now reads "00:00 - 24:00" for a full day and "14:00 - 24:00" for the evening half of a shared one. The worked-hours column is unchanged: on-call is standby, not worked time, so an OC day stays 0.00 there and its standby hours are reported in the on-call pay table
+
 ## [1.8.0] - 2026-08-31
 
 ### Security

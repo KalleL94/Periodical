@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.9.0",
+    "date": "2026-09-04",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Ett beredskapspass kan delas mellan två personer samma dygn. Lägg till beredskap med en start- och sluttid, till exempel 00:00 till 14:00 för den ena och 14:00 till 24:00 för den andra, så räknas ersättningen bara för den delen. Lämnar du tiderna tomma gäller hela dygnet som förut, och varje del betalas efter den taxa som gäller just då, så ett fönster fredag kväll ger helgtaxa medan samma fredags förmiddag ger vardagstaxa",
+        "en": "An on-call shift can be shared between two people on the same day. Add on-call with a start and end time, say 00:00 to 14:00 for one of you and 14:00 to 24:00 for the other, and the compensation counts only that part. Leave the times blank and the whole day applies as before, and each part is paid at the rate that applies at the time, so a Friday evening window is weekend rate while the same Friday morning is weekday rate"
+      },
+      {
+        "type": "förbättring",
+        "sv": "Dagsvyn visar vilken tid beredskapen gäller. Raden högst upp läste tiderna från passtypen och stod därför alltid på 00:00 till 00:00, oavsett vilken del av dygnet du hade",
+        "en": "The day view shows the time the on-call shift covers. The row at the top read its times from the shift type and so always said 00:00 to 00:00, whichever part of the day you actually held"
+      }
+    ]
+  },
+  {
     "version": "1.8.0",
     "date": "2026-08-31",
     "entries": [
