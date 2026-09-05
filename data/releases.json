@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.10.0",
+    "date": "2026-09-06",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Månads- och årsvyn markerar nu både raden och kolumnen när du håller pekaren över en ruta, precis som veckovyn. Personens hela kolumn lyser upp, så du kan följa en person genom hela året utan att tappa bort kolumnen på vägen.",
+        "en": "The month and year views now highlight both the row and the column when you hover a cell, the same way the week view does. The person's whole column lights up, so you can follow one person through the year without losing track of the column."
+      }
+    ]
+  },
+  {
     "version": "1.9.0",
     "date": "2026-09-04",
     "entries": [

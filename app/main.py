@@ -133,15 +133,16 @@ _templates.env.globals["app_version"] = get_latest_version()
 
 
 def _compute_static_version() -> str:
-    """Hash the CSS files' contents so the cache-busting query string changes
-    whenever a stylesheet actually changes, independent of the changelog version
-    (which is bumped manually and not always updated for CSS-only releases)."""
+    """Hash the CSS and JS files' contents so the cache-busting query string
+    changes whenever a stylesheet or script actually changes, independent of the
+    changelog version (which is bumped manually and not always updated for
+    asset-only releases)."""
     import hashlib
 
-    css_dir = Path("app/static/css")
+    static_dir = Path("app/static")
     digest = hashlib.sha256()
-    for css_file in sorted(css_dir.glob("*.css")):
-        digest.update(css_file.read_bytes())
+    for asset in sorted(static_dir.glob("css/*.css")) + sorted(static_dir.glob("js/*.js")):
+        digest.update(asset.read_bytes())
     return digest.hexdigest()[:10]
 
 
