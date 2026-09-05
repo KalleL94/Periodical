@@ -6,10 +6,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{% block title %}Periodical{% endblock %}</title>
         <link rel="icon" href="/static/favicon.svg?v={{ static_version }}" type="image/svg+xml">
-        {# static_version is a hash of the CSS files' contents (computed at startup,
-           see app/main.py), not the changelog version, so the cache-busting query
-           string changes on every CSS edit even when a release has no changelog
-           entry. Without it, files with different Last-Modified times (no
+        {# static_version is a hash of the CSS and JS files' contents (computed at
+           startup, see app/main.py), not the changelog version, so the cache-busting
+           query string changes on every asset edit even when a release has no
+           changelog entry. Without it, files with different Last-Modified times (no
            Cache-Control is set) can skew in cache: e.g. a stale base.css without
            a token that a fresh tables.css depends on, which silently breaks the
            frozen-column sticky layering on mobile. #}
@@ -20,7 +20,8 @@
         <link rel="stylesheet" href="/static/css/tables.css?v={{ static_version }}">
         <link rel="stylesheet" href="/static/css/navigation.css?v={{ static_version }}">
         <link rel="stylesheet" href="/static/css/calendar.css?v={{ static_version }}">
-        <script src="/static/js/shift-colors.js" defer></script>
+        <script src="/static/js/shift-colors.js?v={{ static_version }}" defer></script>
+        <script src="/static/js/grid-crosshair.js?v={{ static_version }}" defer></script>
     </head>
     <body>
         {% set path = request.url.path %}

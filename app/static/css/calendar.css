@@ -172,3 +172,12 @@ a.rotation-week-small:hover { color: var(--text); }
     background-image: var(--grid-hl);
   }
 }
+
+/* The month and year team grids are the same crosshair transposed: days are
+   rows (lit by tr.shift-row:hover in tables.css) and people are columns, lit
+   by the .col-hl class that grid-crosshair.js puts on the hovered person's
+   header and cells. */
+@media (hover: hover) {
+  .month-schedule { --grid-hl: linear-gradient(rgb(var(--accent-rgb) / 0.2), rgb(var(--accent-rgb) / 0.2)); }
+  .month-schedule .col-hl { background-image: var(--grid-hl); }
+}

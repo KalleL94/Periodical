@@ -22,6 +22,14 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.10.0] - 2026-09-06
+
+### Added
+- The team month and year grids get the week grid's hover crosshair. Hovering a cell already lit that day's row; now it lights that person's column too, so reading a single person down a 365-row year no longer means tracking a column by eye. The week grid does this in pure CSS because its columns are the seven days at fixed positions, but here the columns are people, their count varies with substitutes and person changes, and they are addressed by `data-person`, which no selector can match against the hovered cell. `app/static/js/grid-crosshair.js` puts a `col-hl` class on the matching header and cells instead, guarded by `(hover: hover)` so touch devices bind nothing, and hidden columns are unaffected because it matches on the key rather than a column index
+
+### Fixed
+- `static_version`, the cache-busting query string, hashed only the CSS files, so a JavaScript-only change shipped behind whatever the browser had cached. It now hashes `app/static/js` as well, and `shift-colors.js` carries the query string it was missing
+
 ## [1.9.0] - 2026-09-04
 
 ### Added
