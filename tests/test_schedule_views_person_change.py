@@ -451,6 +451,47 @@ def test_year_future_succession_column_hidden_until_effective(month_env):
     assert re.search(r'<input[^>]*data-future="1"[^>]*\bdisabled\b', resp.text)
 
 
+def test_year_successor_visible_in_year_after_the_change(month_env):
+    """A successor who takes over later this year is visible in the NEXT year.
+
+    Bob takes over position 3 from Isak 30 days from now. In the current year his
+    column is rightly hidden as future, but in the following year his tenure
+    covers every day, so the column must be visible and Isak's (who left before
+    that year started) must be the hidden one.
+    """
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 11, "isak1", "Isak")
+    bob = _make_user(session, 12, "bob1", "Bob")
+
+    today = get_today()
+    succession_date = today + datetime.timedelta(days=30)
+
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    add_person_change(
+        session,
+        old_user_id=isak.id,
+        new_user_id=bob.id,
+        person_id=3,
+        new_name="Bob",
+        new_username="bob1",
+        effective_from=succession_date,
+        created_by=1,
+    )
+
+    token = create_access_token(data={"sub": str(admin.id)})
+    client.cookies.set("access_token", f"Bearer {token}")
+
+    resp = client.get(f"/year?year={today.year + 1}")
+    assert resp.status_code == 200
+
+    ths = _year_header_ths(resp.text, 3)
+    bob_th = next(th for th in ths if "Bob" in th)
+    assert 'data-future="0"' in bob_th and 'data-past="0"' in bob_th
+    assert "display:none" not in bob_th
+    assert not any("Isak" in th for th in ths), "Isak's tenure ends before the viewed year"
+
+
 def _out_of_tenure_cells(html: str, col_key: str) -> list[str]:
     """Return the out-of-tenure day cells (whole <td>...</td>) for a column."""
     return re.findall(

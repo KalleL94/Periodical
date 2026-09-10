@@ -675,11 +675,17 @@ async def show_year_all(
             seg = segs[0]
             to_date = seg["to_date"]
             from_date = seg["from_date"]
-            past = to_date is not None and to_date < real_today
-            # Use the raw employment start, not the window-clamped from_date,
-            # so an ongoing holder viewed in a later year is not mistaken for
-            # a future hire.
-            future = seg["effective_from"] > real_today
+            # Past/future are judged against today clamped to the viewed year,
+            # and against the raw employment dates rather than the
+            # window-clamped ones. Both halves matter: a tenure that starts
+            # later this year is future when viewed in this year but ongoing
+            # when viewed in a later one, and an open-ended tenure viewed in a
+            # past year must not read as departed just because the window ends
+            # before today.
+            past_cutoff = min(real_today, year_end)
+            future_cutoff = max(real_today, year_start)
+            past = seg["effective_to"] is not None and seg["effective_to"] < past_cutoff
+            future = seg["effective_from"] > future_cutoff
             person_headers.append(
                 {
                     "person_id": seg["person_id"],
