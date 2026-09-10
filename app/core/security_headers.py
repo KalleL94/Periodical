@@ -38,18 +38,21 @@ CSP = "; ".join(
 )
 
 # Swagger UI and ReDoc pull their bundle from jsDelivr, so the strict policy
-# would leave the admin-only API docs blank. These paths get the CDN added
-# instead of the whole app getting a looser default. Kept here (rather than in
-# main.py) so the path list and the policy that depends on it stay together;
-# main.py imports it for the admin gate.
+# would leave the API docs blank. These paths get the CDN added instead of the
+# whole app getting a looser default. Kept here (rather than in main.py) so the
+# path list and the policy that depends on it stay together; main.py imports
+# both sets below for the docs gate.
 #
 # One entry per mounted app: the root app plus both API sub-apps. Built as a
 # product rather than listed, because leaving a mount out costs twice over: the
-# page renders blank AND, since main.py reads the same set, it renders for
-# anyone.
-DOC_PATHS = frozenset(
-    f"{prefix}{page}" for prefix in ("", "/api/v1", "/api/v1/admin") for page in ("/docs", "/redoc", "/openapi.json")
-)
+# page renders blank AND, since main.py reads the same set, it goes ungated.
+_DOC_PAGES = ("/docs", "/redoc", "/openapi.json")
+DOC_PATHS = frozenset(f"{prefix}{page}" for prefix in ("", "/api/v1", "/api/v1/admin") for page in _DOC_PAGES)
+
+# The user API is what a user's own API key reaches, so its docs are for every
+# signed-in user to read. The rest of DOC_PATHS is admin-only: the root app's
+# own schema and the admin API, which needs an admin key to call at all.
+USER_DOC_PATHS = frozenset(f"/api/v1{page}" for page in _DOC_PAGES)
 
 _CDN = "https://cdn.jsdelivr.net"
 DOCS_CSP = (
