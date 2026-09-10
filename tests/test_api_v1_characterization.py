@@ -252,6 +252,35 @@ class TestDayShape:
             "is_extension": False,
         }
 
+    def test_status_after_midnight_keeps_the_running_night_shift_and_its_coworkers(self, api_env):
+        """Between midnight and 06:30 the night shift that started YESTERDAY is the live one.
+
+        User One works N3 on both 2026-03-14 and 2026-03-15, but User Two is on
+        that night only on the 14th. Asked at 03:00 on the 15th, the response must
+        carry the 14th's shift in currently_active_shift together with the people
+        actually on it, since the top-level day describes the whole 15th and the
+        night still to come that evening.
+        """
+        client, _ = api_env
+        body = _get(client, "/api/v1/users/1/status?date=2026-03-15&time=03:00")
+
+        assert body["date"] == "2026-03-15"
+        active = body["currently_active_shift"]
+        assert active["date"] == "2026-03-14"
+        assert active["shift"]["code"] == "N3"
+        assert active["shift"]["overnight"] is True
+
+        on_shift_now = {c["name"] for c in active["coworkers"] if c["shift_code"] == "N3"}
+        on_shift_tonight = {c["name"] for c in body["coworkers"] if c["shift_code"] == "N3"}
+        assert "User Two" in on_shift_now
+        assert "User Two" not in on_shift_tonight
+
+    def test_status_after_the_night_shift_ends_has_no_active_shift(self, api_env):
+        """Past 06:30 the previous night is over and nothing is running."""
+        client, _ = api_env
+        body = _get(client, "/api/v1/users/1/status?date=2026-03-15&time=07:00")
+        assert "currently_active_shift" not in body
+
     def test_schedule_today_shape(self, api_env):
         client, _ = api_env
         body = _get(client, f"/api/v1/users/1/schedule/today?date={N2_DAY}")

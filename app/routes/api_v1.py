@@ -299,7 +299,14 @@ def _active_overnight_shift(day: dict, current_time: datetime.time) -> dict | No
         return None
     if current_time >= datetime.time.fromisoformat(shift["end_time"]):
         return None
-    return {"date": day["date"], "shift": shift, "rotation_week": day["rotation_week"]}
+    active = {"date": day["date"], "shift": shift, "rotation_week": day["rotation_week"]}
+    if "coworkers" in day:
+        # The colleagues of the shift that is still running, which are the ones
+        # from the day it started on. Reading the new calendar day's coworkers
+        # after midnight names whoever comes on tonight instead of the people
+        # standing next to you right now.
+        active["coworkers"] = day["coworkers"]
+    return active
 
 
 def _build_day_status(
@@ -368,7 +375,13 @@ async def get_user_status(
     current_user: User = Depends(get_api_user),
     db: Session = Depends(get_db),
 ):
-    """Status for a given user. Defaults to now; pass ?date=YYYY-MM-DD&time=HH:MM to simulate."""
+    """Status for a given user right now, co-workers included.
+
+    Defaults to now; pass ?date=YYYY-MM-DD&time=HH:MM to simulate. When an overnight
+    shift from the previous day is still running, `currently_active_shift` holds it
+    with that shift's own co-workers, and it outranks the top-level day fields for
+    anything describing what the user is doing at this moment.
+    """
     target = _get_user_or_404(user_id, db)
     include_salary = _can_see_salary(current_user, target)
     if at_date:
@@ -385,9 +398,13 @@ async def get_user_status(
         today = now.date()
         current_time = now.time()
     yesterday = today - datetime.timedelta(days=1)
-    days, _ = _build_period(target, yesterday, today, db, include_salary)
+    days, _ = _build_period(target, yesterday, today, db, include_salary, with_coworkers=True)
     previous, result = days
-    # Check for an ongoing overnight shift from the previous day.
+    # Check for an ongoing overnight shift from the previous day. Between midnight
+    # and its end time this, not the top-level day, is what the user is working:
+    # the day fields describe the whole calendar day and the next night still to
+    # come. Clients showing "right now" must prefer currently_active_shift when
+    # present, including its coworkers.
     active = _active_overnight_shift(previous, current_time)
     if active is not None:
         result["currently_active_shift"] = active
