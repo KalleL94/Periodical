@@ -22,6 +22,12 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [Unreleased]
+
+### Fixed
+- `/api/v1/docs` rendered as a blank page, and served that page to anyone. `DOC_PATHS` drives two things at once: the relaxed CSP that lets Swagger UI load its bundle from jsDelivr, and the admin gate in `protect_docs`. It listed the root app's three doc pages and the admin API sub-app's, but not the user API sub-app's, so `/api/v1/docs`, `/api/v1/redoc` and `/api/v1/openapi.json` got the strict `script-src 'self'` (bundle blocked, empty `<div id="swagger-ui">`) and no gate at all, leaving the full endpoint and parameter schema readable without logging in. The set is now built as a product over the three mounts, so a mount cannot be half-registered
+- Removed `_admin_cookie_check` and `_DOCS_PATHS` from `app/routes/api_v1.py`. A copy of the docs gate that was never registered on either sub-app, and whose presence made the real gap look covered
+
 ## [1.10.0] - 2026-09-10
 
 ### Added

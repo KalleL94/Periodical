@@ -7,6 +7,8 @@ served from the static mount, not just ordinary route responses.
 
 import os
 
+import pytest
+
 from app.core.security_headers import HSTS, SecurityHeadersMiddleware
 
 
@@ -71,3 +73,19 @@ def test_docs_csp_allows_the_swagger_cdn(test_client):
 
 def test_ordinary_pages_do_not_allow_the_cdn(test_client):
     assert "cdn.jsdelivr.net" not in test_client.get("/login").headers["content-security-policy"]
+
+
+@pytest.mark.parametrize("prefix", ["", "/api/v1", "/api/v1/admin"])
+@pytest.mark.parametrize("page", ["/docs", "/redoc", "/openapi.json"])
+def test_every_mounted_docs_page_is_gated_and_gets_the_cdn(test_client, prefix, page):
+    """The API sub-apps mount their own docs, and each mount needs both halves.
+
+    DOC_PATHS drives the relaxed CSP and the admin gate alike, so a mount left
+    out of it renders blank (Swagger's bundle blocked) and renders for anyone.
+    The user API's three pages were missing exactly that way.
+    """
+    resp = test_client.get(f"{prefix}{page}", follow_redirects=False)
+
+    assert resp.status_code in (302, 307), "anonymous callers must be sent to /login"
+    assert resp.headers["location"] == "/login"
+    assert "https://cdn.jsdelivr.net" in resp.headers["content-security-policy"]
