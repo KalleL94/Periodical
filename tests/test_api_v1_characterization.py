@@ -275,6 +275,20 @@ class TestDayShape:
         assert "User Two" in on_shift_now
         assert "User Two" not in on_shift_tonight
 
+    def test_next_shift_carries_the_running_shift_with_its_coworkers(self, api_env):
+        """/next-shift reports the same running night shift, co-workers included.
+
+        Same 03:00 moment as above: the answer to "what is next" is the shift
+        tonight, but the client also needs to know a shift is in progress and
+        who is on it, which is what makes the field worth returning at all.
+        """
+        client, _ = api_env
+        body = _get(client, "/api/v1/users/1/next-shift?date=2026-03-15&time=03:00")
+
+        active = body["currently_active_shift"]
+        assert active["date"] == "2026-03-14"
+        assert "User Two" in {c["name"] for c in active["coworkers"] if c["shift_code"] == "N3"}
+
     def test_status_after_the_night_shift_ends_has_no_active_shift(self, api_env):
         """Past 06:30 the previous night is over and nothing is running."""
         client, _ = api_env
