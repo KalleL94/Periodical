@@ -25,6 +25,7 @@ something to tell users about, whose pull request renames the heading.
 ## [Unreleased]
 
 ### Fixed
+- The user API's docs went admin-only along with the rest when the gate below was fixed, which is one tier too high: `/api/v1` is the API a user calls with their own key, so its `/docs`, `/redoc` and `/openapi.json` describe what the reader can already do. Signing in is now the floor for every docs page, and admin is required on top of it only for the root app's own schema and the admin API, which needs an admin key to call at all
 - `/api/v1/docs` rendered as a blank page, and served that page to anyone. `DOC_PATHS` drives two things at once: the relaxed CSP that lets Swagger UI load its bundle from jsDelivr, and the admin gate in `protect_docs`. It listed the root app's three doc pages and the admin API sub-app's, but not the user API sub-app's, so `/api/v1/docs`, `/api/v1/redoc` and `/api/v1/openapi.json` got the strict `script-src 'self'` (bundle blocked, empty `<div id="swagger-ui">`) and no gate at all, leaving the full endpoint and parameter schema readable without logging in. The set is now built as a product over the three mounts, so a mount cannot be half-registered
 - Removed `_admin_cookie_check` and `_DOCS_PATHS` from `app/routes/api_v1.py`. A copy of the docs gate that was never registered on either sub-app, and whose presence made the real gap look covered
 

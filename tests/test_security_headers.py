@@ -80,7 +80,7 @@ def test_ordinary_pages_do_not_allow_the_cdn(test_client):
 def test_every_mounted_docs_page_is_gated_and_gets_the_cdn(test_client, prefix, page):
     """The API sub-apps mount their own docs, and each mount needs both halves.
 
-    DOC_PATHS drives the relaxed CSP and the admin gate alike, so a mount left
+    DOC_PATHS drives the relaxed CSP and the docs gate alike, so a mount left
     out of it renders blank (Swagger's bundle blocked) and renders for anyone.
     The user API's three pages were missing exactly that way.
     """
@@ -89,3 +89,63 @@ def test_every_mounted_docs_page_is_gated_and_gets_the_cdn(test_client, prefix, 
     assert resp.status_code in (302, 307), "anonymous callers must be sent to /login"
     assert resp.headers["location"] == "/login"
     assert "https://cdn.jsdelivr.net" in resp.headers["content-security-policy"]
+
+
+def _signed_in(test_client, test_db, monkeypatch, role):
+    """A client carrying a session cookie for a user of the given role.
+
+    SessionLocal is rebound because protect_docs opens its own session rather
+    than taking the request's dependency, so without this it reads the real
+    database and finds no such user.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    import app.database.database as db_module
+    from app.auth.auth import create_access_token
+    from app.database.database import User, UserRole, WageType
+
+    engine = test_db.get_bind()
+    monkeypatch.setattr(db_module, "SessionLocal", sessionmaker(autocommit=False, autoflush=False, bind=engine))
+    test_db.add(
+        User(
+            id=1,
+            username="u1",
+            password_hash="x",
+            name="Someone",
+            role=UserRole.ADMIN if role == "admin" else UserRole.USER,
+            wage=30000,
+            wage_type=WageType.MONTHLY,
+            vacation={},
+            must_change_password=0,
+            is_active=1,
+            person_id=1,
+        )
+    )
+    test_db.commit()
+    test_client.cookies.set("access_token", f"Bearer {create_access_token(data={'sub': '1'})}")
+    return test_client
+
+
+@pytest.mark.parametrize("page", ["/docs", "/redoc", "/openapi.json"])
+def test_a_signed_in_user_reads_the_user_api_docs(test_client, test_db, monkeypatch, page):
+    """The user API's docs describe what a user's own API key already reaches."""
+    client = _signed_in(test_client, test_db, monkeypatch, role="user")
+
+    assert client.get(f"/api/v1{page}", follow_redirects=False).status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/docs", "/api/v1/admin/docs", "/api/v1/admin/openapi.json"])
+def test_a_signed_in_user_is_kept_out_of_the_admin_docs(test_client, test_db, monkeypatch, path):
+    """The root app's schema and the admin API stay admin-only."""
+    client = _signed_in(test_client, test_db, monkeypatch, role="user")
+    resp = client.get(path, follow_redirects=False)
+
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == "/login"
+
+
+@pytest.mark.parametrize("prefix", ["", "/api/v1", "/api/v1/admin"])
+def test_an_admin_reads_every_docs_page(test_client, test_db, monkeypatch, prefix):
+    client = _signed_in(test_client, test_db, monkeypatch, role="admin")
+
+    assert client.get(f"{prefix}/docs", follow_redirects=False).status_code == 200

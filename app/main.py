@@ -20,7 +20,7 @@ from app.core.csrf_middleware import CSRFMiddleware
 from app.core.logging_config import get_logger, setup_logging
 from app.core.news import get_latest_version
 from app.core.request_logging import RequestLoggingMiddleware
-from app.core.security_headers import DOC_PATHS, SecurityHeadersMiddleware
+from app.core.security_headers import DOC_PATHS, USER_DOC_PATHS, SecurityHeadersMiddleware
 from app.core.sentry_config import init_sentry
 from app.database.database import create_tables, get_db
 from app.routes.admin import router as admin_router
@@ -240,7 +240,11 @@ async def protect_docs(request: Request, call_next):
         finally:
             db.close()
 
-        if not user or user.role != UserRole.ADMIN:
+        # Signing in is the floor for every docs page. Admin is required on top
+        # of it for all but the user API's own, which describe what any user's
+        # API key can already do.
+        needs_admin = request.url.path not in USER_DOC_PATHS
+        if not user or (needs_admin and user.role != UserRole.ADMIN):
             from fastapi.responses import RedirectResponse
 
             return RedirectResponse("/login")
