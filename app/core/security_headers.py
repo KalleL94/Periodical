@@ -42,15 +42,13 @@ CSP = "; ".join(
 # instead of the whole app getting a looser default. Kept here (rather than in
 # main.py) so the path list and the policy that depends on it stay together;
 # main.py imports it for the admin gate.
+#
+# One entry per mounted app: the root app plus both API sub-apps. Built as a
+# product rather than listed, because leaving a mount out costs twice over: the
+# page renders blank AND, since main.py reads the same set, it renders for
+# anyone.
 DOC_PATHS = frozenset(
-    {
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/api/v1/admin/docs",
-        "/api/v1/admin/redoc",
-        "/api/v1/admin/openapi.json",
-    }
+    f"{prefix}{page}" for prefix in ("", "/api/v1", "/api/v1/admin") for page in ("/docs", "/redoc", "/openapi.json")
 )
 
 _CDN = "https://cdn.jsdelivr.net"

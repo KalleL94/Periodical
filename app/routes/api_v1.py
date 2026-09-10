@@ -758,28 +758,6 @@ async def get_team_schedule_range(
 
 # ── Sub-app factories ─────────────────────────────────────────────────────────
 
-_DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
-
-
-async def _admin_cookie_check(request, call_next):
-    """Middleware: requires an authenticated admin session for docs pages."""
-    if request.url.path in _DOCS_PATHS:
-        from app.auth.auth import get_current_user_from_cookie
-        from app.database.database import SessionLocal, UserRole
-
-        db = SessionLocal()
-        try:
-            user = await get_current_user_from_cookie(request, db)
-        finally:
-            db.close()
-
-        if not user or user.role != UserRole.ADMIN:
-            from starlette.responses import RedirectResponse
-
-            return RedirectResponse("/login")
-
-    return await call_next(request)
-
 
 def _add_bearer_security(api: FastAPI, server_prefix: str) -> None:
     """Inject BearerAuth security scheme and correct server prefix into the sub-app's OpenAPI schema."""
