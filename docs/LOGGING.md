@@ -24,12 +24,13 @@ All logs are stored in the `logs/` directory:
 logs/
 ├── app.log         # Main application log (INFO and above)
 ├── error.log       # Error log (ERROR and above)
+├── api.log         # Every /api/ request as JSON (INFO and above)
 └── access.log      # HTTP access log (optional)
 ```
 
 **Log Rotation:**
 - Maximum file size: 10MB
-- Backup count: 5 files (app.log), 10 files (error.log)
+- Backup count: 5 files (app.log and api.log), 10 files (error.log)
 - Old files are automatically deleted
 
 ## Log Formats
@@ -263,6 +264,25 @@ sudo journalctl -u ica-schedule --since "1 hour ago"
 
 # Filter by level
 sudo journalctl -u ica-schedule -p err
+```
+
+### The API log
+
+Every request under `/api/` is written to `logs/api.log` as JSON, in development
+and in production alike, and also reaches the normal handlers. A line names the
+caller (the API key resolves to `username` and `user_id`), the full query string
+and the `user_agent`, which is what identifies an external integration such as
+the Home Assistant plugin.
+
+```bash
+# Everything one integration asked for today
+jq -r 'select(.username == "peter") | "\(.timestamp) \(.path)?\(.query // "") \(.status_code)"' logs/api.log
+
+# Rejected API keys
+jq 'select(.status_code == 401)' logs/api.log
+
+# Slow calls
+jq 'select(.duration_ms > 500)' logs/api.log
 ```
 
 ### Searching Logs

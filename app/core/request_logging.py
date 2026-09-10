@@ -15,6 +15,10 @@ from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# API traffic gets its own logger so it lands in logs/api.log as well, where a
+# misbehaving client can be traced without digging through the whole app log.
+api_logger = get_logger("app.api")
+
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
@@ -68,35 +72,45 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             if username:
                 log_data["username"] = username
 
+            # The query string and the client are what make an API call
+            # reproducible afterwards: which date and time was asked for, and
+            # which integration asked.
+            is_api = request.url.path.startswith("/api/")
+            if request.url.query:
+                log_data["query"] = request.url.query
+            if is_api:
+                log_data["user_agent"] = request.headers.get("user-agent")
+
             # Create log record with extra fields
             extra = {"extra_fields": log_data}
+            log = api_logger if is_api else logger
 
             # Log level based on status code
             if error:
-                logger.error(
+                log.error(
                     f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms) - ERROR: {error}",
                     extra=extra,
                     exc_info=True,
                 )
             elif status_code >= 500:
-                logger.error(
+                log.error(
                     f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
                     extra=extra,
                 )
             elif status_code >= 400:
-                logger.warning(
+                log.warning(
                     f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
                     extra=extra,
                 )
             else:
                 # Don't log health checks at INFO level (reduces noise)
                 if request.url.path == "/health":
-                    logger.debug(
+                    log.debug(
                         f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
                         extra=extra,
                     )
                 else:
-                    logger.info(
+                    log.info(
                         f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
                         extra=extra,
                     )
