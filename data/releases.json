@@ -1,12 +1,22 @@
 [
   {
     "version": "1.10.0",
-    "date": "2026-09-06",
+    "date": "2026-09-10",
     "entries": [
       {
         "type": "nyhet",
         "sv": "Månads- och årsvyn markerar nu både raden och kolumnen när du håller pekaren över en ruta, precis som veckovyn. Personens hela kolumn lyser upp, så du kan följa en person genom hela året utan att tappa bort kolumnen på vägen.",
         "en": "The month and year views now highlight both the row and the column when you hover a cell, the same way the week view does. The person's whole column lights up, so you can follow one person through the year without losing track of the column."
+      },
+      {
+        "type": "fix",
+        "sv": "Personer som bytt plats syns nu i årsvyn även åren efter bytet. Den som tog över en plats räknades som en framtida anställning så länge starten låg framåt i tiden, också när man tittade på nästa år där personen jobbar hela året. Kolumnen doldes då helt, och kryssrutan för att visa den var låst.",
+        "en": "People who changed position now show up in the year view in the years after the change. Whoever took over a position counted as a future hire for as long as their start date lay ahead, even when you were looking at the following year where they work every day of it. The column was hidden entirely, and the checkbox for showing it was locked."
+      },
+      {
+        "type": "fix",
+        "sv": "API:et rapporterar rätt kollegor under andra halvan av ett nattpass. Efter midnatt svarade det med kvällens kommande pass i stället för det som pågick, så en integration som visar vem du jobbar med namngav fel person mellan 00:00 och passets slut.",
+        "en": "The API reports the right colleagues during the second half of a night shift. After midnight it answered with the coming evening's shift rather than the one in progress, so an integration showing who you work with named the wrong person between midnight and the end of the shift."
       }
     ]
   },

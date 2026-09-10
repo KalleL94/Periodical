@@ -22,12 +22,15 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
-## [1.10.0] - 2026-09-06
+## [1.10.0] - 2026-09-10
 
 ### Added
+- Every request under `/api/` is written to `logs/api.log` as JSON, with the calling user, the full query string, the user agent, the status and the duration. API calls carry no session cookie, so the request logger never resolved a user for them and the query string was dropped, which left an integration's traffic unidentifiable after the fact. Records still reach the existing handlers, so nothing is lost from `app.log`. Rotation matches the app log at 10 MB and 5 backups, and `docs/LOGGING.md` documents the file
 - The team month and year grids get the week grid's hover crosshair. Hovering a cell already lit that day's row; now it lights that person's column too, so reading a single person down a 365-row year no longer means tracking a column by eye. The week grid does this in pure CSS because its columns are the seven days at fixed positions, but here the columns are people, their count varies with substitutes and person changes, and they are addressed by `data-person`, which no selector can match against the hovered cell. `app/static/js/grid-crosshair.js` puts a `col-hl` class on the matching header and cells instead, guarded by `(hover: hover)` so touch devices bind nothing, and hidden columns are unaffected because it matches on the key rather than a column index
 
 ### Fixed
+- A person who took over a position stopped appearing in the year view from the next year onwards. `show_year_all` flags a column `past` or `future` so the template can hide holders outside the current window, and both flags were judged against today alone, using the window-clamped segment dates. A tenure starting later this year is rightly future in this year's grid, but the flag stayed true in the next year's grid where that tenure covers all 365 days, and such a column is hidden with `display:none` and a disabled filter checkbox, so there was no way to bring it back. Both flags are now judged against today clamped to the viewed year, and against the raw employment dates. That also fixes the mirror case: an open-ended tenure viewed in a past year read as departed because its clamped end date fell before today
+- `/api/v1/users/{id}/status` named the wrong colleagues during the second half of a night shift. The response already carried `currently_active_shift` when an overnight shift from the previous day was still running, but only its date, shift and rotation week; co-workers sat on the top-level day, which is always the calendar day asked for. So at 03:00 the response described the whole of that day including the night starting at 22:00 that evening, with that night's people. `currently_active_shift` now carries the co-workers of the day the shift started on, and the endpoint documents that it outranks the top-level day fields for anything describing this moment
 - `static_version`, the cache-busting query string, hashed only the CSS files, so a JavaScript-only change shipped behind whatever the browser had cached. It now hashes `app/static/js` as well, and `shift-colors.js` carries the query string it was missing
 
 ## [1.9.0] - 2026-09-04
