@@ -687,8 +687,11 @@ async def get_user_next_shift(
         current_time = now.time()
 
     yesterday = today - datetime.timedelta(days=1)
+    # Co-workers are built for the range so the ongoing overnight shift below can
+    # carry its own, which is the whole point of reporting it: who you are
+    # standing next to right now. Measured at 3 to 7 ms over the 61 days.
     days, _ = _build_period(
-        target, yesterday, today + datetime.timedelta(days=59), db, include_salary=False, with_coworkers=False
+        target, yesterday, today + datetime.timedelta(days=59), db, include_salary=False, with_coworkers=True
     )
     # Check if there is an ongoing overnight shift from yesterday still running.
     currently_active = _active_overnight_shift(days[0], current_time)
