@@ -25,6 +25,7 @@ LOG_DIR.mkdir(exist_ok=True)
 APP_LOG_FILE = LOG_DIR / "app.log"
 ACCESS_LOG_FILE = LOG_DIR / "access.log"
 ERROR_LOG_FILE = LOG_DIR / "error.log"
+API_LOG_FILE = LOG_DIR / "api.log"
 
 
 class JSONFormatter(logging.Formatter):
@@ -176,6 +177,23 @@ def setup_logging() -> None:
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(logging.Formatter("%(levelname)s %(asctime)s [%(name)s:%(lineno)d] %(message)s"))
         root_logger.addHandler(file_handler)
+
+    # API access log: every /api/ request in JSON, in its own file. Kept in both
+    # environments and regardless of level, since debugging an integration means
+    # reading yesterday's traffic, not reproducing it. Records still propagate to
+    # the handlers above.
+    api_handler = logging.handlers.RotatingFileHandler(
+        API_LOG_FILE,
+        maxBytes=10_000_000,  # 10MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    api_handler.setLevel(logging.INFO)
+    api_handler.setFormatter(JSONFormatter())
+    api_log = logging.getLogger("app.api")
+    api_log.setLevel(logging.INFO)
+    api_log.handlers.clear()
+    api_log.addHandler(api_handler)
 
     # Configure uvicorn loggers
     logging.getLogger("uvicorn").setLevel(logging.INFO)

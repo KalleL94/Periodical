@@ -443,6 +443,9 @@ async def get_api_user(request: Request, db: Session = Depends(get_db)) -> User:
             detail="Invalid API key",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Let the request logger name the caller: API calls carry no session cookie,
+    # so without this every line in api.log is anonymous.
+    request.state.user = user
     return user
 
 
