@@ -24,6 +24,12 @@ something to tell users about, whose pull request renames the heading.
 
 ## [Unreleased]
 
+Everything below is already running in production, deployed with
+`./scripts/release.sh --notag` on 2026-09-10, so it is shipped but unnumbered:
+`git describe` on prod reads `v1.10.0-6`. The next release that does have
+something to tell users renames this heading and takes these along, rather than
+leaving them behind under a fresh Unreleased block.
+
 ### Fixed
 - `/api/v1/users/{id}/next-shift` reported the running overnight shift without its co-workers. It builds its 61 day window without them, so the guard on `currently_active_shift` dropped the field, and a client asking what is next could see that a shift was in progress but not who was on it. The window is built with co-workers now, measured at 3 to 7 ms over the 61 days against 61 ms for the window itself
 - The user API's docs went admin-only along with the rest when the gate below was fixed, which is one tier too high: `/api/v1` is the API a user calls with their own key, so its `/docs`, `/redoc` and `/openapi.json` describe what the reader can already do. Signing in is now the floor for every docs page, and admin is required on top of it only for the root app's own schema and the admin API, which needs an admin key to call at all
