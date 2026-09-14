@@ -263,7 +263,7 @@ The arity drops from 6 to 4 on purpose: every unpack site fails loudly rather th
 - [ ] **Step 1: Run the characterization suite to record the green baseline**
 
 Run: `venv/bin/python3 -m pytest tests/test_period_characterization.py tests/test_summary_characterization.py tests/test_day_builder_agreement.py tests/test_api_v1_characterization.py -q`
-Expected: 97 passed. If it is not green before you start, stop and report it, because the grader is broken and nothing after this is trustworthy.
+Expected: 72 passed. If it is not green before you start, stop and report it, because the grader is broken and nothing after this is trustworthy.
 
 - [ ] **Step 2: Add the import**
 
@@ -595,7 +595,7 @@ The returned dict keeps `"hours": hours, "start": start, "end": end` exactly as 
 - [ ] **Step 6: Run the characterization suite**
 
 Run: `venv/bin/python3 -m pytest tests/test_period_characterization.py tests/test_summary_characterization.py tests/test_day_builder_agreement.py tests/test_api_v1_characterization.py -q`
-Expected: 97 passed.
+Expected: 72 passed.
 
 A failure here is a real behaviour change, not a test to adjust. Read the assertion diff and find which return point stopped matching. The four likeliest causes, in order: a missed `_ShiftResolution` return point still passing `0.0, None, None`; `ob_eligible` set on the on-call segment; OB recomputed after the overtime overlay instead of left alone; the derive lines placed above the overtime overlay rather than below it.
 

@@ -36,7 +36,7 @@ excel_shared.py, statistics.py and api_v1.py are untouched by the refactor. The
 1538 lines of characterization tests (`test_period_characterization.py`,
 `test_summary_characterization.py`, `test_day_builder_agreement.py`,
 `test_api_v1_characterization.py`) are the grader: they pass unmodified or the
-refactor is wrong. All 97 were green at the time of writing.
+refactor is wrong. All 72 were green at the time of writing.
 
 **`shift_types.json` stays a JSON file.** A DB table is tempting because the
 custom shift needs free clock times, but the custom shift stores its own times on
