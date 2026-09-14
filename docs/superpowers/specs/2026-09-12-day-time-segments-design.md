@@ -158,9 +158,18 @@ operate on the list instead of rebinding scalars. `hours`, `start`, `end` and
 `ob` are derived from the list at the end of `_populate_single_person_day` and
 `_build_person_day_basic`.
 
-`_apply_ot_display_shift` disappears. It exists only to fake the shift type to
-`OT` so a called-in overtime day has something to display; with a segment list
-the display reads the list and the fake is unnecessary.
+`_apply_ot_display_shift` survives this branch, contrary to the first draft of
+this spec. It exists only to fake the shift type to `OT` so a called-in overtime
+day has something to display, and a segment list is what eventually makes that
+fake unnecessary. But the day dict still reports a single `shift` and the
+characterization tests pin it, so letting the templates read the segment list
+instead changes observable output. That is branch 1 at the earliest. What this
+branch does take from the function is the scalar rebinding: it returns
+`(shift, segments)` instead of four values.
+
+The same constraint applies to OB. The scalar version does not recompute OB after
+the overtime overlay, so a called-in overtime day keeps the OB of the shift it
+replaced. That is arguably wrong, and it stays wrong here.
 
 Done when all four characterization test files pass **unmodified**. Any edit to
 those files during this branch means the refactor changed behaviour.
