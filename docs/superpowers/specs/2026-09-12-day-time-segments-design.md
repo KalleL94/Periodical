@@ -140,6 +140,29 @@ hourly pay plus OB. This is the same branch that
 
 Overtime segments carry no OB, which preserves today's behaviour for extensions.
 
+**Only `extra` segments join the segment list.** This is the rule the whole pay
+story hangs on, and getting it wrong double-counts hours. `day_worked_hours` in
+`summary.py` computes a day as `day["hours"] + day["ot_hours"]`, so anything that
+lands in both is counted twice. Today an extension's hours live in `ot_hours`
+alone and never touch `day["hours"]`, which is why an 8.5 h shift plus 2 h
+overtime reports 10.5 and not 12.5.
+
+So:
+
+| kind | side | Joins the segment list? | Reported through |
+|---|---|---|---|
+| `extra` | `before` / `after` | yes | `day["hours"]` and `day["ob"]` |
+| `ot` | `before` / `after` | no | `ot_hours`, `ot_pay`, `ot_details`, as today |
+| `ot` | `full` | replaces it | `ot_hours`; `day_worked_hours` zeroes shift hours for code `OT` |
+
+**The pay rule then needs no new code.** For `HOURLY` users `summary.py` already
+prices `total_hours - ot_hours - substitute_hours` at the hourly rate, so extra
+time entering `day["hours"]` is paid automatically. For `MONTHLY` users gross is
+the fixed salary and is unaffected, while OB grows because `segment_ob` covers
+the new interval. The `wage_type` branch described above is therefore a
+description of what already happens, not a thing to build. The only new
+computation is the OB over the extra segment.
+
 Unchanged precedence: a vacation day still blocks the overtime overlay
 (issue #285), absence and parental leave still short-circuit before any segment
 is read, and `day_pay_override.ob_hours_override` is still applied last so a
@@ -174,13 +197,21 @@ replaced. That is arguably wrong, and it stays wrong here.
 Done when all four characterization test files pass **unmodified**. Any edit to
 those files during this branch means the refactor changed behaviour.
 
-## Branch 1: `feat/day-segment-types`
+## Branch 1 splits in two
 
-The migration above, then the three new capabilities, then the page restructure.
+The engine and the surface are independently testable, so they get one plan
+each. 1a can be exercised entirely through unit tests and the routes; 1b is what
+makes it reachable from a browser.
+
+## Branch 1a: `feat/day-segment-types`
+
+The migration above, then the three new capabilities.
 
 `app/routes/overtime.py` gains `kind` and `side` form fields and upserts per
 `(owner, date, kind, side)`. `/shift-override/add` accepts `ETC` with times and
 a label.
+
+## Branch 1b: `feat/day-edit-panel`
 
 The edit panel becomes a Jinja partial, `app/templates/_day_edit_panel.html`,
 with four tabs: Tid, Frånvaro, Beredskap, Byte. The Tid tab lists the day's
