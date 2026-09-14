@@ -45,6 +45,11 @@ def test_empty_list_derives_the_off_day_scalars():
     assert segment_ob([], [_evening_rule()]) == {}
 
 
+def test_empty_list_yields_a_float_not_an_int():
+    """An OFF day reported 0.0 before this refactor, and bare sum() would return 0."""
+    assert isinstance(segment_hours([]), float)
+
+
 def test_hours_sum_across_segments():
     segments = [
         DaySegment(_dt(6), _dt(14, 30), 8.5),

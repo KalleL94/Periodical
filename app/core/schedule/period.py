@@ -24,6 +24,7 @@ from .core import (
 from .ob import calculate_ob_hours, get_combined_rules_for_year
 from .overtime import get_overtime_shift_for_date
 from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
+from .segments import DaySegment, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import get_all_user_wages
 
@@ -1396,18 +1397,25 @@ def _lookup_ot_shift(person_id: int, date: datetime.date, ot_shift_map, session)
     return None
 
 
-def _apply_ot_display_shift(ot_shift, date: datetime.date, shift, hours, start, end, shift_types):
-    """Replace the day's shift with OT for display, unless the overtime only extends it."""
+def _apply_ot_display_shift(ot_shift, date: datetime.date, shift, segments, shift_types):
+    """Replace the day's worked time with OT for display, unless the overtime only extends it.
+
+    The caller's OB is left alone on purpose: a called-in overtime day keeps the OB
+    of the shift it replaced, which is what the scalar version did.
+
+    Unparseable stored times still yield a segment, carrying the hours without
+    clock times, so the day does not silently lose them.
+    """
     if ot_shift.is_extension:
-        return shift, hours, start, end
+        return shift, segments
     ot_shift_type = next((s for s in shift_types if s.code == "OT"), None)
     if not ot_shift_type:
-        return shift, hours, start, end
+        return shift, segments
     try:
         ot_start, ot_end = parse_ot_times(ot_shift, date)
     except ValueError:
         ot_start, ot_end = None, None
-    return ot_shift_type, ot_shift.hours, ot_start, ot_end
+    return ot_shift_type, [DaySegment(ot_start, ot_end, ot_shift.hours, ob_eligible=False)]
 
 
 # Pay keys the canonical path fills in and the week path does not report.
@@ -1476,7 +1484,7 @@ def _build_person_day_basic(
         return _basic_day_result(day, rotation_length)
 
     # Kolla semester / override / byte / normalt skift (i prioritetsordning)
-    shift, rotation_week, hours, start, end, _ob = _resolve_effective_shift(
+    shift, rotation_week, segments, _ob = _resolve_effective_shift(
         date,
         person_id,
         vacation_shift,
@@ -1496,11 +1504,14 @@ def _build_person_day_basic(
     original_shift = _rot[0] if _rot else shift
 
     oncall_override = _lookup_for_day(ctx.oncall_override_map, session, OnCallOverride, person_id, date)
-    shift, hours, start, end, _ob = _apply_oncall_override(oncall_override, shift, hours, start, end, _ob, shift_types)
+    shift, segments, _ob = _apply_oncall_override(oncall_override, shift, segments, _ob, shift_types)
 
     ot_shift, ot_shift_for_oncall = _lookup_ot_shifts(person_id, date, ctx.ot_shift_map, session)
     if ot_shift and not is_vacation_day:
-        shift, hours, start, end = _apply_ot_display_shift(ot_shift, date, shift, hours, start, end, shift_types)
+        shift, segments = _apply_ot_display_shift(ot_shift, date, shift, segments, shift_types)
+
+    hours = segment_hours(segments)
+    start, end = segment_bounds(segments)
 
     return {
         "person_id": person_id,
@@ -1703,9 +1714,7 @@ def _populate_parental_day(
 class _ShiftResolution(NamedTuple):
     shift: object
     rotation_week: object
-    hours: float
-    start: object
-    end: object
+    segments: list
     ob: dict
 
 
@@ -1727,10 +1736,14 @@ def _resolve_effective_shift(
 
     def _with_ob(shift, rotation_week) -> _ShiftResolution:
         if shift is None:
-            return _ShiftResolution(None, None, 0.0, None, None, {})
+            return _ShiftResolution(None, None, [], {})
         hours, start, end = calculate_shift_hours(current_day, shift.code)
-        ob = calculate_ob_hours(start, end, combined_ob_rules) if (start is not None and shift.code != "OC") else {}
-        return _ShiftResolution(shift, rotation_week, hours, start, end, ob)
+        if start is None:
+            return _ShiftResolution(shift, rotation_week, [], {})
+        # On-call spans the whole day and carries hours, but its compensation comes
+        # from the on-call rules, so it contributes no OB.
+        segments = [DaySegment(start, end, hours, ob_eligible=shift.code != "OC")]
+        return _ShiftResolution(shift, rotation_week, segments, segment_ob(segments, combined_ob_rules))
 
     # Vacation (week-based): only mark scheduled (non-OFF) days; OFF days fall through
     # to the rotation shift below so they render as OFF.
@@ -1740,7 +1753,7 @@ def _resolve_effective_shift(
         if rot_shift and rot_shift.code != "OFF":
             # The rotation week is a property of the date, not of the shift shown, so it
             # survives the vacation marking (the week path has always reported it).
-            return _ShiftResolution(vacation_shift, rot[1], 0.0, None, None, {})
+            return _ShiftResolution(vacation_shift, rot[1], [], {})
 
     # Manual shift override
     if shift_override_map is not None and shift_override_map.get((person_id, current_day)):
@@ -1761,7 +1774,7 @@ def _resolve_effective_shift(
     # Rotation shift
     result = determine_shift_for_date(current_day, person_id)
     if result is None or result[0] is None:
-        return _ShiftResolution(None, None, 0.0, None, None, {})
+        return _ShiftResolution(None, None, [], {})
     return _with_ob(result[0], result[1])
 
 
@@ -1842,28 +1855,32 @@ def _compute_overtime_pay(
     return ot_pay, ot_hours, ot_details
 
 
-def _apply_oncall_override(override, shift, hours, start, end, ob, shift_types):
+def _apply_oncall_override(override, shift, segments, ob, shift_types):
     """Apply a manual on-call override to the day's shift.
 
     ADD replaces the shift with OC; REMOVE turns an OC shift into OFF. Returns the (possibly
-    modified) (shift, hours, start, end, ob); unchanged when there is no override.
+    modified) (shift, segments, ob); unchanged when there is no override.
+
+    Both overrides clear the segment list. An overridden day carries no worked
+    interval, which is what the scalar version expressed as zero hours with no
+    start, no end and no OB.
     """
     if override is None:
-        return shift, hours, start, end, ob
+        return shift, segments, ob
 
     from app.database.database import OnCallOverrideType
 
     if override.override_type == OnCallOverrideType.ADD:
         oc_shift = next((s for s in shift_types if s.code == "OC"), None)
         if oc_shift:
-            return oc_shift, 0.0, None, None, {}  # OC har inga specifika tider
+            return oc_shift, [], {}  # OC har inga specifika tider
     elif override.override_type == OnCallOverrideType.REMOVE:
         if shift and shift.code == "OC":
             off_shift = next((s for s in shift_types if s.code == "OFF"), None)
             if off_shift:
-                return off_shift, 0.0, None, None, {}
+                return off_shift, [], {}
 
-    return shift, hours, start, end, ob
+    return shift, segments, ob
 
 
 def _populate_single_person_day(
@@ -1948,7 +1965,7 @@ def _populate_single_person_day(
         return
 
     # Kolla semester / override / byte / normalt skift (i prioritetsordning)
-    shift, rotation_week, hours, start, end, ob = _resolve_effective_shift(
+    shift, rotation_week, segments, ob = _resolve_effective_shift(
         current_day,
         person_id,
         vacation_shift,
@@ -1973,7 +1990,7 @@ def _populate_single_person_day(
     # Kolla oncall override - hämta från batch eller databas
     oncall_override = _lookup_for_day(oncall_override_map, session, OnCallOverride, person_id, current_day)
 
-    shift, hours, start, end, ob = _apply_oncall_override(oncall_override, shift, hours, start, end, ob, shift_types)
+    shift, segments, ob = _apply_oncall_override(oncall_override, shift, segments, ob, shift_types)
 
     # Calculate on-call pay
     _person_rates = (user_rates_map or {}).get(person_id) or {}
@@ -2006,7 +2023,7 @@ def _populate_single_person_day(
         )
 
         # Ersätt skift med OT för visning – men inte om det är en förlängning
-        shift, hours, start, end = _apply_ot_display_shift(ot_shift, current_day, shift, hours, start, end, shift_types)
+        shift, segments = _apply_ot_display_shift(ot_shift, current_day, shift, segments, shift_types)
 
     # Apply manual hour overrides if one exists for this person and date
     day_pay_override_map = ctx.day_pay_override_map or {}
@@ -2028,6 +2045,11 @@ def _populate_single_person_day(
             )
         if day_pay_override.ob_hours_override:
             ob_hours_override = day_pay_override.ob_hours_override
+
+    # The day dict still speaks in scalars, so the segment list collapses here and
+    # nowhere else. Every consumer outside this module is unchanged.
+    hours = segment_hours(segments)
+    start, end = segment_bounds(segments)
 
     day_info.update(
         {

@@ -35,8 +35,12 @@ class DaySegment:
 
 
 def segment_hours(segments: list[DaySegment]) -> float:
-    """Total worked hours across the segments."""
-    return sum(segment.hours for segment in segments)
+    """Total worked hours across the segments.
+
+    The 0.0 start value matters: bare sum() returns the int 0 for an empty list,
+    and the scalar version this replaces always produced a float.
+    """
+    return sum((segment.hours for segment in segments), 0.0)
 
 
 def segment_bounds(

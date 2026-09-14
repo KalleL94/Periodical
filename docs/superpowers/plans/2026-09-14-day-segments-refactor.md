@@ -675,15 +675,15 @@ Run:
 venv/bin/python3 -c "
 import datetime, json
 from app.core.schedule.period import generate_month_data
-data = generate_month_data(2026, 6, person_id=3)
-print(json.dumps({k: str(v) for k, v in sorted(data['days'][0].items())}, indent=0))
+days = generate_month_data(2026, 6, person_id=3)
+print(json.dumps([{k: str(v) for k, v in sorted(d.items())} for d in days], indent=0))
 " > /tmp/claude-1000/-home-kakan-workspace-Periodical-dev/526e5643-be84-4348-a705-99a881369283/scratchpad/after.txt
 git stash
 venv/bin/python3 -c "
 import datetime, json
 from app.core.schedule.period import generate_month_data
-data = generate_month_data(2026, 6, person_id=3)
-print(json.dumps({k: str(v) for k, v in sorted(data['days'][0].items())}, indent=0))
+days = generate_month_data(2026, 6, person_id=3)
+print(json.dumps([{k: str(v) for k, v in sorted(d.items())} for d in days], indent=0))
 " > /tmp/claude-1000/-home-kakan-workspace-Periodical-dev/526e5643-be84-4348-a705-99a881369283/scratchpad/before.txt
 git stash pop
 diff /tmp/claude-1000/-home-kakan-workspace-Periodical-dev/526e5643-be84-4348-a705-99a881369283/scratchpad/before.txt /tmp/claude-1000/-home-kakan-workspace-Periodical-dev/526e5643-be84-4348-a705-99a881369283/scratchpad/after.txt && echo IDENTICAL
@@ -691,7 +691,7 @@ diff /tmp/claude-1000/-home-kakan-workspace-Periodical-dev/526e5643-be84-4348-a7
 
 Expected: `IDENTICAL`.
 
-If `generate_month_data`'s signature rejects `person_id` as a keyword, run `venv/bin/python3 -c "import inspect; from app.core.schedule.period import generate_month_data; print(inspect.signature(generate_month_data))"` and adapt the call. The point of the check is the diff, not the exact argument list.
+`generate_month_data` returns a `list[dict]`, one entry per day, so the snippet dumps the whole month rather than a single day. The point of the check is the diff, not the exact argument list.
 
 - [ ] **Step 5: Report**
 
