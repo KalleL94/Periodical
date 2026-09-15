@@ -1743,6 +1743,48 @@ def _populate_parental_day(
     return True
 
 
+@dataclass(frozen=True)
+class _SyntheticShift:
+    """A shift built from a custom override rather than shift_types.json.
+
+    Carries the same attributes the templates and calculators read off a real
+    ShiftType, so nothing downstream needs to know the difference.
+    """
+
+    code: str
+    label: str
+    start_time: str
+    end_time: str
+    color: str = "#78909c"
+
+
+def _synthetic_shift(override):
+    """The shift an ETC override describes, or None for a plain code override."""
+    if override.shift_code != "ETC" or not override.start_time or not override.end_time:
+        return None
+    return _SyntheticShift(
+        code="ETC",
+        label=override.label or "Ovrigt",
+        start_time=override.start_time.strftime("%H:%M"),
+        end_time=override.end_time.strftime("%H:%M"),
+    )
+
+
+def _synthetic_shift_hours(shift, current_day: datetime.date):
+    """(hours, start, end) for a synthetic shift, crossing midnight when end <= start.
+
+    calculate_shift_hours reads shift_types.json by code, so it cannot price a
+    shift whose times live on the override row.
+    """
+    start_t = dt_time.fromisoformat(shift.start_time)
+    end_t = dt_time.fromisoformat(shift.end_time)
+    start = datetime.datetime.combine(current_day, start_t)
+    end = datetime.datetime.combine(current_day, end_t)
+    if end <= start:
+        end += datetime.timedelta(days=1)
+    return (end - start).total_seconds() / 3600.0, start, end
+
+
 class _ShiftResolution(NamedTuple):
     shift: object
     rotation_week: object
@@ -1769,7 +1811,10 @@ def _resolve_effective_shift(
     def _with_ob(shift, rotation_week) -> _ShiftResolution:
         if shift is None:
             return _ShiftResolution(None, None, [], {})
-        hours, start, end = calculate_shift_hours(current_day, shift.code)
+        if isinstance(shift, _SyntheticShift):
+            hours, start, end = _synthetic_shift_hours(shift, current_day)
+        else:
+            hours, start, end = calculate_shift_hours(current_day, shift.code)
         if start is None:
             return _ShiftResolution(shift, rotation_week, [], {})
         # On-call spans the whole day and carries hours, but its compensation comes
@@ -1789,10 +1834,12 @@ def _resolve_effective_shift(
 
     # Manual shift override
     if shift_override_map is not None and shift_override_map.get((person_id, current_day)):
-        override_code = shift_override_map[(person_id, current_day)].shift_code
+        override = shift_override_map[(person_id, current_day)]
         result = determine_shift_for_date(current_day, person_id)
         rotation_week = result[1] if result else None
-        override_shift = next((s for s in shift_types if s.code == override_code), None)
+        override_shift = _synthetic_shift(override) or next(
+            (s for s in shift_types if s.code == override.shift_code), None
+        )
         return _with_ob(override_shift, rotation_week if override_shift else None)
 
     # Accepted shift swap

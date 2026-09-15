@@ -2,6 +2,7 @@
 """Routes for manual shift overrides (adding/removing a regular shift for a day)."""
 
 from datetime import date as date_cls
+from datetime import time as time_cls
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
@@ -14,7 +15,8 @@ from app.database.database import ShiftOverride, User, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 
-_ALLOWED_CODES = {"N1", "N2", "N3"}
+# ETC is the custom labelled block; it carries its own times on the row.
+_ALLOWED_CODES = {"N1", "N2", "N3", "ETC"}
 
 
 @router.post("/add")
@@ -22,13 +24,26 @@ async def add_shift_override(
     user_id: int = Form(...),
     date: date_cls = Form(...),
     shift_code: str = Form(...),
+    start_time: time_cls | None = Form(None),
+    end_time: time_cls | None = Form(None),
+    label: str = Form(""),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_own_or_admin(current_user, user_id, "Du kan bara lägga till manuella pass för dig själv")
 
     if shift_code not in _ALLOWED_CODES:
-        raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3")
+        raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3/ETC")
+
+    # A custom block with no clock times has no hours and would render as a blank
+    # row, so it is rejected rather than stored.
+    if shift_code == "ETC" and not (start_time and end_time):
+        raise HTTPException(status_code=400, detail="Ett övrigt-pass kräver både starttid och sluttid")
+
+    # Times and label belong to ETC alone; a plain code override clears them so a
+    # row switched from ETC back to N2 does not keep stale times.
+    if shift_code != "ETC":
+        start_time, end_time, label = None, None, ""
 
     override_date = date
 
@@ -39,6 +54,9 @@ async def add_shift_override(
     )
     if existing:
         existing.shift_code = shift_code
+        existing.start_time = start_time
+        existing.end_time = end_time
+        existing.label = label or None
         existing.created_by = current_user.id
     else:
         session.add(
@@ -46,6 +64,9 @@ async def add_shift_override(
                 user_id=user_id,
                 date=override_date,
                 shift_code=shift_code,
+                start_time=start_time,
+                end_time=end_time,
+                label=label or None,
                 created_by=current_user.id,
             )
         )
