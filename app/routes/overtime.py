@@ -22,6 +22,9 @@ from app.database.database import OvertimeShift, User, get_db
 
 router = APIRouter(prefix="/overtime", tags=["overtime"])
 
+_KINDS = {"ot", "extra"}
+_SIDES = {"before", "after", "full"}
+
 
 @router.post("/add")
 async def add_overtime_shift(
@@ -30,7 +33,8 @@ async def add_overtime_shift(
     start_time: time_cls = Form(...),
     end_time: time_cls = Form(...),
     hours: float = Form(8.5),
-    is_extension: bool = Form(False),
+    kind: str = Form("ot"),
+    side: str = Form("full"),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -42,6 +46,12 @@ async def add_overtime_shift(
     - User: can only add for themselves
     """
     require_own_or_admin(current_user, user_id, "Not authorized to add overtime for other users")
+
+    # These reach a unique index and a pay branch, so they are a trust boundary.
+    if kind not in _KINDS:
+        raise HTTPException(status_code=400, detail=f"Invalid kind, use one of {sorted(_KINDS)}")
+    if side not in _SIDES:
+        raise HTTPException(status_code=400, detail=f"Invalid side, use one of {sorted(_SIDES)}")
 
     # Needed for the wage lookup below
     ot_date = date
@@ -60,39 +70,46 @@ async def add_overtime_shift(
         if _ot_rates.get("ot") is not None
         else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
     )
-    ot_pay = calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=_ot_rate)
+    # Extra time is worked time, not overtime: it earns OB through the day's segment
+    # list and carries no OT pay, the same convention substitute rows already use.
+    ot_pay = calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=_ot_rate) if kind == "ot" else 0.0
 
     # Parse times
     start_t = start_time
     end_t = end_time
 
-    existing_shifts = (
+    # One row per (user, date, kind, side). The unique indexes added by
+    # migrations/migrate_ot_kind_side.py enforce the same thing in the database,
+    # which is why the old duplicate deletion is gone.
+    existing = (
         session.query(OvertimeShift)
-        .filter(OvertimeShift.user_id == user_id, OvertimeShift.date == ot_date)
-        .order_by(OvertimeShift.id)
-        .all()
-    )
-    if existing_shifts:
-        ot_shift = existing_shifts[0]
-        ot_shift.start_time = start_t
-        ot_shift.end_time = end_t
-        ot_shift.hours = hours
-        ot_shift.ot_pay = ot_pay
-        ot_shift.is_extension = is_extension
-        for duplicate in existing_shifts[1:]:
-            session.delete(duplicate)
-    else:
-        ot_shift = OvertimeShift(
-            user_id=user_id,
-            date=ot_date,
-            start_time=start_t,
-            end_time=end_t,
-            hours=hours,
-            ot_pay=ot_pay,
-            is_extension=is_extension,
-            created_by=current_user.id,
+        .filter(
+            OvertimeShift.user_id == user_id,
+            OvertimeShift.date == ot_date,
+            OvertimeShift.kind == kind,
+            OvertimeShift.side == side,
         )
-        session.add(ot_shift)
+        .first()
+    )
+    if existing:
+        existing.start_time = start_t
+        existing.end_time = end_t
+        existing.hours = hours
+        existing.ot_pay = ot_pay
+    else:
+        session.add(
+            OvertimeShift(
+                user_id=user_id,
+                date=ot_date,
+                start_time=start_t,
+                end_time=end_t,
+                hours=hours,
+                ot_pay=ot_pay,
+                kind=kind,
+                side=side,
+                created_by=current_user.id,
+            )
+        )
 
     session.commit()
 

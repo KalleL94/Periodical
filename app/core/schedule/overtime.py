@@ -22,19 +22,29 @@ def calculate_overtime_pay(monthly_salary: int, hours: float, ot_hourly_rate: fl
     return (monthly_salary / OT_RATE_DIVISOR) * hours
 
 
-def get_overtime_shift_for_date(session, user_id: int, date: datetime.date):
-    """
-    Hämtar övertidspass för en användare och datum.
-
-    Returns:
-        OvertimeShift eller None
-    """
+def get_overtime_rows_for_date(session, user_id: int, date: datetime.date) -> list:
+    """Every overtime and extra-time row for a user and date, ordered by id."""
     if not session:
-        return None
+        return []
 
     from app.database.database import OvertimeShift
 
-    return session.query(OvertimeShift).filter(OvertimeShift.user_id == user_id, OvertimeShift.date == date).first()
+    return (
+        session.query(OvertimeShift)
+        .filter(OvertimeShift.user_id == user_id, OvertimeShift.date == date)
+        .order_by(OvertimeShift.id)
+        .all()
+    )
+
+
+def get_overtime_shift_for_date(session, user_id: int, date: datetime.date):
+    """The day's primary overtime row, for callers that still want just one.
+
+    Prefers the called-in row, then any overtime row. Kept because
+    app/core/schedule/__init__.py exports it and api_v1.py imports it.
+    """
+    rows = [r for r in get_overtime_rows_for_date(session, user_id, date) if r.kind == "ot"]
+    return next((r for r in rows if r.side == "full"), rows[0] if rows else None)
 
 
 def get_overtime_shifts_for_month(
@@ -82,7 +92,7 @@ def build_ot_details(ot_shift, hourly_rate: float) -> dict:
         "hours": ot_shift.hours,
         "pay": hourly_rate * ot_shift.hours,
         "hourly_rate": hourly_rate,
-        "is_extension": ot_shift.is_extension,
+        "is_extension": ot_shift.side != "full",
     }
 
 

@@ -205,7 +205,8 @@ def test_overtime_day_renders_ot_shift_and_pay(char_session):
             end_time=datetime.time(12, 0),
             hours=4.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     char_session.commit()

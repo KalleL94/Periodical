@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -205,9 +206,19 @@ class User(Base):
 
 
 class OvertimeShift(Base):
-    """Overtime shift model for tracking called-in shifts during on-call."""
+    """Overtime and extra-time rows: one per (owner, date, kind, side)."""
 
     __tablename__ = "overtime_shifts"
+    # One row per owner, date, kind and side. Two indexes because exactly one of
+    # user_id / substitute_id is ever set, and SQLite treats NULLs in a unique
+    # index as distinct, so each index simply does not apply to the other's rows.
+    # migrations/migrate_ot_kind_side.py creates the same two on existing
+    # databases; declaring them here is what gives a freshly created one the
+    # same guarantee.
+    __table_args__ = (
+        Index("ix_ot_user_day_kind_side", "user_id", "date", "kind", "side", unique=True),
+        Index("ix_ot_sub_day_kind_side", "substitute_id", "date", "kind", "side", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     # Exactly one of user_id / substitute_id is set (enforced at the route layer).
@@ -218,7 +229,6 @@ class OvertimeShift(Base):
     end_time = Column(Time, nullable=False)
     hours = Column(Float, nullable=False)
     ot_pay = Column(Float, nullable=False)  # Always 0.0 for substitutes (hours tracked, no pay)
-    is_extension = Column(Boolean, default=False, nullable=False)
     # "ot" or "extra". Overtime is paid at the OT rate and reported through
     # ot_hours/ot_pay; extra time is worked time that joins the day's segment
     # list and earns OB on its own interval.

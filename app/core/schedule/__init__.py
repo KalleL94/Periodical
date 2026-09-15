@@ -34,6 +34,7 @@ from .ob import (
 from .overtime import (
     calculate_overtime_pay,
     compute_ot_details,
+    get_overtime_rows_for_date,
     get_overtime_shift_for_date,
     get_overtime_shifts_for_month,
 )
@@ -100,6 +101,7 @@ __all__ = [
     # overtime
     "calculate_overtime_pay",
     "compute_ot_details",
+    "get_overtime_rows_for_date",
     "get_overtime_shift_for_date",
     "get_overtime_shifts_for_month",
     # wages

@@ -73,3 +73,25 @@ def segment_ob(segments: list[DaySegment], rules: list) -> dict[str, float]:
         for code, hours in calculate_ob_hours(segment.start, segment.end, rules).items():
             totals[code] = totals.get(code, 0.0) + hours
     return totals
+
+
+def extra_segments(ot_rows: list, date: datetime.date) -> list[DaySegment]:
+    """Turn a day's kind == "extra" rows into segments.
+
+    Overtime rows are deliberately excluded. summary.day_worked_hours adds
+    day["hours"] and day["ot_hours"], so an overtime row appearing in both would
+    be counted twice: an 8.5 hour shift with 2 hours of overtime would report
+    12.5 instead of 10.5.
+    """
+    from app.core.time_utils import parse_ot_times
+
+    segments = []
+    for row in ot_rows:
+        if row.kind != "extra":
+            continue
+        try:
+            start, end = parse_ot_times(row, date)
+        except ValueError:
+            start, end = None, None
+        segments.append(DaySegment(start, end, row.hours, ob_eligible=True))
+    return segments

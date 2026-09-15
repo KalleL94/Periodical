@@ -63,7 +63,8 @@ def test_breakdown_shows_amount_per_compensation_column(test_client, admin_user,
             end_time=datetime.time(2, 0),
             hours=4.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     test_db.commit()
