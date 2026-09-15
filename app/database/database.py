@@ -219,6 +219,14 @@ class OvertimeShift(Base):
     hours = Column(Float, nullable=False)
     ot_pay = Column(Float, nullable=False)  # Always 0.0 for substitutes (hours tracked, no pay)
     is_extension = Column(Boolean, default=False, nullable=False)
+    # "ot" or "extra". Overtime is paid at the OT rate and reported through
+    # ot_hours/ot_pay; extra time is worked time that joins the day's segment
+    # list and earns OB on its own interval.
+    kind = Column(String(8), default="ot", nullable=False)
+    # "before" or "after" the day's shift, or "full" for a called-in shift that
+    # replaces it. Never NULL: SQLite treats NULLs in a unique index as distinct,
+    # so a NULL side would leave called-in overtime unconstrained.
+    side = Column(String(6), default="full", nullable=False)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"))
 
@@ -303,7 +311,12 @@ class ShiftOverride(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     date = Column(Date, nullable=False)
-    shift_code = Column(String(10), nullable=False)  # N1, N2, N3
+    shift_code = Column(String(10), nullable=False)  # N1, N2, N3, ETC
+    # Set only for shift_code "ETC", the custom labelled shift. The resolver
+    # builds a synthetic shift type from these three.
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    label = Column(String(40), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
