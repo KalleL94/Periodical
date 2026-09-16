@@ -831,6 +831,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "weekday_names_full": '["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]',
         "shift_labels": {
             "N1": "Dagpass",
+            "SICK": "Sjuk",
+            "VAB": "VAB",
+            "LEAVE": "Ledigt",
             "N2": "Kvällspass",
             "N3": "Nattpass",
             "OC": "Beredskap",
@@ -2021,6 +2024,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "weekday_names_full": '["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]',
         "shift_labels": {
             "N1": "Day shift",
+            "SICK": "Sick",
+            "VAB": "Child sick leave",
+            "LEAVE": "Leave",
             "N2": "Evening shift",
             "N3": "Night shift",
             "OC": "On-call",

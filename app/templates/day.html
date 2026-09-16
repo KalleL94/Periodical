@@ -92,9 +92,9 @@
                         </td>
                         <td>
                             {% if is_vacation_day %}
-                                {{ t.day_absence_vacation }}{% if shift %} ({{ shift.label }}){% endif %}
+                                {{ t.day_absence_vacation }}{% if shift %} ({{ t.shift_labels.get(shift.code, shift.label) }}){% endif %}
                             {% elif shift %}
-                                {{ shift.label }}
+                                {{ t.shift_labels.get(shift.code, shift.label) }}
                             {% else %}
                                 {{ t.day_no_shift }}
                             {% endif %}

@@ -94,7 +94,7 @@
                 <div class="ot-presets">
                     {% for s in standard_shifts %}
                     <button type="button" class="btn btn-secondary btn-sm ot-preset"
-                            data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">{{ s.label }}</button>
+                            data-start="{{ s.start_time }}" data-end="{{ s.end_time }}">{{ t.shift_labels.get(s.code, s.label) }}</button>
                     {% endfor %}
                 </div>
                 <button type="submit" class="btn btn-primary">{{ t.day_seg_add }}</button>

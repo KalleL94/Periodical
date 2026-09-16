@@ -235,7 +235,7 @@
                     <td><a href="/day/{{ person_id }}/{{ d.date.year }}/{{ "%02d"|format(d.date.month) }}/{{ "%02d"|format(d.date.day) }}">{{ d.date }}</a></td>
                     <td>{{ d.weekday_name }}</td>
                     <td>{{ d.rotation_week }}/{{ d.rotation_length }}</td>
-                    <td>{{ d.target_shift.code }} {{ d.target_shift.label }}</td>
+                    <td>{{ d.target_shift.code }} {{ t.shift_labels.get(d.target_shift.code, d.target_shift.label) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

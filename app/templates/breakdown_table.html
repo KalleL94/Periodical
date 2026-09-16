@@ -87,7 +87,7 @@
                         {% set cd_row_total = cd_ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + cd_ot %}
 
                         {# Shift label (needed in both modes) #}
-                        {% set shift_label = d.shift.label if d.shift and d.shift.label else (d.shift.code if d.shift and d.shift.code != 'OFF' else '') %}
+                        {% set shift_label = t.shift_labels.get(d.shift.code, d.shift.label) if d.shift and d.shift.label else (d.shift.code if d.shift and d.shift.code != 'OFF' else '') %}
 
                         {% if row_total > 0 or cd_row_total > 0 %}
                             {% if row_total > 0 or cd_row_total > 0 %}{% set ns.has_rows = true %}{% endif %}
