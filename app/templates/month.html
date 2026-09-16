@@ -196,15 +196,23 @@
                                     {% if day_data.is_substitute %}
                                         <span class="badge badge-blue badge-calendar-marker" title="{{ t.substitute_tag }}">{{ t.substitute_marker }}</span>
                                     {% endif %}
+                                    {# A part-day absence is not always sickness: paid leave, unpaid
+                                       leave and VAB use the same mechanism. The marker names the
+                                       actual type, and the title says which end of the shift moved. #}
                                     {% if day_data.partial_absence %}
-                                        <span class="badge badge-danger badge-calendar-marker" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
+                                        {% set pa_code = day_data.partial_absence.absence_type.value %}
+                                        {% set pa_name = t.absence_labels.get(pa_code, pa_code) %}
+                                        <span class="badge badge-calendar-marker {{ 'badge-danger' if pa_code == 'SICK' else 'badge-off' }}"
+                                              title="{{ pa_name }}: {% if day_data.partial_absence.arrived_at %}{{ t.day_partial_arrived.replace('{time}', day_data.partial_absence.arrived_at) }}{% endif %}{% if day_data.partial_absence.left_at %}{% if day_data.partial_absence.arrived_at %}, {% endif %}{{ t.day_partial_left.replace('{time}', day_data.partial_absence.left_at) }}{% endif %}">{{ pa_code }}</span>
                                     {% endif %}
 
                                     {% if day_data.shift and day_data.shift.code != 'OC' %}
-                                        {% if day_data.shift.code == 'OT' and day_data.start and day_data.end %}
+                                        {# The day's computed window, not the shift type's nominal one. It
+                                           already accounts for overtime, a part-day absence and a custom
+                                           block; the old partial branch read left_at directly, which is
+                                           empty when the person arrived late instead of leaving early. #}
+                                        {% if day_data.start and day_data.end %}
                                             <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.end | time_format }}</div>
-                                        {% elif day_data.partial_absence and day_data.start and day_data.end %}
-                                            <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.partial_absence.left_at }}</div>
                                         {% elif day_data.shift.start_time is not none %}
                                             <div class="calendar-time">{{ day_data.shift.start_time }} - {{ day_data.shift.end_time }}</div>
                                         {% endif %}

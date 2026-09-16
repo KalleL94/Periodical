@@ -829,6 +829,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "week_with": "Med:",
         "week_day_names": '["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"]',
         "weekday_names_full": '["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]',
+        "absence_labels": {
+            "SICK": "Sjuk",
+            "VAB": "VAB",
+            "LEAVE": "Ledigt (obetald)",
+            "OFF": "Ledig (betald)",
+            "VACATION": "Semester",
+            "PARENTAL": "Föräldraledig",
+        },
+        "day_partial_arrived": "kom {time}",
+        "day_partial_left": "gick {time}",
         "shift_labels": {
             "N1": "Dagpass",
             "SICK": "Sjuk",
@@ -2022,6 +2032,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "week_with": "With:",
         "week_day_names": '["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]',
         "weekday_names_full": '["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]',
+        "absence_labels": {
+            "SICK": "Sick",
+            "VAB": "Child care",
+            "LEAVE": "Leave (unpaid)",
+            "OFF": "Off (paid)",
+            "VACATION": "Vacation",
+            "PARENTAL": "Parental leave",
+        },
+        "day_partial_arrived": "arrived {time}",
+        "day_partial_left": "left {time}",
         "shift_labels": {
             "N1": "Day shift",
             "SICK": "Sick",

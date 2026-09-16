@@ -88,7 +88,10 @@
                             {% endif %}
 
                             {% if day.shift and day.shift.code != 'OC' %}
-                                {% if day.shift.code == 'OT' and day.start and day.end %}
+                                {# The day's computed window, not the shift type's nominal one. It already
+                                   accounts for overtime, a part-day absence and a custom block; reading the
+                                   nominal times made every one of those invisible. #}
+                                {% if day.start and day.end %}
                                     <div class="calendar-time">{{ day.start | time_format }} - {{ day.end | time_format }}</div>
                                 {% elif day.shift.start_time is not none %}
                                     <div class="calendar-time">{{ day.shift.start_time }} - {{ day.shift.end_time }}</div>
