@@ -470,6 +470,11 @@
 .day-tab-panel { display: none; }
 .day-tab-panel.is-active { display: block; }
 
+/* The hidden attribute is only honoured while nothing sets display on the row.
+   Spelled out so a later `.form-row { display: flex }` cannot silently reveal
+   the custom-shift fields, the same guard .range-date-panel[hidden] already uses. */
+#etc-fields[hidden] { display: none; }
+
 /* Pay override edit toggle: CSP-safe class switch instead of inline display. */
 .pay-edit { display: none; }
 #pay-section.is-editing .pay-view { display: none; }
@@ -540,6 +545,16 @@ document.querySelectorAll('.day-tab').forEach(function (btn) {
             endInput.value = btn.dataset.end;
             updateHours();
         });
+    });
+})();
+
+// The custom block's label and times only apply to shift code ETC.
+(function () {
+    var select = document.getElementById('shift_code');
+    var fields = document.getElementById('etc-fields');
+    if (!select || !fields) return;
+    select.addEventListener('change', function () {
+        fields.hidden = select.value !== 'ETC';
     });
 })();
 

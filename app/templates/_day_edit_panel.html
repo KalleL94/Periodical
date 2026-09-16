@@ -477,7 +477,28 @@
                                 <option value="N1"{% if shift and shift.code == 'N1' %} selected{% endif %}>N1 – {{ t.handover_morning }}</option>
                                 <option value="N2"{% if shift and shift.code == 'N2' %} selected{% endif %}>N2 – {{ t.handover_evening }}</option>
                                 <option value="N3"{% if shift and shift.code == 'N3' %} selected{% endif %}>N3 – {{ t.handover_night }}</option>
+                                <option value="ETC"{% if shift_override and shift_override.shift_code == 'ETC' %} selected{% endif %}>{{ t.day_shift_etc }}</option>
                             </select>
+                        </div>
+                    </div>
+
+                    {# Only meaningful for ETC. The route rejects an ETC post without
+                       both times with a 400, so hiding these is convenience, not validation. #}
+                    <div class="form-row" id="etc-fields"{% if not (shift_override and shift_override.shift_code == 'ETC') %} hidden{% endif %}>
+                        <div class="form-group">
+                            <label for="etc_label">{{ t.day_shift_etc_label }}</label>
+                            <input type="text" id="etc_label" name="label" maxlength="40"
+                                   value="{{ shift_override.label or '' if shift_override else '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="etc_start">{{ t.day_start_time }}</label>
+                            <input type="time" id="etc_start" name="start_time"
+                                   value="{{ shift_override.start_time.strftime('%H:%M') if shift_override and shift_override.start_time else '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="etc_end">{{ t.day_end_time }}</label>
+                            <input type="time" id="etc_end" name="end_time"
+                                   value="{{ shift_override.end_time.strftime('%H:%M') if shift_override and shift_override.end_time else '' }}">
                         </div>
                     </div>
 

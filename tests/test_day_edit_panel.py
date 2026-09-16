@@ -124,3 +124,10 @@ def test_all_four_tabs_render(env):
     html = _page(client)
     for tab in ("tab-tid", "tab-franvaro", "tab-beredskap", "tab-byte"):
         assert f'id="{tab}"' in html
+
+
+def test_the_shift_tab_offers_the_custom_block(env):
+    client, _ = env
+    html = _page(client)
+    assert 'value="ETC"' in html
+    assert 'name="label"' in html
