@@ -82,3 +82,45 @@ def test_the_four_add_forms_post_dates_not_date(env):
     assert 'name="dates"' in html
     for form in re.findall(r'<form[^>]*action="/(?:overtime|absence|oncall|shift-override)/add".*?</form>', html, re.S):
         assert 'name="date"' not in form
+
+
+def test_the_tid_tab_lists_every_overtime_row(env):
+    """Two rows on one day must both appear, each with its own delete button."""
+    from app.database.database import OvertimeShift
+
+    client, session = env
+    for side, start, end in (("before", "05:00", "06:00"), ("after", "14:30", "16:30")):
+        session.add(
+            OvertimeShift(
+                user_id=1,
+                date=DAY,
+                start_time=datetime.time.fromisoformat(start),
+                end_time=datetime.time.fromisoformat(end),
+                hours=1.0,
+                ot_pay=0.0,
+                kind="ot",
+                side=side,
+            )
+        )
+    session.commit()
+    clear_schedule_cache()
+
+    html = _page(client)
+    rows = session.query(OvertimeShift).all()
+    assert len(rows) == 2
+    for row in rows:
+        assert f"/overtime/{row.id}/delete" in html
+
+
+def test_the_add_form_offers_kind_and_side(env):
+    client, _ = env
+    html = _page(client)
+    assert 'name="kind"' in html
+    assert 'name="side"' in html
+
+
+def test_all_four_tabs_render(env):
+    client, _ = env
+    html = _page(client)
+    for tab in ("tab-tid", "tab-franvaro", "tab-beredskap", "tab-byte"):
+        assert f'id="{tab}"' in html

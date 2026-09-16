@@ -277,7 +277,9 @@ def _ob_totals(html):
 
 
 def _ot_pay(html):
-    m = re.search(r"kr/h</td>\s*<td>([\d.]+) kr", html)
+    """The kr figure in the cell after the kr/h one. The td carries classes since
+    the segment list replaced the old overtime tables, so attributes are tolerated."""
+    m = re.search(r"kr/h</td>\s*<td[^>]*>([\d.]+) kr", html)
     return float(m.group(1)) if m else None
 
 
