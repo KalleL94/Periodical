@@ -4,6 +4,7 @@ Shared helper functions for templates and route handlers.
 """
 
 from datetime import date
+from urllib.parse import quote, urlparse
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -155,3 +156,59 @@ def strip_year_summary(summary: dict) -> dict:
     result["ob_pay_by_code"] = {}
     result["total_ob_hours"] = None
     return result
+
+
+def is_safe_redirect(url: str) -> bool:
+    """True when url is a local path, so it cannot become an open redirect."""
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return not parsed.scheme and not parsed.netloc and url.startswith("/") and not url.startswith("//")
+
+
+def apply_to_dates(dates, write, conflicts):
+    """Run write(date) for each date, skipping conflicts when more than one is given.
+
+    A single-date post is a deliberate edit of one day: the caller can see what it
+    replaces, so it upserts and the conflict check is never consulted. Ten dates at
+    once is a different act, and silently overwriting nine days is the kind of error
+    that surfaces a month later in a pay forecast.
+
+    Returns (written dates, [(skipped date, reason)]).
+    """
+    written, skipped = [], []
+    for day in dates:
+        reason = conflicts(day) if len(dates) > 1 else None
+        if reason:
+            skipped.append((day, reason))
+            continue
+        write(day)
+        written.append(day)
+    return written, skipped
+
+
+def result_param(written: list, skipped: list) -> str:
+    """The ?result= fragment describing a multi-date write. Empty for a single date."""
+    if not skipped and len(written) <= 1:
+        return ""
+    parts = [f"{len(written)} dagar satta"]
+    if skipped:
+        detail = ", ".join(f"{d.strftime('%d %b')} {reason}" for d, reason in skipped)
+        parts.append(f"{len(skipped)} hoppades över: {detail}")
+    return "?result=" + quote(". ".join(parts))
+
+
+def edit_redirect_url(user_id: int, dates: list, return_to: str, written: list, skipped: list) -> str:
+    """Where an edit route sends the browser after writing.
+
+    return_to when it is a safe relative path, otherwise the first date's day page.
+    A multi-date write appends the result fragment so the landing page can report
+    what was skipped.
+    """
+    if is_safe_redirect(return_to):
+        base = return_to
+        joiner = "&" if "?" in base else "?"
+        fragment = result_param(written, skipped)
+        return base + (joiner + fragment[1:] if fragment else "")
+    first = dates[0]
+    return f"/day/{user_id}/{first.year}/{first.month}/{first.day}" + result_param(written, skipped)

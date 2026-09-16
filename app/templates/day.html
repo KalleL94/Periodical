@@ -209,7 +209,7 @@
                     <form method="POST" action="/overtime/add" class="ot-form" id="ext-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
-                        <input type="hidden" name="date" value="{{ date }}">
+                        {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
                         <input type="hidden" name="is_extension" value="true">
 
                         <div class="form-row">
@@ -257,7 +257,7 @@
                 <form method="POST" action="/overtime/add" class="ot-form{% if shift and shift.code in ('N1', 'N2', 'N3') %} ot-form-spaced{% endif %}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
-                    <input type="hidden" name="date" value="{{ date }}">
+                    {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
 
                     <details>
                         <summary class="day-summary-toggle">{{ t.day_add_called_ot }}</summary>
@@ -462,7 +462,7 @@
                 <form method="POST" action="/absence/add" class="absence-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
-                    <input type="hidden" name="date" value="{{ date }}">
+                    {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
 
                     <div class="form-row">
                         <div class="form-group">
@@ -580,7 +580,7 @@
                     <form method="POST" action="/oncall/add" class="oncall-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
-                        <input type="hidden" name="date" value="{{ date }}">
+                        {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
 
                         <div class="form-row">
                             <div class="form-group">
@@ -606,7 +606,7 @@
                     <form method="POST" action="/oncall/add" class="oncall-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
-                        <input type="hidden" name="date" value="{{ date }}">
+                        {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
 
                         <div class="form-row">
                             <div class="form-group">
@@ -663,7 +663,7 @@
                 <form method="POST" action="/shift-override/add">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
-                    <input type="hidden" name="date" value="{{ date }}">
+                    {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
 
                     <div class="form-row">
                         <div class="form-group">

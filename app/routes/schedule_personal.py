@@ -476,6 +476,9 @@ async def show_day_for_person(
             "is_storhelg": is_storhelg,  # Whether this date is a major holiday
             # Quick-fill presets for the manual overtime form
             "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
+            # The edit forms post a list of dates so the same markup can serve a
+            # calendar selection later. The day page always passes exactly one.
+            "edit_dates": [date_obj],
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
             "absence": absence,  # Pass absence data to template

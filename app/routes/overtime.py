@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.helpers import require_own_or_admin
+from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import (
     calculate_overtime_pay,
     clear_schedule_cache,
@@ -29,12 +29,13 @@ _SIDES = {"before", "after", "full"}
 @router.post("/add")
 async def add_overtime_shift(
     user_id: int = Form(...),
-    date: date_cls = Form(...),
+    dates: list[date_cls] = Form(...),
     start_time: time_cls = Form(...),
     end_time: time_cls = Form(...),
     hours: float = Form(8.5),
     kind: str = Form("ot"),
     side: str = Form("full"),
+    return_to: str = Form(""),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -53,70 +54,81 @@ async def add_overtime_shift(
     if side not in _SIDES:
         raise HTTPException(status_code=400, detail=f"Invalid side, use one of {sorted(_SIDES)}")
 
-    # Needed for the wage lookup below
-    ot_date = date
-
-    # Get user's wage and rates for the specific date (temporal query)
-    raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
-
     from app.core.rates import get_user_rates
 
     ot_user = session.query(User).filter(User.id == user_id).first()
-    _ot_rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
 
-    # Calculate OT pay -- use stored wage directly for HOURLY workers
-    _ot_rate = (
-        _ot_rates.get("ot")
-        if _ot_rates.get("ot") is not None
-        else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
-    )
+    def _rate_for(ot_date):
+        """The OT hourly rate on one date; wages and rates are temporal."""
+        raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
+        rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
+        if rates.get("ot") is not None:
+            return rates["ot"]
+        return get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
+
     # Extra time is worked time, not overtime: it earns OB through the day's segment
     # list and carries no OT pay, the same convention substitute rows already use.
-    ot_pay = calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=_ot_rate) if kind == "ot" else 0.0
-
-    # Parse times
-    start_t = start_time
-    end_t = end_time
-
-    # One row per (user, date, kind, side). The unique indexes added by
-    # migrations/migrate_ot_kind_side.py enforce the same thing in the database,
-    # which is why the old duplicate deletion is gone.
-    existing = (
-        session.query(OvertimeShift)
-        .filter(
-            OvertimeShift.user_id == user_id,
-            OvertimeShift.date == ot_date,
-            OvertimeShift.kind == kind,
-            OvertimeShift.side == side,
-        )
-        .first()
-    )
-    if existing:
-        existing.start_time = start_t
-        existing.end_time = end_t
-        existing.hours = hours
-        existing.ot_pay = ot_pay
-    else:
-        session.add(
-            OvertimeShift(
-                user_id=user_id,
-                date=ot_date,
-                start_time=start_t,
-                end_time=end_t,
-                hours=hours,
-                ot_pay=ot_pay,
-                kind=kind,
-                side=side,
-                created_by=current_user.id,
+    def _row_for(ot_date):
+        return (
+            session.query(OvertimeShift)
+            .filter(
+                OvertimeShift.user_id == user_id,
+                OvertimeShift.date == ot_date,
+                OvertimeShift.kind == kind,
+                OvertimeShift.side == side,
             )
+            .first()
         )
+
+    def conflicts(ot_date):
+        # Extra time is worked time, not overtime: it earns OB through the day's
+        # segment list and carries no OT pay, the same convention substitutes use.
+        return "hade redan en rad av den typen" if _row_for(ot_date) else None
+
+    def write(ot_date):
+        ot_pay = (
+            calculate_overtime_pay(
+                get_user_wage(session, user_id, effective_date=ot_date),
+                hours,
+                ot_hourly_rate=_rate_for(ot_date),
+            )
+            if kind == "ot"
+            else 0.0
+        )
+        # One row per (user, date, kind, side). The unique indexes on the model
+        # enforce the same thing, which is why the old duplicate deletion is gone.
+        existing = _row_for(ot_date)
+        if existing:
+            existing.start_time = start_time
+            existing.end_time = end_time
+            existing.hours = hours
+            existing.ot_pay = ot_pay
+        else:
+            session.add(
+                OvertimeShift(
+                    user_id=user_id,
+                    date=ot_date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    hours=hours,
+                    ot_pay=ot_pay,
+                    kind=kind,
+                    side=side,
+                    created_by=current_user.id,
+                )
+            )
+
+    written, skipped = apply_to_dates(dates, write, conflicts)
 
     session.commit()
 
-    # Clear schedule cache to reflect changes
+    # Clear schedule cache to reflect changes. Once, after the whole loop.
     clear_schedule_cache()
 
-    return RedirectResponse(url=f"/day/{user_id}/{ot_date.year}/{ot_date.month}/{ot_date.day}", status_code=303)
+    return RedirectResponse(
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped),
+        status_code=303,
+    )
 
 
 @router.post("/{ot_id}/delete")

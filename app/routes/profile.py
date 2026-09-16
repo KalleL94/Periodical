@@ -5,12 +5,14 @@ Profile routes: user profile, wages, rates, vacation, absence.
 
 import datetime
 import secrets
+from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import decrypt_api_key, encrypt_api_key, get_current_user, hash_api_key, set_password
+from app.core.helpers import apply_to_dates, edit_redirect_url
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule import vacation as vacation_core
 from app.core.utils import get_today
@@ -569,24 +571,19 @@ async def update_vacation_settings(
 async def add_absence(
     request: Request,
     user_id: int = Form(...),
-    date_str: str = Form(..., alias="date"),
+    dates: list[date_cls] = Form(...),
     absence_type: str = Form(...),
     left_at: str = Form(default=""),
     arrived_at: str = Form(default=""),
+    return_to: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Add absence for the current user."""
     import re
-    from datetime import datetime
 
     if current_user.role != UserRole.ADMIN and user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to add absence for other users")
-
-    try:
-        absence_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Ogiltigt datumformat. Använd YYYY-MM-DD") from None
 
     try:
         absence_type_enum = AbsenceType(absence_type)
@@ -609,28 +606,38 @@ async def add_absence(
     else:
         target_user_id = current_user.id
 
-    existing = db.query(Absence).filter(Absence.user_id == target_user_id, Absence.date == absence_date).first()
+    def _row_for(absence_date):
+        return db.query(Absence).filter(Absence.user_id == target_user_id, Absence.date == absence_date).first()
 
-    if existing:
-        existing.absence_type = absence_type_enum
-        existing.left_at = parsed_left_at
-        existing.arrived_at = parsed_arrived_at
-        db.commit()
-    else:
-        new_absence = Absence(
+    def conflicts(absence_date):
+        return "hade redan frånvaro" if _row_for(absence_date) else None
+
+    def write(absence_date):
+        existing = _row_for(absence_date)
+        if existing:
+            existing.absence_type = absence_type_enum
+            existing.left_at = parsed_left_at
+            existing.arrived_at = parsed_arrived_at
+            return
+        db.add(_new_absence(absence_date))
+
+    def _new_absence(absence_date):
+        return Absence(
             user_id=target_user_id,
             date=absence_date,
             absence_type=absence_type_enum,
             left_at=parsed_left_at,
             arrived_at=parsed_arrived_at,
         )
-        db.add(new_absence)
-        db.commit()
 
+    written, skipped = apply_to_dates(dates, write, conflicts)
+
+    db.commit()
     clear_schedule_cache()
 
     return RedirectResponse(
-        url=f"/day/{target_user_id}/{absence_date.year}/{absence_date.month}/{absence_date.day}", status_code=302
+        url=edit_redirect_url(target_user_id, dates, return_to, written, skipped),
+        status_code=302,
     )
 
 

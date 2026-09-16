@@ -10,12 +10,13 @@ from app.routes.overtime import add_overtime_shift
 async def test_add_overtime_creates_shift(test_db, test_user):
     response = await add_overtime_shift(
         user_id=test_user.id,
-        date=datetime.date(2026, 1, 15),
+        dates=[datetime.date(2026, 1, 15)],
         start_time=datetime.time(6, 0),
         end_time=datetime.time(14, 0),
         hours=8.0,
         kind="ot",
         side="full",
+        return_to="",
         session=test_db,
         current_user=test_user,
     )
@@ -36,12 +37,13 @@ async def test_add_overtime_updates_existing_shift_for_same_kind_and_side(test_d
     """The upsert key is (user, date, kind, side), not (user, date)."""
     await add_overtime_shift(
         user_id=test_user.id,
-        date=datetime.date(2026, 1, 15),
+        dates=[datetime.date(2026, 1, 15)],
         start_time=datetime.time(6, 0),
         end_time=datetime.time(14, 0),
         hours=8.0,
         kind="ot",
         side="full",
+        return_to="",
         session=test_db,
         current_user=test_user,
     )
@@ -51,12 +53,13 @@ async def test_add_overtime_updates_existing_shift_for_same_kind_and_side(test_d
 
     await add_overtime_shift(
         user_id=test_user.id,
-        date=datetime.date(2026, 1, 15),
+        dates=[datetime.date(2026, 1, 15)],
         start_time=datetime.time(14, 0),
         end_time=datetime.time(22, 0),
         hours=7.5,
         kind="ot",
         side="full",
+        return_to="",
         session=test_db,
         current_user=test_user,
     )
@@ -73,23 +76,25 @@ async def test_add_overtime_updates_existing_shift_for_same_kind_and_side(test_d
 async def test_add_overtime_keeps_different_dates_separate(test_db, test_user):
     await add_overtime_shift(
         user_id=test_user.id,
-        date=datetime.date(2026, 1, 15),
+        dates=[datetime.date(2026, 1, 15)],
         start_time=datetime.time(6, 0),
         end_time=datetime.time(14, 0),
         hours=8.0,
         kind="ot",
         side="full",
+        return_to="",
         session=test_db,
         current_user=test_user,
     )
     await add_overtime_shift(
         user_id=test_user.id,
-        date=datetime.date(2026, 1, 16),
+        dates=[datetime.date(2026, 1, 16)],
         start_time=datetime.time(14, 0),
         end_time=datetime.time(22, 0),
         hours=8.0,
         kind="ot",
         side="full",
+        return_to="",
         session=test_db,
         current_user=test_user,
     )
@@ -106,12 +111,13 @@ async def test_two_sides_on_one_day_coexist(test_db, test_user):
     ):
         await add_overtime_shift(
             user_id=test_user.id,
-            date=datetime.date(2026, 1, 15),
+            dates=[datetime.date(2026, 1, 15)],
             start_time=start,
             end_time=end,
             hours=1.0,
             kind="ot",
             side=side,
+            return_to="",
             session=test_db,
             current_user=test_user,
         )
@@ -124,12 +130,13 @@ async def test_extra_time_is_stored_with_zero_ot_pay(test_db, test_user):
     """Extra time is worked time, priced through the day's segments, not the OT rate."""
     await add_overtime_shift(
         user_id=test_user.id,
-        date=datetime.date(2026, 1, 15),
+        dates=[datetime.date(2026, 1, 15)],
         start_time=datetime.time(13, 0),
         end_time=datetime.time(14, 0),
         hours=1.0,
         kind="extra",
         side="before",
+        return_to="",
         session=test_db,
         current_user=test_user,
     )
@@ -169,12 +176,13 @@ async def test_an_invalid_kind_is_rejected(test_db, test_user):
     with pytest.raises(HTTPException) as exc:
         await add_overtime_shift(
             user_id=test_user.id,
-            date=datetime.date(2026, 1, 15),
+            dates=[datetime.date(2026, 1, 15)],
             start_time=datetime.time(6, 0),
             end_time=datetime.time(14, 0),
             hours=8.0,
             kind="nonsense",
             side="full",
+            return_to="",
             session=test_db,
             current_user=test_user,
         )

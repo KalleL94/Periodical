@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.helpers import require_own_or_admin
+from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
 from app.database.database import OnCallOverride, OnCallOverrideType, User, get_db
 
@@ -44,10 +44,11 @@ def _parse_window(start_time: str | None, end_time: str | None) -> tuple[str | N
 @router.post("/add")
 async def add_oncall_override(
     user_id: int = Form(...),
-    date: date_cls = Form(...),
+    dates: list[date_cls] = Form(...),
     start_time: str = Form(None),
     end_time: str = Form(None),
     reason: str = Form(None),
+    return_to: str = Form(""),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -64,40 +65,50 @@ async def add_oncall_override(
     """
     require_own_or_admin(current_user, user_id, "Not authorized to add on-call for other users")
 
-    oc_date = date
     window_start, window_end = _parse_window(start_time, end_time)
 
-    # Check if override already exists for this date
-    existing = (
-        session.query(OnCallOverride).filter(OnCallOverride.user_id == user_id, OnCallOverride.date == oc_date).first()
-    )
-
-    if existing:
-        # Update existing override
-        existing.override_type = OnCallOverrideType.ADD
-        existing.start_time = window_start
-        existing.end_time = window_end
-        existing.reason = reason
-        existing.created_by = current_user.id
-    else:
-        # Create new override
-        override = OnCallOverride(
-            user_id=user_id,
-            date=oc_date,
-            override_type=OnCallOverrideType.ADD,
-            start_time=window_start,
-            end_time=window_end,
-            reason=reason,
-            created_by=current_user.id,
+    def _row_for(oc_date):
+        return (
+            session.query(OnCallOverride)
+            .filter(OnCallOverride.user_id == user_id, OnCallOverride.date == oc_date)
+            .first()
         )
-        session.add(override)
+
+    def conflicts(oc_date):
+        return "hade redan en beredskapsändring" if _row_for(oc_date) else None
+
+    def write(oc_date):
+        existing = _row_for(oc_date)
+        if existing:
+            existing.override_type = OnCallOverrideType.ADD
+            existing.start_time = window_start
+            existing.end_time = window_end
+            existing.reason = reason
+            existing.created_by = current_user.id
+            return
+        session.add(
+            OnCallOverride(
+                user_id=user_id,
+                date=oc_date,
+                override_type=OnCallOverrideType.ADD,
+                start_time=window_start,
+                end_time=window_end,
+                reason=reason,
+                created_by=current_user.id,
+            )
+        )
+
+    written, skipped = apply_to_dates(dates, write, conflicts)
 
     session.commit()
 
-    # Clear schedule cache to reflect changes
+    # Clear schedule cache to reflect changes. Once, after the whole loop.
     clear_schedule_cache()
 
-    return RedirectResponse(url=f"/day/{user_id}/{oc_date.year}/{oc_date.month}/{oc_date.day}", status_code=303)
+    return RedirectResponse(
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped),
+        status_code=303,
+    )
 
 
 @router.post("/remove")
