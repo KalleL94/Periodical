@@ -54,6 +54,7 @@
                 {% set is_today = today is defined and day.date == today %}
 
                 <td class="calendar-day {% if is_today %}today-cell{% endif %}"
+                    data-date="{{ day.date.isoformat() }}" aria-pressed="false"
                     data-border-top="{% if day.shift %}{{ day.shift.color }}{% else %}#333{% endif %}">
 
                     <div class="calendar-day-content">

@@ -162,6 +162,7 @@
                         {% set is_current = day_data.is_current_month %}
 
                         <td class="calendar-day {% if not is_current %}adjacent-month{% endif %} {% if is_today %}today-cell{% endif %}"
+                            data-date="{{ day_data.date.isoformat() }}" aria-pressed="false"
                             data-border-top="{% if day_data.shift %}{{ day_data.shift.color }}{% else %}#333{% endif %}">
 
                             <div class="calendar-day-content">
