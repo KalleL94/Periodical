@@ -33,11 +33,11 @@ from app.core.schedule import (
     determine_shift_for_date,
     get_effective_monthly_wage,
     get_overtime_rows_for_date,
-    get_overtime_shift_for_date,
     get_rotation_length_for_date,
     get_shift_types,
     ob_rules,
     oncall_window,
+    preferred_ot_row,
     rotation_start_date,
     settings,
     summarize_year_for_person,
@@ -308,11 +308,11 @@ async def show_day_for_person(
     # user's OT rate via user_rates_map); only the raw OT row id is fetched
     # here, for the delete link in the edit form.
     ot_details = canonical.get("ot_details") or {}
-    _ot_row = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
-    ot_shift_id = _ot_row.id if _ot_row else None
-    # The Time tab lists every row; ot_shift_id above stays for the pay section,
+    # The Time tab lists every row; ot_shift_id stays for the pay section,
     # which still speaks about a single primary row.
     ot_rows = get_overtime_rows_for_date(db, user_id_for_wages, date_obj)
+    _ot_row = preferred_ot_row(ot_rows)
+    ot_shift_id = _ot_row.id if _ot_row else None
 
     # On-call pay comes from the canonical dict, which already zeroes it on
     # absence days and reduces it around overtime (including OT crossing

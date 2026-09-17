@@ -37,14 +37,19 @@ def get_overtime_rows_for_date(session, user_id: int, date: datetime.date) -> li
     )
 
 
-def get_overtime_shift_for_date(session, user_id: int, date: datetime.date):
-    """The day's primary overtime row, for callers that still want just one.
+def preferred_ot_row(rows: list):
+    """The overtime row that stands for the day: the called-in one, else the first.
 
-    Prefers the called-in row, then any overtime row. Kept because
-    app/core/schedule/__init__.py exports it and api_v1.py imports it.
+    Extra-time rows are ignored. This is also the row on-call pay is recomputed
+    around, since only paid overtime interrupts standby.
     """
-    rows = [r for r in get_overtime_rows_for_date(session, user_id, date) if r.kind == "ot"]
-    return next((r for r in rows if r.side == "full"), rows[0] if rows else None)
+    ot = [r for r in rows if r.kind == "ot"]
+    return next((r for r in ot if r.side == "full"), ot[0] if ot else None)
+
+
+def get_overtime_shift_for_date(session, user_id: int, date: datetime.date):
+    """The day's primary overtime row, for callers that still want just one."""
+    return preferred_ot_row(get_overtime_rows_for_date(session, user_id, date))
 
 
 def get_overtime_shifts_for_month(

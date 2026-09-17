@@ -22,7 +22,7 @@ from .core import (
     weekday_names,
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
-from .overtime import get_overtime_rows_for_date
+from .overtime import get_overtime_rows_for_date, preferred_ot_row
 from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .segments import DaySegment, extra_segments, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
@@ -1386,11 +1386,11 @@ def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session
     """
     ot_rows = _lookup_ot_shift(person_id, date, ot_shift_map, session)
     if ot_rows:
-        return ot_rows, _oncall_relevant_row(ot_rows)
+        return ot_rows, preferred_ot_row(ot_rows)
 
     prev_day = date - datetime.timedelta(days=1)
     prev_rows = _lookup_ot_shift(person_id, prev_day, ot_shift_map, session)
-    prev_ot = _oncall_relevant_row(prev_rows)
+    prev_ot = preferred_ot_row(prev_rows)
     if prev_ot:
         try:
             _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
@@ -1399,16 +1399,6 @@ def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session
         except ValueError:
             pass
     return [], None
-
-
-def _oncall_relevant_row(ot_rows):
-    """The overtime row that on-call pay is recomputed around.
-
-    Only paid overtime interrupts standby, so extra-time rows are ignored. A
-    called-in shift outranks one that merely extends a shift.
-    """
-    ot = [r for r in ot_rows or [] if r.kind == "ot"]
-    return next((r for r in ot if r.side == "full"), ot[0] if ot else None)
 
 
 def _lookup_ot_shift(person_id: int, date: datetime.date, ot_shift_map, session):
