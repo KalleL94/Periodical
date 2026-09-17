@@ -166,6 +166,11 @@ def is_safe_redirect(url: str) -> bool:
     return not parsed.scheme and not parsed.netloc and url.startswith("/") and not url.startswith("//")
 
 
+# ponytail: one insert per date, no batching. 62 days is two months, the widest a
+# month view can select. Batch the writes if a real use case ever needs more.
+MAX_EDIT_DATES = 62
+
+
 def apply_to_dates(dates, write, conflicts):
     """Run write(date) for each date, skipping conflicts when more than one is given.
 
@@ -176,6 +181,9 @@ def apply_to_dates(dates, write, conflicts):
 
     Returns (written dates, [(skipped date, reason)]).
     """
+    if len(dates) > MAX_EDIT_DATES:
+        raise HTTPException(status_code=400, detail=f"Too many dates, the limit is {MAX_EDIT_DATES}")
+
     written, skipped = [], []
     for day in dates:
         reason = conflicts(day) if len(dates) > 1 else None

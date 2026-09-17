@@ -7,7 +7,7 @@ import datetime
 
 import pytest
 
-from app.core.helpers import apply_to_dates, is_safe_redirect
+from app.core.helpers import MAX_EDIT_DATES, apply_to_dates, is_safe_redirect
 from app.database.database import OvertimeShift
 from app.routes.overtime import add_overtime_shift
 
@@ -171,3 +171,19 @@ async def test_the_skip_report_uses_the_success_parameter(test_db, test_user):
     location = response.headers["location"]
     assert "success=" in location
     assert "result=" not in location
+
+
+def test_too_many_dates_is_rejected():
+    """The write loop has no batching, so the cap is the guard."""
+    from fastapi import HTTPException
+
+    dates = [D(2026, 1, 1) + datetime.timedelta(days=i) for i in range(MAX_EDIT_DATES + 1)]
+    with pytest.raises(HTTPException) as exc:
+        apply_to_dates(dates, lambda d: None, lambda d: None)
+    assert exc.value.status_code == 400
+
+
+def test_exactly_the_cap_is_allowed():
+    dates = [D(2026, 1, 1) + datetime.timedelta(days=i) for i in range(MAX_EDIT_DATES)]
+    written, skipped = apply_to_dates(dates, lambda d: None, lambda d: None)
+    assert len(written) == MAX_EDIT_DATES
