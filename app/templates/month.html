@@ -5,6 +5,10 @@
 
 {% block page_content %}
 
+    {% if success %}
+    <div class="alert alert--success">{{ success }}</div>
+    {% endif %}
+
     {# Compute prev/next month + year here in the template #}
     {% if month == 1 %}
         {% set prev_month = 12 %}

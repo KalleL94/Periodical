@@ -78,6 +78,7 @@ async def show_day_for_person(
     year: int,
     month: int,
     day: int,
+    success: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -483,6 +484,7 @@ async def show_day_for_person(
             # The edit forms post a list of dates so the same markup can serve a
             # calendar selection later. The day page always passes exactly one.
             "edit_dates": [date_obj],
+            "success": success,
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
             "ot_rows": ot_rows,
@@ -525,6 +527,7 @@ async def show_week_for_person(
     person_id: int,
     year: int = None,
     week: int = None,
+    success: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -612,6 +615,7 @@ async def show_week_for_person(
             "year": year,
             "week": week,
             "days": days_in_week,
+            "success": success,
             "person_id": person_id,
             "person_name": person_name,
             "person_nav": build_position_nav(db) if current_user and current_user.role == UserRole.ADMIN else None,
@@ -814,6 +818,7 @@ async def show_month_for_person(
     person_id: int,
     year: int = None,
     month: int = None,
+    success: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -978,6 +983,7 @@ async def show_month_for_person(
             "person_id": person_id,
             "person_name": person_name,
             "days": days_in_month,
+            "success": success,
             "calendar_grid": calendar_grid,
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,

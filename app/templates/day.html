@@ -5,6 +5,10 @@
 
 {% block page_content %}
 
+    {% if success %}
+    <div class="alert alert--success">{{ success }}</div>
+    {% endif %}
+
     <div class="day-buttons-bar">
         <div class="day-buttons-left">
             <a href="/day/{{ person_id }}/{{ prev_year }}/{{ prev_month }}/{{ prev_day }}"

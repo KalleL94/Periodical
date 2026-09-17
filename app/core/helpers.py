@@ -188,14 +188,18 @@ def apply_to_dates(dates, write, conflicts):
 
 
 def result_param(written: list, skipped: list) -> str:
-    """The ?result= fragment describing a multi-date write. Empty for a single date."""
+    """The ?success= fragment describing a multi-date write. Empty for a single date.
+
+    It reuses the success query parameter the admin pages already render with
+    `alert alert--success`, so the skip report needs no markup of its own.
+    """
     if not skipped and len(written) <= 1:
         return ""
     parts = [f"{len(written)} dagar satta"]
     if skipped:
         detail = ", ".join(f"{d.strftime('%d %b')} {reason}" for d, reason in skipped)
         parts.append(f"{len(skipped)} hoppades över: {detail}")
-    return "?result=" + quote(". ".join(parts))
+    return "?success=" + quote(". ".join(parts))
 
 
 def edit_redirect_url(user_id: int, dates: list, return_to: str, written: list, skipped: list) -> str:

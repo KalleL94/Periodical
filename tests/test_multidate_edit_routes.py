@@ -136,4 +136,38 @@ async def test_a_conflicting_date_is_skipped_and_named(test_db, test_user):
     untouched = test_db.query(OvertimeShift).filter(OvertimeShift.date == D(2026, 6, 2)).one()
     assert untouched.start_time == datetime.time(9, 0)
     assert test_db.query(OvertimeShift).count() == 3
-    assert "result=" in response.headers["location"]
+    assert "success=" in response.headers["location"]
+
+
+@pytest.mark.anyio
+async def test_the_skip_report_uses_the_success_parameter(test_db, test_user):
+    """The views already render ?success=; a bespoke ?result= would render nowhere."""
+    test_db.add(
+        OvertimeShift(
+            user_id=test_user.id,
+            date=D(2026, 6, 2),
+            start_time=datetime.time(9, 0),
+            end_time=datetime.time(10, 0),
+            hours=1.0,
+            ot_pay=0.0,
+            kind="extra",
+            side="before",
+        )
+    )
+    test_db.commit()
+
+    response = await add_overtime_shift(
+        user_id=test_user.id,
+        dates=[D(2026, 6, 1), D(2026, 6, 2)],
+        start_time=datetime.time(5, 0),
+        end_time=datetime.time(6, 0),
+        hours=1.0,
+        kind="extra",
+        side="before",
+        return_to="/week/1?year=2026&week=23",
+        session=test_db,
+        current_user=test_user,
+    )
+    location = response.headers["location"]
+    assert "success=" in location
+    assert "result=" not in location
