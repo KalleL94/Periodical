@@ -484,6 +484,7 @@ async def show_day_for_person(
             # The edit forms post a list of dates so the same markup can serve a
             # calendar selection later. The day page always passes exactly one.
             "edit_dates": [date_obj],
+            "return_to_url": f"/day/{person_id}/{date_obj.year}/{date_obj.month}/{date_obj.day}",
             "success": success,
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
@@ -616,6 +617,16 @@ async def show_week_for_person(
             "week": week,
             "days": days_in_week,
             "success": success,
+            # The drawer renders the day page's edit partial against a calendar
+            # selection. edit_dates is empty: the selection script writes the real
+            # dates in at submit time, so opening it needs no round trip. The
+            # per-day context the partial reads (absence, oncall_override,
+            # shift_override, ot_rows) is deliberately absent, because with many
+            # days selected there is no single day's state to show.
+            "edit_dates": [],
+            "drawer": True,
+            "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
+            "return_to_url": request.url.path + (f"?{request.url.query}" if request.url.query else ""),
             "person_id": person_id,
             "person_name": person_name,
             "person_nav": build_position_nav(db) if current_user and current_user.role == UserRole.ADMIN else None,
@@ -984,6 +995,16 @@ async def show_month_for_person(
             "person_name": person_name,
             "days": days_in_month,
             "success": success,
+            # The drawer renders the day page's edit partial against a calendar
+            # selection. edit_dates is empty: the selection script writes the real
+            # dates in at submit time, so opening it needs no round trip. The
+            # per-day context the partial reads (absence, oncall_override,
+            # shift_override, ot_rows) is deliberately absent, because with many
+            # days selected there is no single day's state to show.
+            "edit_dates": [],
+            "drawer": True,
+            "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
+            "return_to_url": request.url.path + (f"?{request.url.query}" if request.url.query else ""),
             "calendar_grid": calendar_grid,
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,

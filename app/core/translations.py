@@ -829,6 +829,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "week_with": "Med:",
         "week_day_names": '["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"]',
         "weekday_names_full": '["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]',
+        "multiday_selected": "{n} dagar markerade",
         "absence_labels": {
             "SICK": "Sjuk",
             "VAB": "VAB",
@@ -2032,6 +2033,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "week_with": "With:",
         "week_day_names": '["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]',
         "weekday_names_full": '["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]',
+        "multiday_selected": "{n} days selected",
         "absence_labels": {
             "SICK": "Sick",
             "VAB": "Child care",

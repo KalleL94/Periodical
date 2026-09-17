@@ -3,6 +3,9 @@
    partial serves the day page (one date) and a calendar selection later. Every
    form posts its dates as repeated hidden inputs. #}
 {% set edit_dates = edit_dates | default([date]) %}
+{# drawer mode: rendered against a calendar selection rather than one day, so the
+   blocks that describe a single day's current state are left out. #}
+{% set drawer = drawer | default(false) %}
 
     <div class="day-tabs" role="tablist">
         <button type="button" class="day-tab is-active" data-tab="tid" role="tab">{{ t.day_tab_time }}</button>
@@ -61,7 +64,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="user_id" value="{{ person_id }}">
                 {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
-                <input type="hidden" name="return_to" value="/day/{{ person_id }}/{{ date.year }}/{{ date.month }}/{{ date.day }}">
+                <input type="hidden" name="return_to" value="{{ return_to_url }}">
                 <div class="form-row">
                     <div class="form-group">
                         <label for="seg_kind">{{ t.day_seg_type }}</label>
@@ -262,6 +265,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
+                    <input type="hidden" name="return_to" value="{{ return_to_url }}">
 
                     <div class="form-row">
                         <div class="form-group">
@@ -383,6 +387,7 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
+                        <input type="hidden" name="return_to" value="{{ return_to_url }}">
 
                         <div class="form-row">
                             <div class="form-group">
@@ -409,6 +414,7 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <input type="hidden" name="user_id" value="{{ person_id }}">
                         {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
+                        <input type="hidden" name="return_to" value="{{ return_to_url }}">
 
                         <div class="form-row">
                             <div class="form-group">
@@ -442,7 +448,9 @@
     <div class="day-tab-panel" id="tab-byte">
         {# Manuellt pass – byt/tilldela vilket pass man jobbar på en dag #}
         {% if user and (user.id == person_id or user.id == 0) %}
-            {% if shift_override or (not absence and shift and shift.code in ('N1', 'N2', 'N3', 'OFF', 'OC')) %}
+            {# In drawer mode there is no single day's shift to gate on, so the form
+               is always offered. #}
+            {% if drawer or shift_override or (not absence and shift and shift.code in ('N1', 'N2', 'N3', 'OFF', 'OC')) %}
                 {% set is_work_shift = shift and shift.code in ('N1', 'N2', 'N3') %}
                 <h3>{{ t.day_shift_override_title }}</h3>
 
@@ -469,6 +477,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="user_id" value="{{ person_id }}">
                     {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
+                    <input type="hidden" name="return_to" value="{{ return_to_url }}">
 
                     <div class="form-row">
                         <div class="form-group">

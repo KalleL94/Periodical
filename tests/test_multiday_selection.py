@@ -97,3 +97,36 @@ def test_cells_are_marked_as_toggles_for_screen_readers(env, view):
     client, _ = env
     html = client.get(VIEWS[view]).text
     assert 'aria-pressed="false"' in html
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_drawer_renders_hidden_with_the_edit_forms(env, view):
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    assert 'id="day-edit-drawer"' in html
+    for action in ("/overtime/add", "/absence/add", "/oncall/add", "/shift-override/add"):
+        assert f'action="{action}"' in html
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_every_drawer_form_returns_to_this_view(env, view):
+    """Without return_to a multi-day edit lands on some day page instead."""
+    import re
+
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    drawer = html[html.index('id="day-edit-drawer"') :]
+    forms = re.findall(r'<form[^>]*action="/(?:overtime|absence|oncall|shift-override)/add".*?</form>', drawer, re.S)
+    assert len(forms) == 4, f"expected four add forms, found {len(forms)}"
+    for form in forms:
+        assert 'name="return_to"' in form
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_drawer_shows_no_single_day_state(env, view):
+    """With many days selected there is no one day's absence or overtime to show."""
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    drawer = html[html.index('id="day-edit-drawer"') :]
+    assert "/overtime/add" in drawer
+    assert "/delete" not in drawer

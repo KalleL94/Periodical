@@ -114,4 +114,38 @@
     </tbody>
 </table>
 
+    <div id="day-edit-drawer" hidden>
+        <p class="day-selection-summary" id="day-selection-count"></p>
+        {% include "_day_edit_panel.html" with context %}
+    </div>
+
+<script>
+// Wire the calendar selection to the edit drawer. The dates are written into the
+// forms at submit time, so selecting a day costs no server round trip.
+(function () {
+    var drawer = document.getElementById('day-edit-drawer');
+    var count = document.getElementById('day-selection-count');
+    if (!drawer) return;
+    var current = [];
+
+    document.addEventListener('day-selection-change', function (event) {
+        current = event.detail.dates;
+        drawer.hidden = current.length === 0;
+        count.textContent = '{{ t.multiday_selected }}'.replace('{n}', current.length);
+    });
+
+    drawer.addEventListener('submit', function (event) {
+        var form = event.target;
+        form.querySelectorAll('input[name="dates"]').forEach(function (el) { el.remove(); });
+        current.forEach(function (d) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'dates';
+            input.value = d;
+            form.appendChild(input);
+        });
+    });
+})();
+</script>
+
 {% endblock %}
