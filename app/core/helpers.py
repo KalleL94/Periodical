@@ -205,10 +205,10 @@ def edit_redirect_url(user_id: int, dates: list, return_to: str, written: list, 
     A multi-date write appends the result fragment so the landing page can report
     what was skipped.
     """
-    if is_safe_redirect(return_to):
-        base = return_to
-        joiner = "&" if "?" in base else "?"
-        fragment = result_param(written, skipped)
-        return base + (joiner + fragment[1:] if fragment else "")
-    first = dates[0]
-    return f"/day/{user_id}/{first.year}/{first.month}/{first.day}" + result_param(written, skipped)
+    fragment = result_param(written, skipped)
+    if not is_safe_redirect(return_to):
+        first = dates[0]
+        return f"/day/{user_id}/{first.year}/{first.month}/{first.day}" + fragment
+    if fragment and "?" in return_to:
+        fragment = "&" + fragment[1:]
+    return return_to + fragment

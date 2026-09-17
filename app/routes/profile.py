@@ -619,15 +619,14 @@ async def add_absence(
             existing.left_at = parsed_left_at
             existing.arrived_at = parsed_arrived_at
             return
-        db.add(_new_absence(absence_date))
-
-    def _new_absence(absence_date):
-        return Absence(
-            user_id=target_user_id,
-            date=absence_date,
-            absence_type=absence_type_enum,
-            left_at=parsed_left_at,
-            arrived_at=parsed_arrived_at,
+        db.add(
+            Absence(
+                user_id=target_user_id,
+                date=absence_date,
+                absence_type=absence_type_enum,
+                left_at=parsed_left_at,
+                arrived_at=parsed_arrived_at,
+            )
         )
 
     written, skipped = apply_to_dates(dates, write, conflicts)

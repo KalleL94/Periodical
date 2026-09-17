@@ -58,16 +58,17 @@ async def add_overtime_shift(
 
     ot_user = session.query(User).filter(User.id == user_id).first()
 
-    def _rate_for(ot_date):
-        """The OT hourly rate on one date; wages and rates are temporal."""
+    def _ot_pay_for(ot_date):
+        """OT pay on one date; wages and rates are temporal."""
         raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
         rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
-        if rates.get("ot") is not None:
-            return rates["ot"]
-        return get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
+        rate = (
+            rates["ot"]
+            if rates.get("ot") is not None
+            else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
+        )
+        return calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=rate)
 
-    # Extra time is worked time, not overtime: it earns OB through the day's segment
-    # list and carries no OT pay, the same convention substitute rows already use.
     def _row_for(ot_date):
         return (
             session.query(OvertimeShift)
@@ -81,20 +82,12 @@ async def add_overtime_shift(
         )
 
     def conflicts(ot_date):
-        # Extra time is worked time, not overtime: it earns OB through the day's
-        # segment list and carries no OT pay, the same convention substitutes use.
         return "hade redan en rad av den typen" if _row_for(ot_date) else None
 
     def write(ot_date):
-        ot_pay = (
-            calculate_overtime_pay(
-                get_user_wage(session, user_id, effective_date=ot_date),
-                hours,
-                ot_hourly_rate=_rate_for(ot_date),
-            )
-            if kind == "ot"
-            else 0.0
-        )
+        # Extra time is worked time, not overtime: it earns OB through the day's
+        # segment list and carries no OT pay, the same convention substitutes use.
+        ot_pay = _ot_pay_for(ot_date) if kind == "ot" else 0.0
         # One row per (user, date, kind, side). The unique indexes on the model
         # enforce the same thing, which is why the old duplicate deletion is gone.
         existing = _row_for(ot_date)
