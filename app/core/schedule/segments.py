@@ -66,8 +66,6 @@ def segment_ob(segments: list[DaySegment], rules: list) -> dict[str, float]:
     result from the rules it is given.
     """
     eligible = [s for s in segments if s.ob_eligible and s.start is not None and s.end is not None]
-    if not eligible:
-        return {}
     totals: dict[str, float] = {}
     for segment in eligible:
         for code, hours in calculate_ob_hours(segment.start, segment.end, rules).items():

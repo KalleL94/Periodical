@@ -1525,9 +1525,7 @@ def _build_person_day_basic(
     ot_rows, ot_shift_for_oncall = _lookup_ot_shifts(person_id, date, ctx.ot_shift_map, session)
 
     # Same layering as _populate_single_person_day; see the comment there.
-    extra = extra_segments(ot_rows, date)
-    if extra:
-        segments = segments + extra
+    segments = segments + extra_segments(ot_rows, date)
 
     if ot_rows and not is_vacation_day:
         shift, segments = _apply_ot_display_shift(ot_rows, date, shift, segments, shift_types)
