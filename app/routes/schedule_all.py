@@ -607,10 +607,18 @@ async def show_year_all(
         # Merge consecutive segments held by the same user so a single
         # employment split across adjacent history records stays one column and
         # its col_key (person_id-user_id) remains unique.
+        #
+        # Adjacency is required, not just the same user: someone who left the
+        # position and later returned to it has a gap in between, and merging
+        # across that gap gave them one column covering months they did not hold.
         merged: list[dict] = []
         for seg in segments:
-            if merged and merged[-1]["user_id"] == seg["user_id"]:
-                merged[-1]["to_date"] = seg["to_date"]
+            if (
+                merged
+                and merged[-1]["user_id"] == seg["user_id"]
+                and merged[-1]["to_date"] >= seg["from_date"] - timedelta(days=1)
+            ):
+                merged[-1]["to_date"] = max(merged[-1]["to_date"], seg["to_date"])
             else:
                 merged.append(dict(seg))
 

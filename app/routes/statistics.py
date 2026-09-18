@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.constants import placeholder_person_name
-from app.core.helpers import can_see_salary, strip_salary_data
+from app.core.helpers import can_see_salary, strip_salary_data, strip_year_summary
 from app.core.schedule import (
     _cached_special_rules,
     ob_rules,
@@ -82,7 +82,7 @@ async def statistics_view(
 
     if not show_salary:
         months = [strip_salary_data(m) for m in months]
-        year_summary = strip_salary_data(year_summary)
+        year_summary = strip_year_summary(year_summary)
 
     # Fold the vacation supplement and any employment transition into the pay
     # figures. Shared with /year/<id> so both pages show the same money.

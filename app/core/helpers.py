@@ -108,54 +108,97 @@ def can_see_data_for_date(
     return False
 
 
-def strip_salary_data(data: dict) -> dict:
-    """
-    Remove sensitive salary data from a summary dictionary.
-    Used when user doesn't have permission to see salary info.
-    """
+# Every key below is an amount in kronor. Anything here is hidden from a viewer who
+# may not see the target's pay; hour counts and day counts are not listed, because
+# the schedule itself is shared and those are visible from it anyway.
+#
+# Keep this list closed over both summary shapes. The month shape and the year shape
+# name the same figures differently (brutto_pay vs total_brutto), and when the two
+# were stripped by two hand-maintained functions the year shape kept its totals and
+# both shapes kept on-call pay, overtime pay and every deduction.
+_MONEY_SCALARS = frozenset(
+    {
+        # Month shape
+        "brutto_pay",
+        "netto_pay",
+        "tax",
+        "tax_computed",
+        "base_salary",
+        "total_ob",
+        "oncall_pay",
+        "ot_pay",
+        "absence_deduction",
+        "vacation_supplement",
+        "sick_ob_pay",
+        "sick_total_ob",
+        "sick_ob_lost",
+        "transition_direct",
+        # Year shape
+        "total_netto",
+        "total_brutto",
+        "avg_netto",
+        "avg_brutto",
+        "avg_ob",
+        "total_ob_hours",
+        "total_oncall",
+        "avg_oncall",
+        "total_ot",
+        "avg_ot",
+        "total_absence_deduction",
+        "avg_absence_deduction",
+        "sick_deduction",
+        "vab_deduction",
+        "leave_deduction",
+        "off_deduction",
+        "total_vacation_supplement",
+        "avg_vacation_supplement",
+        "total_sick_ob_pay",
+        "avg_sick_ob_pay",
+        "total_sick_ob_lost",
+        "total_sick_total_ob",
+        "avg_sick_total_ob",
+    }
+)
+
+# Mappings of code -> kronor (or -> hours that only appear beside kronor). Blanked to
+# an empty dict so the templates' .get(code, 0) still works.
+_MONEY_MAPS = frozenset(
+    {
+        "ob_pay",
+        "ob_hours",
+        "ob_pay_by_code",
+        "ob_hours_by_code",
+        # Manual payslip adjustments are amounts in kronor, like any other figure here.
+        "override_deltas",
+    }
+)
+
+
+def _strip_money(data: dict) -> dict:
+    """Blank every pay figure in a month or year summary, leaving the schedule intact."""
     result = data.copy()
-    result["brutto_pay"] = None
-    result["netto_pay"] = None
-    result["tax"] = None
-    result["tax_computed"] = None
-    result["ob_pay"] = {}
-    result["ob_hours"] = {}
-    result["total_ob"] = None
-    # Manual payslip adjustments are amounts in kronor, so they are salary data
-    # like any other figure here.
-    result["override_deltas"] = {}
-    if "base_salary" in result:
-        result["base_salary"] = None
+    for key in result.keys() & _MONEY_SCALARS:
+        result[key] = None
+    for key in result.keys() & _MONEY_MAPS:
+        result[key] = {}
     if "tax_table" in result:
         result["tax_table"] = None
+    return result
 
-    if "days" in result and result["days"]:
-        stripped_days = []
-        for day in result["days"]:
-            day_copy = day.copy()
-            day_copy["ob_pay"] = {}
-            day_copy["ob_hours"] = {}
-            stripped_days.append(day_copy)
-        result["days"] = stripped_days
+
+def strip_salary_data(data: dict) -> dict:
+    """Remove pay data from a month summary, for a viewer without salary permission."""
+    result = _strip_money(data)
+
+    if result.get("days"):
+        result["days"] = [day | {"ob_pay": {}, "ob_hours": {}} for day in result["days"]]
 
     return result
 
 
 def strip_year_summary(summary: dict) -> dict:
-    """
-    Remove sensitive salary data from year summary.
-    """
-    result = summary.copy()
-    result["total_netto"] = None
-    result["total_brutto"] = None
-    result["total_ob"] = None
-    result["avg_netto"] = None
-    result["avg_brutto"] = None
-    result["avg_ob"] = None
-    result["ob_hours_by_code"] = {}
-    result["ob_pay_by_code"] = {}
-    result["total_ob_hours"] = None
-    return result
+    """Remove pay data from a year summary, for a viewer without salary permission."""
+    return _strip_money(summary)
 
 
 def is_safe_redirect(url: str) -> bool:
