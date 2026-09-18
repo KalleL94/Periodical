@@ -731,6 +731,12 @@ def _absence_shift_code(absence_type) -> str:
         return "SEM"
     if absence_type == AbsenceType.PARENTAL:
         return "LEAVE"
+    # Late arrival is inherently partial, so this only matters when the time was
+    # left blank. Each falls back to the twin it is paid like.
+    if absence_type == AbsenceType.LATE_UNPAID:
+        return "LEAVE"
+    if absence_type == AbsenceType.LATE_PAID:
+        return "OFF"
     return absence_type.value
 
 

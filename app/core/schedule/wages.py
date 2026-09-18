@@ -224,9 +224,9 @@ def calculate_absence_deduction(
             return hourly_wage * hours * 0.2
     elif absence_type == "VAB":
         return hourly_wage * hours
-    elif absence_type == "LEAVE":
+    elif absence_type in ("LEAVE", "LATE_UNPAID"):
         return hourly_wage * hours
-    elif absence_type == "OFF":
+    elif absence_type in ("OFF", "LATE_PAID"):
         return 0.0
     elif absence_type == "PARENTAL":
         return 0.0
@@ -533,10 +533,12 @@ def get_absence_deductions_for_month(
             if absence.absence_type == AbsenceType.VAB:
                 vab_days += 1
                 vab_hours += absent_hours
-            elif absence.absence_type == AbsenceType.LEAVE:
+            elif absence.absence_type in (AbsenceType.LEAVE, AbsenceType.LATE_UNPAID):
+                # Counted with leave: the payslip reports one unpaid-absence row,
+                # and a late hour is deducted the same way a leave hour is.
                 leave_days += 1
                 leave_hours += absent_hours
-            elif absence.absence_type == AbsenceType.OFF:
+            elif absence.absence_type in (AbsenceType.OFF, AbsenceType.LATE_PAID):
                 off_days += 1
                 off_hours += absent_hours
             elif absence.absence_type == AbsenceType.PARENTAL:

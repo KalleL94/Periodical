@@ -3,6 +3,7 @@
 
 {% block title %}Periodical – {{ t.range_title }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
 
+{% import "_partial_absence_marker.html" as marker %}
 {% block page_content %}
 
 {# ── Scaling styles based on number of weeks ───────────────────── #}
@@ -120,6 +121,7 @@
                         <span class="badge calendar-badge" data-shift-color="{{ day.shift.color }}" data-shift-contrast="{{ day.shift.color | contrast }}">
                             {{ day.shift.code }}
                         </span>
+                        {{ marker.partial_absence_marker(day.partial_absence, t) }}
                     {% else %}
                         <span class="badge badge-off calendar-badge">OFF</span>
                     {% endif %}

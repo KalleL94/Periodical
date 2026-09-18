@@ -158,3 +158,23 @@ def test_a_sick_part_day_still_reads_as_sick(env):
 
     cell = _cell(client.get(VIEWS["month"]).text)
     assert "SICK" in cell or "Sjuk" in cell
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_every_view_says_why_the_day_is_short(env, view):
+    """A truncated window with no marker reads as a shorter scheduled shift."""
+    client, session = env
+    _add_absence(session, AbsenceType.OFF, left_at="18:00")
+
+    cell = _cell(client.get(VIEWS[view]).text)
+    assert "OFF" in cell, f"{view} shows no marker for the part-day absence"
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_a_late_arrival_is_named_as_such(env, view):
+    """LATE_PAID exists so this does not read as a whole day off."""
+    client, session = env
+    _add_absence(session, AbsenceType.LATE_PAID, arrived_at="17:00")
+
+    cell = _cell(client.get(VIEWS[view]).text)
+    assert "LATE_PAID" in cell or "Late" in cell or "Sen" in cell

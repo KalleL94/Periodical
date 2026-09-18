@@ -1,0 +1,13 @@
+{# app/templates/_partial_absence_marker.html
+   The marker for a day that was only partly worked.
+
+   One macro for the month, week and range views: a truncated window with no
+   marker reads as a shorter scheduled shift, and three copies of this drift. #}
+{% macro partial_absence_marker(absence, t) %}
+{%- if absence %}
+{%- set code = absence.absence_type.value %}
+{%- set name = t.absence_labels.get(code, code) %}
+<span class="badge badge-calendar-marker {{ 'badge-danger' if code == 'SICK' else 'badge-off' }}"
+      title="{{ name }}: {% if absence.arrived_at %}{{ t.day_partial_arrived.replace('{time}', absence.arrived_at) }}{% endif %}{% if absence.left_at %}{% if absence.arrived_at %}, {% endif %}{{ t.day_partial_left.replace('{time}', absence.left_at) }}{% endif %}">{{ code }}</span>
+{%- endif %}
+{% endmacro %}

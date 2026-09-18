@@ -86,6 +86,11 @@ class AbsenceType(enum.StrEnum):
     OFF = "OFF"  # Ledig - inget löneavdrag
     VACATION = "VACATION"  # Enskild semesterdag
     PARENTAL = "PARENTAL"  # Föräldraledig - ingen semesterdag, ingen ersättning
+    # Late arrival, as its own pair rather than LEAVE/OFF with an arrival time.
+    # Recording it as LEAVE reads on the schedule as a whole day off. The money is
+    # identical to the twin: LATE_UNPAID deducts, LATE_PAID does not.
+    LATE_UNPAID = "LATE_UNPAID"  # Sen ankomst med löneavdrag
+    LATE_PAID = "LATE_PAID"  # Sen ankomst utan löneavdrag
 
 
 class WageType(enum.StrEnum):
