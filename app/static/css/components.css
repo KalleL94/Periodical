@@ -1269,12 +1269,12 @@ td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 1
 /* Per-day table: one area's columns at a time. Twelve controls per row is not a
    usable table at phone width, which is what drives the whole design. */
 .per-day-area { display: none; }
-.per-day-table.is-area-absence .per-day-area--absence,
-.per-day-table.is-area-time .per-day-area--time,
-.per-day-table.is-area-shift .per-day-area--shift { display: table-cell; }
+.per-day-table tr.is-area-absence .per-day-area--absence,
+.per-day-table tr.is-area-time .per-day-area--time,
+.per-day-table tr.is-area-shift .per-day-area--shift { display: table-cell; }
 @media (max-width: 800px) {
   /* tables.css turns cells into blocks here, so table-cell above would undo it. */
-  .per-day-table.is-area-absence .per-day-area--absence,
-  .per-day-table.is-area-time .per-day-area--time,
-  .per-day-table.is-area-shift .per-day-area--shift { display: block; }
+  .per-day-table tr.is-area-absence .per-day-area--absence,
+  .per-day-table tr.is-area-time .per-day-area--time,
+  .per-day-table tr.is-area-shift .per-day-area--shift { display: block; }
 }

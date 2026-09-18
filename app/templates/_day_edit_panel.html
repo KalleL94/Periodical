@@ -542,23 +542,9 @@
             <input type="hidden" name="user_id" value="{{ person_id }}">
             <input type="hidden" name="return_to" value="{{ return_to_url }}">
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="per_day_area">{{ t.day_perday_area }}</label>
-                    {# The area decides which columns are visible and which fields the
-                       route reads. The other two stay in the DOM and still submit,
-                       which is why the route ignores them. #}
-                    <select id="per_day_area" name="area">
-                        <option value="absence">{{ t.day_tab_absence }}</option>
-                        <option value="time">{{ t.day_tab_time }}</option>
-                        <option value="shift">{{ t.day_tab_swap }}</option>
-                    </select>
-                </div>
-            </div>
-
             {# No keep-table here: that class opts out of the card layout, and the card
                layout is the whole reason the per-day table is usable on a phone. #}
-            <table class="per-day-table is-area-absence" id="per-day-table">
+            <table class="per-day-table" id="per-day-table">
                 <tbody id="per-day-rows"></tbody>
             </table>
 
@@ -574,6 +560,17 @@
     <template id="per-day-row">
         <tr>
             <td class="per-day-date" data-label="{{ t.day_perday_day }}"></td>
+            {# Per row, not per table: one post can set Monday sick and Tuesday
+               overtime. It decides both what the row shows and which of its
+               fields the route reads. #}
+            <td data-label="{{ t.day_perday_area }}">
+                <select class="per-day-area-select" data-field="area">
+                    <option value="">-</option>
+                    <option value="absence">{{ t.day_tab_absence }}</option>
+                    <option value="time">{{ t.day_tab_time }}</option>
+                    <option value="shift">{{ t.day_tab_swap }}</option>
+                </select>
+            </td>
             <td class="per-day-area per-day-area--absence" data-label="{{ t.day_absence_type_label }}">
                 <select data-field="absence_type">
                     <option value="">-</option>

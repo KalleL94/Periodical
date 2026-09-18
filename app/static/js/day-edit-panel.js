@@ -56,10 +56,9 @@
     // anything is selected, so the server never knows which days the table needs.
     var rowTemplate = document.getElementById('per-day-row');
     var rowBody = document.getElementById('per-day-rows');
-    var areaSelect = document.getElementById('per_day_area');
     var perDayTable = document.getElementById('per-day-table');
 
-    if (rowTemplate && rowBody && areaSelect && perDayTable) {
+    if (rowTemplate && rowBody && perDayTable) {
         var dayLabel = function (iso) {
             var d = new Date(iso + 'T00:00:00');
             return d.toLocaleDateString(document.documentElement.lang || 'sv', {
@@ -79,9 +78,14 @@
             });
         });
 
-        areaSelect.addEventListener('change', function () {
+        // The area lives on the row, so one post can mix them. Its select shows
+        // that row's fields and nothing else.
+        perDayTable.addEventListener('change', function (event) {
+            var select = event.target.closest('.per-day-area-select');
+            if (!select) return;
+            var row = select.closest('tr');
             ['absence', 'time', 'shift'].forEach(function (area) {
-                perDayTable.classList.toggle('is-area-' + area, areaSelect.value === area);
+                row.classList.toggle('is-area-' + area, select.value === area);
             });
         });
     }

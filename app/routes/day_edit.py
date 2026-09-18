@@ -125,24 +125,38 @@ _AREAS = {
 }
 
 
-def _rows_for_area(form, area: str) -> dict[date_cls, dict[str, str]]:
-    """Group `<field>_<ISO date>` values by date, for one area only.
+def _date_suffix(key: str, prefix: str) -> date_cls | None:
+    """The date `<prefix><ISO date>` names, or None when it is some other field."""
+    if not key.startswith(prefix):
+        return None
+    try:
+        return date_cls.fromisoformat(key[len(prefix) :])
+    except ValueError:
+        return None
 
-    Field names carry their date so rows never depend on parallel arrays staying
-    aligned. A row the user left alone has no values and is dropped here.
+
+def _areas_by_date(form) -> dict[date_cls, str]:
+    """Each row's own area. One post may mix them: Monday sick, Tuesday overtime."""
+    areas: dict[date_cls, str] = {}
+    for key, value in form.items():
+        day = _date_suffix(key, "area_")
+        if day is not None and (value or "").strip():
+            areas[day] = value.strip()
+    return areas
+
+
+def _fields_for(form, day: date_cls, area: str) -> dict[str, str]:
+    """One row's values, for its own area only.
+
+    Every area's fields sit in every row, because switching a row's area only
+    changes what is visible. Reading the others would write values the user never
+    looked at.
     """
-    rows: dict[date_cls, dict[str, str]] = {}
+    fields = {}
     for field in _AREAS[area]:
-        prefix = f"{field}_"
-        for key, value in form.items():
-            if not key.startswith(prefix):
-                continue
-            try:
-                day = date_cls.fromisoformat(key[len(prefix) :])
-            except ValueError:
-                continue
-            rows.setdefault(day, {})[field] = (value or "").strip()
-    return {day: fields for day, fields in rows.items() if any(fields.values())}
+        value = form.get(f"{field}_{day.isoformat()}")
+        fields[field] = (value or "").strip()
+    return fields
 
 
 def _parse_time(value: str) -> time_cls | None:
@@ -267,21 +281,26 @@ async def bulk_edit(
     user_id = int(form.get("user_id") or 0)
     require_own_or_admin(current_user, user_id, "Not authorized to edit days for other users")
 
-    area = form.get("area") or ""
-    if area not in _AREAS:
-        raise HTTPException(status_code=400, detail=f"Invalid area, use one of {sorted(_AREAS)}")
-
-    rows = _rows_for_area(form, area)
-    if len(rows) > MAX_EDIT_DATES:
+    areas = _areas_by_date(form)
+    unknown = sorted(set(areas.values()) - set(_AREAS))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Invalid area {unknown[0]}, use one of {sorted(_AREAS)}")
+    if len(areas) > MAX_EDIT_DATES:
         raise HTTPException(status_code=400, detail=f"Too many dates, the limit is {MAX_EDIT_DATES}")
 
-    writer = _WRITERS[area]
-    written = [day for day in sorted(rows) if writer(session, user_id, day, rows[day], current_user)]
+    written = []
+    for day in sorted(areas):
+        area = areas[day]
+        fields = _fields_for(form, day, area)
+        if not any(fields.values()):
+            continue
+        if _WRITERS[area](session, user_id, day, fields, current_user):
+            written.append(day)
 
     session.commit()
     clear_schedule_cache()
 
-    dates = sorted(rows) or [date_cls.today()]
+    dates = sorted(areas) or [date_cls.today()]
     return RedirectResponse(
         url=edit_redirect_url(user_id, dates, form.get("return_to") or "", written, []),
         status_code=303,
