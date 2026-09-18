@@ -30,7 +30,7 @@ router = APIRouter(prefix="/day-edit", tags=["day_edit"])
 
 # What the drawer can clear. The overtime entries use the same kind:side vocabulary
 # the add form already posts, so the two stay in step.
-_TARGETS = {
+_SINGLE_TARGETS = {
     "ot:before",
     "ot:after",
     "ot:full",
@@ -41,19 +41,33 @@ _TARGETS = {
     "shift",
 }
 
+# "all" wipes a day back to its rotation: every overtime and extra-time row, the
+# absence, the on-call override and the shift change. One pass instead of picking
+# each type in turn.
+_TARGETS = _SINGLE_TARGETS | {"all"}
 
-def _query_for(session: Session, user_id: int, what: str, date: date_cls):
-    """The rows `what` names on one date, as a query."""
+_MODELS = {"absence": Absence, "oncall": OnCallOverride, "shift": ShiftOverride}
+
+
+def _queries_for(session: Session, user_id: int, what: str, date: date_cls) -> list:
+    """The queries covering everything `what` names on one date."""
+    if what == "all":
+        return [
+            session.query(OvertimeShift).filter(OvertimeShift.user_id == user_id, OvertimeShift.date == date),
+            *(session.query(model).filter(model.user_id == user_id, model.date == date) for model in _MODELS.values()),
+        ]
     if ":" in what:
         kind, side = what.split(":", 1)
-        return session.query(OvertimeShift).filter(
-            OvertimeShift.user_id == user_id,
-            OvertimeShift.date == date,
-            OvertimeShift.kind == kind,
-            OvertimeShift.side == side,
-        )
-    model = {"absence": Absence, "oncall": OnCallOverride, "shift": ShiftOverride}[what]
-    return session.query(model).filter(model.user_id == user_id, model.date == date)
+        return [
+            session.query(OvertimeShift).filter(
+                OvertimeShift.user_id == user_id,
+                OvertimeShift.date == date,
+                OvertimeShift.kind == kind,
+                OvertimeShift.side == side,
+            )
+        ]
+    model = _MODELS[what]
+    return [session.query(model).filter(model.user_id == user_id, model.date == date)]
 
 
 @router.post("/clear")
@@ -77,11 +91,13 @@ async def clear_days(
 
     def conflicts(date):
         # "Nothing here" is not a failure, it is the report.
-        return None if _query_for(session, user_id, what, date).first() else "hade inget att rensa"
+        found = any(query.first() for query in _queries_for(session, user_id, what, date))
+        return None if found else "hade inget att rensa"
 
     def write(date):
-        for row in _query_for(session, user_id, what, date).all():
-            session.delete(row)
+        for query in _queries_for(session, user_id, what, date):
+            for row in query.all():
+                session.delete(row)
 
     # apply_to_dates skips the conflict check for a single date, which would delete
     # nothing and report nothing. Asking directly keeps one date honest.

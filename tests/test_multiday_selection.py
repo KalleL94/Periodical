@@ -220,3 +220,11 @@ def test_the_per_day_table_does_not_opt_out_of_the_card_layout(env, view):
     html = client.get(VIEWS[view]).text
     table = re.search(r'<table[^>]*id="per-day-table"[^>]*>', html).group(0)
     assert "keep-table" not in table
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_clear_form_offers_everything(env, view):
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    drawer = html[html.index('id="day-edit-drawer"') :]
+    assert 'value="all"' in drawer

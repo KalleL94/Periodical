@@ -157,3 +157,75 @@ async def test_the_report_says_cleared_not_set(test_db, test_user):
     message = unquote(response.headers["location"])
     assert "rensade" in message
     assert "satta" not in message
+
+
+@pytest.mark.anyio
+async def test_all_clears_every_kind_on_the_selected_days(test_db, test_user):
+    """One pass to undo a day, instead of picking each type in turn."""
+    date = DATES[0]
+    test_db.add(_overtime(test_user.id, date))
+    test_db.add(_overtime(test_user.id, date, kind="ot", side="after"))
+    test_db.add(Absence(user_id=test_user.id, date=date, absence_type=AbsenceType.SICK))
+    test_db.add(
+        OnCallOverride(
+            user_id=test_user.id,
+            date=date,
+            override_type=OnCallOverrideType.ADD,
+            created_by=test_user.id,
+        )
+    )
+    test_db.add(ShiftOverride(user_id=test_user.id, date=date, shift_code="N2", created_by=test_user.id))
+    test_db.commit()
+
+    await clear_days(
+        user_id=test_user.id,
+        dates=[date],
+        what="all",
+        return_to="",
+        session=test_db,
+        current_user=test_user,
+    )
+
+    assert test_db.query(OvertimeShift).count() == 0
+    assert test_db.query(Absence).count() == 0
+    assert test_db.query(OnCallOverride).count() == 0
+    assert test_db.query(ShiftOverride).count() == 0
+
+
+@pytest.mark.anyio
+async def test_all_leaves_other_days_alone(test_db, test_user):
+    test_db.add(_overtime(test_user.id, DATES[0]))
+    test_db.add(_overtime(test_user.id, DATES[2]))
+    test_db.commit()
+
+    await clear_days(
+        user_id=test_user.id,
+        dates=[DATES[0]],
+        what="all",
+        return_to="",
+        session=test_db,
+        current_user=test_user,
+    )
+
+    rows = test_db.query(OvertimeShift).all()
+    assert [r.date for r in rows] == [DATES[2]]
+
+
+@pytest.mark.anyio
+async def test_all_reports_a_day_that_had_nothing(test_db, test_user):
+    from urllib.parse import unquote
+
+    test_db.add(_overtime(test_user.id, DATES[0]))
+    test_db.commit()
+
+    response = await clear_days(
+        user_id=test_user.id,
+        dates=DATES,
+        what="all",
+        return_to="/week/1?year=2026&week=23",
+        session=test_db,
+        current_user=test_user,
+    )
+    message = unquote(response.headers["location"])
+    assert "1 dagar rensade" in message
+    assert "2 hoppades över" in message

@@ -837,6 +837,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "day_perday_hint": "Tomma rader skrivs inte. Bara det valda området sparas.",
         "day_clear_title": "Rensa på markerade dagar",
         "day_clear_hint": "Tar bort den valda ändringen från varje markerad dag. Dagar utan något att rensa räknas separat.",
+        "day_clear_all": "Allt på dagen",
         "day_clear_button": "Rensa",
         "multiday_selected": "{n} dagar markerade",
         "absence_labels": {
@@ -2050,6 +2051,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "day_perday_hint": "Blank rows are not written. Only the selected area is saved.",
         "day_clear_title": "Clear on the selected days",
         "day_clear_hint": "Removes the chosen change from every selected day. Days with nothing to remove are counted separately.",
+        "day_clear_all": "Everything on the day",
         "day_clear_button": "Clear",
         "multiday_selected": "{n} days selected",
         "absence_labels": {
