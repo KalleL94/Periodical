@@ -1746,15 +1746,35 @@ class _SyntheticShift:
     color: str = "#78909c"
 
 
-def _synthetic_shift(override):
-    """The shift an ETC override describes, or None for a plain code override."""
-    if override.shift_code != "ETC" or not override.start_time or not override.end_time:
+def _synthetic_shift(override, shift_types):
+    """The shift an override with its own clock times describes, else None.
+
+    Two cases share this. ETC is a custom block with a free-text label. Any other
+    code is an ordinary shift given a different window: you worked N1 but stayed
+    until 16:30, or a colleague took the first two hours. It stays that shift,
+    with its own name and colour, so the schedule still reads as the rotation
+    does; only the hours and the OB window move.
+
+    An override carrying no times falls through to the plain shift type, which is
+    what a shift change has always been.
+    """
+    if not override.start_time or not override.end_time:
         return None
+
+    real = next((s for s in shift_types if s.code == override.shift_code), None)
+    if override.shift_code == "ETC":
+        label, color = override.label or "Ovrigt", _SyntheticShift.color
+    elif real is None:
+        return None
+    else:
+        label, color = real.label, real.color
+
     return _SyntheticShift(
-        code="ETC",
-        label=override.label or "Ovrigt",
+        code=override.shift_code,
+        label=label,
         start_time=override.start_time.strftime("%H:%M"),
         end_time=override.end_time.strftime("%H:%M"),
+        color=color,
     )
 
 
@@ -1825,7 +1845,7 @@ def _resolve_effective_shift(
         override = shift_override_map[(person_id, current_day)]
         result = determine_shift_for_date(current_day, person_id)
         rotation_week = result[1] if result else None
-        override_shift = _synthetic_shift(override) or next(
+        override_shift = _synthetic_shift(override, shift_types) or next(
             (s for s in shift_types if s.code == override.shift_code), None
         )
         return _with_ob(override_shift, rotation_week if override_shift else None)

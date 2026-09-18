@@ -69,10 +69,11 @@ async def add_shift_override(
     if shift_code == "ETC" and not (start_time and end_time):
         raise HTTPException(status_code=400, detail="Ett övrigt-pass kräver både starttid och sluttid")
 
-    # Times and label belong to ETC alone; a plain code override clears them so a
-    # row switched from ETC back to N2 does not keep stale times.
+    # The label belongs to ETC alone, so a row switched back to N2 keeps no stale
+    # text. The times do not: an ordinary shift may carry its own window, which is
+    # how "I worked N1 but stayed until 16:30" is recorded.
     if shift_code != "ETC":
-        start_time, end_time, label = None, None, ""
+        label = ""
 
     def _row_for(override_date):
         return (

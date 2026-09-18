@@ -492,14 +492,18 @@
                         </div>
                     </div>
 
-                    {# Only meaningful for ETC. The route rejects an ETC post without
-                       both times with a 400, so hiding these is convenience, not validation. #}
+                    {# The label is ETC only. The times are not: any shift can carry its
+                       own window, which is how "N1 but until 16:30" is recorded. The
+                       route rejects an ETC post missing either time with a 400, so
+                       hiding the label is convenience, not validation. #}
                     <div class="form-row" id="etc-fields"{% if not (shift_override and shift_override.shift_code == 'ETC') %} hidden{% endif %}>
                         <div class="form-group">
                             <label for="etc_label">{{ t.day_shift_etc_label }}</label>
                             <input type="text" id="etc_label" name="label" maxlength="40"
                                    value="{{ shift_override.label or '' if shift_override else '' }}">
                         </div>
+                    </div>
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="etc_start">{{ t.day_start_time }}</label>
                             <input type="time" id="etc_start" name="start_time"
@@ -511,6 +515,7 @@
                                    value="{{ shift_override.end_time.strftime('%H:%M') if shift_override and shift_override.end_time else '' }}">
                         </div>
                     </div>
+                    <p class="info-text">{{ t.day_shift_times_hint }}</p>
 
                     <button type="submit" class="btn btn-primary">
                         {%- if shift_override or is_work_shift %}{{ t.day_shift_override_change }}{% else %}{{ t.day_shift_override_add }}{% endif -%}

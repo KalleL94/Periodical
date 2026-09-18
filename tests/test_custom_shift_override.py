@@ -133,3 +133,43 @@ def test_a_plain_n2_override_is_unaffected(day_for_override):
     day = day_for_override(shift_code="N2")
     assert day["shift"].code == "N2"
     assert day["hours"] == 8.5
+
+
+def test_a_normal_shift_can_be_given_its_own_times(day_for_override):
+    """You worked N1 but stayed until 16:30. It is still N1, just a longer window."""
+    day = day_for_override(shift_code="N1", start="06:00", end="16:30")
+    assert day["shift"].code == "N1"
+    assert day["hours"] == 10.5
+    assert day["start"].strftime("%H:%M") == "06:00"
+    assert day["end"].strftime("%H:%M") == "16:30"
+
+
+def test_a_retimed_shift_keeps_its_name_and_colour(day_for_override):
+    """Only the window moves. The badge must still read as the rotation shift."""
+    from app.core.schedule.core import get_shift_types
+
+    real = next(s for s in get_shift_types() if s.code == "N1")
+    day = day_for_override(shift_code="N1", start="06:00", end="16:30")
+    assert day["shift"].label == real.label
+    assert day["shift"].color == real.color
+
+
+def test_a_retimed_shift_earns_ob_on_the_new_window(day_for_override):
+    """An evening stretch earns OB the shift would not have earned on its own."""
+    plain = day_for_override(shift_code="N1")
+    ob_plain = sum(plain["ob"].values())
+
+    day = day_for_override(shift_code="N1", start="06:00", end="20:00")
+    assert sum(day["ob"].values()) > ob_plain
+
+
+def test_an_override_without_times_still_uses_the_shift_type(day_for_override):
+    day = day_for_override(shift_code="N1")
+    assert day["shift"].code == "N1"
+    assert day["hours"] == 8.5
+
+
+def test_starting_later_shortens_the_day(day_for_override):
+    """The mirror case: a colleague takes the start of your shift."""
+    day = day_for_override(shift_code="N2", start="16:00", end="22:30")
+    assert day["hours"] == 6.5
