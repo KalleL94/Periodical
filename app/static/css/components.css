@@ -1250,3 +1250,18 @@ form:not(:has(select[name="vacation_variable_payout"] option[value="lump"]:check
 td.calendar-day[data-date] { cursor: pointer; }
 td.calendar-day.is-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 137, 0.10); }
+
+/* _day_edit_panel.html. These live here, not in day.html, because the partial is
+   rendered on the day view and in the month and week multi-day drawer. Tabs use
+   the same CSP-safe class switch as the pay section, and flex-wrap keeps the row
+   usable at phone width instead of scrolling sideways. */
+.day-tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.day-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; color: var(--muted); cursor: pointer; font: inherit; }
+.day-tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
+.day-tab-panel { display: none; }
+.day-tab-panel.is-active { display: block; }
+
+/* The hidden attribute is only honoured while nothing sets display on the row.
+   Spelled out so a later `.form-row { display: flex }` cannot silently reveal
+   the custom-shift fields, the same guard .range-date-panel[hidden] already uses. */
+#etc-fields[hidden] { display: none; }

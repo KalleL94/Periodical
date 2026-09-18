@@ -5,6 +5,7 @@ both. These tests pin the attributes that script depends on.
 """
 
 import datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -130,3 +131,31 @@ def test_the_drawer_shows_no_single_day_state(env, view):
     drawer = html[html.index('id="day-edit-drawer"') :]
     assert "/overtime/add" in drawer
     assert "/delete" not in drawer
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_drawer_gets_the_panel_behaviour(env, view):
+    """The tabs, the hours calculator and the ETC toggle are the partial's own
+    behaviour. Left in day.html they are dead everywhere else, so every panel
+    renders at once in the drawer."""
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    assert "day-edit-panel.js" in html
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_drawer_gets_the_panel_styles(env, view):
+    """Without .day-tab-panel { display: none } every tab shows at once."""
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    assert "components.css" in html
+    css = (Path("app/static/css/components.css")).read_text()
+    assert ".day-tab-panel {" in css
+    assert ".day-tab-panel.is-active {" in css
+
+
+def test_the_panel_behaviour_is_not_inline_in_the_day_page():
+    """A copy left in day.html would drift out of step with the shared one."""
+    day = Path("app/templates/day.html").read_text()
+    assert "querySelectorAll('.day-tab')" not in day
+    assert ".day-tab-panel {" not in day

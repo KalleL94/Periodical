@@ -442,7 +442,6 @@
         </section>
         {% endif %}{# end show_salary #}
 
-
     </div>
 
 <style>
@@ -464,20 +463,6 @@
 .pay-edit-num { width: 5rem; text-align: right; }
 .pay-edit-reason { max-width: 14rem; }
 .day-note-sm { color: var(--muted); font-size: 0.875rem; }
-
-/* Tabs in the edit panel. Same CSP-safe class switch as the pay section below,
-   so no inline styles and no new dependency. flex-wrap keeps the row usable at
-   phone width instead of scrolling sideways. */
-.day-tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
-.day-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; color: var(--muted); cursor: pointer; font: inherit; }
-.day-tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
-.day-tab-panel { display: none; }
-.day-tab-panel.is-active { display: block; }
-
-/* The hidden attribute is only honoured while nothing sets display on the row.
-   Spelled out so a later `.form-row { display: flex }` cannot silently reveal
-   the custom-shift fields, the same guard .range-date-panel[hidden] already uses. */
-#etc-fields[hidden] { display: none; }
 
 /* Pay override edit toggle: CSP-safe class switch instead of inline display. */
 .pay-edit { display: none; }
@@ -507,60 +492,6 @@ function toggleDayEdit() {
     panel.hidden = !panel.hidden;
     btn.textContent = panel.hidden ? '{{ t.day_edit_toggle }} ▾' : '{{ t.day_edit_close }} ▲';
 }
-
-document.querySelectorAll('.day-tab').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var name = btn.dataset.tab;
-        document.querySelectorAll('.day-tab').forEach(function (b) {
-            b.classList.toggle('is-active', b === btn);
-        });
-        document.querySelectorAll('.day-tab-panel').forEach(function (panel) {
-            panel.classList.toggle('is-active', panel.id === 'tab-' + name);
-        });
-    });
-});
-
-// Fill the hours field from the two time fields, crossing midnight on a
-// negative difference (an evening shift extended until 00:30).
-(function () {
-    var startInput = document.getElementById('seg_start');
-    var endInput = document.getElementById('seg_end');
-    var hoursInput = document.getElementById('seg_hours');
-    if (!startInput || !endInput || !hoursInput) return;
-
-    function minutes(value) {
-        var parts = value.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-    }
-
-    function updateHours() {
-        if (!startInput.value || !endInput.value) return;
-        var diff = minutes(endInput.value) - minutes(startInput.value);
-        if (diff <= 0) diff += 24 * 60;
-        hoursInput.value = (diff / 60).toFixed(2);
-    }
-
-    startInput.addEventListener('change', updateHours);
-    endInput.addEventListener('change', updateHours);
-
-    document.querySelectorAll('.ot-preset').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            startInput.value = btn.dataset.start;
-            endInput.value = btn.dataset.end;
-            updateHours();
-        });
-    });
-})();
-
-// The custom block's label and times only apply to shift code ETC.
-(function () {
-    var select = document.getElementById('shift_code');
-    var fields = document.getElementById('etc-fields');
-    if (!select || !fields) return;
-    select.addEventListener('change', function () {
-        fields.hidden = select.value !== 'ETC';
-    });
-})();
 
 function togglePayOverrideEdit() {
     document.getElementById('pay-section').classList.toggle('is-editing');
