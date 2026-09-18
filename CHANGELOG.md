@@ -24,6 +24,30 @@ something to tell users about, whose pull request renames the heading.
 
 ## [Unreleased]
 
+### Added
+- Overtime can sit before a shift, not only after it, and a day can carry both at once. `overtime_shifts` held one row per day and `/overtime/add` deleted anything extra, so the two were mutually exclusive. The table now keys on `(owner, date, kind, side)` with a unique index per owner column, and `is_extension` is replaced by that pair
+- Extra time (mertid): worked time before or after a shift that is not overtime. It earns OB on its own interval and no OT pay. No `wage_type` branch was needed: `summary.py` already prices `total_hours - ot_hours - substitute_hours` at the hourly rate for `HOURLY` users, and a `MONTHLY` gross is fixed, so both are correct by construction
+- A custom shift block, code `ETC`, with a free-text label and its own clock times. `shift_overrides` carries the times and the label
+- An ordinary shift can carry its own clock times without changing code. "I worked N1 but stayed until 16:30" keeps the shift's name and colour on every view and moves only the window, so hours and OB follow the time actually worked
+- The day page's edit area is four tabs instead of four stacked forms, and lives in `_day_edit_panel.html`. `day.html` went from 1062 lines to 501
+- Days can be selected in the month and week calendars, and edited together from one drawer: absence, on-call, shift change, overtime and extra time. The four add-routes take `dates` as a list, skip conflicting dates when more than one is posted, and report what they skipped. One date still upserts, which is what the day page relies on when swapping one absence type for another
+- A per-day tab in that drawer, where each row picks its own area, so one post can set Monday sick, Tuesday overtime and Wednesday a retimed shift
+- `/day-edit/clear` removes one kind of change, or everything, across a selection. The per-row delete routes are keyed by row id and cannot express "remove the extra-time row on these seven days"
+- `LATE_UNPAID` and `LATE_PAID` name a late arrival instead of recording it as leave, which read on the schedule as a whole day off. The money is identical to the twin each mirrors and each is counted with it, so the payslip still reports one unpaid-absence row
+
+### Fixed
+- A part-day absence rendered as sickness in the month view and not at all in the week and range views. Every calendar read the shift type's nominal start and end and special-cased only OT, so a day the person left at 12:30 still showed 06:00 to 14:30. The views now use the day's computed window, which was correct all along, and the marker names the actual absence type. The three views share one macro
+- Shift names came straight from `shift_types.json`, which holds Swedish only, so an English page read "Dagpass". `t.shift_labels` already covered every code in both languages and only two templates used it. `SICK`, `VAB` and `LEAVE` were missing from that lookup entirely
+- The tab switching, hours calculator and custom-shift toggle were defined in `day.html` while the markup lived in the partial, so the multi-day drawer rendered the panel with every tab showing at once. They live with the component now
+
+### Changed
+- A day's worked time is a list of intervals inside `period.py` rather than four rebound scalars. The day dict keys are unchanged, so summary, payslip, the Excel export, statistics and the v1 API were untouched and the four characterization suites passed unmodified
+- `is_extension` leaves the database but stays in the v1 API response and in `ot_details`, derived as `side != "full"`
+- `compute_ot_details` is gone. It was exported and never called, and read a single overtime row
+
+### Migration
+- `migrations/migrate_schema.py` then `migrations/migrate_ot_kind_side.py`, in that order, before deploying. The second backfills `kind` and `side` from `is_extension`, adds the two unique indexes and drops the column. Both are idempotent. `scripts/deploy.sh` does not run migrations
+
 ### Fixed
 - `/api/v1/users/{id}/next-shift` reported the running overnight shift without its co-workers. It builds its 61 day window without them, so the guard on `currently_active_shift` dropped the field, and a client asking what is next could see that a shift was in progress but not who was on it. The window is built with co-workers now, measured at 3 to 7 ms over the 61 days against 61 ms for the window itself
 - The user API's docs went admin-only along with the rest when the gate below was fixed, which is one tier too high: `/api/v1` is the API a user calls with their own key, so its `/docs`, `/redoc` and `/openapi.json` describe what the reader can already do. Signing in is now the floor for every docs page, and admin is required on top of it only for the root app's own schema and the admin API, which needs an admin key to call at all
