@@ -214,7 +214,9 @@ def _write_shift(session, user_id, day, fields, current_user):
     end = _parse_time(fields.get("shift_end", ""))
     if code == "ETC" and not (start and end):
         raise HTTPException(status_code=400, detail="A custom block needs both a start and an end")
-    if code != "ETC":
+    # Any code may carry its own window ("N1 but until 16:30"), so the times are
+    # kept. Only one of the two is useless, since a window needs both ends.
+    if not (start and end):
         start, end = None, None
 
     upsert_shift_override(

@@ -180,3 +180,44 @@ async def test_editing_another_user_is_refused(test_db, test_user, bulk_request)
             current_user=test_user,
         )
     assert exc.value.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_a_normal_shift_keeps_its_own_times(test_db, test_user, bulk_request):
+    """The per-day tab must record "N1 but until 16:30" the way the day page does."""
+    request = bulk_request(
+        _form(
+            "shift",
+            test_user.id,
+            {
+                DATES[0]: {
+                    "shift_code": "N1",
+                    "shift_label": "",
+                    "shift_start": "07:00",
+                    "shift_end": "16:30",
+                }
+            },
+        )
+    )
+    await bulk_edit(request=request, session=test_db, current_user=test_user)
+
+    row = test_db.query(ShiftOverride).one()
+    assert row.shift_code == "N1"
+    assert row.start_time == datetime.time(7, 0)
+    assert row.end_time == datetime.time(16, 30)
+
+
+@pytest.mark.anyio
+async def test_a_normal_shift_without_times_stores_none(test_db, test_user, bulk_request):
+    request = bulk_request(
+        _form(
+            "shift",
+            test_user.id,
+            {DATES[0]: {"shift_code": "N1", "shift_label": "", "shift_start": "", "shift_end": ""}},
+        )
+    )
+    await bulk_edit(request=request, session=test_db, current_user=test_user)
+
+    row = test_db.query(ShiftOverride).one()
+    assert row.start_time is None
+    assert row.end_time is None
