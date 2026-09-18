@@ -528,3 +528,33 @@
         {% endif %}
 
     </div>{# /tab-byte #}
+
+{% if drawer %}
+    {# Clearing is drawer-only: the day page has per-row delete buttons, which say
+       exactly which row they remove. Here there are no rows to show, so the
+       choice is what to clear rather than which one. #}
+    <h3>{{ t.day_clear_title }}</h3>
+    <form method="POST" action="/day-edit/clear" class="ot-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="user_id" value="{{ person_id }}">
+        {% for d in edit_dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}
+        <input type="hidden" name="return_to" value="{{ return_to_url }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="clear_what">{{ t.day_seg_type }}</label>
+                <select id="clear_what" name="what">
+                    <option value="extra:before">{{ t.day_seg_kind_extra }}, {{ t.day_seg_side_before }}</option>
+                    <option value="extra:after">{{ t.day_seg_kind_extra }}, {{ t.day_seg_side_after }}</option>
+                    <option value="ot:before">{{ t.day_seg_kind_ot }}, {{ t.day_seg_side_before }}</option>
+                    <option value="ot:after">{{ t.day_seg_kind_ot }}, {{ t.day_seg_side_after }}</option>
+                    <option value="ot:full">{{ t.day_seg_kind_ot }}, {{ t.day_seg_side_full }}</option>
+                    <option value="absence">{{ t.day_tab_absence }}</option>
+                    <option value="oncall">{{ t.day_tab_oncall }}</option>
+                    <option value="shift">{{ t.day_shift_override_title }}</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-danger">{{ t.day_clear_button }}</button>
+    </form>
+    <p class="info-text">{{ t.day_clear_hint }}</p>
+{% endif %}

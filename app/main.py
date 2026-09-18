@@ -30,6 +30,7 @@ from app.routes.auth_routes import router as auth_router
 from app.routes.calendar_feed import router as calendar_feed_router
 from app.routes.changelog import router as changelog_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.day_edit import router as day_edit_router
 from app.routes.day_pay_override import router as day_pay_override_router
 from app.routes.oncall import router as oncall_router
 from app.routes.overtime import router as overtime_router
@@ -337,6 +338,7 @@ app.include_router(schedule_api_router)
 app.include_router(overtime_router)
 app.include_router(oncall_router)
 app.include_router(shift_swap_router)
+app.include_router(day_edit_router)
 app.include_router(shift_override_router)
 app.include_router(substitutes_router)
 app.include_router(day_pay_override_router)

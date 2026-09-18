@@ -159,3 +159,21 @@ def test_the_panel_behaviour_is_not_inline_in_the_day_page():
     day = Path("app/templates/day.html").read_text()
     assert "querySelectorAll('.day-tab')" not in day
     assert ".day-tab-panel {" not in day
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_drawer_offers_clearing(env, view):
+    """Without this the only way to undo a multi-day edit is one day page at a time."""
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    drawer = html[html.index('id="day-edit-drawer"') :]
+    assert 'action="/day-edit/clear"' in drawer
+    for target in ("extra:before", "absence", "oncall", "shift"):
+        assert f'value="{target}"' in drawer
+
+
+def test_the_day_page_does_not_offer_the_bulk_clear(env):
+    """The day page has per-row delete buttons, which say exactly what they remove."""
+    client, _ = env
+    html = client.get(f"/day/1/{DAY.year}/{DAY.month}/{DAY.day}").text
+    assert 'action="/day-edit/clear"' not in html

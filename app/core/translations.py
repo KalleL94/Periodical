@@ -829,6 +829,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "week_with": "Med:",
         "week_day_names": '["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"]',
         "weekday_names_full": '["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]',
+        "day_clear_title": "Rensa på markerade dagar",
+        "day_clear_hint": "Tar bort den valda ändringen från varje markerad dag. Dagar utan något att rensa räknas separat.",
+        "day_clear_button": "Rensa",
         "multiday_selected": "{n} dagar markerade",
         "absence_labels": {
             "SICK": "Sjuk",
@@ -2033,6 +2036,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "week_with": "With:",
         "week_day_names": '["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]',
         "weekday_names_full": '["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]',
+        "day_clear_title": "Clear on the selected days",
+        "day_clear_hint": "Removes the chosen change from every selected day. Days with nothing to remove are counted separately.",
+        "day_clear_button": "Clear",
         "multiday_selected": "{n} days selected",
         "absence_labels": {
             "SICK": "Sick",

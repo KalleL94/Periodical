@@ -195,7 +195,7 @@ def apply_to_dates(dates, write, conflicts):
     return written, skipped
 
 
-def result_param(written: list, skipped: list) -> str:
+def result_param(written: list, skipped: list, verb: str = "satta") -> str:
     """The ?success= fragment describing a multi-date write. Empty for a single date.
 
     It reuses the success query parameter the admin pages already render with
@@ -203,21 +203,23 @@ def result_param(written: list, skipped: list) -> str:
     """
     if not skipped and len(written) <= 1:
         return ""
-    parts = [f"{len(written)} dagar satta"]
+    parts = [f"{len(written)} dagar {verb}"]
     if skipped:
         detail = ", ".join(f"{d.strftime('%d %b')} {reason}" for d, reason in skipped)
         parts.append(f"{len(skipped)} hoppades över: {detail}")
     return "?success=" + quote(". ".join(parts))
 
 
-def edit_redirect_url(user_id: int, dates: list, return_to: str, written: list, skipped: list) -> str:
+def edit_redirect_url(
+    user_id: int, dates: list, return_to: str, written: list, skipped: list, verb: str = "satta"
+) -> str:
     """Where an edit route sends the browser after writing.
 
     return_to when it is a safe relative path, otherwise the first date's day page.
     A multi-date write appends the result fragment so the landing page can report
     what was skipped.
     """
-    fragment = result_param(written, skipped)
+    fragment = result_param(written, skipped, verb)
     if not is_safe_redirect(return_to):
         first = dates[0]
         return f"/day/{user_id}/{first.year}/{first.month}/{first.day}" + fragment
