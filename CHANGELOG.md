@@ -22,7 +22,7 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
-## [Unreleased]
+## [1.11.0] - 2026-09-18
 
 ### Added
 - Overtime can sit before a shift, not only after it, and a day can carry both at once. `overtime_shifts` held one row per day and `/overtime/add` deleted anything extra, so the two were mutually exclusive. The table now keys on `(owner, date, kind, side)` with a unique index per owner column, and `is_extension` is replaced by that pair
