@@ -567,6 +567,33 @@ async def update_vacation_settings(
 # ============ Absence Routes ============
 
 
+def absence_row(session, user_id: int, date):
+    """The absence on one date, or None."""
+    return session.query(Absence).filter(Absence.user_id == user_id, Absence.date == date).first()
+
+
+def upsert_absence(session, *, user_id: int, date, absence_type, left_at, arrived_at) -> None:
+    """Write one absence row, replacing whatever that date already had.
+
+    Shared with /day-edit/bulk so the two paths cannot drift apart.
+    """
+    existing = absence_row(session, user_id, date)
+    if existing:
+        existing.absence_type = absence_type
+        existing.left_at = left_at
+        existing.arrived_at = arrived_at
+        return
+    session.add(
+        Absence(
+            user_id=user_id,
+            date=date,
+            absence_type=absence_type,
+            left_at=left_at,
+            arrived_at=arrived_at,
+        )
+    )
+
+
 @router.post("/absence/add", name="add_absence")
 async def add_absence(
     request: Request,
@@ -606,27 +633,17 @@ async def add_absence(
     else:
         target_user_id = current_user.id
 
-    def _row_for(absence_date):
-        return db.query(Absence).filter(Absence.user_id == target_user_id, Absence.date == absence_date).first()
-
     def conflicts(absence_date):
-        return "hade redan frånvaro" if _row_for(absence_date) else None
+        return "hade redan frånvaro" if absence_row(db, target_user_id, absence_date) else None
 
     def write(absence_date):
-        existing = _row_for(absence_date)
-        if existing:
-            existing.absence_type = absence_type_enum
-            existing.left_at = parsed_left_at
-            existing.arrived_at = parsed_arrived_at
-            return
-        db.add(
-            Absence(
-                user_id=target_user_id,
-                date=absence_date,
-                absence_type=absence_type_enum,
-                left_at=parsed_left_at,
-                arrived_at=parsed_arrived_at,
-            )
+        upsert_absence(
+            db,
+            user_id=target_user_id,
+            date=absence_date,
+            absence_type=absence_type_enum,
+            left_at=parsed_left_at,
+            arrived_at=parsed_arrived_at,
         )
 
     written, skipped = apply_to_dates(dates, write, conflicts)

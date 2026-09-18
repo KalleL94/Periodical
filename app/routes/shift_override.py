@@ -19,6 +19,34 @@ router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 _ALLOWED_CODES = {"N1", "N2", "N3", "ETC"}
 
 
+def upsert_shift_override(
+    session, *, user_id: int, date, shift_code: str, start_time, end_time, label, created_by: int
+) -> None:
+    """Write one shift override, replacing whatever that date already had.
+
+    Shared with /day-edit/bulk so the two paths cannot drift apart.
+    """
+    existing = session.query(ShiftOverride).filter(ShiftOverride.user_id == user_id, ShiftOverride.date == date).first()
+    if existing:
+        existing.shift_code = shift_code
+        existing.start_time = start_time
+        existing.end_time = end_time
+        existing.label = label or None
+        existing.created_by = created_by
+        return
+    session.add(
+        ShiftOverride(
+            user_id=user_id,
+            date=date,
+            shift_code=shift_code,
+            start_time=start_time,
+            end_time=end_time,
+            label=label or None,
+            created_by=created_by,
+        )
+    )
+
+
 @router.post("/add")
 async def add_shift_override(
     user_id: int = Form(...),
@@ -62,24 +90,15 @@ async def add_shift_override(
         return "hade frånvaro" if has_absence else None
 
     def write(override_date):
-        existing = _row_for(override_date)
-        if existing:
-            existing.shift_code = shift_code
-            existing.start_time = start_time
-            existing.end_time = end_time
-            existing.label = label or None
-            existing.created_by = current_user.id
-            return
-        session.add(
-            ShiftOverride(
-                user_id=user_id,
-                date=override_date,
-                shift_code=shift_code,
-                start_time=start_time,
-                end_time=end_time,
-                label=label or None,
-                created_by=current_user.id,
-            )
+        upsert_shift_override(
+            session,
+            user_id=user_id,
+            date=override_date,
+            shift_code=shift_code,
+            start_time=start_time,
+            end_time=end_time,
+            label=label,
+            created_by=current_user.id,
         )
 
     written, skipped = apply_to_dates(dates, write, conflicts)

@@ -26,6 +26,62 @@ _KINDS = {"ot", "extra"}
 _SIDES = {"before", "after", "full"}
 
 
+def _overtime_row(session, user_id: int, date: date_cls, kind: str, side: str):
+    """The row that (user, date, kind, side) addresses, or None."""
+    return (
+        session.query(OvertimeShift)
+        .filter(
+            OvertimeShift.user_id == user_id,
+            OvertimeShift.date == date,
+            OvertimeShift.kind == kind,
+            OvertimeShift.side == side,
+        )
+        .first()
+    )
+
+
+def upsert_overtime(
+    session,
+    *,
+    user_id: int,
+    date: date_cls,
+    start_time: time_cls,
+    end_time: time_cls,
+    hours: float,
+    kind: str,
+    side: str,
+    ot_pay: float,
+    created_by: int,
+) -> None:
+    """Write one overtime or extra-time row.
+
+    One row per (user, date, kind, side). The unique indexes on the model enforce
+    the same thing, which is why there is no duplicate cleanup here.
+
+    Shared with /day-edit/bulk so the two paths cannot drift apart.
+    """
+    existing = _overtime_row(session, user_id, date, kind, side)
+    if existing:
+        existing.start_time = start_time
+        existing.end_time = end_time
+        existing.hours = hours
+        existing.ot_pay = ot_pay
+        return
+    session.add(
+        OvertimeShift(
+            user_id=user_id,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            hours=hours,
+            ot_pay=ot_pay,
+            kind=kind,
+            side=side,
+            created_by=created_by,
+        )
+    )
+
+
 @router.post("/add")
 async def add_overtime_shift(
     user_id: int = Form(...),
@@ -70,16 +126,7 @@ async def add_overtime_shift(
         return calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=rate)
 
     def _row_for(ot_date):
-        return (
-            session.query(OvertimeShift)
-            .filter(
-                OvertimeShift.user_id == user_id,
-                OvertimeShift.date == ot_date,
-                OvertimeShift.kind == kind,
-                OvertimeShift.side == side,
-            )
-            .first()
-        )
+        return _overtime_row(session, user_id, ot_date, kind, side)
 
     def conflicts(ot_date):
         return "hade redan en rad av den typen" if _row_for(ot_date) else None
@@ -88,28 +135,18 @@ async def add_overtime_shift(
         # Extra time is worked time, not overtime: it earns OB through the day's
         # segment list and carries no OT pay, the same convention substitutes use.
         ot_pay = _ot_pay_for(ot_date) if kind == "ot" else 0.0
-        # One row per (user, date, kind, side). The unique indexes on the model
-        # enforce the same thing, which is why the old duplicate deletion is gone.
-        existing = _row_for(ot_date)
-        if existing:
-            existing.start_time = start_time
-            existing.end_time = end_time
-            existing.hours = hours
-            existing.ot_pay = ot_pay
-        else:
-            session.add(
-                OvertimeShift(
-                    user_id=user_id,
-                    date=ot_date,
-                    start_time=start_time,
-                    end_time=end_time,
-                    hours=hours,
-                    ot_pay=ot_pay,
-                    kind=kind,
-                    side=side,
-                    created_by=current_user.id,
-                )
-            )
+        upsert_overtime(
+            session,
+            user_id=user_id,
+            date=ot_date,
+            start_time=start_time,
+            end_time=end_time,
+            hours=hours,
+            kind=kind,
+            side=side,
+            ot_pay=ot_pay,
+            created_by=current_user.id,
+        )
 
     written, skipped = apply_to_dates(dates, write, conflicts)
 
