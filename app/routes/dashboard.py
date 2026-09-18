@@ -4,6 +4,7 @@ Dashboard route - personalized home page for authenticated users.
 """
 
 import datetime as dt
+import logging
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -12,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary
-from app.core.logging_config import get_logger
 from app.core.rates import get_user_rates
 from app.core.schedule import (
     _cached_special_rules,
@@ -37,7 +37,7 @@ from app.database.database import Absence, ShiftSwap, SwapStatus, User, get_db
 from app.routes.shared import render
 
 router = APIRouter(tags=["dashboard"])
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _query_absence_and_deduction(

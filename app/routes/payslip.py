@@ -6,6 +6,7 @@ summarize_month_for_person, so this page can never disagree with the month and
 year views about the same month's pay.
 """
 
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -14,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, require_own_or_admin
-from app.core.logging_config import get_logger
 from app.core.payslip_import import parse_payslip_pdf
 from app.core.rates import get_user_rates
 from app.core.schedule import build_calendar_grid_for_month, clear_schedule_cache, rotation_start_date
@@ -37,7 +37,7 @@ from app.core.validators import validate_date_params
 from app.database.database import PayslipOverride, User, UserRole, get_db
 from app.routes.shared import _resolve_person_param, render
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["payslip"])
 

@@ -1,13 +1,13 @@
 """Vacation management – week-based, day-level and balance calculations."""
 
 import datetime
+import logging
 import math
 
 from app.core.constants import PERSON_IDS
-from app.core.logging_config import get_logger
 from app.core.schedule.transition import PERCENTAGE_RULE, PERCENTAGE_RULE_PCT
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _leave_dates_by_position(year: int, session, *, week_attr: str, absence_type) -> dict[int, set[datetime.date]]:

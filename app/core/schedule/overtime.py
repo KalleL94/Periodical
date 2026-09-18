@@ -84,18 +84,3 @@ def get_overtime_shifts_for_month(
         )
         .all()
     )
-
-
-def build_ot_details(ot_shift, hourly_rate: float) -> dict:
-    """Builds detailed info for an overtime shift.
-
-    Recalculates pay based on the provided hourly_rate instead of using stored value.
-    """
-    return {
-        "start_time": str(ot_shift.start_time),
-        "end_time": str(ot_shift.end_time),
-        "hours": ot_shift.hours,
-        "pay": hourly_rate * ot_shift.hours,
-        "hourly_rate": hourly_rate,
-        "is_extension": ot_shift.side != "full",
-    }

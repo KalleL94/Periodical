@@ -4,6 +4,7 @@ Admin user management routes: create, edit, wages, rates, employment, transition
 """
 
 import datetime
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -11,13 +12,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_user, get_password_hash, get_user_by_username, set_password
-from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
 from app.database.database import Passkey, User, UserRole, WageType, get_db, utcnow
 from app.routes.shared import _parse_rates_form, render
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # All routes here live under /admin/, so the admin gate lives on the router and
 # cannot be forgotten on a new route. Handlers keep the parameter only when they read it.

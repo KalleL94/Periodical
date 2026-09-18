@@ -23,7 +23,6 @@ LOG_DIR.mkdir(exist_ok=True)
 
 # Log files
 APP_LOG_FILE = LOG_DIR / "app.log"
-ACCESS_LOG_FILE = LOG_DIR / "access.log"
 ERROR_LOG_FILE = LOG_DIR / "error.log"
 API_LOG_FILE = LOG_DIR / "api.log"
 
@@ -55,25 +54,10 @@ class JSONFormatter(logging.Formatter):
         if hasattr(record, "extra_fields"):
             log_data.update(record.extra_fields)
 
-        # Add user info if present
-        if hasattr(record, "user_id"):
-            log_data["user_id"] = record.user_id
-
-        if hasattr(record, "username"):
-            log_data["username"] = record.username
-
-        # Add request info if present
-        if hasattr(record, "request_id"):
-            log_data["request_id"] = record.request_id
-
-        if hasattr(record, "method"):
-            log_data["method"] = record.method
-
-        if hasattr(record, "path"):
-            log_data["path"] = record.path
-
-        if hasattr(record, "status_code"):
-            log_data["status_code"] = record.status_code
+        # Fields the request-logging middleware attaches via `extra`.
+        for field in ("user_id", "username", "request_id", "method", "path", "status_code"):
+            if hasattr(record, field):
+                log_data[field] = getattr(record, field)
 
         if hasattr(record, "duration"):
             log_data["duration_ms"] = record.duration
@@ -209,16 +193,3 @@ def setup_logging() -> None:
         f"Logging configured (production={IS_PRODUCTION})",
         extra={"extra_fields": {"log_dir": str(LOG_DIR.absolute()), "production": IS_PRODUCTION}},
     )
-
-
-def get_logger(name: str) -> logging.Logger:
-    """
-    Get a logger instance.
-
-    Args:
-        name: Logger name (typically __name__)
-
-    Returns:
-        Logger instance
-    """
-    return logging.getLogger(name)

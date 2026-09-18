@@ -126,7 +126,6 @@ PRODUCTION=false
 # DATABASE_URL=sqlite:///./app/database/schedule.db
 
 # Logging level (optional, defaults to INFO)
-# LOG_LEVEL=INFO
 
 # Timezone (optional, defaults to UTC)
 TZ=Europe/Stockholm

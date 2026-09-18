@@ -1,9 +1,9 @@
 """Monthly and yearly schedule summaries."""
 
+import logging
 from typing import NamedTuple
 
 from app.core.constants import placeholder_person_name
-from app.core.logging_config import get_logger
 from app.core.storage import load_tax_brackets
 
 from .core import get_settings, weekday_names
@@ -17,7 +17,7 @@ from .wages import (
     get_user_wage,
 )
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: int | None = None) -> float:
@@ -32,11 +32,8 @@ def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: in
     Returns:
         Skattebelopp i SEK
     """
-    import logging
 
     from app.core.storage import calculate_tax_bracket, calculate_tax_from_table
-
-    logger = logging.getLogger(__name__)
 
     # Use the tax table if one is configured
     if tax_table:
@@ -209,9 +206,6 @@ def _resolve_month_wage_context(
         user = session.query(User).filter(User.id == uid_for_wages).first()
 
     if fetch_tax_table and user:
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.info(f"Looking up tax_table for user_id={uid_for_wages}, user found: {user is not None}")
         logger.info(f"User {user.username} has tax_table: {user.tax_table}")
         if user.tax_table:

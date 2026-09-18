@@ -4,6 +4,7 @@ Team-wide schedule view routes - week, month, and year views for all persons.
 """
 
 import calendar as _calendar
+import logging
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -14,7 +15,6 @@ from app.auth.auth import get_current_user_optional
 from app.core.constants import WEEKDAY_NAMES
 from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
-from app.core.logging_config import get_logger
 from app.core.oncall import _get_storhelg_dates_for_year
 from app.core.rates import get_user_rates
 from app.core.schedule import (
@@ -35,7 +35,7 @@ from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, WageType, get_db
 from app.routes.shared import render
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["schedule_all"])
 

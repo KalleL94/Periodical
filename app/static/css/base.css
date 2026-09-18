@@ -25,7 +25,6 @@
   --muted: #8b98a6;
   --faint: #5d6873;
   --muted-bg: #4b5563;
-  --muted-text: #9ca3af;
 
   /* Interaction accent (chrome only): a muted instrument teal, not Ant blue.
      Driven by --accent-rgb so the solid accent and every translucent wash
@@ -39,7 +38,6 @@
   --danger: #ef4444;
   --danger-hover: #dc2626;
   --success: #7bd389;        /* money in / positive */
-  --up: var(--success);
   --warning: #ffa500;
   --role: #a78bfa;           /* admin role, its own violet (not --danger, not --ob5) */
 

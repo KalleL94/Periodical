@@ -4,6 +4,7 @@ Personal schedule view routes - day, week, month, and year views for specific pe
 """
 
 import io
+import logging
 from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -14,7 +15,6 @@ from app.auth.auth import get_current_user_optional
 from app.core.constants import placeholder_person_name
 from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
-from app.core.logging_config import get_logger
 from app.core.oncall import (
     _cached_oncall_rules as _get_oncall_rules,
 )
@@ -66,7 +66,7 @@ from app.database.database import (
 )
 from app.routes.shared import _resolve_person_param, build_position_nav, redirect_if_not_own_data, render
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["schedule_personal"])
 

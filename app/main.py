@@ -4,6 +4,7 @@ FastAPI application entry point.
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.csrf_middleware import CSRFMiddleware
-from app.core.logging_config import get_logger, setup_logging
+from app.core.logging_config import setup_logging
 from app.core.news import get_latest_version
 from app.core.request_logging import RequestLoggingMiddleware
 from app.core.security_headers import DOC_PATHS, USER_DOC_PATHS, SecurityHeadersMiddleware
@@ -49,7 +50,7 @@ from app.routes.transition import router as transition_router
 
 # Setup logging FIRST (before any other imports that might log)
 setup_logging()
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Initialize Sentry for error tracking (production only)
 

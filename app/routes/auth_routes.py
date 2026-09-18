@@ -3,6 +3,9 @@
 Authentication routes: login, logout, change-password.
 """
 
+import logging
+
+import sentry_sdk
 from fastapi import APIRouter, Depends, Form, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -21,14 +24,12 @@ from app.auth.auth import (
     set_password,
 )
 from app.core.helpers import is_safe_redirect
-from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
-from app.core.sentry_config import add_breadcrumb, clear_user_context, set_user_context
 from app.database.database import User, get_db
 from app.routes.shared import render
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
@@ -105,8 +106,8 @@ async def login(
         },
     )
 
-    set_user_context(user_id=user.id, username=user.username)
-    add_breadcrumb(message=f"User {user.username} logged in", category="auth", level="info")
+    sentry_sdk.set_user({"id": user.id, "username": user.username})
+    sentry_sdk.add_breadcrumb(message=f"User {user.username} logged in", category="auth", level="info")
 
     access_token = create_access_token(data={"sub": str(user.id)})
 
@@ -135,7 +136,7 @@ async def logout(response: Response, current_user: User | None = Depends(get_cur
             user_id=current_user.id,
             success=True,
         )
-        clear_user_context()
+        sentry_sdk.set_user(None)
 
     redirect = RedirectResponse(url="/login", status_code=302)
     clear_auth_cookie(redirect)

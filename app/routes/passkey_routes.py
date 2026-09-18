@@ -12,8 +12,10 @@ as a JSON string in the `credential` field.
 """
 
 import json
+import logging
 import os
 
+import sentry_sdk
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -30,12 +32,10 @@ from app.auth.webauthn import (
     verify_assertion,
     verify_registration,
 )
-from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
-from app.core.sentry_config import add_breadcrumb, set_user_context
 from app.database.database import Passkey, User, get_db, utcnow
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["passkey"])
 
@@ -289,8 +289,8 @@ async def passkey_login(
         success=True,
         details={"ip": ip, "must_change_password": user.must_change_password == 1},
     )
-    set_user_context(user_id=user.id, username=user.username)
-    add_breadcrumb(message=f"User {user.username} logged in with a passkey", category="auth", level="info")
+    sentry_sdk.set_user({"id": user.id, "username": user.username})
+    sentry_sdk.add_breadcrumb(message=f"User {user.username} logged in with a passkey", category="auth", level="info")
 
     destination = "/change-password" if user.must_change_password == 1 else "/"
     response = JSONResponse({"redirect": destination})
