@@ -4,6 +4,7 @@ Shared helper functions for templates and route handlers.
 """
 
 from datetime import date
+from urllib.parse import quote, urlparse
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -155,3 +156,73 @@ def strip_year_summary(summary: dict) -> dict:
     result["ob_pay_by_code"] = {}
     result["total_ob_hours"] = None
     return result
+
+
+def is_safe_redirect(url: str) -> bool:
+    """True when url is a local path, so it cannot become an open redirect."""
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return not parsed.scheme and not parsed.netloc and url.startswith("/") and not url.startswith("//")
+
+
+# ponytail: one insert per date, no batching. 62 days is two months, the widest a
+# month view can select. Batch the writes if a real use case ever needs more.
+MAX_EDIT_DATES = 62
+
+
+def apply_to_dates(dates, write, conflicts):
+    """Run write(date) for each date, skipping conflicts when more than one is given.
+
+    A single-date post is a deliberate edit of one day: the caller can see what it
+    replaces, so it upserts and the conflict check is never consulted. Ten dates at
+    once is a different act, and silently overwriting nine days is the kind of error
+    that surfaces a month later in a pay forecast.
+
+    Returns (written dates, [(skipped date, reason)]).
+    """
+    if len(dates) > MAX_EDIT_DATES:
+        raise HTTPException(status_code=400, detail=f"Too many dates, the limit is {MAX_EDIT_DATES}")
+
+    written, skipped = [], []
+    for day in dates:
+        reason = conflicts(day) if len(dates) > 1 else None
+        if reason:
+            skipped.append((day, reason))
+            continue
+        write(day)
+        written.append(day)
+    return written, skipped
+
+
+def result_param(written: list, skipped: list, verb: str = "satta") -> str:
+    """The ?success= fragment describing a multi-date write. Empty for a single date.
+
+    It reuses the success query parameter the admin pages already render with
+    `alert alert--success`, so the skip report needs no markup of its own.
+    """
+    if not skipped and len(written) <= 1:
+        return ""
+    parts = [f"{len(written)} dagar {verb}"]
+    if skipped:
+        detail = ", ".join(f"{d.strftime('%d %b')} {reason}" for d, reason in skipped)
+        parts.append(f"{len(skipped)} hoppades över: {detail}")
+    return "?success=" + quote(". ".join(parts))
+
+
+def edit_redirect_url(
+    user_id: int, dates: list, return_to: str, written: list, skipped: list, verb: str = "satta"
+) -> str:
+    """Where an edit route sends the browser after writing.
+
+    return_to when it is a safe relative path, otherwise the first date's day page.
+    A multi-date write appends the result fragment so the landing page can report
+    what was skipped.
+    """
+    fragment = result_param(written, skipped, verb)
+    if not is_safe_redirect(return_to):
+        first = dates[0]
+        return f"/day/{user_id}/{first.year}/{first.month}/{first.day}" + fragment
+    if fragment and "?" in return_to:
+        fragment = "&" + fragment[1:]
+    return return_to + fragment

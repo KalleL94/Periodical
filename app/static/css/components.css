@@ -1243,3 +1243,38 @@ form:not(:has(select[name="vacation_variable_payout"] option[value="lump"]:check
 }
 .to-top--visible { opacity: 0.9; visibility: visible; }
 .to-top:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+
+/* Multi-day selection. The cell is the hit area; the date link keeps navigating.
+   outline rather than border: the cell already paints a top border from
+   data-border-top, and a border here would fight it. */
+td.calendar-day[data-date] { cursor: pointer; }
+td.calendar-day.is-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 137, 0.10); }
+
+/* _day_edit_panel.html. These live here, not in day.html, because the partial is
+   rendered on the day view and in the month and week multi-day drawer. Tabs use
+   the same CSP-safe class switch as the pay section, and flex-wrap keeps the row
+   usable at phone width instead of scrolling sideways. */
+.day-tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.day-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; color: var(--muted); cursor: pointer; font: inherit; }
+.day-tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
+.day-tab-panel { display: none; }
+.day-tab-panel.is-active { display: block; }
+
+/* The hidden attribute is only honoured while nothing sets display on the row.
+   Spelled out so a later `.form-row { display: flex }` cannot silently reveal
+   the custom-shift fields, the same guard .range-date-panel[hidden] already uses. */
+#etc-fields[hidden] { display: none; }
+
+/* Per-day table: one area's columns at a time. Twelve controls per row is not a
+   usable table at phone width, which is what drives the whole design. */
+.per-day-area { display: none; }
+.per-day-table tr.is-area-absence .per-day-area--absence,
+.per-day-table tr.is-area-time .per-day-area--time,
+.per-day-table tr.is-area-shift .per-day-area--shift { display: table-cell; }
+@media (max-width: 800px) {
+  /* tables.css turns cells into blocks here, so table-cell above would undo it. */
+  .per-day-table tr.is-area-absence .per-day-area--absence,
+  .per-day-table tr.is-area-time .per-day-area--time,
+  .per-day-table tr.is-area-shift .per-day-area--shift { display: block; }
+}

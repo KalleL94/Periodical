@@ -3,7 +3,12 @@
 
 {% block title %}Periodical – Månadsvy {{ year }}-{{ '%02d'|format(month) }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
 
+{% import "_partial_absence_marker.html" as marker %}
 {% block page_content %}
+
+    {% if success %}
+    <div class="alert alert--success">{{ success }}</div>
+    {% endif %}
 
     {# Compute prev/next month + year here in the template #}
     {% if month == 1 %}
@@ -158,6 +163,7 @@
                         {% set is_current = day_data.is_current_month %}
 
                         <td class="calendar-day {% if not is_current %}adjacent-month{% endif %} {% if is_today %}today-cell{% endif %}"
+                            data-date="{{ day_data.date.isoformat() }}" aria-pressed="false"
                             data-border-top="{% if day_data.shift %}{{ day_data.shift.color }}{% else %}#333{% endif %}">
 
                             <div class="calendar-day-content">
@@ -196,15 +202,15 @@
                                     {% if day_data.is_substitute %}
                                         <span class="badge badge-blue badge-calendar-marker" title="{{ t.substitute_tag }}">{{ t.substitute_marker }}</span>
                                     {% endif %}
-                                    {% if day_data.partial_absence %}
-                                        <span class="badge badge-danger badge-calendar-marker" title="Sjuk deldag (slutade {{ day_data.partial_absence.left_at }})">SJ</span>
-                                    {% endif %}
+                                    {{ marker.partial_absence_marker(day_data.partial_absence, t) }}
 
                                     {% if day_data.shift and day_data.shift.code != 'OC' %}
-                                        {% if day_data.shift.code == 'OT' and day_data.start and day_data.end %}
+                                        {# The day's computed window, not the shift type's nominal one. It
+                                           already accounts for overtime, a part-day absence and a custom
+                                           block; the old partial branch read left_at directly, which is
+                                           empty when the person arrived late instead of leaving early. #}
+                                        {% if day_data.start and day_data.end %}
                                             <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.end | time_format }}</div>
-                                        {% elif day_data.partial_absence and day_data.start and day_data.end %}
-                                            <div class="calendar-time">{{ day_data.start | time_format }} - {{ day_data.partial_absence.left_at }}</div>
                                         {% elif day_data.shift.start_time is not none %}
                                             <div class="calendar-time">{{ day_data.shift.start_time }} - {{ day_data.shift.end_time }}</div>
                                         {% endif %}
@@ -245,6 +251,40 @@
     {% endwith %}
 
     {% endif %}
+
+    <div id="day-edit-drawer" hidden>
+        <p class="day-selection-summary" id="day-selection-count"></p>
+        {% include "_day_edit_panel.html" with context %}
+    </div>
+
+<script>
+// Wire the calendar selection to the edit drawer. The dates are written into the
+// forms at submit time, so selecting a day costs no server round trip.
+(function () {
+    var drawer = document.getElementById('day-edit-drawer');
+    var count = document.getElementById('day-selection-count');
+    if (!drawer) return;
+    var current = [];
+
+    document.addEventListener('day-selection-change', function (event) {
+        current = event.detail.dates;
+        drawer.hidden = current.length === 0;
+        count.textContent = '{{ t.multiday_selected }}'.replace('{n}', current.length);
+    });
+
+    drawer.addEventListener('submit', function (event) {
+        var form = event.target;
+        form.querySelectorAll('input[name="dates"]').forEach(function (el) { el.remove(); });
+        current.forEach(function (d) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'dates';
+            input.value = d;
+            form.appendChild(input);
+        });
+    });
+})();
+</script>
 
 {{ super() }}
 

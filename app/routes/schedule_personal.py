@@ -32,11 +32,12 @@ from app.core.schedule import (
     compute_day_ob_pay,
     determine_shift_for_date,
     get_effective_monthly_wage,
-    get_overtime_shift_for_date,
+    get_overtime_rows_for_date,
     get_rotation_length_for_date,
     get_shift_types,
     ob_rules,
     oncall_window,
+    preferred_ot_row,
     rotation_start_date,
     settings,
     summarize_year_for_person,
@@ -77,6 +78,7 @@ async def show_day_for_person(
     year: int,
     month: int,
     day: int,
+    success: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -307,7 +309,10 @@ async def show_day_for_person(
     # user's OT rate via user_rates_map); only the raw OT row id is fetched
     # here, for the delete link in the edit form.
     ot_details = canonical.get("ot_details") or {}
-    _ot_row = get_overtime_shift_for_date(db, user_id_for_wages, date_obj)
+    # The Time tab lists every row; ot_shift_id stays for the pay section,
+    # which still speaks about a single primary row.
+    ot_rows = get_overtime_rows_for_date(db, user_id_for_wages, date_obj)
+    _ot_row = preferred_ot_row(ot_rows)
     ot_shift_id = _ot_row.id if _ot_row else None
 
     # On-call pay comes from the canonical dict, which already zeroes it on
@@ -476,8 +481,14 @@ async def show_day_for_person(
             "is_storhelg": is_storhelg,  # Whether this date is a major holiday
             # Quick-fill presets for the manual overtime form
             "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
+            # The edit forms post a list of dates so the same markup can serve a
+            # calendar selection later. The day page always passes exactly one.
+            "edit_dates": [date_obj],
+            "return_to_url": f"/day/{person_id}/{date_obj.year}/{date_obj.month}/{date_obj.day}",
+            "success": success,
             "ot_shift": ot_details if show_salary and ot_details else None,
             "ot_shift_id": ot_shift_id,
+            "ot_rows": ot_rows,
             "absence": absence,  # Pass absence data to template
             "absence_deduction": absence_deduction,
             "absence_shift_hours": absence_shift_hours,
@@ -517,6 +528,7 @@ async def show_week_for_person(
     person_id: int,
     year: int = None,
     week: int = None,
+    success: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -604,6 +616,17 @@ async def show_week_for_person(
             "year": year,
             "week": week,
             "days": days_in_week,
+            "success": success,
+            # The drawer renders the day page's edit partial against a calendar
+            # selection. edit_dates is empty: the selection script writes the real
+            # dates in at submit time, so opening it needs no round trip. The
+            # per-day context the partial reads (absence, oncall_override,
+            # shift_override, ot_rows) is deliberately absent, because with many
+            # days selected there is no single day's state to show.
+            "edit_dates": [],
+            "drawer": True,
+            "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
+            "return_to_url": request.url.path + (f"?{request.url.query}" if request.url.query else ""),
             "person_id": person_id,
             "person_name": person_name,
             "person_nav": build_position_nav(db) if current_user and current_user.role == UserRole.ADMIN else None,
@@ -806,6 +829,7 @@ async def show_month_for_person(
     person_id: int,
     year: int = None,
     month: int = None,
+    success: str | None = Query(None),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -970,6 +994,17 @@ async def show_month_for_person(
             "person_id": person_id,
             "person_name": person_name,
             "days": days_in_month,
+            "success": success,
+            # The drawer renders the day page's edit partial against a calendar
+            # selection. edit_dates is empty: the selection script writes the real
+            # dates in at submit time, so opening it needs no round trip. The
+            # per-day context the partial reads (absence, oncall_override,
+            # shift_override, ot_rows) is deliberately absent, because with many
+            # days selected there is no single day's state to show.
+            "edit_dates": [],
+            "drawer": True,
+            "standard_shifts": [s for s in get_shift_types() if s.code in ("N1", "N2", "N3")],
+            "return_to_url": request.url.path + (f"?{request.url.query}" if request.url.query else ""),
             "calendar_grid": calendar_grid,
             "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,

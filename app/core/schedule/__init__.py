@@ -33,9 +33,10 @@ from .ob import (
 )
 from .overtime import (
     calculate_overtime_pay,
-    compute_ot_details,
+    get_overtime_rows_for_date,
     get_overtime_shift_for_date,
     get_overtime_shifts_for_month,
+    preferred_ot_row,
 )
 from .period import (
     build_substitute_month_summaries,
@@ -99,9 +100,10 @@ __all__ = [
     "select_ob_rules_for_date",
     # overtime
     "calculate_overtime_pay",
-    "compute_ot_details",
+    "get_overtime_rows_for_date",
     "get_overtime_shift_for_date",
     "get_overtime_shifts_for_month",
+    "preferred_ot_row",
     # wages
     "get_user_wage",
     "get_effective_monthly_wage",

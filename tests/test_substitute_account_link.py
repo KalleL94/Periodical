@@ -184,7 +184,8 @@ def test_substitute_ot_priced_with_hourly_rate_db_stays_zero(env):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -422,7 +423,8 @@ def test_report_ot_plus_shift_same_day_counts_once(env):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()

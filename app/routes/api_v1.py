@@ -54,7 +54,7 @@ def _overtime_by_date(
     """Returns {date: {user_id: end_time}} for full (non-extension) overtime shifts."""
     rows = (
         db.query(OvertimeShift.user_id, OvertimeShift.date, OvertimeShift.end_time)
-        .filter(OvertimeShift.date >= start, OvertimeShift.date <= end, OvertimeShift.is_extension.is_(False))
+        .filter(OvertimeShift.date >= start, OvertimeShift.date <= end, OvertimeShift.side == "full")
         .all()
     )
     result: dict[datetime.date, dict[int, datetime.time]] = {}
@@ -149,7 +149,7 @@ def _day_status_and_shift(canonical: dict, absence, overtime) -> tuple[str, obje
         return "parental", assigned
     if shift is not None and shift.code == "SEM":
         return "vacation", assigned
-    if overtime is not None and not overtime.is_extension:
+    if overtime is not None and overtime.side == "full":
         # Canonical swaps in the OT shift type; the API reports overtime in its own
         # block and keeps the underlying shift here.
         return _status(assigned), assigned
@@ -180,7 +180,7 @@ def _build_day(
             "start_time": overtime.start_time.strftime("%H:%M"),
             "end_time": overtime.end_time.strftime("%H:%M"),
             "hours": overtime.hours,
-            "is_extension": overtime.is_extension,
+            "is_extension": overtime.side != "full",
         },
         "partial_day": absence.left_at if absence is not None else None,
     }

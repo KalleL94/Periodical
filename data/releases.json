@@ -1,5 +1,61 @@
 [
   {
+    "version": "1.11.0",
+    "date": "2026-09-18",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Du kan nu markera flera dagar i månads- och veckovyn och ändra dem på en gång. Klicka på dagarna, eller håll shift för ett helt spann, så dyker en ruta upp där du lägger till frånvaro, beredskap, passändring eller tid på alla markerade dagar samtidigt. Datumsiffran fungerar som förut och tar dig till dagsidan.",
+        "en": "You can now select several days in the month and week views and change them in one go. Click the days, or hold shift for a whole range, and a panel appears where you add absence, on-call, a shift change or time to every selected day at once. The date itself still takes you to the day page."
+      },
+      {
+        "type": "nyhet",
+        "sv": "I fliken Per dag kan varje markerad dag få sitt eget val. Måndag sjuk, tisdag övertid och onsdag ett ändrat pass går att skicka in i samma omgång.",
+        "en": "In the Per day tab each selected day can have its own choice. Monday sick, Tuesday overtime and Wednesday a changed shift can all be submitted in one go."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Övertid går nu att lägga före passet, inte bara efter, och båda på samma dag. Tidigare rymdes bara en post per dag.",
+        "en": "Overtime can now be logged before a shift as well as after, and both on the same day. Before this only one entry per day fitted."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Mertid är en ny typ av tid: arbetad tid före eller efter passet som inte är övertid. Den ger OB på sina egna klockslag men ingen övertidsersättning, och på månadslön ingen extra grundlön.",
+        "en": "Extra time is a new kind of entry: time worked before or after a shift that is not overtime. It earns the OB supplement for its own hours but no overtime pay, and no extra base pay on a monthly salary."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Ett ordinarie pass kan få egna klockslag utan att byta passtyp. Jobbade du N1 men stannade till 16:30 står det fortfarande N1 i schemat, med sin färg, och timmarna och OB följer tiden du faktiskt jobbade.",
+        "en": "An ordinary shift can be given its own hours without changing shift type. If you worked N1 but stayed until 16:30 the schedule still shows N1, with its colour, and the hours and the OB follow the time you actually worked."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Ett övrigt-pass med egen etikett och egna tider, för en kursdag eller ett möte som inte är något av de vanliga passen.",
+        "en": "A custom block with its own label and hours, for a course day or a meeting that is none of the usual shifts."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Sen ankomst är nu en egen frånvarotyp, i en betald och en obetald variant. Tidigare fick du välja Ledigt, vilket såg ut som att du varit borta hela dagen fast du jobbade det mesta av den.",
+        "en": "Late arrival is now its own kind of absence, in a paid and an unpaid variant. Before this you had to pick Leave, which looked like a whole day off even though you worked most of it."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Dagsidans redigering är uppdelad i fyra flikar i stället för fyra formulär under varandra: Tid, Frånvaro, Beredskap och Pass.",
+        "en": "The day page's editing is split into four tabs instead of four stacked forms: Time, Absence, On-call and Shift."
+      },
+      {
+        "type": "fix",
+        "sv": "Om du gick tidigare eller kom senare visade vecko- och intervallvyn ändå hela passets tider, och månadsvyn kallade det sjukfrånvaro oavsett vilken typ du valt. Nu visar alla vyer den tid du faktiskt jobbade och vilken typ det var.",
+        "en": "If you left early or arrived late the week and range views still showed the full shift hours, and the month view called it sick leave whatever type you had picked. Every view now shows the hours you actually worked and which type it was."
+      },
+      {
+        "type": "fix",
+        "sv": "Passnamnen stod på svenska även när appen var inställd på engelska. Sjuk, VAB och Ledigt saknades dessutom helt i översättningen.",
+        "en": "Shift names appeared in Swedish even with the app set to English. Sick, child care and leave were missing from the translation altogether."
+      }
+    ]
+  },
+  {
     "version": "1.10.0",
     "date": "2026-09-10",
     "entries": [

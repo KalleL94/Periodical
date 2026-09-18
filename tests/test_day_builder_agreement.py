@@ -131,7 +131,8 @@ def _seed_chain_fixtures(session, *, with_boundary: bool = True) -> None:
             end_time=datetime.time(12, 0),
             hours=4.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.add(
@@ -142,7 +143,8 @@ def _seed_chain_fixtures(session, *, with_boundary: bool = True) -> None:
             end_time=datetime.time(12, 0),
             hours=4.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.add(
@@ -153,7 +155,8 @@ def _seed_chain_fixtures(session, *, with_boundary: bool = True) -> None:
             end_time=datetime.time(5, 0),
             hours=8.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
 

@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -85,6 +86,11 @@ class AbsenceType(enum.StrEnum):
     OFF = "OFF"  # Ledig - inget löneavdrag
     VACATION = "VACATION"  # Enskild semesterdag
     PARENTAL = "PARENTAL"  # Föräldraledig - ingen semesterdag, ingen ersättning
+    # Late arrival, as its own pair rather than LEAVE/OFF with an arrival time.
+    # Recording it as LEAVE reads on the schedule as a whole day off. The money is
+    # identical to the twin: LATE_UNPAID deducts, LATE_PAID does not.
+    LATE_UNPAID = "LATE_UNPAID"  # Sen ankomst med löneavdrag
+    LATE_PAID = "LATE_PAID"  # Sen ankomst utan löneavdrag
 
 
 class WageType(enum.StrEnum):
@@ -205,9 +211,19 @@ class User(Base):
 
 
 class OvertimeShift(Base):
-    """Overtime shift model for tracking called-in shifts during on-call."""
+    """Overtime and extra-time rows: one per (owner, date, kind, side)."""
 
     __tablename__ = "overtime_shifts"
+    # One row per owner, date, kind and side. Two indexes because exactly one of
+    # user_id / substitute_id is ever set, and SQLite treats NULLs in a unique
+    # index as distinct, so each index simply does not apply to the other's rows.
+    # migrations/migrate_ot_kind_side.py creates the same two on existing
+    # databases; declaring them here is what gives a freshly created one the
+    # same guarantee.
+    __table_args__ = (
+        Index("ix_ot_user_day_kind_side", "user_id", "date", "kind", "side", unique=True),
+        Index("ix_ot_sub_day_kind_side", "substitute_id", "date", "kind", "side", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     # Exactly one of user_id / substitute_id is set (enforced at the route layer).
@@ -218,7 +234,14 @@ class OvertimeShift(Base):
     end_time = Column(Time, nullable=False)
     hours = Column(Float, nullable=False)
     ot_pay = Column(Float, nullable=False)  # Always 0.0 for substitutes (hours tracked, no pay)
-    is_extension = Column(Boolean, default=False, nullable=False)
+    # "ot" or "extra". Overtime is paid at the OT rate and reported through
+    # ot_hours/ot_pay; extra time is worked time that joins the day's segment
+    # list and earns OB on its own interval.
+    kind = Column(String(8), default="ot", nullable=False)
+    # "before" or "after" the day's shift, or "full" for a called-in shift that
+    # replaces it. Never NULL: SQLite treats NULLs in a unique index as distinct,
+    # so a NULL side would leave called-in overtime unconstrained.
+    side = Column(String(6), default="full", nullable=False)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"))
 
@@ -303,7 +326,12 @@ class ShiftOverride(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     date = Column(Date, nullable=False)
-    shift_code = Column(String(10), nullable=False)  # N1, N2, N3
+    shift_code = Column(String(10), nullable=False)  # N1, N2, N3, ETC
+    # Set only for shift_code "ETC", the custom labelled shift. The resolver
+    # builds a synthetic shift type from these three.
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    label = Column(String(40), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 

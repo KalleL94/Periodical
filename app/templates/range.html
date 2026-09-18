@@ -3,6 +3,7 @@
 
 {% block title %}Periodical – {{ t.range_title }}{% if person_name %} – {{ person_name }}{% endif %}{% endblock %}
 
+{% import "_partial_absence_marker.html" as marker %}
 {% block page_content %}
 
 {# ── Scaling styles based on number of weeks ───────────────────── #}
@@ -120,6 +121,7 @@
                         <span class="badge calendar-badge" data-shift-color="{{ day.shift.color }}" data-shift-contrast="{{ day.shift.color | contrast }}">
                             {{ day.shift.code }}
                         </span>
+                        {{ marker.partial_absence_marker(day.partial_absence, t) }}
                     {% else %}
                         <span class="badge badge-off calendar-badge">OFF</span>
                     {% endif %}
@@ -128,7 +130,10 @@
                     {% endif %}
                     {% if num_weeks >= 9 %}<div class="range-text-stack">{% endif %}
                     {% if day.shift and day.shift.code != 'OC' %}
-                        {% if day.shift.code == 'OT' and day.start and day.end %}
+                        {# The day's computed window, not the shift type's nominal one. It already
+                           accounts for overtime, a part-day absence and a custom block; reading the
+                           nominal times made every one of those invisible. #}
+                        {% if day.start and day.end %}
                             <div class="calendar-time">{{ day.start | time_format }} - {{ day.end | time_format }}</div>
                         {% elif day.shift.start_time is not none %}
                             <div class="calendar-time">{{ day.shift.start_time }} - {{ day.shift.end_time }}</div>

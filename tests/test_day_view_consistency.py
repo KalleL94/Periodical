@@ -277,7 +277,9 @@ def _ob_totals(html):
 
 
 def _ot_pay(html):
-    m = re.search(r"kr/h</td>\s*<td>([\d.]+) kr", html)
+    """The kr figure in the cell after the kr/h one. The td carries classes since
+    the segment list replaced the old overtime tables, so attributes are tolerated."""
+    m = re.search(r"kr/h</td>\s*<td[^>]*>([\d.]+) kr", html)
     return float(m.group(1)) if m else None
 
 
@@ -460,7 +462,8 @@ def _sc_overtime_callin(session):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -478,7 +481,8 @@ def _sc_overtime_extension(session):
             end_time=datetime.time(0, 30),
             hours=2.0,
             ot_pay=0.0,
-            is_extension=True,
+            kind="ot",
+            side="after",
         )
     )
     session.commit()
@@ -631,7 +635,8 @@ def test_canonical_substitute_ot_wins_over_shift(env):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -758,7 +763,8 @@ def _add_ot(session, day, *, is_extension=False):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=is_extension,
+            kind="ot",
+            side="after" if is_extension else "full",
         )
     )
     session.commit()

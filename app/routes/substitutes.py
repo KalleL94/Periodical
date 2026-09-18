@@ -324,7 +324,8 @@ async def admin_substitute_overtime_add(
             end_time=end_t,
             hours=hours,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
             created_by=current_user.id,
         )
     )

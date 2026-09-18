@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.helpers import require_own_or_admin
+from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import (
     calculate_overtime_pay,
     clear_schedule_cache,
@@ -22,15 +22,76 @@ from app.database.database import OvertimeShift, User, get_db
 
 router = APIRouter(prefix="/overtime", tags=["overtime"])
 
+_KINDS = {"ot", "extra"}
+_SIDES = {"before", "after", "full"}
+
+
+def _overtime_row(session, user_id: int, date: date_cls, kind: str, side: str):
+    """The row that (user, date, kind, side) addresses, or None."""
+    return (
+        session.query(OvertimeShift)
+        .filter(
+            OvertimeShift.user_id == user_id,
+            OvertimeShift.date == date,
+            OvertimeShift.kind == kind,
+            OvertimeShift.side == side,
+        )
+        .first()
+    )
+
+
+def upsert_overtime(
+    session,
+    *,
+    user_id: int,
+    date: date_cls,
+    start_time: time_cls,
+    end_time: time_cls,
+    hours: float,
+    kind: str,
+    side: str,
+    ot_pay: float,
+    created_by: int,
+) -> None:
+    """Write one overtime or extra-time row.
+
+    One row per (user, date, kind, side). The unique indexes on the model enforce
+    the same thing, which is why there is no duplicate cleanup here.
+
+    Shared with /day-edit/bulk so the two paths cannot drift apart.
+    """
+    existing = _overtime_row(session, user_id, date, kind, side)
+    if existing:
+        existing.start_time = start_time
+        existing.end_time = end_time
+        existing.hours = hours
+        existing.ot_pay = ot_pay
+        return
+    session.add(
+        OvertimeShift(
+            user_id=user_id,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            hours=hours,
+            ot_pay=ot_pay,
+            kind=kind,
+            side=side,
+            created_by=created_by,
+        )
+    )
+
 
 @router.post("/add")
 async def add_overtime_shift(
     user_id: int = Form(...),
-    date: date_cls = Form(...),
+    dates: list[date_cls] = Form(...),
     start_time: time_cls = Form(...),
     end_time: time_cls = Form(...),
     hours: float = Form(8.5),
-    is_extension: bool = Form(False),
+    kind: str = Form("ot"),
+    side: str = Form("full"),
+    return_to: str = Form(""),
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -43,63 +104,61 @@ async def add_overtime_shift(
     """
     require_own_or_admin(current_user, user_id, "Not authorized to add overtime for other users")
 
-    # Needed for the wage lookup below
-    ot_date = date
-
-    # Get user's wage and rates for the specific date (temporal query)
-    raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
+    # These reach a unique index and a pay branch, so they are a trust boundary.
+    if kind not in _KINDS:
+        raise HTTPException(status_code=400, detail=f"Invalid kind, use one of {sorted(_KINDS)}")
+    if side not in _SIDES:
+        raise HTTPException(status_code=400, detail=f"Invalid side, use one of {sorted(_SIDES)}")
 
     from app.core.rates import get_user_rates
 
     ot_user = session.query(User).filter(User.id == user_id).first()
-    _ot_rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
 
-    # Calculate OT pay -- use stored wage directly for HOURLY workers
-    _ot_rate = (
-        _ot_rates.get("ot")
-        if _ot_rates.get("ot") is not None
-        else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
-    )
-    ot_pay = calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=_ot_rate)
+    def _ot_pay_for(ot_date):
+        """OT pay on one date; wages and rates are temporal."""
+        raw_wage = get_user_wage(session, user_id, effective_date=ot_date)
+        rates = get_user_rates(ot_user, session=session, effective_date=ot_date) if ot_user else {}
+        rate = (
+            rates["ot"]
+            if rates.get("ot") is not None
+            else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
+        )
+        return calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=rate)
 
-    # Parse times
-    start_t = start_time
-    end_t = end_time
+    def _row_for(ot_date):
+        return _overtime_row(session, user_id, ot_date, kind, side)
 
-    existing_shifts = (
-        session.query(OvertimeShift)
-        .filter(OvertimeShift.user_id == user_id, OvertimeShift.date == ot_date)
-        .order_by(OvertimeShift.id)
-        .all()
-    )
-    if existing_shifts:
-        ot_shift = existing_shifts[0]
-        ot_shift.start_time = start_t
-        ot_shift.end_time = end_t
-        ot_shift.hours = hours
-        ot_shift.ot_pay = ot_pay
-        ot_shift.is_extension = is_extension
-        for duplicate in existing_shifts[1:]:
-            session.delete(duplicate)
-    else:
-        ot_shift = OvertimeShift(
+    def conflicts(ot_date):
+        return "hade redan en rad av den typen" if _row_for(ot_date) else None
+
+    def write(ot_date):
+        # Extra time is worked time, not overtime: it earns OB through the day's
+        # segment list and carries no OT pay, the same convention substitutes use.
+        ot_pay = _ot_pay_for(ot_date) if kind == "ot" else 0.0
+        upsert_overtime(
+            session,
             user_id=user_id,
             date=ot_date,
-            start_time=start_t,
-            end_time=end_t,
+            start_time=start_time,
+            end_time=end_time,
             hours=hours,
+            kind=kind,
+            side=side,
             ot_pay=ot_pay,
-            is_extension=is_extension,
             created_by=current_user.id,
         )
-        session.add(ot_shift)
+
+    written, skipped = apply_to_dates(dates, write, conflicts)
 
     session.commit()
 
-    # Clear schedule cache to reflect changes
+    # Clear schedule cache to reflect changes. Once, after the whole loop.
     clear_schedule_cache()
 
-    return RedirectResponse(url=f"/day/{user_id}/{ot_date.year}/{ot_date.month}/{ot_date.day}", status_code=303)
+    return RedirectResponse(
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped),
+        status_code=303,
+    )
 
 
 @router.post("/{ot_id}/delete")

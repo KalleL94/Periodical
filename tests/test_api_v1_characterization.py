@@ -101,7 +101,8 @@ def api_env(test_db, test_client, monkeypatch):
             end_time=datetime.time(16, 0),
             hours=8.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     test_db.commit()

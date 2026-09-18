@@ -3,8 +3,6 @@
 Authentication routes: login, logout, change-password.
 """
 
-from urllib.parse import urlparse
-
 from fastapi import APIRouter, Depends, Form, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -22,6 +20,7 @@ from app.auth.auth import (
     set_auth_cookie,
     set_password,
 )
+from app.core.helpers import is_safe_redirect
 from app.core.logging_config import get_logger
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
@@ -32,14 +31,6 @@ from app.routes.shared import render
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["auth"])
-
-
-def is_safe_redirect(url: str) -> bool:
-    """Check if redirect URL is safe (local path only)."""
-    if not url:
-        return False
-    parsed = urlparse(url)
-    return not parsed.scheme and not parsed.netloc and url.startswith("/") and not url.startswith("//")
 
 
 @router.get("/login", response_class=HTMLResponse, name="login_page")

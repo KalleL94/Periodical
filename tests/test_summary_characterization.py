@@ -224,7 +224,8 @@ def _add_ot(session, date, start, end, hours, is_extension):
             end_time=datetime.time(*end),
             hours=hours,
             ot_pay=0.0,
-            is_extension=is_extension,
+            kind="ot",
+            side="after" if is_extension else "full",
         )
     )
     session.commit()

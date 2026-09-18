@@ -2055,7 +2055,8 @@ def test_ot_shift_stays_on_pre_swap_holder(month_env):
             end_time=datetime.time(22, 0),
             hours=4.0,
             ot_pay=1000.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -2607,7 +2608,8 @@ def _seed_okan_rickard_swap_with_pre_swap_entries(session):
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=2000.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.add(
@@ -2776,7 +2778,8 @@ def test_month_view_excludes_post_swap_entry_from_prior_holder(month_env):
             end_time=datetime.time(22, 0),
             hours=4.0,
             ot_pay=1000.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -2849,7 +2852,8 @@ def test_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month_env)
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -2890,7 +2894,8 @@ def test_month_and_year_view_agree_on_ot_and_ob_pay_for_same_month(month_env):
                 end_time=datetime.time(22, 30),
                 hours=8.5,
                 ot_pay=0.0,
-                is_extension=False,
+                kind="ot",
+                side="full",
             )
         )
     session.commit()
@@ -3068,7 +3073,8 @@ def test_team_month_view_ot_pay_uses_custom_rate_not_generic_wage_fallback(month
             end_time=datetime.time(22, 30),
             hours=8.5,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
@@ -3144,7 +3150,8 @@ def test_team_month_view_resolves_each_successive_holders_own_rate(month_env, mo
             end_time=datetime.time(18, 0),
             hours=4.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.add(
@@ -3155,7 +3162,8 @@ def test_team_month_view_resolves_each_successive_holders_own_rate(month_env, mo
             end_time=datetime.time(18, 0),
             hours=4.0,
             ot_pay=0.0,
-            is_extension=False,
+            kind="ot",
+            side="full",
         )
     )
     session.commit()
