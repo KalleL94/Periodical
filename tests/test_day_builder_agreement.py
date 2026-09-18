@@ -1,16 +1,23 @@
-"""Agreement net for the two day builders in period.py.
+"""The week view's schedule must match the canonical one, pay gate and all.
 
-period.py resolves the day priority chain twice: `_build_person_day_basic` (used by
-build_week_data, the week/range views) and `_populate_single_person_day` (used by
-generate_period_data, the canonical month/year path). This module pins that both
-builders answer the schedule question identically for a month whose fixtures exercise
-every branch of the chain: absence (full and partial, left_at and arrived_at),
-week-based vacation and parental leave, shift override, swap, on-call override
-(ADD and REMOVE), overtime, overtime crossing midnight, an overtime day inside a
-vacation week (issue #285), and an employment boundary.
+period.py used to resolve the day priority chain twice: `_build_person_day_basic`
+for build_week_data, and `_populate_single_person_day` for the canonical month/year
+path. This module pinned that the copy still agreed. build_week_data now calls the
+canonical path with with_pay=False, so what is pinned here changed shape: that
+switching the pay computation off leaves every schedule field untouched.
 
-Only the fields both paths genuinely produce are compared; the pay fields (ob,
-oncall_pay, ot_pay, ot_hours) exist on the canonical path only.
+That is still worth a net. The gate skips the OB rules, the wage fetch, on-call pay
+and overtime pay, and it sits in the middle of a function where display and pay are
+interleaved - _apply_ot_display_shift replaces the day's shift for a called-in
+overtime and lives inside the same `if ot_rows` block as the pay call, so an
+over-broad gate silently reverts the week view to the rotation shift.
+
+The fixtures exercise every branch of the chain: absence (full and partial, left_at
+and arrived_at), week-based vacation and parental leave, shift override, swap,
+on-call override (ADD and REMOVE), overtime, overtime crossing midnight, an overtime
+day inside a vacation week (issue #285), and an employment boundary.
+
+Only the schedule fields are compared; the pay fields are what the week path drops.
 """
 
 import datetime

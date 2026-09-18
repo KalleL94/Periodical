@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
-from app.core.constants import placeholder_person_name
 from app.core.helpers import can_see_salary, strip_salary_data, strip_year_summary
 from app.core.schedule import (
     _cached_special_rules,
@@ -16,7 +15,7 @@ from app.core.schedule import (
 from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.utils import get_safe_today
 from app.database.database import User, UserRole, get_db
-from app.routes.shared import _resolve_person_param, redirect_if_not_own_data, render
+from app.routes.shared import redirect_if_not_own_data, render, resolve_person_view
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 
@@ -34,13 +33,7 @@ async def statistics_view(
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
     # Resolve as a USER id when a User row exists, else legacy rotation position.
-    target_user, rotation_position = _resolve_person_param(db, person_id)
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(db, current_user, person_id)
 
     redirect = redirect_if_not_own_data(
         current_user, user_id_for_wages, f"/statistics/{current_user.id}?year={year or ''}"
@@ -52,18 +45,6 @@ async def statistics_view(
 
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
-
-    # Resolve person name
-    if person_name is None:
-        if current_user.rotation_person_id == rotation_position:
-            person_name = current_user.name
-        else:
-            holder = db.query(User).filter(User.person_id == rotation_position).first()
-            if holder:
-                person_name = holder.name
-            else:
-                holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Fetch year data. For user-scoped views (a User resolved) filter months to
     # the viewed user's employment period regardless of the viewer's role.

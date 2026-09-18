@@ -552,6 +552,7 @@ async def show_month_all(
             "user": current_user,
             "year": year,
             "month": month,
+            **get_navigation_dates("month", date(year, month, 1)),
             "persons": persons,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,

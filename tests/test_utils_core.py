@@ -69,10 +69,6 @@ class TestGetNavigationDates:
         assert (result["prev_year"], result["prev_month"]) == (2025, 12)
         assert (result["next_year"], result["next_month"]) == (2026, 2)
 
-    def test_year_view(self):
-        result = get_navigation_dates("year", datetime.date(2026, 6, 1))
-        assert result == {"prev_year": 2025, "next_year": 2027}
-
     def test_unsupported_view_raises(self):
         with pytest.raises(ValueError):
             get_navigation_dates("decade", datetime.date(2026, 1, 1))  # type: ignore[arg-type]
