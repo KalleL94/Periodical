@@ -280,6 +280,32 @@ The loop writes one row per date with no batching. Selecting a full year means
 cap on dates per post rather than batching logic. Marked in the code with a
 `ponytail:` comment naming the cap and the upgrade path.
 
+## Branch 3: `feat/per-day-values`
+
+Branch 2's drawer applies one value to every selected day. This adds the case it
+cannot express: different values per day, for example sick on Monday, child care
+on Wednesday, overtime on Friday.
+
+A fifth tab, "Per dag", renders one row per selected day. Above the table an area
+select chooses Frånvaro, Tid or Pass, and only that area's columns are visible.
+That is the mobile constraint driving the design: all three areas at once is
+twelve controls per row, which cannot be a usable table at 400 px. One area at a
+time keeps a row to three to five fields, so it degrades to a readable card.
+
+**The rows are built in the browser.** The drawer renders before anything is
+selected, so the server does not know which days the table needs. A hidden
+`<template>` row is cloned per selected date, which is also why the table does
+not prefill with each day's current values: that would need a round trip. Removal
+is already covered by `/day-edit/clear`, so prefill buys less than it costs.
+
+Fields are named `<area>_<field>_<ISO date>`, so the route groups by suffix rather
+than trusting parallel arrays to stay aligned. The post also carries `area`, and
+the route reads only that area's fields: switching area leaves the other two sets
+in the DOM, and acting on them would write values the user never looked at.
+
+New route `/day-edit/bulk`. It reuses `MAX_EDIT_DATES` and reports through the
+same `?success=` fragment.
+
 ## Testing
 
 Branch 0: the four characterization files, unmodified, are the entire
