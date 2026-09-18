@@ -418,7 +418,6 @@ async def show_month_all(
     db: Session = Depends(get_db),
 ):
     """Month view for all persons."""
-    start_time = datetime.now()
 
     safe_today = get_safe_today(rotation_start_date)
 
@@ -543,16 +542,6 @@ async def show_month_all(
     # Append substitutes (schedule only, no salary) after the regular positions
     persons.extend(build_substitute_month_summaries(year, month, db))
 
-    show_salary = current_user is not None and current_user.role == UserRole.ADMIN
-
-    # Calculate and log load time
-    end_time = datetime.now()
-    load_time = (end_time - start_time).total_seconds()
-    logger.info(
-        f"Route /month (all persons) (year={year}, month={month}) loaded in {load_time:.3f}s",
-        extra={"duration_ms": load_time * 1000, "path": "/month", "user_id": current_user.id if current_user else None},
-    )
-
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
@@ -564,7 +553,6 @@ async def show_month_all(
             "year": year,
             "month": month,
             "persons": persons,
-            "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "today": get_today(),
@@ -581,7 +569,6 @@ async def show_year_all(
     simulated_date: str = None,
 ):
     """Year view for all persons."""
-    start_time = datetime.now()
 
     # Testing aid: ?simulated_date=YYYY-MM-DD views the page as if today were
     # that date (default year selection and past/future column hiding).
@@ -600,10 +587,6 @@ async def show_year_all(
     user_wages = get_all_user_wages(db)
 
     days_in_year = generate_year_data(year, session=db, user_wages=user_wages)
-
-    # Skip calculating totals on initial load - will be lazy-loaded via AJAX
-    # This makes initial page load much faster (~0.5s instead of 1-3s)
-    person_ob_totals = None
 
     # Build the column list with a two-pass restructure, matching the pattern
     # established in _build_person_rows (week view) and show_month_all (month
@@ -730,17 +713,6 @@ async def show_year_all(
     # before any history-tracked column regardless of position number.
     person_headers.sort(key=lambda h: h["person_id"])
 
-    show_salary = current_user is not None and current_user.role == UserRole.ADMIN
-
-    # Calculate and log load time
-    end_time = datetime.now()
-    load_time = (end_time - start_time).total_seconds()
-
-    logger.info(
-        f"Route /year (all persons) loaded in {load_time:.3f}s",
-        extra={"duration_ms": load_time * 1000, "path": "/year", "user_id": current_user.id if current_user else None},
-    )
-
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
@@ -751,9 +723,7 @@ async def show_year_all(
             "user": current_user,
             "year": year,
             "days": days_in_year,
-            "person_ob_totals": person_ob_totals,
             "person_headers": person_headers,
-            "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "today": real_today,

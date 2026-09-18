@@ -6,7 +6,7 @@ from typing import NamedTuple
 from app.core.constants import placeholder_person_name
 from app.core.storage import load_tax_brackets
 
-from .core import get_settings, weekday_names
+from .core import get_settings
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, mask_days_to_employment
 from .wages import (
@@ -823,21 +823,9 @@ def _process_day_for_summary(
         totals["substitute_base_pay"] = totals.get("substitute_base_pay", 0.0) + substitute_base
         totals["substitute_hours"] = totals.get("substitute_hours", 0.0) + hours
 
-    # Compute midnight-crossing metadata (used for per-calendar-day OB aggregation)
     from datetime import datetime as _dt
     from datetime import time as _time
     from datetime import timedelta as _td
-
-    date_next_day = None
-    weekday_name_next_day = None
-    hours_this_day = hours
-    hours_next_day = 0.0
-    if start and end and end.date() > start.date():
-        midnight = _dt.combine(end.date(), _time(0, 0))
-        hours_this_day = max((midnight - start).total_seconds() / 3600.0, 0.0)
-        hours_next_day = max((end - midnight).total_seconds() / 3600.0, 0.0)
-        date_next_day = end.date()
-        weekday_name_next_day = weekday_names[date_next_day.weekday()]
 
     # Update totals (worked hours, each hour counted once)
     totals["total_hours"] += day_worked_hours(day)
@@ -904,10 +892,6 @@ def _process_day_for_summary(
         "ob_hours": ob_hours,
         "ob_pay": ob_pay,
         "ob_hours_by_day": ob_hours_by_day,
-        "hours_this_day": hours_this_day,
-        "hours_next_day": hours_next_day,
-        "date_next_day": date_next_day,
-        "weekday_name_next_day": weekday_name_next_day,
         "oncall_pay": oncall_pay,
         "oncall_details": day.get("oncall_details", {}),
         "ot_pay": ot_pay,
@@ -1273,30 +1257,16 @@ def summarize_year_for_person(
                 wage_user_id=wage_user_id,
             )
         else:
-            # Generate per-month data with temporal rates for correct on-call/OT
-            _month_rates_map = None
-            if _rate_user:
-                _month_effective = dt.date(work_year, work_month, 1)
-                _month_rates = get_user_rates(_rate_user, session=session, effective_date=_month_effective)
-                _month_rates_map = {person_id: _month_rates}
-
-            month_days = generate_month_data(
-                work_year,
-                work_month,
-                person_id,
-                session=session,
-                user_wages=user_wages,
-                user_rates_map=_month_rates_map,
-            )
-
-            # Sammanfatta baserat på ARBETS-månad, inte utbetalnings-månad
+            # Summarised on the WORK month, not the payment month. The rate lookup and
+            # the generate_month_data call used to be repeated here; summarize_month_for_person
+            # does both itself, and its version is the correct one: this copy passed
+            # {person_id: {}} for a user with no rate rows where every other path passes None.
             m = summarize_month_for_person(
                 work_year,
                 work_month,
                 person_id,
                 session=session,
                 user_wages=user_wages,
-                year_days=month_days,
                 payment_year=mapping["payment_year"],
                 wage_user_id=wage_user_id,
             )
@@ -1428,7 +1398,6 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
                 year,
             )
             m["vacation_supplement"] = supplement["total"]
-            m["vacation_supplement_parts"] = supplement
             total_sem_days += sem_days
             total_supplement += m["vacation_supplement"]
 
@@ -1645,7 +1614,6 @@ def _build_year_summary(months: list[dict]) -> dict:
     total_oncall_hours = sum(m.get("oncall_hours", 0.0) for m in months)
     total_ot = sum(m.get("ot_pay", 0.0) for m in months)
     total_absence_deduction = sum(m.get("absence_deduction", 0.0) for m in months)
-    total_absence_hours = sum(m.get("absence_hours", 0.0) for m in months)
     total_sick_days = sum(m.get("sick_days", 0) for m in months)
     total_sick_hours = sum(m.get("sick_hours", 0.0) for m in months)
     total_sick_ob_pay = sum(m.get("sick_ob_pay", 0.0) for m in months)
@@ -1700,7 +1668,6 @@ def _build_year_summary(months: list[dict]) -> dict:
         "total_oncall_hours": total_oncall_hours,
         "total_ot": total_ot,
         "total_absence_deduction": total_absence_deduction,
-        "total_absence_hours": total_absence_hours,
         "total_sick_days": total_sick_days,
         "total_sick_hours": total_sick_hours,
         "total_sick_ob_pay": total_sick_ob_pay,

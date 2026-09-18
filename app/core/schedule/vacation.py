@@ -187,10 +187,7 @@ def get_vacation_year_boundaries(reference_year: int, start_month: int) -> tuple
         (year_start, year_end) as datetime.date
     """
     year_start = datetime.date(reference_year, start_month, 1)
-    if start_month == 1:
-        year_end = datetime.date(reference_year, 12, 31)
-    else:
-        year_end = datetime.date(reference_year + 1, start_month, 1) - datetime.timedelta(days=1)
+    year_end = datetime.date(reference_year + 1, start_month, 1) - datetime.timedelta(days=1)
     return year_start, year_end
 
 
@@ -289,16 +286,8 @@ def count_vacation_days_used(
 
     # Collect the dates covered by week-based vacation
     week_dates: set[datetime.date] = set()
-    # The vacation year may span two calendar years, so check both
-    calendar_years = set()
-    d = year_start
-    while d <= year_end:
-        calendar_years.add(d.year)
-        # Jump forward by month to avoid iterating every day
-        if d.month == 12:
-            d = datetime.date(d.year + 1, 1, 1)
-        else:
-            d = datetime.date(d.year, d.month + 1, 1)
+    # A vacation year is exactly one year long, so it touches at most two calendar years
+    calendar_years = {year_start.year, year_end.year}
 
     for cal_year in calendar_years:
         weeks = vacation_json.get(str(cal_year), []) or []

@@ -16,7 +16,7 @@ from app.core.schedule import (
 from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.utils import get_safe_today
 from app.database.database import User, UserRole, get_db
-from app.routes.shared import _resolve_person_param, render
+from app.routes.shared import _resolve_person_param, redirect_if_not_own_data, render
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 
@@ -42,12 +42,11 @@ async def statistics_view(
         user_id_for_wages = person_id
         person_name = None
 
-    # Non-admin users can only view their own data
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id_for_wages:
-        return RedirectResponse(
-            url=f"/statistics/{current_user.id}?year={year or ''}",
-            status_code=302,
-        )
+    redirect = redirect_if_not_own_data(
+        current_user, user_id_for_wages, f"/statistics/{current_user.id}?year={year or ''}"
+    )
+    if redirect:
+        return redirect
 
     from app.core.schedule import rotation_start_date
 

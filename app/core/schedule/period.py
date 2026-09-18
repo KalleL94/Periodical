@@ -2,6 +2,7 @@
 
 import calendar
 import datetime
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import time as dt_time
 from typing import NamedTuple
@@ -10,6 +11,13 @@ from app.core.constants import PERSON_IDS, placeholder_person_name
 from app.core.oncall import _cached_oncall_rules as get_oncall_rules
 from app.core.oncall import calculate_oncall_pay, calculate_oncall_pay_for_period
 from app.core.time_utils import parse_ot_times
+from app.database.database import (
+    Absence,
+    DayPayOverride,
+    OnCallOverride,
+    OvertimeShift,
+    ShiftOverride,
+)
 
 from .core import (
     calculate_shift_hours,
@@ -22,7 +30,7 @@ from .core import (
     weekday_names,
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
-from .overtime import get_overtime_rows_for_date, preferred_ot_row
+from .overtime import preferred_ot_row
 from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .segments import DaySegment, extra_segments, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
@@ -92,15 +100,28 @@ def build_week_data(
     # last days go missing from the all-persons views the same way.
     extra_user_ids = _range_holder_user_ids(session, person_ids, monday, sunday)
 
-    # Batch fetch absences, overtime, oncall overrides, swaps, and shift overrides for the week
-    absence_map = _batch_fetch_absences(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
-    ot_shift_map = _batch_fetch_ot_shifts(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
-    oncall_override_map = _batch_fetch_oncall_overrides(
-        session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
+    # Batch fetch absences, overtime, oncall overrides, swaps and shift overrides for the week.
+    # OvertimeShift reaches one day further back, to catch shifts crossing midnight into Monday.
+    absence_map = _batch_fetch_by_date(
+        session, Absence, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
+    )
+    ot_shift_map = _batch_fetch_by_date(
+        session,
+        OvertimeShift,
+        person_ids,
+        monday,
+        sunday,
+        rotation_to_user_id,
+        extra_user_ids,
+        days_before=1,
+        multi=True,
+    )
+    oncall_override_map = _batch_fetch_by_date(
+        session, OnCallOverride, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
     )
     swap_map = _batch_fetch_swap_map(session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids)
-    shift_override_map = _batch_fetch_shift_overrides(
-        session, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
+    shift_override_map = _batch_fetch_by_date(
+        session, ShiftOverride, person_ids, monday, sunday, rotation_to_user_id, extra_user_ids
     )
 
     # Substitutes (vikarier) are only included in the all-persons view. An absence
@@ -114,8 +135,8 @@ def build_week_data(
     sub_shift_types = get_shift_types() if substitutes else []
 
     years_week = _get_years_in_range(monday, sunday)
-    vacation_dates = _load_vacation_dates(years_week, session=session)
-    parental_dates = _load_parental_dates(years_week, session=session)
+    vacation_dates = _load_dates_by_person(get_vacation_dates_for_year, years_week, session=session)
+    parental_dates = _load_dates_by_person(get_parental_dates_for_year, years_week, session=session)
 
     # Linked substitutes (issue #290): only relevant for the single-person view,
     # where the before-employment branch may render the linked substitute's days.
@@ -236,8 +257,8 @@ def generate_period_data(
         combined_ob_rules.extend(get_combined_rules_for_year(yr))
 
     # Ladda semester- och föräldraledighetsdatum
-    vacation_dates = _load_vacation_dates(years_in_range, session=session)
-    parental_dates = _load_parental_dates(years_in_range, session=session)
+    vacation_dates = _load_dates_by_person(get_vacation_dates_for_year, years_in_range, session=session)
+    parental_dates = _load_dates_by_person(get_parental_dates_for_year, years_in_range, session=session)
 
     # Ladda löner om inte redan gjort
     if user_wages is None:
@@ -266,23 +287,31 @@ def generate_period_data(
     extra_user_ids = _range_holder_user_ids(session, person_ids, effective_start, end_date)
 
     # Batch fetch absences, overtime shifts, oncall overrides, swaps, and shift overrides for the entire period
-    absence_map = _batch_fetch_absences(
-        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    absence_map = _batch_fetch_by_date(
+        session, Absence, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
-    ot_shift_map = _batch_fetch_ot_shifts(
-        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    ot_shift_map = _batch_fetch_by_date(
+        session,
+        OvertimeShift,
+        person_ids,
+        effective_start,
+        end_date,
+        rotation_to_user_id,
+        extra_user_ids,
+        days_before=1,
+        multi=True,
     )
-    oncall_override_map = _batch_fetch_oncall_overrides(
-        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    oncall_override_map = _batch_fetch_by_date(
+        session, OnCallOverride, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
     swap_map = _batch_fetch_swap_map(
         session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
-    shift_override_map = _batch_fetch_shift_overrides(
-        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    shift_override_map = _batch_fetch_by_date(
+        session, ShiftOverride, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
-    day_pay_override_map = _batch_fetch_day_pay_overrides(
-        session, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
+    day_pay_override_map = _batch_fetch_by_date(
+        session, DayPayOverride, person_ids, effective_start, end_date, rotation_to_user_id, extra_user_ids
     )
 
     # Linked substitutes (issue #290): for a single-person view, pre-fetch the shifts,
@@ -382,37 +411,16 @@ def generate_month_data(
 
 def _get_years_in_range(start: datetime.date, end: datetime.date) -> set[int]:
     """Returns all years present in a date range."""
-    years = set()
-    temp = start
-    while temp <= end:
-        years.add(temp.year)
-        temp += datetime.timedelta(days=365)
-    years.add(end.year)
-    return years
+    return set(range(start.year, end.year + 1))
 
 
-def _load_vacation_dates(years: set[int], session=None) -> dict[int, set[datetime.date]]:
-    """Loads vacation dates for multiple years."""
-    vacation_dates: dict[int, set[datetime.date]] = {}
+def _load_dates_by_person(loader, years: set[int], session=None) -> dict[int, set[datetime.date]]:
+    """Merges a per-year {person_id: dates} loader across several years."""
+    out: dict[int, set[datetime.date]] = defaultdict(set)
     for yr in years:
-        year_vacations = get_vacation_dates_for_year(yr, session=session)
-        for pid, dates in year_vacations.items():
-            if pid not in vacation_dates:
-                vacation_dates[pid] = set()
-            vacation_dates[pid].update(dates)
-    return vacation_dates
-
-
-def _load_parental_dates(years: set[int], session=None) -> dict[int, set[datetime.date]]:
-    """Loads parental leave dates for multiple years."""
-    parental_dates: dict[int, set[datetime.date]] = {}
-    for yr in years:
-        year_parentals = get_parental_dates_for_year(yr, session=session)
-        for pid, dates in year_parentals.items():
-            if pid not in parental_dates:
-                parental_dates[pid] = set()
-            parental_dates[pid].update(dates)
-    return parental_dates
+        for pid, dates in loader(yr, session=session).items():
+            out[pid].update(dates)
+    return dict(out)
 
 
 def _build_rotation_to_user_map(session, rotation_positions: list[int]) -> dict[int, int]:
@@ -518,35 +526,6 @@ def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]
     return resolve
 
 
-def _get_substitutes_with_shifts(session, start_date: datetime.date, end_date: datetime.date) -> list:
-    """Return active substitutes that have at least one shift in the range.
-
-    Substitutes have an empty base schedule, so they are only shown on days they
-    actually work. Listing only those with shifts in range keeps empty rows out of
-    the week/month views.
-    """
-    if not session:
-        return []
-    from app.database.database import Substitute, SubstituteShift
-
-    subs = session.query(Substitute).filter(Substitute.is_active == 1).all()
-    if not subs:
-        return []
-    sub_ids = [s.id for s in subs]
-    rows = (
-        session.query(SubstituteShift.substitute_id)
-        .filter(
-            SubstituteShift.substitute_id.in_(sub_ids),
-            SubstituteShift.date >= start_date,
-            SubstituteShift.date <= end_date,
-        )
-        .distinct()
-        .all()
-    )
-    active_ids = {r[0] for r in rows}
-    return [s for s in subs if s.id in active_ids]
-
-
 def get_linked_substitutes_for_user(session, user_id: int | None) -> list:
     """Return every substitute linked to a user account (issue #290).
 
@@ -639,7 +618,6 @@ def _build_linked_substitute_day_fields(
                     "hours": 0.0,
                     "start": None,
                     "end": None,
-                    "is_absence": True,
                 }
 
         if ot_entries:
@@ -779,7 +757,6 @@ def _build_substitute_day(
                 "start": None,
                 "end": None,
                 "is_substitute": True,
-                "is_absence": True,
             }
 
     # Overtime is shown as the OT shift (same convention as agents), taking display
@@ -927,15 +904,18 @@ def _get_substitutes_with_activity(
     """
     if not session:
         return []
-    from app.database.database import Absence, OvertimeShift, Substitute
+    from app.database.database import Absence, OvertimeShift, Substitute, SubstituteShift
 
     subs = session.query(Substitute).filter(Substitute.is_active == 1).all()
     if not subs:
         return []
     sub_ids = [s.id for s in subs]
 
-    active_ids = {s.id for s in _get_substitutes_with_shifts(session, start_date, end_date)}
-    models = [Absence, OvertimeShift] if include_overtime else [Absence]
+    # A substitute has no base schedule, so they appear only on days they are actually
+    # busy: a shift, an absence (which renders as a day shift) or, for the report,
+    # overtime on its own.
+    active_ids: set[int] = set()
+    models = [SubstituteShift, Absence] + ([OvertimeShift] if include_overtime else [])
     for model in models:
         rows = (
             session.query(model.substitute_id)
@@ -1109,7 +1089,6 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
                 "person_id": f"sub-{sub.id}",
                 "substitute_id": sub.id,
                 "person_name": sub.name,
-                "linked_user_id": sub.user_id,
                 "days": days,
                 "ob_pay": {},
                 "ob_hours": ob_hours,
@@ -1205,95 +1184,6 @@ def _batch_fetch_by_date(
     return grouped
 
 
-def _batch_fetch_absences(
-    session,
-    person_ids: list[int],
-    start_date: datetime.date,
-    end_date: datetime.date,
-    rotation_to_user_id: dict[int, int] | None = None,
-    extra_user_ids: set[int] | None = None,
-) -> dict[tuple[int, datetime.date], object]:
-    """Batch-hämtar frånvaro för flera personer och en period."""
-    from app.database.database import Absence
-
-    return _batch_fetch_by_date(session, Absence, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids)
-
-
-def _batch_fetch_ot_shifts(
-    session,
-    person_ids: list[int],
-    start_date: datetime.date,
-    end_date: datetime.date,
-    rotation_to_user_id: dict[int, int] | None = None,
-    extra_user_ids: set[int] | None = None,
-) -> dict[tuple[int, datetime.date], object]:
-    """Batch-hämtar övertidspass för flera personer och en period.
-
-    Fetches one extra day before start_date to catch OT shifts crossing midnight.
-    """
-    from app.database.database import OvertimeShift
-
-    return _batch_fetch_by_date(
-        session,
-        OvertimeShift,
-        person_ids,
-        start_date,
-        end_date,
-        rotation_to_user_id,
-        extra_user_ids,
-        days_before=1,
-        multi=True,
-    )
-
-
-def _batch_fetch_oncall_overrides(
-    session,
-    person_ids: list[int],
-    start_date: datetime.date,
-    end_date: datetime.date,
-    rotation_to_user_id: dict[int, int] | None = None,
-    extra_user_ids: set[int] | None = None,
-) -> dict[tuple[int, datetime.date], object]:
-    """Batch-hämtar on-call overrides för flera personer och en period."""
-    from app.database.database import OnCallOverride
-
-    return _batch_fetch_by_date(
-        session, OnCallOverride, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids
-    )
-
-
-def _batch_fetch_shift_overrides(
-    session,
-    person_ids: list[int],
-    start_date: datetime.date,
-    end_date: datetime.date,
-    rotation_to_user_id: dict[int, int] | None = None,
-    extra_user_ids: set[int] | None = None,
-) -> dict[tuple[int, datetime.date], object]:
-    """Batch-fetches manual shift overrides for multiple persons and a period."""
-    from app.database.database import ShiftOverride
-
-    return _batch_fetch_by_date(
-        session, ShiftOverride, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids
-    )
-
-
-def _batch_fetch_day_pay_overrides(
-    session,
-    person_ids: list[int],
-    start_date: datetime.date,
-    end_date: datetime.date,
-    rotation_to_user_id: dict[int, int] | None = None,
-    extra_user_ids: set[int] | None = None,
-) -> dict[tuple[int, datetime.date], object]:
-    """Batch-fetches manual pay overrides (OB/oncall) for multiple persons and a period."""
-    from app.database.database import DayPayOverride
-
-    return _batch_fetch_by_date(
-        session, DayPayOverride, person_ids, start_date, end_date, rotation_to_user_id, extra_user_ids
-    )
-
-
 def _batch_fetch_swap_map(
     session,
     person_ids: list[int],
@@ -1375,13 +1265,9 @@ def _batch_fetch_swap_map(
     return swap_map
 
 
-def _lookup_for_day(batch_map, session, model, person_id: int, date: datetime.date):
-    """Row for (person, date), from the pre-fetched batch map or, without one, a query."""
-    if batch_map is not None:
-        return batch_map.get((person_id, date))
-    if session:
-        return session.query(model).filter(model.user_id == person_id, model.date == date).first()
-    return None
+def _lookup_for_day(batch_map, person_id: int, date: datetime.date):
+    """Row for (person, date) from the pre-fetched batch map."""
+    return batch_map.get((person_id, date))
 
 
 def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session):
@@ -1390,12 +1276,12 @@ def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session
     The second may come from the previous day when that overtime crosses midnight; it
     affects the on-call calculation but is never displayed as the day's shift.
     """
-    ot_rows = _lookup_ot_shift(person_id, date, ot_shift_map, session)
+    ot_rows = _lookup_ot_shift(person_id, date, ot_shift_map)
     if ot_rows:
         return ot_rows, preferred_ot_row(ot_rows)
 
     prev_day = date - datetime.timedelta(days=1)
-    prev_rows = _lookup_ot_shift(person_id, prev_day, ot_shift_map, session)
+    prev_rows = _lookup_ot_shift(person_id, prev_day, ot_shift_map)
     prev_ot = preferred_ot_row(prev_rows)
     if prev_ot:
         try:
@@ -1407,12 +1293,8 @@ def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session
     return [], None
 
 
-def _lookup_ot_shift(person_id: int, date: datetime.date, ot_shift_map, session):
-    if ot_shift_map is not None:
-        return ot_shift_map.get((person_id, date), [])
-    if session:
-        return get_overtime_rows_for_date(session, person_id, date)
-    return []
+def _lookup_ot_shift(person_id: int, date: datetime.date, ot_shift_map):
+    return ot_shift_map.get((person_id, date), [])
 
 
 def _apply_ot_display_shift(ot_rows, date: datetime.date, shift, segments, shift_types):
@@ -1460,9 +1342,8 @@ def _build_person_day_basic(
 
     Runs the same priority chain as _populate_single_person_day through the same helpers;
     this builder only adds rotation_length, skips the pay computation (no OB rules are
-    passed in, and the pay keys are dropped) and exposes ot_shift_for_oncall.
+    passed in, and the pay keys are dropped).
     """
-    from app.database.database import Absence, OnCallOverride
 
     shift_types = get_shift_types()
     vacation_shift = get_vacation_shift()
@@ -1497,7 +1378,7 @@ def _build_person_day_basic(
     day: dict = {}
 
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
-    absence = _lookup_for_day(ctx.absence_map, session, Absence, person_id, date)
+    absence = _lookup_for_day(ctx.absence_map, person_id, date)
     if absence and _populate_absence_day(day, absence, date, person_id, person_name, [], vacation_shift, shift_types):
         return _basic_day_result(day, rotation_length)
 
@@ -1525,7 +1406,7 @@ def _build_person_day_basic(
     _rot = determine_shift_for_date(date, person_id)
     original_shift = _rot[0] if _rot else shift
 
-    oncall_override = _lookup_for_day(ctx.oncall_override_map, session, OnCallOverride, person_id, date)
+    oncall_override = _lookup_for_day(ctx.oncall_override_map, person_id, date)
     shift, segments, _ob = _apply_oncall_override(oncall_override, shift, segments, _ob, shift_types)
 
     ot_rows, ot_shift_for_oncall = _lookup_ot_shifts(person_id, date, ctx.ot_shift_map, session)
@@ -1549,7 +1430,6 @@ def _build_person_day_basic(
         "hours": hours,
         "start": start,
         "end": end,
-        "ot_shift_for_oncall": ot_shift_for_oncall,  # OT that affects on-call (may be from prev day)
     }
 
 
@@ -2009,7 +1889,6 @@ def _populate_single_person_day(
     employment_start: datetime.date | None = None,
 ) -> None:
     """Populates detailed day info for a person."""
-    from app.database.database import Absence, OnCallOverride
 
     vacation_dates = ctx.vacation_dates
     combined_ob_rules = ctx.combined_ob_rules
@@ -2070,7 +1949,7 @@ def _populate_single_person_day(
         return
 
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
-    absence = _lookup_for_day(absence_map, session, Absence, person_id, current_day)
+    absence = _lookup_for_day(absence_map, person_id, current_day)
 
     if absence and _populate_absence_day(
         day_info, absence, current_day, person_id, person_name, combined_ob_rules, vacation_shift, shift_types
@@ -2105,7 +1984,7 @@ def _populate_single_person_day(
     original_shift = _rot[0] if _rot else shift
 
     # Kolla oncall override - hämta från batch eller databas
-    oncall_override = _lookup_for_day(oncall_override_map, session, OnCallOverride, person_id, current_day)
+    oncall_override = _lookup_for_day(oncall_override_map, person_id, current_day)
 
     shift, segments, ob = _apply_oncall_override(oncall_override, shift, segments, ob, shift_types)
 
