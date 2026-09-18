@@ -12,6 +12,7 @@
         <button type="button" class="day-tab" data-tab="franvaro" role="tab">{{ t.day_tab_absence }}</button>
         <button type="button" class="day-tab" data-tab="beredskap" role="tab">{{ t.day_tab_oncall }}</button>
         <button type="button" class="day-tab" data-tab="byte" role="tab">{{ t.day_tab_swap }}</button>
+        {% if drawer %}<button type="button" class="day-tab" data-tab="perdag" role="tab">{{ t.day_tab_perday }}</button>{% endif %}
     </div>
 
     <div class="day-tab-panel is-active" id="tab-tid">
@@ -530,6 +531,105 @@
     </div>{# /tab-byte #}
 
 {% if drawer %}
+    <div class="day-tab-panel" id="tab-perdag">
+        <form method="POST" action="/day-edit/bulk" class="ot-form" id="per-day-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ person_id }}">
+            <input type="hidden" name="return_to" value="{{ return_to_url }}">
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="per_day_area">{{ t.day_perday_area }}</label>
+                    {# The area decides which columns are visible and which fields the
+                       route reads. The other two stay in the DOM and still submit,
+                       which is why the route ignores them. #}
+                    <select id="per_day_area" name="area">
+                        <option value="absence">{{ t.day_tab_absence }}</option>
+                        <option value="time">{{ t.day_tab_time }}</option>
+                        <option value="shift">{{ t.day_tab_swap }}</option>
+                    </select>
+                </div>
+            </div>
+
+            {# No keep-table here: that class opts out of the card layout, and the card
+               layout is the whole reason the per-day table is usable on a phone. #}
+            <table class="per-day-table is-area-absence" id="per-day-table">
+                <tbody id="per-day-rows"></tbody>
+            </table>
+
+            <button type="submit" class="btn btn-primary">{{ t.day_perday_save }}</button>
+        </form>
+        <p class="info-text">{{ t.day_perday_hint }}</p>
+    </div>
+
+    {# Cloned once per selected day. Names are empty here so the template never
+       submits; the script sets each to <field>_<ISO date> when it clones. Every
+       cell carries data-label, which is what tables.css turns into the phone
+       card layout below 800 px. #}
+    <template id="per-day-row">
+        <tr>
+            <td class="per-day-date" data-label="{{ t.day_perday_day }}"></td>
+            <td class="per-day-area per-day-area--absence" data-label="{{ t.day_absence_type_label }}">
+                <select data-field="absence_type">
+                    <option value="">-</option>
+                    <option value="SICK">{{ t.day_absence_sick }}</option>
+                    <option value="VAB">{{ t.day_absence_vab }}</option>
+                    <option value="LEAVE">{{ t.day_absence_leave }}</option>
+                    <option value="OFF">{{ t.day_absence_off }}</option>
+                </select>
+            </td>
+            <td class="per-day-area per-day-area--absence" data-label="{{ t.day_absence_arrived_at_label }}">
+                <input type="time" data-field="absence_arrived">
+            </td>
+            <td class="per-day-area per-day-area--absence" data-label="{{ t.day_absence_left_at_label }}">
+                <input type="time" data-field="absence_left">
+            </td>
+
+            <td class="per-day-area per-day-area--time" data-label="{{ t.day_seg_type }}">
+                <select data-field="time_kind">
+                    <option value="">-</option>
+                    <option value="ot">{{ t.day_seg_kind_ot }}</option>
+                    <option value="extra">{{ t.day_seg_kind_extra }}</option>
+                </select>
+            </td>
+            <td class="per-day-area per-day-area--time" data-label="{{ t.day_seg_when }}">
+                <select data-field="time_side">
+                    <option value="after">{{ t.day_seg_side_after }}</option>
+                    <option value="before">{{ t.day_seg_side_before }}</option>
+                    <option value="full">{{ t.day_seg_side_full }}</option>
+                </select>
+            </td>
+            <td class="per-day-area per-day-area--time" data-label="{{ t.day_start_time }}">
+                <input type="time" data-field="time_start">
+            </td>
+            <td class="per-day-area per-day-area--time" data-label="{{ t.day_end_time }}">
+                <input type="time" data-field="time_end">
+            </td>
+            <td class="per-day-area per-day-area--time" data-label="{{ t.day_ext_hours }}">
+                <input type="number" step="0.01" min="0" data-field="time_hours">
+            </td>
+
+            <td class="per-day-area per-day-area--shift" data-label="{{ t.day_shift_override_label }}">
+                <select data-field="shift_code">
+                    <option value="">-</option>
+                    <option value="N1">N1</option>
+                    <option value="N2">N2</option>
+                    <option value="N3">N3</option>
+                    <option value="ETC">{{ t.day_shift_etc }}</option>
+                </select>
+            </td>
+            <td class="per-day-area per-day-area--shift" data-label="{{ t.day_shift_etc_label }}">
+                <input type="text" maxlength="40" data-field="shift_label">
+            </td>
+            <td class="per-day-area per-day-area--shift" data-label="{{ t.day_start_time }}">
+                <input type="time" data-field="shift_start">
+            </td>
+            <td class="per-day-area per-day-area--shift" data-label="{{ t.day_end_time }}">
+                <input type="time" data-field="shift_end">
+            </td>
+        </tr>
+    </template>
+
     {# Clearing is drawer-only: the day page has per-row delete buttons, which say
        exactly which row they remove. Here there are no rows to show, so the
        choice is what to clear rather than which one. #}

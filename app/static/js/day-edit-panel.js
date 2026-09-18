@@ -52,6 +52,40 @@
         });
     }
 
+    // Per-day rows are built here, not on the server: the drawer renders before
+    // anything is selected, so the server never knows which days the table needs.
+    var rowTemplate = document.getElementById('per-day-row');
+    var rowBody = document.getElementById('per-day-rows');
+    var areaSelect = document.getElementById('per_day_area');
+    var perDayTable = document.getElementById('per-day-table');
+
+    if (rowTemplate && rowBody && areaSelect && perDayTable) {
+        var dayLabel = function (iso) {
+            var d = new Date(iso + 'T00:00:00');
+            return d.toLocaleDateString(document.documentElement.lang || 'sv', {
+                weekday: 'short', day: 'numeric', month: 'short'
+            });
+        };
+
+        document.addEventListener('day-selection-change', function (event) {
+            rowBody.textContent = '';
+            event.detail.dates.forEach(function (iso) {
+                var row = rowTemplate.content.cloneNode(true);
+                row.querySelector('.per-day-date').textContent = dayLabel(iso);
+                row.querySelectorAll('[data-field]').forEach(function (el) {
+                    el.name = el.dataset.field + '_' + iso;
+                });
+                rowBody.appendChild(row);
+            });
+        });
+
+        areaSelect.addEventListener('change', function () {
+            ['absence', 'time', 'shift'].forEach(function (area) {
+                perDayTable.classList.toggle('is-area-' + area, areaSelect.value === area);
+            });
+        });
+    }
+
     // The custom block's label and times only apply to shift code ETC.
     var shiftCode = document.getElementById('shift_code');
     var etcFields = document.getElementById('etc-fields');

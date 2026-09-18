@@ -177,3 +177,46 @@ def test_the_day_page_does_not_offer_the_bulk_clear(env):
     client, _ = env
     html = client.get(f"/day/1/{DAY.year}/{DAY.month}/{DAY.day}").text
     assert 'action="/day-edit/clear"' not in html
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_drawer_offers_a_per_day_tab(env, view):
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    drawer = html[html.index('id="day-edit-drawer"') :]
+    assert 'id="tab-perdag"' in drawer
+    assert 'id="per-day-row"' in drawer
+    assert 'action="/day-edit/bulk"' in drawer
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_every_per_day_cell_is_labelled(env, view):
+    """tables.css turns cells into cards below 800px using data-label; a cell
+    without one renders as an unlabelled field on a phone."""
+    import re
+
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    template = re.search(r'<template id="per-day-row">.*?</template>', html, re.S).group(0)
+    cells = re.findall(r"<td[^>]*>", template)
+    assert cells
+    assert all("data-label=" in cell for cell in cells)
+
+
+def test_the_day_page_has_no_per_day_tab(env):
+    """One day does not need a per-day table."""
+    client, _ = env
+    html = client.get(f"/day/1/{DAY.year}/{DAY.month}/{DAY.day}").text
+    assert 'id="tab-perdag"' not in html
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS))
+def test_the_per_day_table_does_not_opt_out_of_the_card_layout(env, view):
+    """keep-table keeps a table a table below 800px. Twelve controls per row in a
+    table is exactly what the per-day design exists to avoid."""
+    import re
+
+    client, _ = env
+    html = client.get(VIEWS[view]).text
+    table = re.search(r'<table[^>]*id="per-day-table"[^>]*>', html).group(0)
+    assert "keep-table" not in table
