@@ -103,6 +103,37 @@ def _resolve_person_param(db, raw_id: int, on_date=None):
     return None, validate_person_id(raw_id)
 
 
+def resolve_person_view(db, current_user, raw_id: int, on_date=None):
+    """Resolve a personal-view path parameter to (target_user, position, wage_user_id, name).
+
+    Wraps _resolve_person_param with the display-name fallback every personal view
+    needs, because the parameter may name a user who no longer holds the position,
+    or a legacy rotation position with no User row of its own.
+
+    The name chain was previously copied into each handler and had drifted three ways:
+    the week view filtered on is_active and returned None on a miss (a blank page
+    heading), the range view had lost the legacy User.id fallback, and the day view
+    never tried User.person_id at all, so the same legacy position answered with a
+    different name depending on which view you opened. This is the union of the three.
+    """
+    from app.core.constants import placeholder_person_name
+    from app.database.database import User
+
+    target_user, position = _resolve_person_param(db, raw_id, on_date=on_date)
+    if target_user is not None:
+        return target_user, position, target_user.id, target_user.name
+
+    if current_user is not None and current_user.rotation_person_id == position:
+        name = current_user.name
+    else:
+        holder = (
+            db.query(User).filter(User.person_id == position).first()
+            or db.query(User).filter(User.id == position).first()
+        )
+        name = holder.name if holder else placeholder_person_name(position)
+    return None, position, raw_id, name
+
+
 def build_position_nav(db) -> list[dict]:
     """Build the admin jump-bar entries: one per rotation position (1-10).
 

@@ -343,7 +343,6 @@ input, select {
 .ot-form .form-group { flex: 1; }
 .ot-form label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
 .ot-form input { width: 100%; padding: 0.5rem; border: 1px solid var(--table-border); border-radius: 4px; }
-.ot-display { margin-top: 1rem; }
 .info-text { font-size: 0.9em; color: var(--muted); margin-top: 0.5rem; font-style: italic; }
 
 
@@ -1218,8 +1217,6 @@ form:not(:has(select[name="vacation_variable_payout"] option[value="lump"]:check
 }
 .form-radio input { margin: 0; flex-shrink: 0; }
 
-/* A derived value shown where an input used to sit: same box, not editable. */
-.form-input--readonly { background: transparent; border-color: transparent; padding-left: 0; }
 
 /* Floating back-to-top button. Hidden until base.html's scroll listener adds
    .to-top--visible (past 400px), so it never covers content at the top. */

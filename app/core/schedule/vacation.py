@@ -1,13 +1,13 @@
 """Vacation management – week-based, day-level and balance calculations."""
 
 import datetime
+import logging
 import math
 
 from app.core.constants import PERSON_IDS
-from app.core.logging_config import get_logger
 from app.core.schedule.transition import PERCENTAGE_RULE, PERCENTAGE_RULE_PCT
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _leave_dates_by_position(year: int, session, *, week_attr: str, absence_type) -> dict[int, set[datetime.date]]:
@@ -187,10 +187,7 @@ def get_vacation_year_boundaries(reference_year: int, start_month: int) -> tuple
         (year_start, year_end) as datetime.date
     """
     year_start = datetime.date(reference_year, start_month, 1)
-    if start_month == 1:
-        year_end = datetime.date(reference_year, 12, 31)
-    else:
-        year_end = datetime.date(reference_year + 1, start_month, 1) - datetime.timedelta(days=1)
+    year_end = datetime.date(reference_year + 1, start_month, 1) - datetime.timedelta(days=1)
     return year_start, year_end
 
 
@@ -289,16 +286,8 @@ def count_vacation_days_used(
 
     # Collect the dates covered by week-based vacation
     week_dates: set[datetime.date] = set()
-    # The vacation year may span two calendar years, so check both
-    calendar_years = set()
-    d = year_start
-    while d <= year_end:
-        calendar_years.add(d.year)
-        # Jump forward by month to avoid iterating every day
-        if d.month == 12:
-            d = datetime.date(d.year + 1, 1, 1)
-        else:
-            d = datetime.date(d.year, d.month + 1, 1)
+    # A vacation year is exactly one year long, so it touches at most two calendar years
+    calendar_years = {year_start.year, year_end.year}
 
     for cal_year in calendar_years:
         weeks = vacation_json.get(str(cal_year), []) or []
@@ -413,6 +402,25 @@ def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, d
     """
     from sqlalchemy.orm.attributes import flag_modified
 
+    from app.database.database import User
+
+    # Re-read vacation_saved straight from the row rather than trusting the copy the
+    # caller loaded. calculate_vacation_balance runs a long stretch of queries between
+    # reading it and deciding to close, and every view that shows a balance reaches
+    # this on a GET, so two requests for different years could both start from the
+    # same dict and the second commit would drop the first year's close.
+    #
+    # Queried as a column, not db.refresh(user), so the caller's User object and any
+    # other pending state on the session are left alone.
+    #
+    # ponytail: this narrows the window to the few statements below, it does not close
+    # it. SQLite has no SELECT ... FOR UPDATE, so a true guarantee means taking the
+    # close out of the read path (a scheduled job or an explicit admin action) and
+    # letting the views only read.
+    stored = db.query(User.vacation_saved).filter(User.id == user.id).scalar() or {}
+    if str(target_year) in stored:
+        return stored[str(target_year)]
+
     monthly_salary = pay.get("monthly_salary", 0)
     # The full supplement, both parts: an employer who pays the variable part as a
     # lump sum still owes it on every unused day that is paid out.
@@ -422,7 +430,7 @@ def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, d
     # Vacation compensation = payout_pct base + vacation supplement
     payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
-    saved = dict(user.vacation_saved or {})
+    saved = dict(stored)
 
     if remaining_own <= 0:
         days_saved = 0

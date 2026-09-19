@@ -4,6 +4,7 @@ Personal schedule view routes - day, week, month, and year views for specific pe
 """
 
 import io
+import logging
 from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -11,10 +12,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
-from app.core.constants import placeholder_person_name
-from app.core.helpers import can_see_salary, strip_salary_data
+from app.core.helpers import can_see_salary, strip_salary_data, strip_year_summary
 from app.core.holidays import get_holiday_dates_for_year
-from app.core.logging_config import get_logger
 from app.core.oncall import (
     _cached_oncall_rules as _get_oncall_rules,
 )
@@ -37,12 +36,12 @@ from app.core.schedule import (
     get_shift_types,
     ob_rules,
     oncall_window,
-    preferred_ot_row,
     rotation_start_date,
     settings,
     summarize_year_for_person,
     weekday_names,
 )
+from app.core.schedule.person_history import get_employment_period
 from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.schedule.vacation import (
     calculate_vacation_balance,
@@ -64,9 +63,9 @@ from app.database.database import (
     UserRole,
     get_db,
 )
-from app.routes.shared import _resolve_person_param, build_position_nav, redirect_if_not_own_data, render
+from app.routes.shared import build_position_nav, redirect_if_not_own_data, render, resolve_person_view
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["schedule_personal"])
 
@@ -95,8 +94,9 @@ async def show_day_for_person(
 
     # Resolve the position held on the VIEWED date, so a future-dated change only
     # shows once its date is reached (mirrors the month/week/range views).
-    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=date_obj)
-    user_id_for_wages = target_user.id if target_user is not None else person_id
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(
+        db, current_user, person_id, on_date=date_obj
+    )
 
     if redirect := redirect_if_not_own_data(
         current_user, user_id_for_wages, f"/day/{current_user.id}/{year}/{month}/{day}"
@@ -129,16 +129,6 @@ async def show_day_for_person(
 
     special_rules = _cached_special_rules(year)
     combined_rules = ob_rules + special_rules
-
-    # Get person name from database
-    if current_user.id == user_id_for_wages:
-        person_name = current_user.name
-    else:
-        holder = db.query(User).filter(User.id == user_id_for_wages).first()
-        if holder:
-            person_name = holder.name
-        else:
-            person_name = placeholder_person_name(rotation_position)
 
     # Use temporal wage query for the specific date being viewed
     # Use user_id_for_wages for wage lookup
@@ -179,7 +169,6 @@ async def show_day_for_person(
         # returning (None, None): no shift, no hours, no pay.
         canonical = {
             "shift": None,
-            "original_shift": None,
             "rotation_week": None,
             "hours": 0.0,
             "start": None,
@@ -309,11 +298,7 @@ async def show_day_for_person(
     # user's OT rate via user_rates_map); only the raw OT row id is fetched
     # here, for the delete link in the edit form.
     ot_details = canonical.get("ot_details") or {}
-    # The Time tab lists every row; ot_shift_id stays for the pay section,
-    # which still speaks about a single primary row.
     ot_rows = get_overtime_rows_for_date(db, user_id_for_wages, date_obj)
-    _ot_row = preferred_ot_row(ot_rows)
-    ot_shift_id = _ot_row.id if _ot_row else None
 
     # On-call pay comes from the canonical dict, which already zeroes it on
     # absence days and reduces it around overtime (including OT crossing
@@ -349,7 +334,6 @@ async def show_day_for_person(
     # Calculate absence deduction if absence exists
     absence_deduction = 0.0
     absence_shift_hours = 0.0
-    is_karens = False
     karens_hours_today = 0.0
     sjuklon_hours_today = 0.0
     sick_ob_pay_today = 0.0
@@ -374,7 +358,6 @@ async def show_day_for_person(
             karens_remaining = max(0.0, KARENS_HOURS - karens_consumed)
             karens_hours_today = min(absent_hours, karens_remaining)
             sjuklon_hours_today = absent_hours - karens_hours_today
-            is_karens = karens_hours_today > 0
             absence_deduction = calculate_absence_deduction(
                 monthly_salary,
                 absence.absence_type.value,
@@ -403,7 +386,6 @@ async def show_day_for_person(
                 )
                 sick_ob_pay_today = sum(full_shift_ob.values()) * (sjuklon_hours_today / full_shift_hours) * 0.8
         else:
-            is_karens = False
             karens_hours_today = 0.0
             sjuklon_hours_today = absent_hours
             absence_deduction = calculate_absence_deduction(
@@ -465,7 +447,6 @@ async def show_day_for_person(
             "rotation_week": rotation_week,
             "rotation_length": rotation_length,
             "shift": shift,
-            "original_shift": original_shift,  # Pass original shift for OC detection
             "hours": hours,
             "ob_hours": ob_hours if show_salary else {},
             "ob_pay": ob_pay if show_salary else {},
@@ -474,7 +455,6 @@ async def show_day_for_person(
             "active_special_rules": active_special_rules,
             "oncall_pay": oncall_pay if show_salary else 0.0,
             "oncall_details": oncall_details if show_salary else {},
-            "monthly_salary": monthly_salary,
             "iso_year": iso_year,
             "iso_week": iso_week,
             "show_salary": show_salary,
@@ -487,16 +467,13 @@ async def show_day_for_person(
             "return_to_url": f"/day/{person_id}/{date_obj.year}/{date_obj.month}/{date_obj.day}",
             "success": success,
             "ot_shift": ot_details if show_salary and ot_details else None,
-            "ot_shift_id": ot_shift_id,
             "ot_rows": ot_rows,
             "absence": absence,  # Pass absence data to template
             "absence_deduction": absence_deduction,
             "absence_shift_hours": absence_shift_hours,
-            "is_karens": is_karens,
             "karens_hours_today": karens_hours_today,
             "sjuklon_hours_today": sjuklon_hours_today,
             "sick_ob_pay_today": sick_ob_pay_today,
-            "before_employment": before_employment,
             "is_substitute": is_substitute_day,
             "substitute_hourly_wage": substitute_hourly_wage if show_salary else 0,
             "substitute_base_pay": (
@@ -547,12 +524,9 @@ async def show_week_for_person(
     # Resolve the position held during the VIEWED week (its Monday), so a
     # future-dated change only shows once its week is reached.
     monday = date.fromisocalendar(year, week, 1)
-    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=monday)
-    if target_user is not None:
-        person_name = target_user.name
-    else:
-        pos_user = db.query(User).filter(User.person_id == rotation_position, User.is_active == 1).first()
-        person_name = pos_user.name if pos_user else None
+    target_user, rotation_position, _week_wage_uid, person_name = resolve_person_view(
+        db, current_user, person_id, on_date=monday
+    )
 
     # Use rotation_position for schedule calculation
     # For user_id lookups, pass employment start/end so days outside the
@@ -561,8 +535,6 @@ async def show_week_for_person(
     week_employment_start = None
     week_employment_end = None
     if target_user is not None:
-        from app.core.schedule.person_history import get_employment_period
-
         week_emp_start, week_emp_end = get_employment_period(db, target_user.id, rotation_position)
         week_employment_start = week_emp_start
         week_employment_end = week_emp_end
@@ -647,7 +619,7 @@ def _range_segments(db, target_user, rotation_position: int, start, end) -> list
     overlapping the range (they had left before it, or start later) gets no segments and
     so no days, which is the same empty range the single-position path produced.
     """
-    from app.core.schedule.person_history import get_employment_period, get_user_position_segments
+    from app.core.schedule.person_history import get_user_position_segments
 
     if target_user is None:
         return [
@@ -719,23 +691,12 @@ async def show_range_for_person(
 
     # Resolve the position held at the VIEWED range's start, so a future-dated
     # change only shows once the range reaches it.
-    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=start)
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(
+        db, current_user, person_id, on_date=start
+    )
 
     if redirect := redirect_if_not_own_data(current_user, user_id_for_wages, f"/range/{current_user.id}"):
         return redirect
-
-    if person_name is None:
-        if current_user is not None and current_user.rotation_person_id == rotation_position:
-            person_name = current_user.name
-        else:
-            holder = db.query(User).filter(User.person_id == rotation_position).first()
-            person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # A range is the one personal view long enough to span a position change, so it
     # cannot resolve a single position for the whole of it: a user who swapped
@@ -839,7 +800,6 @@ async def show_month_for_person(
     that id exists; only when no such user exists does the legacy rotation
     position interpretation apply.
     """
-    start_time = datetime.now()
 
     safe_today = get_safe_today(rotation_start_date)
 
@@ -850,25 +810,9 @@ async def show_month_for_person(
 
     # Resolve the position held during the VIEWED month, so a future-dated change
     # only shows once its month is reached.
-    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=date(year, month, 1))
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
-
-    # Get person name if not already set
-    if person_name is None:
-        if current_user is not None and current_user.rotation_person_id == rotation_position:
-            person_name = current_user.name
-        else:
-            holder = db.query(User).filter(User.person_id == rotation_position).first()
-            if holder:
-                person_name = holder.name
-            else:
-                holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else placeholder_person_name(rotation_position)
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(
+        db, current_user, person_id, on_date=date(year, month, 1)
+    )
 
     # Use rotation_position for schedule calculation
     # For user_id lookups, pass the user's own employment start/end so dates
@@ -878,8 +822,6 @@ async def show_month_for_person(
     viewer_employment_start = None
     viewer_employment_end = None
     if target_user is not None:
-        from app.core.schedule.person_history import get_employment_period
-
         emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
         viewer_employment_start = emp_start
         viewer_employment_end = emp_end
@@ -910,19 +852,6 @@ async def show_month_for_person(
 
     if not show_salary:
         days_in_month = strip_salary_data(days_in_month)
-
-    # Calculate and log load time
-    end_time = datetime.now()
-    load_time = (end_time - start_time).total_seconds()
-    logger.info(
-        f"Route /month/{person_id} (year={year}, month={month}, "
-        f"rotation={rotation_position}) loaded in {load_time:.3f}s",
-        extra={
-            "duration_ms": load_time * 1000,
-            "path": f"/month/{person_id}",
-            "user_id": current_user.id if current_user else None,
-        },
-    )
 
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
@@ -991,6 +920,7 @@ async def show_month_for_person(
             "user": current_user,
             "year": year,
             "month": month,
+            **get_navigation_dates("month", date(year, month, 1)),
             "person_id": person_id,
             "person_name": person_name,
             "days": days_in_month,
@@ -1042,13 +972,9 @@ async def export_month_excel(
 
     # Resolve the position held during the EXPORTED month, so a future-dated
     # change only shows once its month is reached (same as show_month_for_person).
-    target_user, rotation_position = _resolve_person_param(db, person_id, on_date=date(year, month, 1))
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(
+        db, current_user, person_id, on_date=date(year, month, 1)
+    )
 
     if redirect := redirect_if_not_own_data(
         current_user, user_id_for_wages, f"/month/{current_user.id}?year={year}&month={month}"
@@ -1068,7 +994,6 @@ async def export_month_excel(
         from app.core.rates import get_user_rates
         from app.core.schedule import generate_month_data
         from app.core.schedule.period import mask_days_to_employment
-        from app.core.schedule.person_history import get_employment_period
 
         emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
 
@@ -1150,18 +1075,11 @@ async def year_view(
     position comes from PersonHistory but the user id drives wage lookups and
     employment filtering.
     """
-    start_time = datetime.now()
 
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
-    target_user, rotation_position = _resolve_person_param(db, person_id)
-    if target_user is not None:
-        user_id_for_wages = target_user.id  # Use for wage lookup
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id  # Same as person_id for legacy positions
-        person_name = None  # Will be looked up below
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(db, current_user, person_id)
 
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
@@ -1171,21 +1089,6 @@ async def year_view(
 
     if with_person_id is not None:
         with_person_id = validate_person_id(with_person_id)
-
-    # Get person name if not already set (for user_id > 10 case, it's set above)
-    if person_name is None:
-        if current_user.rotation_person_id == rotation_position:
-            # User viewing their own position
-            person_name = current_user.name
-        else:
-            # Admin viewing someone else's position - find current holder
-            holder = db.query(User).filter(User.person_id == rotation_position).first()
-            if holder:
-                person_name = holder.name
-            else:
-                # Fallback: legacy user where user_id == person_id
-                holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Use rotation_position for schedule-related calculations. Scope the cowork
     # stats to the viewed user's own employment window so a successor's days at
@@ -1226,7 +1129,7 @@ async def year_view(
 
     if not show_salary:
         months = [strip_salary_data(m) for m in months]
-        year_summary = strip_salary_data(year_summary)
+        year_summary = strip_year_summary(year_summary)
 
     # Fold the vacation supplement and any employment transition into the pay
     # figures. Shared with /statistics/<id> so both pages show the same money.
@@ -1239,19 +1142,6 @@ async def year_view(
         )
         if vac_user:
             vacation_pay = apply_year_pay_adjustments(months, year_summary, vac_user, year, db)
-
-    # Calculate and log load time
-    end_time = datetime.now()
-    load_time = (end_time - start_time).total_seconds()
-
-    logger.info(
-        f"Route /year/{person_id} loaded in {load_time:.3f}s",
-        extra={
-            "duration_ms": load_time * 1000,
-            "path": f"/year/{person_id}",
-            "user_id": current_user.id if current_user else None,
-        },
-    )
 
     return render(
         "year.html",
@@ -1287,13 +1177,7 @@ async def cowork_view(
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
 
-    target_user, rotation_position = _resolve_person_param(db, person_id)
-    if target_user is not None:
-        user_id_for_wages = target_user.id
-        person_name = target_user.name
-    else:
-        user_id_for_wages = person_id
-        person_name = None
+    target_user, rotation_position, user_id_for_wages, person_name = resolve_person_view(db, current_user, person_id)
 
     if redirect := redirect_if_not_own_data(
         current_user, user_id_for_wages, f"/cowork/{current_user.id}?year={year or ''}"
@@ -1305,17 +1189,6 @@ async def cowork_view(
 
     safe_today = get_safe_today(rotation_start_date)
     year = year or safe_today.year
-
-    if person_name is None:
-        if current_user.rotation_person_id == rotation_position:
-            person_name = current_user.name
-        else:
-            holder = db.query(User).filter(User.person_id == rotation_position).first()
-            if holder:
-                person_name = holder.name
-            else:
-                holder = db.query(User).filter(User.id == rotation_position).first()
-                person_name = holder.name if holder else placeholder_person_name(rotation_position)
 
     # Scope the cowork stats to the viewed user's own employment window so a
     # successor's days at the same position are not attributed to a departed

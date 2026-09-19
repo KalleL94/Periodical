@@ -3,7 +3,7 @@ import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-ViewType = Literal["day", "week", "month", "year"]
+ViewType = Literal["day", "week", "month"]
 
 # Application timezone - all "today" calculations use Stockholm time
 APP_TIMEZONE = ZoneInfo("Europe/Stockholm")
@@ -104,13 +104,6 @@ def get_navigation_dates(
             "prev_month": prev_month,
             "next_year": next_year,
             "next_month": next_month,
-        }
-
-    if view_type == "year":
-        year = current_date.year
-        return {
-            "prev_year": year - 1,
-            "next_year": year + 1,
         }
 
     raise ValueError(f"Unsupported view_type: {view_type}")

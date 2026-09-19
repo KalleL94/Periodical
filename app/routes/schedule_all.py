@@ -4,6 +4,7 @@ Team-wide schedule view routes - week, month, and year views for all persons.
 """
 
 import calendar as _calendar
+import logging
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -14,7 +15,6 @@ from app.auth.auth import get_current_user_optional
 from app.core.constants import WEEKDAY_NAMES
 from app.core.helpers import can_see_salary, strip_salary_data
 from app.core.holidays import get_holiday_dates_for_year
-from app.core.logging_config import get_logger
 from app.core.oncall import _get_storhelg_dates_for_year
 from app.core.rates import get_user_rates
 from app.core.schedule import (
@@ -35,7 +35,7 @@ from app.core.validators import validate_date_params
 from app.database.database import User, UserRole, WageType, get_db
 from app.routes.shared import render
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["schedule_all"])
 
@@ -418,7 +418,6 @@ async def show_month_all(
     db: Session = Depends(get_db),
 ):
     """Month view for all persons."""
-    start_time = datetime.now()
 
     safe_today = get_safe_today(rotation_start_date)
 
@@ -543,16 +542,6 @@ async def show_month_all(
     # Append substitutes (schedule only, no salary) after the regular positions
     persons.extend(build_substitute_month_summaries(year, month, db))
 
-    show_salary = current_user is not None and current_user.role == UserRole.ADMIN
-
-    # Calculate and log load time
-    end_time = datetime.now()
-    load_time = (end_time - start_time).total_seconds()
-    logger.info(
-        f"Route /month (all persons) (year={year}, month={month}) loaded in {load_time:.3f}s",
-        extra={"duration_ms": load_time * 1000, "path": "/month", "user_id": current_user.id if current_user else None},
-    )
-
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
@@ -563,8 +552,8 @@ async def show_month_all(
             "user": current_user,
             "year": year,
             "month": month,
+            **get_navigation_dates("month", date(year, month, 1)),
             "persons": persons,
-            "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "today": get_today(),
@@ -581,7 +570,6 @@ async def show_year_all(
     simulated_date: str = None,
 ):
     """Year view for all persons."""
-    start_time = datetime.now()
 
     # Testing aid: ?simulated_date=YYYY-MM-DD views the page as if today were
     # that date (default year selection and past/future column hiding).
@@ -600,10 +588,6 @@ async def show_year_all(
     user_wages = get_all_user_wages(db)
 
     days_in_year = generate_year_data(year, session=db, user_wages=user_wages)
-
-    # Skip calculating totals on initial load - will be lazy-loaded via AJAX
-    # This makes initial page load much faster (~0.5s instead of 1-3s)
-    person_ob_totals = None
 
     # Build the column list with a two-pass restructure, matching the pattern
     # established in _build_person_rows (week view) and show_month_all (month
@@ -624,10 +608,18 @@ async def show_year_all(
         # Merge consecutive segments held by the same user so a single
         # employment split across adjacent history records stays one column and
         # its col_key (person_id-user_id) remains unique.
+        #
+        # Adjacency is required, not just the same user: someone who left the
+        # position and later returned to it has a gap in between, and merging
+        # across that gap gave them one column covering months they did not hold.
         merged: list[dict] = []
         for seg in segments:
-            if merged and merged[-1]["user_id"] == seg["user_id"]:
-                merged[-1]["to_date"] = seg["to_date"]
+            if (
+                merged
+                and merged[-1]["user_id"] == seg["user_id"]
+                and merged[-1]["to_date"] >= seg["from_date"] - timedelta(days=1)
+            ):
+                merged[-1]["to_date"] = max(merged[-1]["to_date"], seg["to_date"])
             else:
                 merged.append(dict(seg))
 
@@ -730,17 +722,6 @@ async def show_year_all(
     # before any history-tracked column regardless of position number.
     person_headers.sort(key=lambda h: h["person_id"])
 
-    show_salary = current_user is not None and current_user.role == UserRole.ADMIN
-
-    # Calculate and log load time
-    end_time = datetime.now()
-    load_time = (end_time - start_time).total_seconds()
-
-    logger.info(
-        f"Route /year (all persons) loaded in {load_time:.3f}s",
-        extra={"duration_ms": load_time * 1000, "path": "/year", "user_id": current_user.id if current_user else None},
-    )
-
     storhelg_dates = _get_storhelg_dates_for_year(year)
     holiday_dates = get_holiday_dates_for_year(year)
 
@@ -751,9 +732,7 @@ async def show_year_all(
             "user": current_user,
             "year": year,
             "days": days_in_year,
-            "person_ob_totals": person_ob_totals,
             "person_headers": person_headers,
-            "show_salary": show_salary,
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "today": real_today,

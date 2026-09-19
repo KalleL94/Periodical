@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_user
+from app.core.constants import MONTH_NAMES_SV
 from app.core.schedule import clear_schedule_cache, settings, tax_brackets
 from app.core.schedule import vacation as vacation_core
 from app.core.schedule.vacation import calculate_vacation_balance
@@ -415,21 +416,6 @@ async def admin_rotation_eras_delete(
 # ---------------------------------------------------------------------------
 # Admin Vacation Management
 # ---------------------------------------------------------------------------
-
-MONTH_NAMES_SV = [
-    "Januari",
-    "Februari",
-    "Mars",
-    "April",
-    "Maj",
-    "Juni",
-    "Juli",
-    "Augusti",
-    "September",
-    "Oktober",
-    "November",
-    "December",
-]
 
 
 @router.get("/vacation", response_class=HTMLResponse, name="admin_vacation")

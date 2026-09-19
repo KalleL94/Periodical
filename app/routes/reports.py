@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
+from app.core.constants import MONTH_NAMES_SV
 from app.core.schedule import build_month_report, rotation_start_date
 from app.core.utils import get_safe_today
 from app.core.validators import validate_date_params
@@ -36,21 +37,6 @@ def _has_report_access(current_user: User | None, token: str) -> bool:
         return True
     return False
 
-
-MONTH_NAMES_SV = [
-    "Januari",
-    "Februari",
-    "Mars",
-    "April",
-    "Maj",
-    "Juni",
-    "Juli",
-    "Augusti",
-    "September",
-    "Oktober",
-    "November",
-    "December",
-]
 
 # CSV column order: (dict key, header label)
 CSV_COLUMNS = [

@@ -81,3 +81,24 @@ VACATION_CODE: Final[str] = "SEM"
 #: Antal timmar per månad för timlönsberäkning vid övertid.
 #: Formel: månadslön / OT_RATE_DIVISOR = timlön för OT-beräkning
 OT_RATE_DIVISOR: Final[int] = 72
+
+
+# ==========================
+# Månadsnamn
+# ==========================
+
+#: Svenska månadsnamn, index 0 = januari. Delas av admin- och rapportvyerna.
+MONTH_NAMES_SV = [
+    "Januari",
+    "Februari",
+    "Mars",
+    "April",
+    "Maj",
+    "Juni",
+    "Juli",
+    "Augusti",
+    "September",
+    "Oktober",
+    "November",
+    "December",
+]

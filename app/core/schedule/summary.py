@@ -1,12 +1,12 @@
 """Monthly and yearly schedule summaries."""
 
+import logging
 from typing import NamedTuple
 
 from app.core.constants import placeholder_person_name
-from app.core.logging_config import get_logger
 from app.core.storage import load_tax_brackets
 
-from .core import get_settings, weekday_names
+from .core import get_settings
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, mask_days_to_employment
 from .wages import (
@@ -17,7 +17,7 @@ from .wages import (
     get_user_wage,
 )
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: int | None = None) -> float:
@@ -32,11 +32,8 @@ def _calculate_tax(brutto: float, tax_table: str | None = None, payment_year: in
     Returns:
         Skattebelopp i SEK
     """
-    import logging
 
     from app.core.storage import calculate_tax_bracket, calculate_tax_from_table
-
-    logger = logging.getLogger(__name__)
 
     # Use the tax table if one is configured
     if tax_table:
@@ -209,9 +206,6 @@ def _resolve_month_wage_context(
         user = session.query(User).filter(User.id == uid_for_wages).first()
 
     if fetch_tax_table and user:
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.info(f"Looking up tax_table for user_id={uid_for_wages}, user found: {user is not None}")
         logger.info(f"User {user.username} has tax_table: {user.tax_table}")
         if user.tax_table:
@@ -829,21 +823,9 @@ def _process_day_for_summary(
         totals["substitute_base_pay"] = totals.get("substitute_base_pay", 0.0) + substitute_base
         totals["substitute_hours"] = totals.get("substitute_hours", 0.0) + hours
 
-    # Compute midnight-crossing metadata (used for per-calendar-day OB aggregation)
     from datetime import datetime as _dt
     from datetime import time as _time
     from datetime import timedelta as _td
-
-    date_next_day = None
-    weekday_name_next_day = None
-    hours_this_day = hours
-    hours_next_day = 0.0
-    if start and end and end.date() > start.date():
-        midnight = _dt.combine(end.date(), _time(0, 0))
-        hours_this_day = max((midnight - start).total_seconds() / 3600.0, 0.0)
-        hours_next_day = max((end - midnight).total_seconds() / 3600.0, 0.0)
-        date_next_day = end.date()
-        weekday_name_next_day = weekday_names[date_next_day.weekday()]
 
     # Update totals (worked hours, each hour counted once)
     totals["total_hours"] += day_worked_hours(day)
@@ -910,10 +892,6 @@ def _process_day_for_summary(
         "ob_hours": ob_hours,
         "ob_pay": ob_pay,
         "ob_hours_by_day": ob_hours_by_day,
-        "hours_this_day": hours_this_day,
-        "hours_next_day": hours_next_day,
-        "date_next_day": date_next_day,
-        "weekday_name_next_day": weekday_name_next_day,
         "oncall_pay": oncall_pay,
         "oncall_details": day.get("oncall_details", {}),
         "ot_pay": ot_pay,
@@ -1279,30 +1257,16 @@ def summarize_year_for_person(
                 wage_user_id=wage_user_id,
             )
         else:
-            # Generate per-month data with temporal rates for correct on-call/OT
-            _month_rates_map = None
-            if _rate_user:
-                _month_effective = dt.date(work_year, work_month, 1)
-                _month_rates = get_user_rates(_rate_user, session=session, effective_date=_month_effective)
-                _month_rates_map = {person_id: _month_rates}
-
-            month_days = generate_month_data(
-                work_year,
-                work_month,
-                person_id,
-                session=session,
-                user_wages=user_wages,
-                user_rates_map=_month_rates_map,
-            )
-
-            # Sammanfatta baserat på ARBETS-månad, inte utbetalnings-månad
+            # Summarised on the WORK month, not the payment month. The rate lookup and
+            # the generate_month_data call used to be repeated here; summarize_month_for_person
+            # does both itself, and its version is the correct one: this copy passed
+            # {person_id: {}} for a user with no rate rows where every other path passes None.
             m = summarize_month_for_person(
                 work_year,
                 work_month,
                 person_id,
                 session=session,
                 user_wages=user_wages,
-                year_days=month_days,
                 payment_year=mapping["payment_year"],
                 wage_user_id=wage_user_id,
             )
@@ -1434,7 +1398,6 @@ def apply_year_pay_adjustments(months: list[dict], year_summary: dict, user, yea
                 year,
             )
             m["vacation_supplement"] = supplement["total"]
-            m["vacation_supplement_parts"] = supplement
             total_sem_days += sem_days
             total_supplement += m["vacation_supplement"]
 
@@ -1637,105 +1600,76 @@ def build_month_report(year: int, month: int, session, fetch_tax_table: bool = F
     return rows
 
 
+# Year total -> the month key it sums. Written once: the straight-line version named
+# every one of these twice, in its accumulator block and again in its return literal,
+# which is how total_absence_hours survived in the return long after anything read it.
+_YEAR_TOTALS = {
+    "total_netto": "netto_pay",
+    "total_brutto": "brutto_pay",
+    "total_shifts": "num_shifts",
+    "total_hours": "total_hours",
+    "total_ob": "total_ob",
+    "total_oncall": "oncall_pay",
+    "total_oncall_hours": "oncall_hours",
+    "total_ot": "ot_pay",
+    "total_absence_deduction": "absence_deduction",
+    "total_sick_days": "sick_days",
+    "total_sick_hours": "sick_hours",
+    "total_sick_ob_pay": "sick_ob_pay",
+    "total_sick_ob_lost": "sick_ob_lost",
+    "total_sick_total_ob": "sick_total_ob",
+    "total_vab_days": "vab_days",
+    "total_vab_hours": "vab_hours",
+    "total_leave_days": "leave_days",
+    "total_leave_hours": "leave_hours",
+    "total_off_days": "off_days",
+    "total_off_hours": "off_hours",
+    "total_parental_days": "parental_days",
+    "total_parental_hours": "parental_hours",
+}
+
+# The totals that also get a per-month average, as avg_<name>. Deliberately a subset:
+# the day and hour counts for vab, leave, off and parental have no averaged column.
+_YEAR_AVERAGED = (
+    "total_netto",
+    "total_brutto",
+    "total_shifts",
+    "total_hours",
+    "total_ob",
+    "total_oncall",
+    "total_oncall_hours",
+    "total_ot",
+    "total_absence_deduction",
+    "total_sick_total_ob",
+    "total_sick_ob_pay",
+)
+
+_OB_CODES = ("OB1", "OB2", "OB3", "OB4", "OB5")
+
+# Absence deduction key per absence type, for the four types the year view breaks out.
+_DEDUCTION_KEY = {"SICK": "sick_deduction", "VAB": "vab_deduction", "LEAVE": "leave_deduction", "OFF": "off_deduction"}
+
+
 def _build_year_summary(months: list[dict]) -> dict:
     """Builds a yearly summary from monthly data."""
     month_count = len(months) or 1
 
-    # Summera totaler
-    total_netto = sum(m.get("netto_pay", 0.0) for m in months)
-    total_brutto = sum(m.get("brutto_pay", 0.0) for m in months)
-    total_shifts = sum(m.get("num_shifts", 0) for m in months)
-    total_hours = sum(m.get("total_hours", 0.0) for m in months)
-    total_ob = sum(m.get("total_ob", 0.0) for m in months)
-    total_oncall = sum(m.get("oncall_pay", 0.0) for m in months)
-    total_oncall_hours = sum(m.get("oncall_hours", 0.0) for m in months)
-    total_ot = sum(m.get("ot_pay", 0.0) for m in months)
-    total_absence_deduction = sum(m.get("absence_deduction", 0.0) for m in months)
-    total_absence_hours = sum(m.get("absence_hours", 0.0) for m in months)
-    total_sick_days = sum(m.get("sick_days", 0) for m in months)
-    total_sick_hours = sum(m.get("sick_hours", 0.0) for m in months)
-    total_sick_ob_pay = sum(m.get("sick_ob_pay", 0.0) for m in months)
-    total_sick_ob_lost = sum(m.get("sick_ob_lost", 0.0) for m in months)
-    total_sick_total_ob = sum(m.get("sick_total_ob", 0.0) for m in months)
-    total_vab_days = sum(m.get("vab_days", 0) for m in months)
-    total_vab_hours = sum(m.get("vab_hours", 0.0) for m in months)
-    total_leave_days = sum(m.get("leave_days", 0) for m in months)
-    total_leave_hours = sum(m.get("leave_hours", 0.0) for m in months)
-    total_off_days = sum(m.get("off_days", 0) for m in months)
-    total_off_hours = sum(m.get("off_hours", 0.0) for m in months)
-    total_parental_days = sum(m.get("parental_days", 0) for m in months)
-    total_parental_hours = sum(m.get("parental_hours", 0.0) for m in months)
+    summary = {total: sum(m.get(src) or 0 for m in months) for total, src in _YEAR_TOTALS.items()}
+    summary |= {total.replace("total_", "avg_", 1): summary[total] / month_count for total in _YEAR_AVERAGED}
 
-    # Calculate deductions per type from monthly details
-    sick_deduction = 0.0
-    vab_deduction = 0.0
-    leave_deduction = 0.0
-    off_deduction = 0.0
-
+    deductions = dict.fromkeys(_DEDUCTION_KEY.values(), 0.0)
     for m in months:
-        details = m.get("absence_details", [])
-        for detail in details:
-            if detail["type"] == "SICK":
-                sick_deduction += detail["deduction"]
-            elif detail["type"] == "VAB":
-                vab_deduction += detail["deduction"]
-            elif detail["type"] == "LEAVE":
-                leave_deduction += detail["deduction"]
-            elif detail["type"] == "OFF":
-                off_deduction += detail["deduction"]
+        for detail in m.get("absence_details", []):
+            key = _DEDUCTION_KEY.get(detail["type"])
+            if key:
+                deductions[key] += detail["deduction"]
+    summary |= deductions
 
-    # OB per kod
-    ob_codes = ["OB1", "OB2", "OB3", "OB4", "OB5"]
-    ob_hours_by_code = {code: 0.0 for code in ob_codes}
-    ob_pay_by_code = {code: 0.0 for code in ob_codes}
-
-    for m in months:
-        m_ob_hours = m.get("ob_hours", {}) or {}
-        m_ob_pay = m.get("ob_pay", {}) or {}
-        for code in ob_codes:
-            ob_hours_by_code[code] += float(m_ob_hours.get(code, 0.0) or 0.0)
-            ob_pay_by_code[code] += float(m_ob_pay.get(code, 0.0) or 0.0)
-
-    return {
-        "total_netto": total_netto,
-        "total_brutto": total_brutto,
-        "total_shifts": total_shifts,
-        "total_hours": total_hours,
-        "total_ob": total_ob,
-        "total_oncall": total_oncall,
-        "total_oncall_hours": total_oncall_hours,
-        "total_ot": total_ot,
-        "total_absence_deduction": total_absence_deduction,
-        "total_absence_hours": total_absence_hours,
-        "total_sick_days": total_sick_days,
-        "total_sick_hours": total_sick_hours,
-        "total_sick_ob_pay": total_sick_ob_pay,
-        "total_sick_ob_lost": total_sick_ob_lost,
-        "total_sick_total_ob": total_sick_total_ob,
-        "total_vab_days": total_vab_days,
-        "total_vab_hours": total_vab_hours,
-        "total_leave_days": total_leave_days,
-        "total_leave_hours": total_leave_hours,
-        "total_off_days": total_off_days,
-        "total_off_hours": total_off_hours,
-        "total_parental_days": total_parental_days,
-        "total_parental_hours": total_parental_hours,
-        "sick_deduction": sick_deduction,
-        "vab_deduction": vab_deduction,
-        "leave_deduction": leave_deduction,
-        "off_deduction": off_deduction,
-        "avg_netto": total_netto / month_count,
-        "avg_brutto": total_brutto / month_count,
-        "avg_shifts": total_shifts / month_count,
-        "avg_hours": total_hours / month_count,
-        "avg_ob": total_ob / month_count,
-        "avg_oncall": total_oncall / month_count,
-        "avg_oncall_hours": total_oncall_hours / month_count,
-        "avg_ot": total_ot / month_count,
-        "avg_absence_deduction": total_absence_deduction / month_count,
-        "avg_sick_total_ob": total_sick_total_ob / month_count,
-        "avg_sick_ob_pay": total_sick_ob_pay / month_count,
-        "ob_hours_by_code": ob_hours_by_code,
-        "ob_pay_by_code": ob_pay_by_code,
-        "total_ob_hours": sum(ob_hours_by_code.values()),
+    ob_hours_by_code = {c: sum(float((m.get("ob_hours") or {}).get(c) or 0.0) for m in months) for c in _OB_CODES}
+    summary["ob_hours_by_code"] = ob_hours_by_code
+    summary["ob_pay_by_code"] = {
+        c: sum(float((m.get("ob_pay") or {}).get(c) or 0.0) for m in months) for c in _OB_CODES
     }
+    summary["total_ob_hours"] = sum(ob_hours_by_code.values())
+
+    return summary

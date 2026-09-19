@@ -3,21 +3,19 @@
 Request logging middleware for tracking all HTTP requests.
 """
 
+import logging
 import time
 import uuid
 from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 
-from app.core.logging_config import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # API traffic gets its own logger so it lands in logs/api.log as well, where a
 # misbehaving client can be traced without digging through the whole app log.
-api_logger = get_logger("app.api")
+api_logger = logging.getLogger("app.api")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -26,9 +24,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
     Adds a unique request ID to each request for tracing.
     """
-
-    def __init__(self, app: ASGIApp):
-        super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Generate unique request ID

@@ -5,22 +5,6 @@
 
 {% block page_content %}
 
-    {# Compute prev/next month + year here #}
-    {% if month == 1 %}
-        {% set prev_month = 12 %}
-        {% set prev_year = year - 1 %}
-    {% else %}
-        {% set prev_month = month - 1 %}
-        {% set prev_year = year %}
-    {% endif %}
-
-    {% if month == 12 %}
-        {% set next_month = 1 %}
-        {% set next_year = year + 1 %}
-    {% else %}
-        {% set next_month = month + 1 %}
-        {% set next_year = year %}
-    {% endif %}
 
     <div class="page-header">
         <div class="page-header-left">
