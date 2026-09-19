@@ -1,5 +1,31 @@
 [
   {
+    "version": "1.11.1",
+    "date": "2026-09-19",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Årssidan och statistiksidan visade någon annans lön. Utan behörighet att se en kollegas lön doldes månadssiffrorna, men årets totaler, snitten och OB per kod gjorde det inte. Samma sak gällde beredskaps- och övertidsersättning, frånvaroavdragen och semestertillägget, som syntes även på månadssidan.",
+        "en": "The year and statistics pages showed other people's pay. Without permission to see a colleague's salary the monthly figures were hidden, but the year totals, the averages and the per-code OB were not. The same went for on-call and overtime pay, the absence deductions and the vacation supplement, which showed on the month page too."
+      },
+      {
+        "type": "fix",
+        "sv": "Veckosidan för en position utan nuvarande innehavare hade tom rubrik. Nu står det samma namn där som på månads- och årssidan.",
+        "en": "The week page for a position with no current holder had a blank heading. It now shows the same name as the month and year pages."
+      },
+      {
+        "type": "fix",
+        "sv": "Rotationsveckan visades som tom eller som \"3/\" på månads-, års-, spann- och kollegasidan. Nämnaren saknades.",
+        "en": "The rotation week showed as blank or as \"3/\" on the month, year, range and co-worker pages. The denominator was missing."
+      },
+      {
+        "type": "fix",
+        "sv": "I årsöversikten fick den som lämnat en position och senare kommit tillbaka en enda kolumn som sträckte sig över månaderna däremellan, då positionen stod tom eller hade en annan innehavare.",
+        "en": "In the year overview, someone who left a position and later returned got a single column spanning the months in between, when the position was vacant or held by somebody else."
+      }
+    ]
+  },
+  {
     "version": "1.11.0",
     "date": "2026-09-18",
     "entries": [

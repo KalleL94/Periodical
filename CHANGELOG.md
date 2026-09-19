@@ -22,6 +22,25 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.11.1] - 2026-09-19
+
+### Fixed
+- The year and statistics pages showed another person's pay to a viewer without salary permission. `can_see_salary` decided correctly; the stripping that followed it did not. The year views called `strip_salary_data`, which blanks the month-shaped keys (`brutto_pay`, `netto_pay`, `tax`) that a year summary does not have, while `total_brutto`, `total_netto`, the averages and `ob_pay_by_code`, all of which `year.html` and `statistics.html` render, survived. `strip_year_summary` existed for exactly this and nothing called it. Separately, neither stripper covered on-call pay, overtime pay, the absence deductions or the vacation supplement, so those leaked at month level too. Both are now driven by one set of money keys covering both summary shapes, and `tests/test_salary_stripping.py` fails if a template gains a pay figure the set does not hold
+- The year view gave a single column to someone who left a position and later returned to it, spanning the months in between when the position was vacant or held by somebody else. Consecutive segments were merged on holder identity alone, without checking they were adjacent
+- `rotation_length` was read by `month.html`, `year.html`, `cowork.html` and `range.html` off days built by the canonical period path, which never set it, so the rotation week rendered blank or as "3/". Only the week path set it
+- The week page for a position with no current holder had a blank heading. Its name lookup filtered on `is_active` and returned `None` on a miss, where every other personal view falls back to a placeholder
+- `close_vacation_year` built its new `vacation_saved` from the copy the caller loaded. The close runs on a GET, and `calculate_vacation_balance` runs a long stretch of queries between reading that column and deciding to close, so two requests for different years could both start from the same base and the second commit would drop the first year's record. It re-reads the column from the row now. This narrows the window rather than closing it: SQLite has no `SELECT ... FOR UPDATE`, and a guarantee means taking the close out of the read path
+
+### Changed
+- `period.py` resolves the day priority chain in one place. `build_week_data` ran its own fetch prologue and its own copy of the chain, and `tests/test_day_builder_agreement.py` existed to pin that the copy still agreed. It calls `generate_period_data` with a `with_pay` flag that skips the OB rules, the wage fetch and the pay computation, so the week view no longer computes pay it discards. Nothing reads pay off `day["persons"]`, so the all-persons branch takes the same route and `_build_person_day_basic` is gone. 2274 lines to 2019
+- The eight personal-view handlers share `resolve_person_view`. The resolve-plus-name-lookup pair was copied into each and had drifted three ways, so one legacy position answered with a different name depending on which view you opened
+- `_build_year_summary` is driven by a total-to-month-key map instead of naming all 23 keys twice, once in an accumulator block and again in the return literal. Verified against the previous implementation over randomised and sparse month lists
+- The month views take their prev/next navigation from `get_navigation_dates` instead of `month.html` and `month_all.html` each hand-rolling the December wrap in Jinja. Its `year` branch had no caller and is gone
+- `logging.getLogger` replaces the `get_logger` delegate, and `sentry_sdk` is called directly instead of through three wrappers that guarded a hard dependency with `try/except ImportError`
+
+### Removed
+- `build_ot_details`, `_build_person_day_basic`, `_basic_day_result`, `_get_substitutes_with_shifts`, `get_logger`, `ACCESS_LOG_FILE`, the unreachable session fallbacks in `_lookup_for_day` and `_lookup_ot_shift`, 42 translation keys, five CSS classes and the `LOG_LEVEL` documentation for a variable nothing reads
+
 ## [1.11.0] - 2026-09-18
 
 ### Added
