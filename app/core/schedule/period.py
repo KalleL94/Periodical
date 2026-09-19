@@ -48,7 +48,7 @@ class DayLookupContext:
     oncall_override_map: dict | None
     swap_map: dict | None
     shift_override_map: dict | None
-    # Only populated in generate_period_data (not used by _build_person_day_basic):
+    # Left unset when with_pay is off; settings is None is what gates the pay block:
     combined_ob_rules: list | None = None
     user_wages: dict | None = None
     settings: object = None
@@ -92,8 +92,8 @@ def build_week_data(
     sunday = monday + datetime.timedelta(days=6)
 
     # One day builder, not two. This used to run its own fetch prologue and its own
-    # copy of the priority chain (_build_person_day_basic), which is why
-    # tests/test_day_builder_agreement.py existed: to pin that the copy still agreed.
+    # copy of the priority chain, which is why tests/test_day_builder_agreement.py
+    # existed: to pin that the copy still agreed.
     days_in_week = generate_period_data(
         monday,
         sunday,
@@ -194,6 +194,10 @@ def generate_period_data(
     Returns:
         Lista med dagdata
     """
+    # The all-persons day list is schedule only. Nothing reads pay off day["persons"],
+    # so the pay block stays off for it, exactly as the separate builder did.
+    with_pay = with_pay and person_id is not None
+
     rotation_start = get_rotation_start_date()
 
     # Justera startdatum om rotation inte börjat
@@ -310,7 +314,7 @@ def generate_period_data(
         }
 
         if person_id is None:
-            day_info["persons"] = [_build_person_day_basic(current_day, pid, ctx, session) for pid in person_ids] + [
+            day_info["persons"] = [_person_day(current_day, pid, ctx, session) for pid in person_ids] + [
                 _build_substitute_day(current_day, s, substitute_shift_map, sub_shift_types, substitute_absence_map)
                 for s in substitutes
             ]
@@ -529,8 +533,8 @@ def _build_linked_substitute_day_fields(
 ) -> dict | None:
     """Day fields for a linked substitute's pre-employment activity (issue #290).
 
-    Called only from the before-employment branches (_populate_single_person_day
-    and _build_person_day_basic), so on/after employment_start the rotation and
+    Called only from the before-employment branch of _populate_single_person_day,
+    so on/after employment_start the rotation and
     override chain always wins and substitute data is never consulted. Priority
     within the substitute data mirrors _build_substitute_day (team view):
     absence > overtime > scheduled shift. Returns None when no linked substitute
@@ -686,7 +690,7 @@ def _build_substitute_day(
     The base schedule is OFF; a working shift only appears where a SubstituteShift exists.
     Priority mirrors the agent chain: an absence wins, then an overtime entry (shown as OT,
     like agents), then the scheduled shift, otherwise OFF.
-    Matches the shape produced by _build_person_day_basic so the templates can render
+    Matches the shape produced by _person_day so the templates can render
     substitutes alongside regular persons. The person_id uses a "sub-<id>" namespace to
     avoid colliding with rotation positions (1-10).
     """
@@ -1281,111 +1285,11 @@ def _apply_ot_display_shift(ot_rows, date: datetime.date, shift, segments, shift
 _PAY_KEYS = ("ob", "oncall_pay", "oncall_details", "ot_pay", "ot_hours", "ot_details")
 
 
-def _basic_day_result(day: dict, rotation_length: int) -> dict:
-    """The week path's day dict: the shared helpers' output plus rotation_length, minus pay."""
-    return {"rotation_length": rotation_length, **{k: v for k, v in day.items() if k not in _PAY_KEYS}}
-
-
-def _build_person_day_basic(
-    date: datetime.date,
-    person_id: int,
-    ctx: DayLookupContext,
-    session=None,
-    employment_start: datetime.date | None = None,
-) -> dict:
-    """Builds basic day data for a person.
-
-    Runs the same priority chain as _populate_single_person_day through the same helpers;
-    this builder only adds rotation_length, skips the pay computation (no OB rules are
-    passed in, and the pay keys are dropped).
-    """
-
-    shift_types = get_shift_types()
-    vacation_shift = get_vacation_shift()
-    rotation_length = get_rotation_length_for_date(date)
-
-    # Get person name via PersonHistory and whether the date precedes employment.
-    person_name, show_off_before_employment = _resolve_day_person(session, person_id, date, employment_start)
-
-    # If date is before current person's employment, show OFF - unless a linked
-    # substitute has activity on the date (issue #290): same injection layer as
-    # _populate_single_person_day, reaching the week/range views.
-    if show_off_before_employment:
-        sub_fields = _build_linked_substitute_day_fields(date, person_id, ctx, person_name, shift_types)
-        if sub_fields is not None:
-            return {"rotation_length": rotation_length, **sub_fields}
-        off_shift = next((s for s in shift_types if s.code == "OFF"), None)
-        result = determine_shift_for_date(date, person_id)
-        original_shift, rotation_week = result if result else (None, None)
-        return {
-            "person_id": person_id,
-            "person_name": person_name,
-            "shift": off_shift,
-            "original_shift": original_shift,
-            "rotation_week": rotation_week,
-            "rotation_length": rotation_length,
-            "hours": 0.0,
-            "start": None,
-            "end": None,
-            "before_employment": True,  # Flag to indicate this is before employment
-        }
-
+def _person_day(date: datetime.date, person_id: int, ctx: DayLookupContext, session=None) -> dict:
+    """One person's day, for the all-persons list. The canonical builder into a fresh dict."""
     day: dict = {}
-
-    # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
-    absence = _lookup_for_day(ctx.absence_map, person_id, date)
-    if absence and _populate_absence_day(day, absence, date, person_id, person_name, [], vacation_shift, shift_types):
-        return _basic_day_result(day, rotation_length)
-
-    # Kolla föräldraledighet (veckobaserad)
-    if _populate_parental_day(day, date, person_id, person_name, ctx.parental_dates, shift_types):
-        return _basic_day_result(day, rotation_length)
-
-    # Kolla semester / override / byte / normalt skift (i prioritetsordning)
-    shift, rotation_week, segments, _ob = _resolve_effective_shift(
-        date,
-        person_id,
-        vacation_shift,
-        ctx.vacation_dates or {},
-        ctx.shift_override_map,
-        ctx.swap_map,
-        shift_types,
-        [],
-    )
-
-    # Week-based vacation outranks the overtime overlay below (issue #285). Captured
-    # here, before the on-call override can rebind `shift`.
-    is_vacation_day = vacation_shift is not None and shift is vacation_shift
-
-    # Rotationsskiftet (för coworker-matchning och "visa rotation"-toggle i alla-vyer)
-    _rot = determine_shift_for_date(date, person_id)
-    original_shift = _rot[0] if _rot else shift
-
-    oncall_override = _lookup_for_day(ctx.oncall_override_map, person_id, date)
-    shift, segments, _ob = _apply_oncall_override(oncall_override, shift, segments, _ob, shift_types)
-
-    ot_rows, ot_shift_for_oncall = _lookup_ot_shifts(person_id, date, ctx.ot_shift_map, session)
-
-    # Same layering as _populate_single_person_day; see the comment there.
-    segments = segments + extra_segments(ot_rows, date)
-
-    if ot_rows and not is_vacation_day:
-        shift, segments = _apply_ot_display_shift(ot_rows, date, shift, segments, shift_types)
-
-    hours = segment_hours(segments)
-    start, end = segment_bounds(segments)
-
-    return {
-        "person_id": person_id,
-        "person_name": person_name,
-        "shift": shift,
-        "original_shift": original_shift,  # For coworker matching with OT shifts
-        "rotation_week": rotation_week,
-        "rotation_length": rotation_length,
-        "hours": hours,
-        "start": start,
-        "end": end,
-    }
+    _populate_single_person_day(day, date, person_id, ctx, session)
+    return day
 
 
 def _resolve_day_person(
