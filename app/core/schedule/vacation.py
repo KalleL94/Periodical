@@ -402,6 +402,25 @@ def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, d
     """
     from sqlalchemy.orm.attributes import flag_modified
 
+    from app.database.database import User
+
+    # Re-read vacation_saved straight from the row rather than trusting the copy the
+    # caller loaded. calculate_vacation_balance runs a long stretch of queries between
+    # reading it and deciding to close, and every view that shows a balance reaches
+    # this on a GET, so two requests for different years could both start from the
+    # same dict and the second commit would drop the first year's close.
+    #
+    # Queried as a column, not db.refresh(user), so the caller's User object and any
+    # other pending state on the session are left alone.
+    #
+    # ponytail: this narrows the window to the few statements below, it does not close
+    # it. SQLite has no SELECT ... FOR UPDATE, so a true guarantee means taking the
+    # close out of the read path (a scheduled job or an explicit admin action) and
+    # letting the views only read.
+    stored = db.query(User.vacation_saved).filter(User.id == user.id).scalar() or {}
+    if str(target_year) in stored:
+        return stored[str(target_year)]
+
     monthly_salary = pay.get("monthly_salary", 0)
     # The full supplement, both parts: an employer who pays the variable part as a
     # lump sum still owes it on every unused day that is paid out.
@@ -411,7 +430,7 @@ def close_vacation_year(user, target_year: int, remaining_own: int, pay: dict, d
     # Vacation compensation = payout_pct base + vacation supplement
     payout_per_day = round(monthly_salary * payout_pct + supplement_per_day, 2)
 
-    saved = dict(user.vacation_saved or {})
+    saved = dict(stored)
 
     if remaining_own <= 0:
         days_saved = 0
