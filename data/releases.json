@@ -5,8 +5,8 @@
     "entries": [
       {
         "type": "fix",
-        "sv": "Årssidan och statistiksidan visade någon annans lön. Utan behörighet att se en kollegas lön doldes månadssiffrorna, men årets totaler, snitten och OB per kod gjorde det inte. Samma sak gällde beredskaps- och övertidsersättning, frånvaroavdragen och semestertillägget, som syntes även på månadssidan.",
-        "en": "The year and statistics pages showed other people's pay. Without permission to see a colleague's salary the monthly figures were hidden, but the year totals, the averages and the per-code OB were not. The same went for on-call and overtime pay, the absence deductions and the vacation supplement, which showed on the month page too."
+        "sv": "En kollegas månadssida visade deras ersättningar i kronor. Brutto, netto och OB doldes som de skulle, men beredskapsersättning, övertidsersättning, frånvaroavdraget och förlorad OB vid sjukdom gjorde det inte. Nu döljs alla belopp. Schemat och timmarna syns som förut.",
+        "en": "A colleague's month page showed their pay in kronor. Gross, net and OB were hidden as intended, but on-call pay, overtime pay, the absence deduction and OB lost to sickness were not. Every amount is hidden now. The schedule and the hours are unchanged."
       },
       {
         "type": "fix",
