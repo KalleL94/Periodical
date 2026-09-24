@@ -437,11 +437,11 @@
                 <tr class="shift-row">
                     <td class="td_left" data-label="{{ t.year_col_person }}">
                         {% if show_salary %}
-                            <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}">
-                                {{ r.other_name }} (#{{ r.other_id }})
+                            <a href="/year/{{ person_id }}?year={{ year }}&with_person_id={{ r.other_id }}{% if r.other_user_id %}&with_user_id={{ r.other_user_id }}{% endif %}">
+                                {{ r.other_name }}
                             </a>
                         {% else %}
-                            {{ r.other_name }} (#{{ r.other_id }})
+                            {{ r.other_name }}
                         {% endif %}
                     </td>
                     <td class="td_right num" data-label="{{ t.year_total }}">{{ r.total }}</td>
@@ -459,7 +459,7 @@
 {# Detaljvy: lista alla pass med vald kollega - endast om show_salary #}
 {% if show_salary and selected_other_id and cowork_details %}
     <h2 class="page-title">
-        {{ t.year_shared_shifts.replace('{name}', selected_other_name).replace('{id}', selected_other_id|string).replace('{year}', year|string) }}
+        {{ t.year_shared_shifts.replace('{name}', selected_other_name).replace('{year}', year|string) }}
     </h2>
 
     <table class="summary">
