@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.11.2",
+    "date": "2026-09-24",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Kollegastatistiken var tom för alla som bytt rotationsplats. Sidan räknade bara den plats du sitter på i dag, så ett år du tillbringade på en annan plats gav noll pass med alla.",
+        "en": "The co-worker statistics were empty for anyone who had changed rotation position. The page counted only the position you sit at today, so a year you spent at another one showed zero shifts with everybody."
+      },
+      {
+        "type": "fix",
+        "sv": "En kollega som bytt plats med dig försvann helt ur listan. Listan utgår nu från personer i stället för platser, så var och en syns en gång oavsett hur många platser någon av er hunnit sitta på under året.",
+        "en": "A colleague who traded positions with you disappeared from the list entirely. The list is built from people rather than positions now, so each person appears once however many positions either of you sat at during the year."
+      },
+      {
+        "type": "fix",
+        "sv": "Fel namn stod på en plats som bytt innehavare. Den som slutat fick fortsätta namnge raden i stället för den som sitter där nu.",
+        "en": "A position that had changed hands showed the wrong name. The person who left kept labelling the row instead of whoever sits there now."
+      },
+      {
+        "type": "fix",
+        "sv": "Sjukdagar, semester och byten räknades inte. En dag en kollega var sjuk räknades ändå som ett gemensamt pass.",
+        "en": "Sick days, vacation and swaps were ignored. A day a colleague called in sick still counted as a shift worked together."
+      },
+      {
+        "type": "förbättring",
+        "sv": "Listan sorteras på namn med alla som slutat sist, och platsnumret är borta ur namnkolumnen.",
+        "en": "The list is sorted by name with everyone who has left at the bottom, and the position number is gone from the name column."
+      }
+    ]
+  },
+  {
     "version": "1.11.1",
     "date": "2026-09-19",
     "entries": [

@@ -22,6 +22,18 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.11.2] - 2026-09-24
+
+### Fixed
+- The cowork table came back empty for anyone who had changed rotation position. `/year/{id}` and `/cowork/{id}` resolve one position through `resolve_person_view` with no `on_date`, which is the position held today, and `build_cowork_stats` then masked every day of the requested year against that one position. A person at position 3 today and position 8 for the whole of the viewed year matched no segment, so every day was masked and every count was zero. Scoping follows the user now, through `get_user_position_segments`, resolved per date. `summarize_year_for_person` on the same page already stitched the year across positions from `get_user_history`; cowork was the one builder still pinned to a single position
+- A colleague who traded positions with the viewed person vanished from the list. Rows were keyed by position, and the viewed person owned both of the positions that colleague sat at during the year, so both were excluded as "their own". Rows are keyed by holder instead: `_Holders` answers who sat at each position on each date and where each person sat, so one person is one row however often either of them moved. A row is created only for someone who held a position on a day the viewed person also held one, which keeps a successor out of their predecessor's list without a second rule
+- The name on a position that had changed hands was the departed holder's. `_get_person_name_from_db` asked `User.person_id`, which is not kept in step with PersonHistory, and fell back to the user whose *id* matched the position number. Names come from the PersonHistory segment now
+- Absences never reached the cowork figures. The three builders called `generate_year_data` without a session, and `generate_period_data` loads absences, vacation, parental leave, swaps and overtime only when it has one, so every day was the raw rotation shift and a day a colleague was off sick still counted as a shift worked together. The session is passed through. That build costs about 2.7s against 0.3s without, so the builders take an optional prebuilt `days_in_year` and the two routes build the year once for all three calls rather than three times
+
+### Changed
+- Cowork rows are sorted by name with everyone whose PersonHistory record is closed at the bottom. `PersonHistory.is_active` is not used for this: rows in production have it at 0 with an open `effective_to`, so an open record is what marks someone as still employed
+- The position number is gone from the person column and from both detail headings, along with `{id}` in `cowork_detail_title` and `year_shared_shifts`. Detail links carry `with_user_id` beside `with_person_id`, so two people who held the same position during one year each reach their own page. A link with only `with_person_id` still resolves, to whoever held that position last that year
+
 ## [1.11.1] - 2026-09-19
 
 ### Fixed
