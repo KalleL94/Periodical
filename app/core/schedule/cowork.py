@@ -6,62 +6,165 @@ from app.core.constants import PERSON_IDS, placeholder_person_name
 
 from .period import generate_year_data
 
+# Cowork statistics are about PEOPLE, not rotation positions. A position changes
+# hands and a person moves between positions, so both sides of every comparison
+# are resolved per date: who sat at this position today, and where did that
+# person sit today. Rows are keyed by a holder key, ("u", user_id) for a tracked
+# user and ("p", position) for a position with no PersonHistory at all, which
+# keeps legacy setups behaving exactly as they did before employment was tracked.
 
-def _viewer_active_ranges(session, employment_user_id, position_id: int, year: int):
-    """Return the date ranges the viewed user held a position during the year.
 
-    Returns None when no employment-window masking should apply: either the
-    caller supplied no session/user, or the position has no PersonHistory at all
-    (legacy positions keep the current-holder-for-all-dates behavior). Otherwise
-    returns a list of (from_date, to_date) tuples clamped to the year, covering
-    only the segments belonging to employment_user_id. The list may be empty when
-    the user held the position in no part of the year, which masks every day.
+class _Holders:
+    """Who held which rotation position on each date of one year.
+
+    Built once per call from PersonHistory. A None session, or a position with
+    no history, falls back to the legacy view where the position itself stands
+    in for a person.
+    """
+
+    def __init__(self, session, year: int):
+        from app.core.schedule.person_history import (
+            get_position_holder_segments,
+            has_position_history,
+        )
+
+        self.year_start = datetime.date(year, 1, 1)
+        self.year_end = datetime.date(year, 12, 31)
+
+        self._by_position: dict[int, list[tuple]] = {}
+        self._by_key: dict[tuple, list[tuple]] = {}
+        self.name: dict[tuple, str] = {}
+        self.active: dict[tuple, bool] = {}
+        self.row_position: dict[tuple, int] = {}
+        self.key_at_row_position: dict[int, tuple] = {}
+
+        dated: list[tuple] = []  # (from_date, key, position), sorted later
+        for pid in PERSON_IDS:
+            if session is None or not has_position_history(session, pid):
+                key = ("p", pid)
+                self._by_position[pid] = [(self.year_start, self.year_end, key)]
+                self._by_key.setdefault(key, []).append((self.year_start, self.year_end, pid))
+                self.name[key] = placeholder_person_name(pid)
+                self.active[key] = True
+                dated.append((self.year_start, key, pid))
+                continue
+
+            spans: list[tuple] = []
+            for seg in get_position_holder_segments(session, pid, self.year_start, self.year_end):
+                key = ("u", seg["user_id"])
+                spans.append((seg["from_date"], seg["to_date"], key))
+                self._by_key.setdefault(key, []).append((seg["from_date"], seg["to_date"], pid))
+                self.name[key] = seg["name"]
+                # An open record anywhere means the person is still employed.
+                # PersonHistory.is_active is not kept in step, so it is not used.
+                self.active[key] = self.active.get(key, False) or seg["effective_to"] is None
+                dated.append((seg["from_date"], key, pid))
+            self._by_position[pid] = spans
+
+        # Someone who moved during the year is filed under, and linked by, the
+        # last position they held: the one the rest of the app resolves them to.
+        for _from_date, key, pid in sorted(dated, key=lambda t: t[0]):
+            self.row_position[key] = pid
+            self.key_at_row_position[pid] = key
+
+    def holder_at(self, position: int, day_date) -> tuple | None:
+        """The holder key at a position on a date, or None when it is vacant.
+
+        Scanned newest first, matching get_person_for_date, so overlapping
+        records resolve to the one that started last.
+        """
+        for lo, hi, key in reversed(self._by_position.get(position, ())):
+            if lo <= day_date <= hi:
+                return key
+        return None
+
+    def position_at(self, key, day_date) -> int | None:
+        """The position a holder sat at on a date, or None when they held none."""
+        for lo, hi, pid in reversed(self._by_key.get(key, ())):
+            if lo <= day_date <= hi:
+                return pid
+        return None
+
+
+def _viewer_segments(session, employment_user_id, year: int):
+    """Return the positions the viewed user held during the year, in order.
+
+    Returns None when no scoping should apply: the caller supplied no
+    session/user, or the user has no PersonHistory at all (legacy users keep the
+    whole-year-at-the-passed-position behavior). Otherwise returns a list of
+    segment dicts with person_id, from_date and to_date clamped to the year. The
+    list may be empty when the user held no position in the year, which masks
+    every day.
+
+    Scoping follows the USER, not the position: a user who swapped rotation
+    position works a different position in each part of the year, and the caller
+    only knows the one resolved for today. Masking against that single position
+    emptied the whole page for anyone who had moved.
     """
     if session is None or employment_user_id is None:
         return None
 
-    from app.core.schedule.person_history import (
-        get_position_holder_segments,
-        has_position_history,
-    )
+    from app.core.schedule.person_history import get_user_history, get_user_position_segments
 
-    if not has_position_history(session, position_id):
+    if not get_user_history(session, employment_user_id):
         return None
 
     year_start = datetime.date(year, 1, 1)
     year_end = datetime.date(year, 12, 31)
-    return [
-        (seg["from_date"], seg["to_date"])
-        for seg in get_position_holder_segments(session, position_id, year_start, year_end)
-        if seg["user_id"] == employment_user_id
-    ]
+    return get_user_position_segments(session, employment_user_id, year_start, year_end)
 
 
-def _date_in_ranges(day_date, ranges) -> bool:
-    """True if masking is disabled (ranges is None) or day_date falls in a range."""
-    if ranges is None:
-        return True
-    return any(lo <= day_date <= hi for lo, hi in ranges)
+def _position_on(day_date, segments, default_position: int) -> int | None:
+    """The position the viewed user held on day_date.
+
+    default_position when scoping is off (segments is None), otherwise the
+    matching segment's position, or None when the user held no position that day.
+    """
+    if segments is None:
+        return default_position
+    for seg in segments:
+        if seg["from_date"] <= day_date <= seg["to_date"]:
+            return seg["person_id"]
+    return None
 
 
-def _get_person_name_from_db(person_id: int) -> str:
-    """Get current person name from database (respects person_id field)."""
-    from app.database.database import SessionLocal, User
+def _viewer_key(holders: _Holders, employment_user_id, target_person_id: int) -> tuple:
+    """The row key belonging to the viewed person, so they are not their own coworker."""
+    if employment_user_id is not None and ("u", employment_user_id) in holders.name:
+        return ("u", employment_user_id)
+    return holders.key_at_row_position.get(target_person_id, ("p", target_person_id))
 
-    db = SessionLocal()
-    try:
-        # First check if someone has this person_id explicitly set
-        holder = db.query(User).filter(User.person_id == person_id).first()
-        if holder:
-            return holder.name
-        # Fallback: legacy user where user_id == person_id
-        user = db.query(User).filter(User.id == person_id).first()
-        if user:
-            return user.name
-        # Final fallback: nobody holds this position
-        return placeholder_person_name(person_id)
-    finally:
-        db.close()
+
+def _other_key(holders: _Holders, other_person_id: int, other_user_id: int | None):
+    """The row key the detail views were opened for.
+
+    other_user_id names the person outright and is what the stat table links
+    with. other_person_id is the position they are filed under, kept so older
+    links (and any caller that only knows a position) still resolve to whoever
+    held it last that year. None means no holder is known, and the caller reads
+    the position as fixed for the whole year.
+    """
+    if other_user_id is not None and ("u", other_user_id) in holders.name:
+        return ("u", other_user_id)
+    return holders.key_at_row_position.get(other_person_id)
+
+
+def _new_row(holders: _Holders, key: tuple) -> dict:
+    """An empty statistics row for one coworker."""
+    return {
+        "other_id": holders.row_position.get(key, key[1] if key[0] == "p" else 0),
+        "other_user_id": key[1] if key[0] == "u" else None,
+        "other_name": holders.name.get(key) or placeholder_person_name(holders.row_position.get(key, 0)),
+        "active": holders.active.get(key, True),
+        "total": 0,
+        "by_shift": {"N1": 0, "N2": 0, "N3": 0},
+        "by_month": {m: 0 for m in range(1, 13)},
+        "by_weekday": {d: 0 for d in range(7)},
+        "handovers": 0,
+        "pct": 0.0,
+        "next_shared_date": None,
+        "next_handover_date": None,
+    }
 
 
 def build_cowork_stats(
@@ -69,10 +172,11 @@ def build_cowork_stats(
     target_person_id: int,
     session=None,
     employment_user_id: int | None = None,
+    days_in_year: list[dict] | None = None,
 ) -> list[dict]:
     """
-    Räknar hur många pass target_person_id jobbar tillsammans
-    med varje annan person, samt beräknar överlämnings- och månadsstatistik.
+    Räknar hur många pass den visade personen jobbar tillsammans med varje
+    annan person, samt beräknar överlämnings- och månadsstatistik.
 
     En dag räknas som samarbete bara om båda:
       - jobbar (inte OFF)
@@ -84,87 +188,93 @@ def build_cowork_stats(
 
     Args:
         year: År att analysera
-        target_person_id: Position (rotation person_id) att analysera
-        session: Optional DB session used to scope the stats to the viewed user's
-            own employment window at target_person_id.
+        target_person_id: Position (rotation person_id) att analysera. Only the
+            fallback for users without PersonHistory: with history the viewed
+            person's position is resolved per date.
+        session: Optional DB session. With it, every position is read at the
+            holder who sat there on each date, so one row is one person even
+            when they moved position during the year, and the viewed person's
+            own positions are never counted as a coworker.
         employment_user_id: Optional user id of the viewed person. When given
-            together with session, days outside that user's PersonHistory
-            segment(s) for target_person_id are treated as OFF so a successor's
-            interactions are not attributed to a departed holder. Positions
-            without any history keep the legacy whole-year behavior.
+            together with session, each day is read at the position that user's
+            PersonHistory puts them on, and days they held no position are
+            treated as OFF, so a successor's interactions are not attributed to
+            a departed holder.
 
     Returns:
-        Lista med statistik per medarbetare, sorterad på person-ID
+        Lista med statistik per medarbetare, sorterad på namn med inaktiva sist
     """
     today = datetime.date.today()
-    days_in_year = generate_year_data(year, person_id=None)
-    active_ranges = _viewer_active_ranges(session, employment_user_id, target_person_id, year)
+    # The session is what makes absences, swaps and overtime apply. Without it
+    # every day is the raw rotation shift, so a sick day still counted as a
+    # shared shift. Building the year costs seconds, so a caller making several
+    # of these calls builds it once and passes it in.
+    if days_in_year is None:
+        days_in_year = generate_year_data(year, person_id=None, session=session)
+    holders = _Holders(session, year)
+    segments = _viewer_segments(session, employment_user_id, year)
+    me = _viewer_key(holders, employment_user_id, target_person_id)
 
     total_target_work_days = 0
 
-    # Initiera statistik för alla andra personer
-    stats: dict[int, dict] = {}
-    for pid in PERSON_IDS:
-        if pid == target_person_id:
-            continue
-
-        stats[pid] = {
-            "other_id": pid,
-            "other_name": _get_person_name_from_db(pid),
-            "total": 0,
-            "by_shift": {"N1": 0, "N2": 0, "N3": 0},
-            "by_month": {m: 0 for m in range(1, 13)},
-            "by_weekday": {d: 0 for d in range(7)},
-            "handovers": 0,
-            "pct": 0.0,
-            "next_shared_date": None,
-            "next_handover_date": None,
-        }
+    # Rows are created as colleagues are met, see the day loop below.
+    stats: dict[tuple, dict] = {}
 
     # Överlämningspar samma dag: skiftet till vänster lämnar till skiftet till höger
     _HANDOVER_PAIRS = {("N1", "N2"), ("N2", "N3")}
 
-    prev_day_shifts: dict[int, str] = {}  # person_id -> skiftkod föregående dag
+    prev_codes: dict[tuple, str] = {}  # holder key -> skiftkod föregående dag
+    target_prev = "OFF"
 
     for day in days_in_year:
         persons_today = day.get("persons", [])
         date_val = day["date"]
 
-        # Bygg dagens skiftkarta
-        current_day_shifts: dict[int, str] = {
+        shift_at: dict[int, str] = {
             p["person_id"]: (p["shift"].code if p.get("shift") else "OFF") for p in persons_today
         }
 
-        # Days outside the viewed user's tenure at this position belong to a
-        # different holder. Treat the target as OFF and carry that forward so no
-        # coworking or handover is attributed to the viewed user for those days.
-        if not _date_in_ranges(date_val, active_ranges):
-            current_day_shifts[target_person_id] = "OFF"
-            prev_day_shifts = current_day_shifts
+        # Dagens skiftkod per person, oavsett vilken position de sitter på.
+        current_codes: dict[tuple, str] = {}
+        for pid in PERSON_IDS:
+            key = holders.holder_at(pid, date_val)
+            if key is not None:
+                current_codes[key] = shift_at.get(pid, "OFF")
+
+        # The position the viewed person actually sat at on this date. None means
+        # they held no position that day, so nothing is attributed to them and
+        # the carried-forward state stays OFF across the tenure edge.
+        position_today = _position_on(date_val, segments, target_person_id)
+        if position_today is None:
+            prev_codes = current_codes
+            target_prev = "OFF"
             continue
 
-        target_prev = prev_day_shifts.get(target_person_id, "OFF")
+        target_code = shift_at.get(position_today, "OFF")
 
-        # Hitta target-personens skift idag
-        target = _find_person_in_day(persons_today, target_person_id)
-        target_code = "OFF"
-        if target and target.get("shift"):
-            target_code = target["shift"].code
+        # Anyone holding a position on a day the viewed person also holds one is
+        # a colleague, and gets a row even with no shared shift. A successor who
+        # only held the viewed person's own position after they left never turns
+        # up here, which is right: they never worked together.
+        for key in current_codes:
+            if key != me and key not in stats:
+                stats[key] = _new_row(holders, key)
 
         month = date_val.month
         weekday = date_val.weekday()
 
         # Korsdag N3→N1: kontrollera mot gårdagens skift
-        for pid in stats:
-            other_prev = prev_day_shifts.get(pid, "OFF")
-            other_curr = current_day_shifts.get(pid, "OFF")
+        for key, row in stats.items():
+            other_prev = prev_codes.get(key, "OFF")
+            other_curr = current_codes.get(key, "OFF")
             if (target_prev == "N3" and other_curr == "N1") or (other_prev == "N3" and target_code == "N1"):
-                stats[pid]["handovers"] += 1
-                if date_val >= today and stats[pid]["next_handover_date"] is None:
-                    stats[pid]["next_handover_date"] = date_val
+                row["handovers"] += 1
+                if date_val >= today and row["next_handover_date"] is None:
+                    row["next_handover_date"] = date_val
 
         # Uppdatera prev innan eventuellt skip
-        prev_day_shifts = current_day_shifts
+        prev_codes = current_codes
+        target_prev = target_code
 
         if target_code not in ("N1", "N2", "N3"):
             continue
@@ -172,40 +282,35 @@ def build_cowork_stats(
         total_target_work_days += 1
 
         # Jämför med alla andra
-        for p in persons_today:
-            pid = p["person_id"]
-            if pid == target_person_id or pid not in stats:
+        for key, other_code in current_codes.items():
+            row = stats.get(key)
+            if row is None or other_code not in ("N1", "N2", "N3"):
                 continue
-
-            other_shift = p.get("shift")
-            if not other_shift:
-                continue
-
-            other_code = other_shift.code
 
             # Samarbete: samma skifttyp
             if other_code == target_code:
-                stats[pid]["total"] += 1
-                stats[pid]["by_shift"][target_code] += 1
-                stats[pid]["by_month"][month] += 1
-                stats[pid]["by_weekday"][weekday] += 1
-                if date_val >= today and stats[pid]["next_shared_date"] is None:
-                    stats[pid]["next_shared_date"] = date_val
+                row["total"] += 1
+                row["by_shift"][target_code] += 1
+                row["by_month"][month] += 1
+                row["by_weekday"][weekday] += 1
+                if date_val >= today and row["next_shared_date"] is None:
+                    row["next_shared_date"] = date_val
 
             # Överlämning samma dag: N1↔N2 eller N2↔N3
             pair = (target_code, other_code)
             pair_rev = (other_code, target_code)
             if pair in _HANDOVER_PAIRS or pair_rev in _HANDOVER_PAIRS:
-                stats[pid]["handovers"] += 1
-                if date_val >= today and stats[pid]["next_handover_date"] is None:
-                    stats[pid]["next_handover_date"] = date_val
+                row["handovers"] += 1
+                if date_val >= today and row["next_handover_date"] is None:
+                    row["next_handover_date"] = date_val
 
     # Beräkna procentandelar
     rows = list(stats.values())
     for r in rows:
         r["pct"] = round(r["total"] / total_target_work_days * 100, 1) if total_target_work_days > 0 else 0.0
 
-    rows.sort(key=lambda r: r["other_id"])
+    # Alphabetical, with everyone who has left the rotation last.
+    rows.sort(key=lambda r: (not r["active"], r["other_name"].casefold()))
     return rows
 
 
@@ -215,26 +320,34 @@ def build_cowork_details(
     other_person_id: int,
     session=None,
     employment_user_id: int | None = None,
+    other_user_id: int | None = None,
+    days_in_year: list[dict] | None = None,
 ) -> list[dict]:
     """
     Returnerar alla dagar då två personer jobbar samma skift.
 
     Args:
         year: År att analysera
-        target_person_id: Position (rotation person_id) för första personen
-        other_person_id: Position för andra personen
-        session: Optional DB session used to scope the details to the viewed
-            user's own employment window at target_person_id.
-        employment_user_id: Optional user id of the viewed person. When given
-            together with session, days outside that user's PersonHistory
-            segment(s) for target_person_id are skipped. Positions without any
-            history keep the legacy whole-year behavior.
+        target_person_id: Position för den visade personen, fallback utan historik
+        other_person_id: Position kollegan är listad under
+        session: Optional DB session, see build_cowork_stats
+        employment_user_id: Optional user id of the viewed person, see build_cowork_stats
+        other_user_id: Optional user id of the coworker. Both sides follow their
+            person across position changes, so a day counts whenever the two
+            worked the same shift, wherever either of them sat.
 
     Returns:
         Lista med dagdetaljer, sorterad på datum
     """
-    days_in_year = generate_year_data(year, person_id=None)
-    active_ranges = _viewer_active_ranges(session, employment_user_id, target_person_id, year)
+    # The session is what makes absences, swaps and overtime apply. Without it
+    # every day is the raw rotation shift, so a sick day still counted as a
+    # shared shift. Building the year costs seconds, so a caller making several
+    # of these calls builds it once and passes it in.
+    if days_in_year is None:
+        days_in_year = generate_year_data(year, person_id=None, session=session)
+    holders = _Holders(session, year)
+    segments = _viewer_segments(session, employment_user_id, year)
+    other_key = _other_key(holders, other_person_id, other_user_id)
     details: list[dict] = []
 
     for day in days_in_year:
@@ -242,12 +355,14 @@ def build_cowork_details(
         if not persons_today:
             continue
 
-        # Skip days outside the viewed user's tenure at this position.
-        if not _date_in_ranges(day["date"], active_ranges):
+        date_val = day["date"]
+        my_position = _position_on(date_val, segments, target_person_id)
+        their_position = other_person_id if other_key is None else holders.position_at(other_key, date_val)
+        if my_position is None or their_position is None or my_position == their_position:
             continue
 
-        target = _find_person_in_day(persons_today, target_person_id)
-        other = _find_person_in_day(persons_today, other_person_id)
+        target = _find_person_in_day(persons_today, my_position)
+        other = _find_person_in_day(persons_today, their_position)
 
         if not target or not other:
             continue
@@ -267,14 +382,14 @@ def build_cowork_details(
 
         details.append(
             {
-                "date": day["date"],
+                "date": date_val,
                 "weekday_name": day["weekday_name"],
                 "rotation_week": target.get("rotation_week"),
                 "rotation_length": target.get("rotation_length"),
-                "target_id": target_person_id,
+                "target_id": my_position,
                 "target_name": target["person_name"],
                 "target_shift": target_shift,
-                "other_id": other_person_id,
+                "other_id": their_position,
                 "other_name": other["person_name"],
                 "other_shift": other_shift,
             }
@@ -290,6 +405,8 @@ def build_handover_details(
     other_person_id: int,
     session=None,
     employment_user_id: int | None = None,
+    other_user_id: int | None = None,
+    days_in_year: list[dict] | None = None,
 ) -> list[dict]:
     """
     Returnerar alla överlämningar mellan två personer under ett år.
@@ -300,26 +417,29 @@ def build_handover_details(
 
     Varje post innehåller:
       - date, weekday_name: när överlämningen sker
-      - from_shift: skiftet som lämnar (t.ex. "N1")
-      - to_shift: skiftet som tar emot (t.ex. "N2")
-      - i_lamnar: True om target är den som lämnar, False om other lämnar
+      - from_shift, to_shift: skiftet som lämnar och skiftet som tar emot
+      - i_lamnar: True om den visade personen är den som lämnar
 
     Args:
         year: År att analysera
-        target_person_id: Position (rotation person_id) för "Jag"-personen
-        other_person_id: Position för den andra personen
-        session: Optional DB session used to scope the handovers to the viewed
-            user's own employment window at target_person_id.
-        employment_user_id: Optional user id of the viewed person. When given
-            together with session, handovers on dates outside that user's
-            PersonHistory segment(s) for target_person_id are dropped. Positions
-            without any history keep the legacy whole-year behavior.
+        target_person_id: Position för den visade personen, fallback utan historik
+        other_person_id: Position kollegan är listad under
+        session: Optional DB session, see build_cowork_stats
+        employment_user_id: Optional user id of the viewed person, see build_cowork_stats
+        other_user_id: Optional user id of the coworker, see build_cowork_details
 
     Returns:
         Lista med överlämningar, sorterad på datum
     """
-    days_in_year = generate_year_data(year, person_id=None)
-    active_ranges = _viewer_active_ranges(session, employment_user_id, target_person_id, year)
+    # The session is what makes absences, swaps and overtime apply. Without it
+    # every day is the raw rotation shift, so a sick day still counted as a
+    # shared shift. Building the year costs seconds, so a caller making several
+    # of these calls builds it once and passes it in.
+    if days_in_year is None:
+        days_in_year = generate_year_data(year, person_id=None, session=session)
+    holders = _Holders(session, year)
+    segments = _viewer_segments(session, employment_user_id, year)
+    other_key = _other_key(holders, other_person_id, other_user_id)
     details: list[dict] = []
 
     _HANDOVER_PAIRS = {("N1", "N2"), ("N2", "N3")}
@@ -330,23 +450,24 @@ def build_handover_details(
     for day in days_in_year:
         persons_today = day.get("persons", [])
 
-        target = _find_person_in_day(persons_today, target_person_id)
-        other = _find_person_in_day(persons_today, other_person_id)
-
-        target_code = target["shift"].code if target and target.get("shift") else "OFF"
-        other_code = other["shift"].code if other and other.get("shift") else "OFF"
-
         date = day["date"]
         weekday_name = day["weekday_name"]
 
-        # Days outside the viewed user's tenure at this position belong to a
-        # different holder. Record no handover on such a date, and keep the
-        # target masked OFF in the carried-forward state so a boundary cross-day
-        # handover is not attributed across the tenure edge.
-        if not _date_in_ranges(date, active_ranges):
+        their_position = other_person_id if other_key is None else holders.position_at(other_key, date)
+        other = None if their_position is None else _find_person_in_day(persons_today, their_position)
+        other_code = other["shift"].code if other and other.get("shift") else "OFF"
+
+        # Days the viewed person held no position, or sat at the coworker's own
+        # position, produce no handover. Keep them masked OFF in the carried
+        # forward state so no cross-day handover crosses the edge.
+        my_position = _position_on(date, segments, target_person_id)
+        if my_position is None or their_position is None or my_position == their_position:
             prev_target_code = "OFF"
             prev_other_code = other_code
             continue
+
+        target = _find_person_in_day(persons_today, my_position)
+        target_code = target["shift"].code if target and target.get("shift") else "OFF"
 
         # Korsdag N3→N1: använder dagens datum (när N1 börjar)
         if prev_target_code == "N3" and other_code == "N1":

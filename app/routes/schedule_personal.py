@@ -30,6 +30,7 @@ from app.core.schedule import (
     build_week_data,
     compute_day_ob_pay,
     determine_shift_for_date,
+    generate_year_data,
     get_effective_monthly_wage,
     get_overtime_rows_for_date,
     get_rotation_length_for_date,
@@ -1058,12 +1059,27 @@ async def export_month_excel(
     )
 
 
+def _find_cowork_row(cowork_rows: list[dict], with_person_id: int, with_user_id: int | None) -> dict | None:
+    """Pick the selected coworker row.
+
+    with_user_id names the person and is what the stat table links with. Older
+    links carry only the position, which still resolves as long as one person is
+    filed under it that year.
+    """
+    if with_user_id is not None:
+        row = next((r for r in cowork_rows if r["other_user_id"] == with_user_id), None)
+        if row is not None:
+            return row
+    return next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
+
+
 @router.get("/year/{person_id}", response_class=HTMLResponse, name="year_person")
 async def year_view(
     request: Request,
     person_id: int,
     year: int = Query(None),
     with_person_id: int | None = Query(None, alias="with_person_id"),
+    with_user_id: int | None = Query(None, alias="with_user_id"),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -1094,17 +1110,27 @@ async def year_view(
     # stats to the viewed user's own employment window so a successor's days at
     # the same position are not attributed to a departed holder.
     employment_user_id = target_user.id if target_user is not None else None
-    cowork_rows = build_cowork_stats(year, rotation_position, session=db, employment_user_id=employment_user_id)
+    # One schedule build serves every cowork call on the page: it costs seconds.
+    cowork_days = generate_year_data(year, person_id=None, session=db)
+    cowork_rows = build_cowork_stats(
+        year, rotation_position, session=db, employment_user_id=employment_user_id, days_in_year=cowork_days
+    )
     selected_other_id = None
     selected_other_name = None
     cowork_details: list[dict] = []
 
     if with_person_id:
         selected_other_id = with_person_id
-        _other_row = next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
+        _other_row = _find_cowork_row(cowork_rows, with_person_id, with_user_id)
         selected_other_name = _other_row["other_name"] if _other_row else str(with_person_id)
         cowork_details = build_cowork_details(
-            year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
+            year,
+            rotation_position,
+            with_person_id,
+            session=db,
+            employment_user_id=employment_user_id,
+            other_user_id=with_user_id,
+            days_in_year=cowork_days,
         )
 
     # Use rotation_position for schedule, user_id_for_wages for wage lookup.
@@ -1170,6 +1196,7 @@ async def cowork_view(
     person_id: int,
     year: int = Query(None),
     with_person_id: int | None = Query(None, alias="with_person_id"),
+    with_user_id: int | None = Query(None, alias="with_user_id"),
     current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -1194,7 +1221,11 @@ async def cowork_view(
     # successor's days at the same position are not attributed to a departed
     # holder.
     employment_user_id = target_user.id if target_user is not None else None
-    cowork_rows = build_cowork_stats(year, rotation_position, session=db, employment_user_id=employment_user_id)
+    # One schedule build serves every cowork call on the page: it costs seconds.
+    cowork_days = generate_year_data(year, person_id=None, session=db)
+    cowork_rows = build_cowork_stats(
+        year, rotation_position, session=db, employment_user_id=employment_user_id, days_in_year=cowork_days
+    )
 
     selected_other_id = None
     selected_other_name = None
@@ -1204,13 +1235,25 @@ async def cowork_view(
 
     if with_person_id:
         selected_other_id = with_person_id
-        selected_cowork_row = next((r for r in cowork_rows if r["other_id"] == with_person_id), None)
+        selected_cowork_row = _find_cowork_row(cowork_rows, with_person_id, with_user_id)
         selected_other_name = selected_cowork_row["other_name"] if selected_cowork_row else str(with_person_id)
         cowork_details = build_cowork_details(
-            year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
+            year,
+            rotation_position,
+            with_person_id,
+            session=db,
+            employment_user_id=employment_user_id,
+            other_user_id=with_user_id,
+            days_in_year=cowork_days,
         )
         handover_details = build_handover_details(
-            year, rotation_position, with_person_id, session=db, employment_user_id=employment_user_id
+            year,
+            rotation_position,
+            with_person_id,
+            session=db,
+            employment_user_id=employment_user_id,
+            other_user_id=with_user_id,
+            days_in_year=cowork_days,
         )
 
     return render(
