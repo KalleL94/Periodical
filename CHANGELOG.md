@@ -22,6 +22,11 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.12.0] - 2026-09-25
+
+### Added
+- The week and month views carry a jump menu beside the prev/next buttons, covering six steps either side of the view you are on. Getting half a year away took twelve clicks before, or a hand-edited query string. `get_jump_options` in `app/core/utils.py` builds the thirteen entries; weeks step by ISO Monday, so a year with 53 weeks and the turn of the year land right, and months step on a month index rather than by adding days. The four routes pass one `jump_options` key, the templates render a `<select>` whose options are whole URLs, the same pattern the person picker on the statistics page already uses
+
 ## [1.11.2] - 2026-09-24
 
 ### Fixed

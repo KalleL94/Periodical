@@ -11,6 +11,13 @@
             <a href="/month?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-primary">{{ t.month_prev }}</a>
             <a href="/month" class="btn btn-primary">{{ t.month_today }}</a>
             <a href="/month?year={{ next_year }}&month={{ next_month }}" class="btn btn-primary">{{ t.month_next }}</a>
+            <select class="stat-select" onchange="window.location.href=this.value"
+                    aria-label="{{ t.jump_label }}">
+                {% for o in jump_options %}
+                <option value="/month?year={{ o.year }}&amp;month={{ o.month }}"
+                        {% if o.month == month and o.year == year %}selected{% endif %}>{{ o.label }}</option>
+                {% endfor %}
+            </select>
         </div>
 
         <div class="page-header-right">

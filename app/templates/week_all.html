@@ -11,6 +11,13 @@
         <a href="/week?year={{ prev_year }}&week={{ prev_week }}" class="btn btn-primary">{{ t.week_prev_week }}</a>
         <a href="/week" class="btn btn-primary">{{ t.week_today }}</a>
         <a href="/week?year={{ next_year }}&week={{ next_week }}" class="btn btn-primary">{{ t.week_next_week }}</a>
+        <select class="stat-select" onchange="window.location.href=this.value"
+                aria-label="{{ t.jump_label }}">
+            {% for o in jump_options %}
+            <option value="/week?year={{ o.year }}&amp;week={{ o.week }}"
+                    {% if o.week == week and o.year == year %}selected{% endif %}>{{ o.label }}</option>
+            {% endfor %}
+        </select>
         {# <a href="/week?year={{ year + 1 }}&week={{ week }}" class="btn btn-primary">Next year</a> #}
     </div>
 

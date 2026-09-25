@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.12.0",
+    "date": "2026-09-25",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Vecko- och månadsvyn har fått en hoppmeny. Välj en vecka eller månad upp till ett halvår bakåt eller framåt i stället för att klicka dig fram ett steg i taget.",
+        "en": "The week and month views have a jump menu. Pick a week or a month up to six steps back or forward instead of clicking your way there one step at a time."
+      }
+    ]
+  },
+  {
     "version": "1.11.2",
     "date": "2026-09-24",
     "entries": [

@@ -51,7 +51,7 @@ from app.core.schedule.vacation import (
     vacation_supplement_for_month,
     vacation_year_of,
 )
-from app.core.utils import get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
+from app.core.utils import get_jump_options, get_navigation_dates, get_ot_shift_display_code, get_safe_today, get_today
 from app.core.validators import validate_date_params, validate_person_id
 from app.database.database import (
     Absence,
@@ -607,6 +607,7 @@ async def show_week_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             **nav,
+            "jump_options": get_jump_options("week", monday),
         },
     )
 
@@ -922,6 +923,7 @@ async def show_month_for_person(
             "year": year,
             "month": month,
             **get_navigation_dates("month", date(year, month, 1)),
+            "jump_options": get_jump_options("month", date(year, month, 1)),
             "person_id": person_id,
             "person_name": person_name,
             "days": days_in_month,

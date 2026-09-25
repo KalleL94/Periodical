@@ -109,6 +109,39 @@ def get_navigation_dates(
     raise ValueError(f"Unsupported view_type: {view_type}")
 
 
+def get_jump_options(
+    view_type: Literal["week", "month"],
+    current_date: datetime.date,
+    span: int = 6,
+) -> list[dict]:
+    """
+    Bygger hoppalternativ +/- span steg kring current_date, aktuellt steg inkluderat.
+
+    Varje post: offset, year, label samt week eller month beroende på vy.
+    Veckor räknas via ISO-kalendern, så årsskiften och 53-veckorsår blir rätt.
+    """
+    options: list[dict] = []
+
+    if view_type == "week":
+        iso_year, iso_week, _ = current_date.isocalendar()
+        base_monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
+    elif view_type != "month":
+        raise ValueError(f"Unsupported view_type: {view_type}")
+
+    for offset in range(-span, span + 1):
+        if view_type == "week":
+            monday = base_monday + datetime.timedelta(weeks=offset)
+            year, week, _ = monday.isocalendar()
+            options.append({"offset": offset, "year": year, "week": week, "label": f"{year}-W{week:02d}"})
+        else:
+            index = current_date.year * 12 + current_date.month - 1 + offset
+            year, month = divmod(index, 12)
+            month += 1
+            options.append({"offset": offset, "year": year, "month": month, "label": f"{year}-{month:02d}"})
+
+    return options
+
+
 def get_ot_shift_display_code(start_time: datetime.datetime | str | None) -> str:
     """
     Maps an overtime shift start time to a display code.
