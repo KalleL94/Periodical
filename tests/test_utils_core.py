@@ -12,6 +12,7 @@ import pytest
 
 from app.core.utils import (
     calculate_payment_date,
+    get_jump_options,
     get_navigation_dates,
     get_ot_shift_display_code,
     get_safe_today,
@@ -130,3 +131,27 @@ class TestCalculatePaymentDate:
     def test_christmas_rule_when_dec_23_is_sunday(self):
         # Dec 23 2018 is a Sunday -> move back two days to Friday Dec 21.
         assert calculate_payment_date(2018, 11) == datetime.date(2018, 12, 21)
+
+
+class TestGetJumpOptions:
+    def test_month_spans_six_steps_each_way_across_year_boundary(self):
+        options = get_jump_options("month", datetime.date(2026, 3, 15))
+        assert len(options) == 13
+        assert (options[0]["year"], options[0]["month"]) == (2025, 9)
+        assert (options[6]["year"], options[6]["month"]) == (2026, 3)
+        assert options[6]["offset"] == 0
+        assert (options[-1]["year"], options[-1]["month"]) == (2026, 9)
+        assert options[0]["label"] == "2025-09"
+
+    def test_week_uses_iso_calendar_across_a_53_week_year(self):
+        # 2026 has 53 ISO weeks, so week 52 of 2026 plus 6 lands in 2027 week 5.
+        options = get_jump_options("week", datetime.date.fromisocalendar(2026, 52, 1))
+        assert len(options) == 13
+        assert (options[6]["year"], options[6]["week"]) == (2026, 52)
+        assert (options[-1]["year"], options[-1]["week"]) == (2027, 5)
+        assert (options[0]["year"], options[0]["week"]) == (2026, 46)
+        assert options[-1]["label"] == "2027-W05"
+
+    def test_rejects_unknown_view_type(self):
+        with pytest.raises(ValueError):
+            get_jump_options("day", datetime.date(2026, 3, 15))
