@@ -22,6 +22,11 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [Unreleased]
+
+### Added
+- Admin quick-add on the week view: type a name, a date range and a shift, and the person gets their own substitute row. A known name (case-insensitive) reuses its substitute, an unknown one creates it, an archived one is restored.
+
 ## [1.12.0] - 2026-09-25
 
 ### Added

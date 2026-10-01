@@ -32,7 +32,7 @@ from app.core.schedule.person_history import get_position_holder_segments, get_u
 from app.core.schedule.summary import _calculate_tax
 from app.core.utils import get_jump_options, get_navigation_dates, get_safe_today, get_today
 from app.core.validators import validate_date_params
-from app.database.database import User, UserRole, WageType, get_db
+from app.database.database import Substitute, User, UserRole, WageType, get_db
 from app.routes.shared import render
 
 logger = logging.getLogger(__name__)
@@ -406,6 +406,11 @@ async def show_week_all(
             "holiday_dates": holiday_dates,
             **nav,
             "jump_options": get_jump_options("week", monday),
+            "monday": monday,
+            # Known names for the admin quick-add form's autocomplete
+            "substitute_names": [s.name for s in db.query(Substitute.name).order_by(Substitute.name)]
+            if current_user is not None and current_user.role == UserRole.ADMIN
+            else [],
         },
     )
 

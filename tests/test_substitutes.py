@@ -163,3 +163,29 @@ def test_substitute_shown_as_coworker_in_personal_month(rotation_session):
                 assert "VikKollega" in dd.get("coworkers", [])
                 found = True
     assert found
+
+
+def test_substitute_quick_add_creates_and_reuses_by_name(test_client, test_db, admin_user):
+    test_client.cookies.set("access_token", create_access_token(data={"sub": str(admin_user.id)}))
+
+    r = test_client.post(
+        "/admin/substitutes/quick-add",
+        data={"name": " Anna ", "date_from": "2026-10-05", "date_to": "2026-10-07", "shift_code": "N2"},
+    )
+    assert r.status_code == 200
+    assert "Anna" in r.text  # followed redirect to the week view shows the new row
+
+    # Same name, other case: reuses the substitute and overwrites the overlapping day
+    test_client.post(
+        "/admin/substitutes/quick-add",
+        data={"name": "anna", "date_from": "2026-10-07", "shift_code": "N1"},
+    )
+    subs = test_db.query(Substitute).all()
+    assert [s.name for s in subs] == ["Anna"]
+    shifts = {s.date: s.shift_code for s in test_db.query(SubstituteShift)}
+    assert shifts == {date(2026, 10, 5): "N2", date(2026, 10, 6): "N2", date(2026, 10, 7): "N1"}
+
+    bad = {"name": "Bo", "date_from": "2026-10-07", "date_to": "2026-10-05", "shift_code": "N1"}
+    assert test_client.post("/admin/substitutes/quick-add", data=bad).status_code == 400
+    bad.update(date_to="2026-10-08", shift_code="X")
+    assert test_client.post("/admin/substitutes/quick-add", data=bad).status_code == 400

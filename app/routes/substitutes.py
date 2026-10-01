@@ -13,6 +13,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_admin_user
@@ -81,6 +82,70 @@ async def admin_substitute_create(
     db.commit()
 
     return RedirectResponse(url=f"/admin/substitutes/{substitute.id}", status_code=303)
+
+
+_QUICK_ADD_MAX_DAYS = 92
+
+
+@router.post("/admin/substitutes/quick-add", name="admin_substitute_quick_add")
+async def admin_substitute_quick_add(
+    name: str = Form(...),
+    date_from: date_cls = Form(...),
+    date_to: date_cls | None = Form(None),
+    shift_code: str = Form(...),
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: put a named person on a shift over a date range, straight from the week view.
+
+    The name is matched case-insensitively against existing substitutes so the same
+    person keeps one row; an unknown name creates the substitute, an archived one is
+    restored. Existing shifts on the range are overwritten.
+    """
+    name = name.strip()
+    date_to = date_to or date_from
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+    if shift_code not in _ALLOWED_CODES:
+        raise HTTPException(status_code=400, detail="Invalid shift code")
+    if date_to < date_from or (date_to - date_from).days >= _QUICK_ADD_MAX_DAYS:
+        raise HTTPException(status_code=400, detail="Invalid date range")
+
+    substitute = db.query(Substitute).filter(func.lower(Substitute.name) == name.lower()).first()
+    if substitute is None:
+        substitute = Substitute(name=name, is_active=1, created_by=current_user.id)
+        db.add(substitute)
+        db.flush()
+    else:
+        substitute.is_active = 1
+
+    existing = {
+        s.date: s
+        for s in db.query(SubstituteShift).filter(
+            SubstituteShift.substitute_id == substitute.id,
+            SubstituteShift.date >= date_from,
+            SubstituteShift.date <= date_to,
+        )
+    }
+    current = date_from
+    while current <= date_to:
+        row = existing.get(current)
+        if row:
+            row.shift_code = shift_code
+            row.created_by = current_user.id
+        else:
+            db.add(
+                SubstituteShift(
+                    substitute_id=substitute.id, date=current, shift_code=shift_code, created_by=current_user.id
+                )
+            )
+        current += timedelta(days=1)
+
+    db.commit()
+    clear_schedule_cache()
+
+    iso_year, iso_week, _ = date_from.isocalendar()
+    return RedirectResponse(url=f"/week?year={iso_year}&week={iso_week}", status_code=303)
 
 
 @router.get("/admin/substitutes/{substitute_id}", response_class=HTMLResponse, name="admin_substitute_manage")
