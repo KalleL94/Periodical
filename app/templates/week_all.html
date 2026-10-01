@@ -161,6 +161,40 @@
     </table>
 </div>
 
+{% if user and user.role.value == 'admin' %}
+<div class="card form-card-block">
+    <h3 class="form-card-title">{{ t.substitute_quick_title }}</h3>
+    <form method="POST" action="/admin/substitutes/quick-add" class="form-row-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-group">
+            <label for="qa-name" class="form-label">{{ t.admin_substitutes_name }}</label>
+            <input type="text" id="qa-name" name="name" required list="qa-names" autocomplete="off" class="form-input">
+            <datalist id="qa-names">
+                {% for n in substitute_names %}<option value="{{ n }}">{% endfor %}
+            </datalist>
+        </div>
+        <div class="form-group">
+            <label for="qa-from" class="form-label">{{ t.substitute_quick_from }}</label>
+            <input type="date" id="qa-from" name="date_from" required value="{{ monday.isoformat() }}" class="form-input">
+        </div>
+        <div class="form-group">
+            <label for="qa-to" class="form-label">{{ t.substitute_quick_to }}</label>
+            <input type="date" id="qa-to" name="date_to" class="form-input">
+        </div>
+        <div class="form-group">
+            <label for="qa-shift" class="form-label">{{ t.substitute_quick_shift }}</label>
+            <select id="qa-shift" name="shift_code" class="form-input">
+                {% for code in ['N1', 'N2', 'N3', 'OC'] %}
+                    <option value="{{ code }}">{{ t.shift_labels.get(code, code) }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">{{ t.substitute_quick_submit }}</button>
+    </form>
+    <p class="info-text">{{ t.substitute_quick_help }}</p>
+</div>
+{% endif %}
+
 <script>
 var showOriginal = false;
 function toggleOriginalMode() {
