@@ -1500,6 +1500,7 @@ def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
         "person_name": summary.get("person_name", ""),
         "person_id": summary.get("person_id"),
         "substitute_id": summary.get("substitute_id"),
+        "holder_user_id": summary.get("holder_user_id"),
         "is_substitute": is_substitute,
         "num_shifts": summary.get("num_shifts", 0) or 0,
         # Worked shift hours plus overtime, each counted once (see day_worked_hours).
@@ -1571,6 +1572,7 @@ def build_month_position_summaries(
             )
             if seg is not None:
                 summary["person_name"] = seg["name"]
+                summary["holder_user_id"] = seg["user_id"]
             summaries.append(summary)
 
     return summaries
@@ -1587,17 +1589,29 @@ def build_month_report(year: int, month: int, session, fetch_tax_table: bool = F
 
     user_wages = get_all_user_wages(session)
 
-    rows = [
-        _report_row_from_summary(summary, is_substitute=False)
-        for summary in build_month_position_summaries(
-            year, month, session, fetch_tax_table=fetch_tax_table, user_wages=user_wages
-        )
-    ]
+    rows: list[dict] = []
+    by_holder: dict[int, dict] = {}
+    for summary in build_month_position_summaries(
+        year, month, session, fetch_tax_table=fetch_tax_table, user_wages=user_wages
+    ):
+        row = _report_row_from_summary(summary, is_substitute=False)
+        uid = row["holder_user_id"]
+        first = by_holder.get(uid) if uid is not None else None
+        if first is None:
+            rows.append(row)
+            if uid is not None:
+                by_holder[uid] = row
+            continue
+        # A position swap yields one summary per held position: one row per person.
+        for key, val in row.items():
+            if isinstance(val, (int, float)) and not isinstance(val, bool) and key != "person_id":
+                first[key] = round(first[key] + val, 1)
 
     for sub_summary in build_substitute_month_summaries(year, month, session, include_overtime=True):
         rows.append(_report_row_from_summary(sub_summary, is_substitute=True))
 
-    return rows
+    # Agents by name, substitutes last (sort is stable, names tie-break within each group).
+    return sorted(rows, key=lambda r: (r["is_substitute"], r["person_name"].casefold()))
 
 
 # Year total -> the month key it sums. Written once: the straight-line version named

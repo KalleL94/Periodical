@@ -202,10 +202,22 @@ async def admin_report_xlsx(
         ws.append([row.get(key, "") for key, _ in CSV_COLUMNS])
     autofit_columns(ws)
 
-    # One sheet per position holder, identical to the /month/{id} export. Same rows
-    # as the summary sheet, so a mid-month person change gets one tab per holder.
+    # One sheet per person, identical to the /month/{id} export. Same rows as the summary
+    # sheet: a mid-month person change gets one tab per holder, while a position swap
+    # (same holder on several positions) is merged into one tab. The sheet only reads
+    # `days`, and the holder's segments never overlap, so non-OFF days are overlaid.
     used_titles = {ws.title}
+    sheets: dict = {}
     for summary in build_month_position_summaries(year, month, db):
+        uid = summary.get("holder_user_id")
+        first = sheets.get(uid) if uid is not None else None
+        if first is None:
+            first = sheets[uid if uid is not None else id(summary)] = {**summary, "days": list(summary["days"])}
+            continue
+        for i, day in enumerate(summary["days"]):
+            if day.get("shift") and day["shift"].code != "OFF":
+                first["days"][i] = day
+    for summary in sorted(sheets.values(), key=lambda s: (s.get("person_name") or "").casefold()):
         title = _safe_sheet_title(summary.get("person_name") or f"Agent {summary.get('person_id')}", used_titles)
         used_titles.add(title)
         agent_ws = wb.create_sheet(title=title)
