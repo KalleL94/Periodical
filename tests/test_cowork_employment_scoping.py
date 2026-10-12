@@ -20,6 +20,7 @@ from app.core.schedule.cowork import (
     build_cowork_stats,
     build_handover_details,
 )
+from app.core.schedule.period import generate_year_data
 from app.core.schedule.person_history import (
     add_person_change,
     end_employment,
@@ -78,12 +79,13 @@ def _seed_succession(session):
 def _all_cowork_dates(session, employment_user_id):
     """Aggregate cowork detail dates across every other position."""
     dates = []
+    days_in_year = generate_year_data(YEAR, person_id=None, session=session)  # built once, not per position
     for other in range(1, 11):
         if other == POSITION:
             continue
-        kwargs = {}
+        kwargs = {"days_in_year": days_in_year}
         if employment_user_id is not None:
-            kwargs = {"session": session, "employment_user_id": employment_user_id}
+            kwargs |= {"session": session, "employment_user_id": employment_user_id}
         dates += [r["date"] for r in build_cowork_details(YEAR, POSITION, other, **kwargs)]
     return dates
 
@@ -91,12 +93,13 @@ def _all_cowork_dates(session, employment_user_id):
 def _all_handover_dates(session, employment_user_id):
     """Aggregate handover detail dates across every other position."""
     dates = []
+    days_in_year = generate_year_data(YEAR, person_id=None, session=session)  # built once, not per position
     for other in range(1, 11):
         if other == POSITION:
             continue
-        kwargs = {}
+        kwargs = {"days_in_year": days_in_year}
         if employment_user_id is not None:
-            kwargs = {"session": session, "employment_user_id": employment_user_id}
+            kwargs |= {"session": session, "employment_user_id": employment_user_id}
         dates += [r["date"] for r in build_handover_details(YEAR, POSITION, other, **kwargs)]
     return dates
 
