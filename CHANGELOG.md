@@ -27,6 +27,9 @@ something to tell users about, whose pull request renames the heading.
 ### Added
 - Admin quick-add on the week view: type a name, a date range and a shift, and the person gets their own substitute row. A known name (case-insensitive) reuses its substitute, an unknown one creates it, an archived one is restored.
 
+### Fixed
+- Admin monthly report: a person who swapped rotation positions mid-month no longer appears twice. The table, CSV and Excel summary show one row per person, sorted by name with substitutes last, and the Excel export has one tab per person.
+
 ## [1.12.0] - 2026-09-25
 
 ### Added

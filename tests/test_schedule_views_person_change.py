@@ -3342,3 +3342,42 @@ def test_all_persons_week_shows_a_departed_holders_own_days(month_env):
     # The all-persons view must agree rather than showing the raw rotation.
     assert _shift_on(all_persons, monday) == "OFF"
     assert _shift_on(all_persons, tuesday) == "N2"
+
+
+def test_report_one_row_per_person_after_mid_month_swap(month_env):
+    """A mid-month position swap yields one report row per person, not one per position."""
+    from app.core.schedule import build_month_report
+
+    _, session = month_env
+    isak = _make_user(session, 11, "isak1", "Isak")
+    omar = _make_user(session, 12, "omar1", "Omar")
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, omar.id, 5, "Omar", "omar1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2027, 6, 15), created_by=1)
+
+    rows = build_month_report(2027, 6, session)
+    names = [r["person_name"] for r in rows if not r["is_substitute"]]
+    assert names.count("Isak") == 1
+    assert names.count("Omar") == 1
+
+
+def test_report_xlsx_one_tab_per_person_after_swap(month_env):
+    """The Excel export merges a swap participant's two position tabs into one."""
+    import io
+
+    import openpyxl
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    isak = _make_user(session, 11, "isak1", "Isak")
+    omar = _make_user(session, 12, "omar1", "Omar")
+    start_employment(session, isak.id, 3, "Isak", "isak1", datetime.date(2026, 1, 2), created_by=1)
+    start_employment(session, omar.id, 5, "Omar", "omar1", datetime.date(2026, 1, 2), created_by=1)
+    swap_positions(session, 3, 5, datetime.date(2027, 6, 15), created_by=1)
+    client.cookies.set("access_token", f"Bearer {create_access_token(data={'sub': str(admin.id)})}")
+
+    resp = client.get("/admin/report.xlsx?year=2027&month=6")
+    assert resp.status_code == 200
+    titles = openpyxl.load_workbook(io.BytesIO(resp.content)).sheetnames
+    assert [t for t in titles if t.startswith("Isak")] == ["Isak"]
+    assert [t for t in titles if t.startswith("Omar")] == ["Omar"]
