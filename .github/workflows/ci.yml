@@ -52,4 +52,5 @@ jobs:
           PRODUCTION: "false"
         run: |
           # Fail the build if coverage drops below the floor (guards against regression, not a target)
-          pytest --cov=app --cov-report=term-missing --cov-fail-under=50
+          # -n auto runs the suite in parallel (one worker per core), roughly 4x faster
+          pytest -n auto --cov=app --cov-report=term-missing --cov-fail-under=50

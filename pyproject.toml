@@ -33,6 +33,7 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov",
+    "pytest-xdist",
     "httpx",
     # Pin ruff so CI, local and pre-commit lint with the same rules (avoids version drift)
     "ruff==0.16.9",
