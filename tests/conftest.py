@@ -134,6 +134,7 @@ def test_db():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()  # StaticPool keeps its connection open until disposed
 
 
 @pytest.fixture(scope="function")
@@ -323,3 +324,4 @@ def rotation_session(monkeypatch):
     session.close()
     clear_schedule_cache()
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
