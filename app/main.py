@@ -286,6 +286,9 @@ async def password_change_required_handler(request: Request, exc: PasswordChange
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code >= 400:
+        logger.warning("HTTP %s on %s %s: %s", exc.status_code, request.method, request.url.path, exc.detail)
+
     if _wants_json(request):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
@@ -293,6 +296,9 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         exc.status_code,
         ("Fel", str(exc.detail) if exc.detail else "Ett oväntat fel har inträffat."),
     )
+    # A 400 detail is written for the user (validation messages), so show it.
+    if exc.status_code == 400 and exc.detail:
+        message = str(exc.detail)
 
     return render(
         "error.html",
