@@ -158,7 +158,10 @@ def get_all_user_wages(session) -> dict[int, int]:
 
     from app.database.database import User, WageType
 
-    users = session.query(User).filter(User.id.in_(PERSON_IDS)).all()
+    # Every user, not just ids 1-10: a position's holder can have any user id, and
+    # the schedule prices on-call by the holder's id. Positions without a user row
+    # still get the fallback below.
+    users = session.query(User).all()
     wages = {}
     for user in users:
         if user.wage_type == WageType.HOURLY:
