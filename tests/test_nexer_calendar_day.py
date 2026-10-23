@@ -198,3 +198,56 @@ def test_year_months_follow_calendar_days(env):
     assert by_month[(2026, 8)]["ot_hours"] == pytest.approx(2.0)
     assert by_month[(2026, 9)]["ot_hours"] == pytest.approx(6.5)
     assert year["year_summary"]["total_ot"] == pytest.approx(sum(m["ot_pay"] for m in year["months"]))
+
+
+def test_nexer_worked_hours_follow_calendar_day(env):
+    session, _ = env
+    session.add(ShiftOverride(user_id=1, date=date(2026, 8, 31), shift_code="N3"))
+    session.commit()
+    ica_aug, ica_sep = _month(session, 8, "ica"), _month(session, 9)
+    nx_aug, nx_sep = _month(session, 8, "nexer"), _month(session, 9)
+    # The 8.5 h night: ica keeps it on 31 Aug, nexer gives August 2 h and September 6.5 h.
+    assert nx_aug["total_hours"] == pytest.approx(ica_aug["total_hours"] - 6.5)
+    assert nx_sep["total_hours"] == pytest.approx(ica_sep["total_hours"] + 6.5)
+    assert nx_aug["num_shifts"] == ica_aug["num_shifts"]
+    assert nx_sep["num_shifts"] == ica_sep["num_shifts"]
+
+
+def test_hourly_nexer_base_pay_follows_calendar_day(env):
+    from app.database.database import WageType
+
+    session, user = env
+    user.wage_type = WageType.HOURLY
+    user.wage = 200
+    session.add(ShiftOverride(user_id=1, date=date(2026, 8, 31), shift_code="N3"))
+    session.commit()
+    ica_sep, nx_sep = _month(session, 9, "ica"), _month(session, 9, "nexer")
+    assert nx_sep["payslip"].by_key()["norm"].qty == pytest.approx(ica_sep["payslip"].by_key()["norm"].qty + 6.5)
+    assert nx_sep["payslip"].by_key()["norm"].amount == pytest.approx(
+        ica_sep["payslip"].by_key()["norm"].amount + 6.5 * 200
+    )
+
+
+def _week_hours(client, week):
+    import re
+
+    html = client.get(f"/?week={week}&wyear=2026").text
+    return float(re.search(r'class="summary-value">([\d.]+)h<', html).group(1))
+
+
+def test_nexer_week_summary_follows_calendar_day(test_client, env):
+    session, _ = env
+    # Sunday 6 Sep night into Monday 7 Sep; the neighbouring Sundays stay free.
+    session.add(ShiftOverride(user_id=1, date=date(2026, 9, 6), shift_code="N3"))
+    for d in (date(2026, 8, 30), date(2026, 9, 13)):
+        session.add(ShiftOverride(user_id=1, date=d, shift_code="OFF"))
+    session.commit()
+    _login(test_client, "testuser", "testpass123")
+    hours = {}
+    for profile in ("ica", "nexer"):
+        session.query(User).filter_by(id=1).update({"employer_profile": profile})
+        session.commit()
+        clear_schedule_cache()
+        hours[profile] = (_week_hours(test_client, 36), _week_hours(test_client, 37))
+    assert hours["nexer"][0] == pytest.approx(hours["ica"][0] - 6.5)
+    assert hours["nexer"][1] == pytest.approx(hours["ica"][1] + 6.5)
