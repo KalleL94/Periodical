@@ -5,6 +5,11 @@
     "entries": [
       {
         "type": "nyhet",
+        "sv": "Admin kan lägga till en vikarie direkt i veckovyn: skriv namn, datumintervall och pass, så får personen en egen rad. Ett namn som redan finns återanvänds, ett nytt skapas och ett arkiverat tas tillbaka.",
+        "en": "Admins can add a substitute straight from the week view: type a name, a date range and a shift, and the person gets their own row. A name that already exists is reused, a new one is created and an archived one is brought back."
+      },
+      {
+        "type": "nyhet",
         "sv": "Varje person har nu en arbetsgivarprofil som styr hur beredskap och övertid räknas och vad kolumnerna heter. Profilen sätts av en admin.",
         "en": "Each person now has an employer profile that decides how on-call and overtime are calculated and what the columns are called. An admin sets the profile."
       },
