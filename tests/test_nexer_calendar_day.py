@@ -4,10 +4,12 @@ import datetime
 from datetime import date
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
 from app.core.schedule import clear_schedule_cache
 from app.core.schedule.ob import calculate_ob_hours_by_day, get_combined_rules_for_year
 from app.core.schedule.summary import summarize_month_for_person
+from app.database import database as db_module
 from app.database.database import OvertimeShift, PersonHistory, RotationEra, ShiftOverride, User
 from tests.conftest import _ROTATION_ERA_PATTERN
 from tests.test_employer_profile import _login
@@ -16,7 +18,9 @@ SALARY = 35000
 
 
 @pytest.fixture()
-def env(test_db, test_user):
+def env(test_db, test_user, monkeypatch):
+    # The rotation era lookup reads through the global SessionLocal, so point it at this DB.
+    monkeypatch.setattr(db_module, "SessionLocal", sessionmaker(bind=test_db.get_bind()))
     clear_schedule_cache()
     test_db.add(
         RotationEra(
