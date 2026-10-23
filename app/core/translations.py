@@ -470,6 +470,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Day view ───────────────────────────────────────────────
         "day_prev": "Previous day",
         "day_back_week": "Back to week",
+        "day_back": "Tillbaka",
         "day_next": "Next day",
         "day_holiday": "Storhelg",
         "day_shift_section": "Shift",
@@ -1651,6 +1652,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # ── Day view ───────────────────────────────────────────────
         "day_prev": "Previous day",
         "day_back_week": "Back to week",
+        "day_back": "Back",
         "day_next": "Next day",
         "day_holiday": "Public holiday",
         "day_shift_section": "Shift",

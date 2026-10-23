@@ -16,6 +16,7 @@
                 {{ t.day_prev }}
             </a>
             <a href="/week/{{ person_id }}?year={{ iso_year }}&week={{ iso_week }}"
+               id="day-back" data-label-back="{{ t.day_back }}"
                class="btn btn-primary">
                 {{ t.day_back_week }}
             </a>
@@ -485,6 +486,31 @@ document.querySelectorAll('[data-shift-color]').forEach(function (el) {
         el.style.color = el.getAttribute('data-shift-contrast') || 'var(--bg)';
     }
 });
+
+// Back returns to the page that opened the day view (month, year, handover...).
+// Stepping between days keeps that origin; with no same-site origin it stays on the week.
+(function () {
+    var link = document.getElementById('day-back');
+    var from = '';
+    try {
+        var ref = document.referrer ? new URL(document.referrer) : null;
+        if (ref && ref.origin === location.origin) {
+            // Day-to-day steps and the login bounce keep the saved origin.
+            if (ref.pathname.indexOf('/day/') === 0 || ref.pathname === '/login') {
+                from = sessionStorage.getItem('dayBackUrl') || '';
+            } else {
+                from = ref.pathname + ref.search;
+                sessionStorage.setItem('dayBackUrl', from);
+            }
+        } else {
+            sessionStorage.removeItem('dayBackUrl');
+        }
+    } catch (e) {}
+    if (from) {
+        link.href = from;
+        link.textContent = link.dataset.labelBack;
+    }
+})();
 
 function toggleDayEdit() {
     var panel = document.getElementById('day-edit-panel');
