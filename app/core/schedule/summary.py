@@ -10,6 +10,7 @@ from app.core.storage import load_tax_brackets
 from .core import get_settings
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, mask_days_to_employment
+from .segments import DaySegment
 from .wages import (
     _MONTHLY_HOURS,
     get_absence_deductions_for_month,
@@ -118,18 +119,26 @@ def _calendar_day_parts(day_data: dict) -> dict:
         part(start_date)["ot_hours"] += day_data.get("ot_hours") or 0.0
         part(start_date)["ot_pay"] += day_data.get("ot_pay") or 0.0
 
-    # Shift hours (worked hours without overtime) split by the clock at midnight.
+    # Shift hours (worked hours without overtime) split by the clock at midnight,
+    # interval by interval, so the gap between a shift and later extra time counts
+    # nowhere. A day without a segment list is one interval from start to end.
     shift_hours = day_worked_hours(day_data) - (day_data.get("ot_hours") or 0.0)
-    start, end = day_data.get("start"), day_data.get("end")
-    if shift_hours and start and end and end > start:
+    segments = day_data.get("segments") or [DaySegment(day_data.get("start"), day_data.get("end"), shift_hours)]
+    seg_total = sum(s.hours for s in segments)
+    if not seg_total:
+        part(start_date)["worked_hours"] += shift_hours
+    for seg in segments if seg_total else ():
+        hours = shift_hours * seg.hours / seg_total
+        start, end = seg.start, seg.end
+        if not (start and end and end > start):
+            part(start_date)["worked_hours"] += hours
+            continue
         span = (end - start).total_seconds()
         cursor = start
         while cursor < end:
             stop = min(end, _dt_mod.datetime.combine(cursor.date() + _dt_mod.timedelta(days=1), _dt_mod.time()))
-            part(cursor.date())["worked_hours"] += shift_hours * (stop - cursor).total_seconds() / span
+            part(cursor.date())["worked_hours"] += hours * (stop - cursor).total_seconds() / span
             cursor = stop
-    else:
-        part(start_date)["worked_hours"] += shift_hours
     for p in parts.values():
         p["worked_hours"] += p["ot_hours"]
     return parts
@@ -1080,6 +1089,7 @@ def _process_day_for_summary(
         "ot_details": day.get("ot_details", {}),
         "start": start,
         "end": end,
+        "segments": day.get("segments"),
         "partial_absence": day.get("partial_absence"),
         "is_substitute": day.get("is_substitute"),
         "substitute_hourly_wage": day.get("substitute_hourly_wage"),
@@ -1756,6 +1766,7 @@ def build_month_position_summaries(
                 year_days=month_days,
                 fetch_tax_table=fetch_tax_table,
                 payment_year=year,
+                wage_user_id=seg["user_id"] if seg is not None else None,
                 employment_window=(seg["effective_from"], seg["effective_to"]) if seg is not None else None,
             )
             if seg is not None:

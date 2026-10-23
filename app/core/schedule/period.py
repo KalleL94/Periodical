@@ -2038,6 +2038,9 @@ def _populate_single_person_day(
             "hours": hours,
             "start": start,
             "end": end,
+            # The intervals behind hours/start/end, so a Nexer day splits its
+            # worked hours at midnight by the real clock and not the outer span.
+            "segments": segments,
             "ob": ob,
             "oncall_pay": oncall_pay,
             "oncall_details": oncall_details,

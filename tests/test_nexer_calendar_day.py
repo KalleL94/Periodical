@@ -278,3 +278,56 @@ def test_employment_from_the_1st_ignores_the_night_before(env, night):
     assert nexer["total_hours"] == pytest.approx(ica["total_hours"])
     assert nexer["ob_hours"] == pytest.approx(ica["ob_hours"])
     assert nexer["ot_hours"] == pytest.approx(ica["ot_hours"]) == 0
+
+
+def test_admin_month_report_takes_holder_night_before(env):
+    """The holder's user id differs from the position: the night before still counts."""
+    from app.core.schedule.summary import build_month_report
+
+    session, user = env
+    user.person_id = 2
+    user.employer_profile = "ica"
+    session.add(
+        User(id=11, username="h", is_active=1, password_hash="x", name="H", wage=SALARY, vacation={}, person_id=1)
+    )
+    session.add(
+        PersonHistory(user_id=11, person_id=1, name="H", username="h", is_active=1, effective_from=date(2026, 1, 1))
+    )
+    session.add(ShiftOverride(user_id=11, date=date(2026, 8, 31), shift_code="N3"))
+    session.add(ShiftOverride(user_id=11, date=date(2026, 9, 30), shift_code="OFF"))
+    session.commit()
+
+    def sep_hours(profile):
+        session.query(User).filter_by(id=11).update({"employer_profile": profile})
+        session.commit()
+        clear_schedule_cache()
+        return next(r for r in build_month_report(2026, 9, session) if r["holder_user_id"] == 11)["total_hours"]
+
+    assert sep_hours("nexer") == pytest.approx(sep_hours("ica") + 6.5)
+
+
+def test_nexer_disjoint_extra_time_splits_by_its_own_interval(env):
+    """Shift 06:00-14:30 plus extra time 23:00-01:00: the gap between them is not worked."""
+    session, _ = env
+    session.add(ShiftOverride(user_id=1, date=date(2026, 8, 31), shift_code="N1"))
+    session.add(
+        OvertimeShift(
+            user_id=1,
+            date=date(2026, 8, 31),
+            start_time=datetime.time(23, 0),
+            end_time=datetime.time(1, 0),
+            hours=2.0,
+            ot_pay=0.0,
+            kind="extra",
+            side="after",
+        )
+    )
+    session.commit()
+    ica_aug, ica_sep = _month(session, 8, "ica"), _month(session, 9)
+    nx_aug, nx_sep = _month(session, 8, "nexer"), _month(session, 9)
+    last = next(d for d in nx_aug["days"] if d["date"] == date(2026, 8, 31))
+    assert last["calendar_day_pay"]["worked_hours"] == pytest.approx(8.5 + 1)
+    assert nx_aug["total_hours"] == pytest.approx(ica_aug["total_hours"] - 1)
+    assert nx_sep["total_hours"] == pytest.approx(ica_sep["total_hours"] + 1)
+    ica_last = next(d for d in ica_aug["days"] if d["date"] == date(2026, 8, 31))
+    assert ica_last["hours"] == pytest.approx(10.5)
