@@ -38,6 +38,15 @@ def engine(tmp_path):
             "INSERT INTO day_pay_overrides VALUES"
             " (1, 1, '2026-08-22', '{\"OC_WEEKEND_SAT\": 12.0, \"OC_WEEKDAY\": 1.0}')"
         )
+        c.exec_driver_sql(
+            "CREATE TABLE overtime_shifts (id INTEGER PRIMARY KEY, user_id INTEGER, date DATE,"
+            " start_time TIME, end_time TIME, hours FLOAT, ot_pay FLOAT, kind TEXT, side TEXT)"
+        )
+        for oid, uid, d, h in ((1, 1, "2026-08-30", 2.0), (2, 1, "2026-08-31", 8.5), (3, 1, "2026-09-01", 6.5)):
+            c.exec_driver_sql(
+                f"INSERT INTO overtime_shifts VALUES ({oid}, {uid}, '{d}', '22:00:00.000000',"
+                f" '06:30:00.000000', {h}, 0, 'ot', 'full')"
+            )
         # Same key on another user must stay untouched.
         c.exec_driver_sql("INSERT INTO day_pay_overrides VALUES (2, 5, '2026-08-22', '{\"OC_WEEKEND_SAT\": 3.0}')")
     return eng
@@ -57,9 +66,9 @@ def _rates(engine, table):
 
 def test_migrate_is_idempotent(engine):
     first = migrate(engine)
-    assert first == {"override_renamed": 1, "custom_rates_cleaned": 4, "rate_history_cleaned": 4}
+    assert first == {"override_renamed": 1, "custom_rates_cleaned": 4, "rate_history_cleaned": 4, "overtime_fixed": 1}
     second = migrate(engine)
-    assert second == {"override_renamed": 0, "custom_rates_cleaned": 0, "rate_history_cleaned": 0}
+    assert second == {"override_renamed": 0, "custom_rates_cleaned": 0, "rate_history_cleaned": 0, "overtime_fixed": 0}
 
     with engine.connect() as c:
         ov = {
@@ -89,8 +98,31 @@ def test_null_and_non_dict_values_are_skipped(engine):
         c.exec_driver_sql("INSERT INTO day_pay_overrides VALUES (3, 1, '2026-08-22', '7')")
         c.exec_driver_sql("INSERT INTO day_pay_overrides VALUES (4, 1, '2026-08-22', NULL)")
     result = migrate(engine)
-    assert result == {"override_renamed": 0, "custom_rates_cleaned": 2, "rate_history_cleaned": 4}
+    assert result == {"override_renamed": 0, "custom_rates_cleaned": 2, "rate_history_cleaned": 4, "overtime_fixed": 1}
     with engine.connect() as c:
         users = dict(c.execute(text("SELECT id, custom_rates FROM users")).all())
     assert users[1] is None
     assert json.loads(users[2]) == ["oncall"]
+
+
+def _ot(engine):
+    with engine.connect() as c:
+        return c.execute(text("SELECT date, hours FROM overtime_shifts ORDER BY date")).all()
+
+
+def test_overtime_rows_are_corrected_once(engine):
+    migrate(engine)
+    assert _ot(engine) == [("2026-08-30", 8.5), ("2026-08-31", 8.5)]
+
+
+def test_overtime_untouched_when_pattern_differs(engine):
+    with engine.begin() as c:
+        c.exec_driver_sql("UPDATE overtime_shifts SET hours = 3.0 WHERE id = 1")
+    assert migrate(engine)["overtime_fixed"] == 0
+    assert _ot(engine)[0] == ("2026-08-30", 3.0)
+    assert len(_ot(engine)) == 3
+
+
+def test_overtime_dry_run_writes_nothing(engine):
+    assert migrate(engine, dry_run=True)["overtime_fixed"] == 1
+    assert len(_ot(engine)) == 3

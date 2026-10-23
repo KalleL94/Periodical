@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """One-off data rewrite for the employer-profile release.
 
-Two steps, each skipped when already done, so the script is safe to run twice:
+Three steps, each skipped when already done, so the script is safe to run twice:
 
 1. Pierre's day_pay_overrides row for 2026-08-22: rename the on-call key
    OC_WEEKEND_SAT to NX_WEEKEND (the Nexer weekend code).
 2. Drop the `oncall` key from users.custom_rates and every rate_history.rates
    row for Al-Amin, Pierre, Adriana and Rickard. Their on-call pricing now comes
    from the employer profile. Every other key is left alone.
+
+3. Pierre's manual overtime rows 2026-08-30 (2.0 h), 2026-08-31 (8.5 h) and
+   2026-09-01 (6.5 h), all 22:00-06:30: set the first to 8.5 h and delete the
+   third. Only done when exactly that pattern is present. The stored ot_pay is
+   write-only (nothing reads it back for pricing), so it is left as is.
 
 Profiles themselves are set by an admin in the UI after deploy.
 
@@ -29,13 +34,16 @@ OVERRIDE_DATE = "2026-08-22"
 OLD_KEY, NEW_KEY = "OC_WEEKEND_SAT", "NX_WEEKEND"
 
 
+OT_ROWS = {"2026-08-30": 2.0, "2026-08-31": 8.5, "2026-09-01": 6.5}
+
+
 def _load(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
 def migrate(engine, dry_run: bool = False) -> dict[str, int]:
     """Apply both steps. Returns how many rows each one changed (or would change)."""
-    result = {"override_renamed": 0, "custom_rates_cleaned": 0, "rate_history_cleaned": 0}
+    result = {"override_renamed": 0, "custom_rates_cleaned": 0, "rate_history_cleaned": 0, "overtime_fixed": 0}
     marks = ",".join(f":n{i}" for i in range(len(NAMES)))
     names = {f"n{i}": n for i, n in enumerate(NAMES)}
 
@@ -84,6 +92,22 @@ def migrate(engine, dry_run: bool = False) -> dict[str, int]:
                         text(f"UPDATE {table} SET {col} = :v WHERE id = :id"),
                         {"v": json.dumps(rates), "id": row_id},
                     )
+
+        ot = c.execute(
+            text(
+                "SELECT o.id, substr(o.date, 1, 10), o.hours FROM overtime_shifts o"
+                " JOIN users u ON u.id = o.user_id WHERE u.name = :name AND o.kind = 'ot' AND o.side = 'full'"
+                " AND substr(o.start_time, 1, 5) = '22:00' AND substr(o.end_time, 1, 5) = '06:30'"
+                " AND substr(o.date, 1, 10) IN ('2026-08-30', '2026-08-31', '2026-09-01')"
+            ),
+            {"name": OVERRIDE_USER},
+        ).all()
+        if {d: h for _, d, h in ot} == OT_ROWS and len(ot) == len(OT_ROWS):
+            ids = {d: i for i, d, _ in ot}
+            result["overtime_fixed"] = 1
+            if not dry_run:
+                c.execute(text("UPDATE overtime_shifts SET hours = 8.5 WHERE id = :id"), {"id": ids["2026-08-30"]})
+                c.execute(text("DELETE FROM overtime_shifts WHERE id = :id"), {"id": ids["2026-09-01"]})
     return result
 
 
@@ -97,7 +121,8 @@ def main() -> int:
     print(
         f"  override rows renamed ({verb}): {result['override_renamed']}\n"
         f"  users.custom_rates cleaned ({verb}): {result['custom_rates_cleaned']}\n"
-        f"  rate_history rows cleaned ({verb}): {result['rate_history_cleaned']}"
+        f"  rate_history rows cleaned ({verb}): {result['rate_history_cleaned']}\n"
+        f"  overtime rows corrected ({verb}): {result['overtime_fixed']}"
     )
     return 0
 

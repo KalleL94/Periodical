@@ -37,6 +37,31 @@
         "type": "fix",
         "sv": "Beredskap som delats av övertid räknades inte med samma regler som en hel dag. Nu får timmarna samma pris.",
         "en": "On-call that was split by overtime was not priced by the same rules as a full day. The hours now get the same price."
+      },
+      {
+        "type": "fix",
+        "sv": "Månadsrapporten visade en person två gånger om hen bytt plats i rotationen under månaden. Nu visas varje person en gång.",
+        "en": "The monthly report showed a person twice if they changed rotation position during the month. Each person now appears once."
+      },
+      {
+        "type": "fix",
+        "sv": "Beredskap och övertid prissattes fel för den vars användar-id inte stämde med platsen i rotationen. Nu räknas lönen för den som faktiskt har dagen.",
+        "en": "On-call and overtime were priced wrongly for a person whose user id did not match their rotation position. Pay is now calculated for whoever actually holds the day."
+      },
+      {
+        "type": "fix",
+        "sv": "Beredskapen minskas nu av alla överlappande övertidspass, inte bara det första, även för vikarier.",
+        "en": "On-call is now reduced by every overlapping overtime shift, not just the first, also for substitutes."
+      },
+      {
+        "type": "fix",
+        "sv": "Ett pass som slutar vid midnatt visas som 24:00 i månadens tabell.",
+        "en": "A shift that ends at midnight is shown as 24:00 in the month table."
+      },
+      {
+        "type": "fix",
+        "sv": "OB och övertid räknas på den kalenderdag de arbetas, även i månads- och veckosummorna.",
+        "en": "OB and overtime are counted on the calendar day they are worked, also in the month and week totals."
       }
     ]
   },
