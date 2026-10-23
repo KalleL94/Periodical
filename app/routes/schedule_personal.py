@@ -1037,6 +1037,7 @@ async def export_month_excel(
             year_days=month_days,
             payment_year=year,
             wage_user_id=user_id_for_wages,
+            employment_window=(emp_start, emp_end),
         )
     else:
         days_in_month = summarize_month_for_person(

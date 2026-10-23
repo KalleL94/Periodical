@@ -204,11 +204,14 @@ def _throwaway_totals() -> dict:
     return totals
 
 
-def _previous_day_for_month(session, person_id, uid_for_wages, settings, user_wages, days, month_start) -> dict | None:
+def _previous_day_for_month(
+    session, person_id, uid_for_wages, settings, user_wages, days, month_start, employment_window=None
+) -> dict | None:
     """The last day of the previous month, priced as that month prices it, or None.
 
-    Only the hours after midnight are used. The day is skipped when someone else
-    held the position then, so a predecessor's night never reaches this user.
+    Only the hours after midnight are used. The day is skipped when it falls
+    outside the employment window the caller masked the month to, or when someone
+    else held the position then, so a predecessor's night never reaches this user.
     """
     import datetime as _dt_mod
 
@@ -216,6 +219,9 @@ def _previous_day_for_month(session, person_id, uid_for_wages, settings, user_wa
     if first_day is None or "holder_user_id" not in first_day:
         return None
     prev = month_start - _dt_mod.timedelta(days=1)
+    emp_from, emp_to = employment_window or (None, None)
+    if (emp_from is not None and prev < emp_from) or (emp_to is not None and prev > emp_to):
+        return None
     ctx = _resolve_month_wage_context(session, uid_for_wages, settings, prev.replace(day=1), False, user_wages)
     rates_map = {person_id: ctx.user_rates} if ctx.user_rates else None
     generated = generate_period_data(
@@ -384,6 +390,7 @@ def summarize_month_for_person(
     fetch_tax_table: bool = True,
     payment_year: int | None = None,
     wage_user_id: int | None = None,
+    employment_window: tuple | None = None,
 ) -> dict:
     """
     Detaljerad månadsöversikt för en person.
@@ -396,6 +403,9 @@ def summarize_month_for_person(
         user_wages: Förladdade löner
         year_days: Förgenererad årsdata (optimering)
         wage_user_id: Användar-ID för löneberäkning (om annan än person_id)
+        employment_window: (from, to) the caller masked year_days to, either end None
+            for open. A Nexer month only takes the previous month's last night when
+            that day lies inside it.
 
     Returns:
         Dict med total_hours, num_shifts, ob_hours, ob_pay, brutto/netto, days
@@ -489,7 +499,7 @@ def summarize_month_for_person(
     prev_day_data = None
     if any(rule_set_for(d.get("employer_profile")) == "nexer" for d in days_out):
         prev_day_data = _previous_day_for_month(
-            session, person_id, uid_for_wages, settings, user_wages, days, month_start_date
+            session, person_id, uid_for_wages, settings, user_wages, days, month_start_date, employment_window
         )
         _count_on_calendar_days(totals, days_out, prev_day_data)
 
@@ -740,6 +750,7 @@ def build_calendar_grid_for_month(
             year_days=stitched_month_days,
             payment_year=year,
             wage_user_id=wage_user_id,
+            employment_window=_record_window(_month_segments[0][0]),
         )
     elif employment_start is not None or employment_end is not None:
         # employment_start is threaded so the before-employment branch can inject
@@ -767,6 +778,7 @@ def build_calendar_grid_for_month(
             year_days=month_days,
             payment_year=year,
             wage_user_id=wage_user_id,
+            employment_window=(employment_start, employment_end),
         )
     else:
         month_summary = summarize_month_for_person(
@@ -1142,6 +1154,11 @@ def _records_overlapping_work_month(records: list[dict], month_first, month_last
     return segments
 
 
+def _record_window(record: dict) -> tuple:
+    """(effective_from, effective_to) of an employment record, unclamped."""
+    return record["effective_from"], record["effective_to"]
+
+
 def _stitch_user_month_days(
     session,
     work_year: int,
@@ -1424,6 +1441,7 @@ def summarize_year_for_person(
                 year_days=stitched_days,
                 payment_year=mapping["payment_year"],
                 wage_user_id=wage_user_id,
+                employment_window=_record_window(month_segments[0][0]),
             )
         else:
             # Summarised on the WORK month, not the payment month. The rate lookup and
@@ -1738,6 +1756,7 @@ def build_month_position_summaries(
                 year_days=month_days,
                 fetch_tax_table=fetch_tax_table,
                 payment_year=year,
+                employment_window=(seg["effective_from"], seg["effective_to"]) if seg is not None else None,
             )
             if seg is not None:
                 summary["person_name"] = seg["name"]

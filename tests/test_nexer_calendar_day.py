@@ -251,3 +251,30 @@ def test_nexer_week_summary_follows_calendar_day(test_client, env):
         hours[profile] = (_week_hours(test_client, 36), _week_hours(test_client, 37))
     assert hours["nexer"][0] == pytest.approx(hours["ica"][0] - 6.5)
     assert hours["nexer"][1] == pytest.approx(hours["ica"][1] + 6.5)
+
+
+@pytest.mark.parametrize("night", ["N3", "OT"])
+def test_employment_from_the_1st_ignores_the_night_before(env, night):
+    """A night on 31 Aug belongs to whoever worked it: employed from 1 Sep, it is not yours."""
+    from app.core.schedule.summary import build_calendar_grid_for_month
+
+    session, _ = env
+    if night == "N3":
+        session.add(ShiftOverride(user_id=1, date=date(2026, 8, 31), shift_code="N3"))
+        session.commit()
+    else:
+        _add_night_ot(session)
+
+    def sep(profile):
+        session.query(User).filter_by(id=1).update({"employer_profile": profile})
+        session.commit()
+        clear_schedule_cache()
+        grid = build_calendar_grid_for_month(
+            2026, 9, 1, session=session, employment_start=date(2026, 9, 1), wage_user_id=1
+        )
+        return grid["summary"]
+
+    ica, nexer = sep("ica"), sep("nexer")
+    assert nexer["total_hours"] == pytest.approx(ica["total_hours"])
+    assert nexer["ob_hours"] == pytest.approx(ica["ob_hours"])
+    assert nexer["ot_hours"] == pytest.approx(ica["ot_hours"]) == 0
