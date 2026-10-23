@@ -36,7 +36,7 @@ dev = [
     "pytest-xdist",
     "httpx",
     # Pin ruff so CI, local and pre-commit lint with the same rules (avoids version drift)
-    "ruff==0.16.9",
+    "ruff==0.17.2",
     "pre-commit",
 ]
 
