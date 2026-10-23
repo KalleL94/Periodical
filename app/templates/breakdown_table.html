@@ -1,5 +1,7 @@
 {# Shared detailed OB / on-call / OT breakdown table.
-   Expects: bd_days (list of day dicts), optional bd_csv_filename for the CSV button. #}
+   Expects: bd_days (list of day dicts), optional bd_csv_filename for the CSV button,
+   optional employer_profile (on-call column labels; ica when absent). #}
+{% set oc_labels = oncall_column_labels.get(employer_profile|default('ica'), oncall_column_labels.ica) %}
 <div id="breakdown-section" class="ob-by-shift" hidden>
         <div class="flex-between">
             <h3 class="title-inline">{{ t.month_breakdown_title }}</h3>
@@ -31,10 +33,10 @@
                         <th class="th_right">OB3(x1,24)</th>
                         <th class="th_right">OB4(x1,24)</th>
                         <th class="th_right">OB5(x1,47)</th>
-                        <th class="th_right">B.Vardag(75)</th>
-                        <th class="th_right">B.Helg(97)</th>
-                        <th class="th_right">B.Helgdag(112)</th>
-                        <th class="th_right">B.Storhelg(192)</th>
+                        <th class="th_right">{{ oc_labels.oc_vardag }}</th>
+                        <th class="th_right">{{ oc_labels.oc_helg }}</th>
+                        <th class="th_right">{{ oc_labels.oc_helgdag }}</th>
+                        <th class="th_right">{{ oc_labels.oc_storhelg }}</th>
                         <th class="th_right">{{ t.month_col_ot }}</th>
                     </tr>
                 </thead>
@@ -61,15 +63,11 @@
                         {% if norm < 0 %}{% set norm = 0 %}{% endif %}
 
                         {% set oc_bd = d.oncall_details.get('breakdown', {}) if d.oncall_details else {} %}
-                        {% set oc_vardag = (oc_bd.get('OC_WEEKDAY', {}).get('hours', 0) or 0) %}
-                        {% set oc_helg = (oc_bd.get('OC_WEEKEND', {}).get('hours', 0) or 0)
-                                       + (oc_bd.get('OC_WEEKEND_SAT', {}).get('hours', 0) or 0)
-                                       + (oc_bd.get('OC_WEEKEND_SUN', {}).get('hours', 0) or 0)
-                                       + (oc_bd.get('OC_WEEKEND_MON', {}).get('hours', 0) or 0) %}
-                        {% set oc_helgdag = (oc_bd.get('OC_HOLIDAY', {}).get('hours', 0) or 0)
-                                          + (oc_bd.get('OC_HOLIDAY_EVE', {}).get('hours', 0) or 0)
-                                          + (oc_bd.get('OC_NATIONALDAGEN', {}).get('hours', 0) or 0) %}
-                        {% set oc_storhelg = (oc_bd.get('OC_SPECIAL', {}).get('hours', 0) or 0) %}
+                        {% set oc_h = oncall_hours_by_group(oc_bd) %}
+                        {% set oc_vardag = oc_h.oc_vardag %}
+                        {% set oc_helg = oc_h.oc_helg %}
+                        {% set oc_helgdag = oc_h.oc_helgdag %}
+                        {% set oc_storhelg = oc_h.oc_storhelg %}
 
                         {% set ot = d.ot_hours or 0 %}
 
@@ -112,15 +110,11 @@
                                 {% set ns.pay_ob3 = ns.pay_ob3 + (d.ob_pay.get('OB3', 0) or 0) %}
                                 {% set ns.pay_ob4 = ns.pay_ob4 + (d.ob_pay.get('OB4', 0) or 0) %}
                                 {% set ns.pay_ob5 = ns.pay_ob5 + (d.ob_pay.get('OB5', 0) or 0) %}
-                                {% set ns.pay_vardag = ns.pay_vardag + (oc_bd.get('OC_WEEKDAY', {}).get('pay', 0) or 0) %}
-                                {% set ns.pay_helg = ns.pay_helg + (oc_bd.get('OC_WEEKEND', {}).get('pay', 0) or 0)
-                                                                 + (oc_bd.get('OC_WEEKEND_SAT', {}).get('pay', 0) or 0)
-                                                                 + (oc_bd.get('OC_WEEKEND_SUN', {}).get('pay', 0) or 0)
-                                                                 + (oc_bd.get('OC_WEEKEND_MON', {}).get('pay', 0) or 0) %}
-                                {% set ns.pay_helgdag = ns.pay_helgdag + (oc_bd.get('OC_HOLIDAY', {}).get('pay', 0) or 0)
-                                                                       + (oc_bd.get('OC_HOLIDAY_EVE', {}).get('pay', 0) or 0)
-                                                                       + (oc_bd.get('OC_NATIONALDAGEN', {}).get('pay', 0) or 0) %}
-                                {% set ns.pay_storhelg = ns.pay_storhelg + (oc_bd.get('OC_SPECIAL', {}).get('pay', 0) or 0) %}
+                                {% set oc_p = oncall_pay_by_group(oc_bd) %}
+                                {% set ns.pay_vardag = ns.pay_vardag + oc_p.oc_vardag %}
+                                {% set ns.pay_helg = ns.pay_helg + oc_p.oc_helg %}
+                                {% set ns.pay_helgdag = ns.pay_helgdag + oc_p.oc_helgdag %}
+                                {% set ns.pay_storhelg = ns.pay_storhelg + oc_p.oc_storhelg %}
                                 {% set ns.pay_ot = ns.pay_ot + (d.ot_pay or 0) %}
 
                                 {# Shift start/end times #}

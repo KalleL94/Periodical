@@ -84,6 +84,51 @@ ONCALL_GROUP_BY_CODE: dict[str, str] = {
     "NX_SPECIAL": "oc_storhelg",
 }
 
+_ICA_LABELS = {
+    "oc_vardag": "B.Vardag(75)",
+    "oc_helg": "B.Helg(97)",
+    "oc_helgdag": "B.Helgdag(112)",
+    "oc_storhelg": "B.Storhelg(192)",
+}
+
+# Column headers per employer profile, keyed by the slots above.
+ONCALL_COLUMN_LABELS: dict[str, dict[str, str]] = {
+    "ica": _ICA_LABELS,
+    "agiremus": _ICA_LABELS,
+    "experis": {
+        "oc_vardag": "B.Vardag",
+        "oc_helg": "B.Helg",
+        "oc_helgdag": "B.Helgdag",
+        "oc_storhelg": "B.Storhelg",
+    },
+    "nexer": {
+        "oc_vardag": "B.Vardag",
+        "oc_helg": "B.Natt",
+        "oc_helgdag": "B.Helg",
+        "oc_storhelg": "B.Storhelg",
+    },
+}
+
+
+def _by_group(breakdown: dict, field: str) -> dict[str, float]:
+    out = dict.fromkeys(("oc_vardag", "oc_helg", "oc_helgdag", "oc_storhelg"), 0)
+    for code, entry in (breakdown or {}).items():
+        group = ONCALL_GROUP_BY_CODE.get(code)
+        if group:
+            out[group] += entry.get(field, 0) or 0
+    return out
+
+
+def oncall_hours_by_group(breakdown: dict) -> dict[str, float]:
+    """Sum an on-call breakdown's hours into the four payslip columns."""
+    return _by_group(breakdown, "hours")
+
+
+def oncall_pay_by_group(breakdown: dict) -> dict[str, float]:
+    """Sum an on-call breakdown's pay into the four payslip columns."""
+    return _by_group(breakdown, "pay")
+
+
 # Replacement priorities. The highest-priority rule covering an hour wins outright.
 PRIORITY_NATIONALDAGEN = 6
 PRIORITY_STORHELG = 5

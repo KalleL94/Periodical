@@ -12,6 +12,8 @@ from datetime import date as _date
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from app.core.oncall import oncall_hours_by_group
+
 # Column layout for an agent's month sheet (index used to decide merge and filter).
 COL_HEADERS = [
     "Datum",
@@ -139,19 +141,13 @@ def _build_month_rows(
             norm = max((hours - ob_sum), 0) if is_work else 0
 
             oc_bd = d.get("oncall_details", {}).get("breakdown", {}) if d.get("oncall_details") else {}
-            oc_vardag = oc_bd.get("OC_WEEKDAY", {}).get("hours", 0) or 0
-            oc_helg = (
-                (oc_bd.get("OC_WEEKEND", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_WEEKEND_SAT", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_WEEKEND_SUN", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_WEEKEND_MON", {}).get("hours", 0) or 0)
+            oc_h = oncall_hours_by_group(oc_bd)
+            oc_vardag, oc_helg, oc_helgdag, oc_storhelg = (
+                oc_h["oc_vardag"],
+                oc_h["oc_helg"],
+                oc_h["oc_helgdag"],
+                oc_h["oc_storhelg"],
             )
-            oc_helgdag = (
-                (oc_bd.get("OC_HOLIDAY", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_HOLIDAY_EVE", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_NATIONALDAGEN", {}).get("hours", 0) or 0)
-            )
-            oc_storhelg = oc_bd.get("OC_SPECIAL", {}).get("hours", 0) or 0
             ot = d.get("ot_hours", 0) or 0
 
             num_vals = [norm, ob1, ob2, ob3, ob5, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, ot, comment]
