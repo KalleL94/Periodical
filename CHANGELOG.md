@@ -26,7 +26,7 @@ something to tell users about, whose pull request renames the heading.
 
 ### Added
 - Admin quick-add on the week view: type a name, a date range and a shift, and the person gets their own substitute row. A known name (case-insensitive) reuses its substitute, an unknown one creates it, an archived one is restored.
-- Employer profile per user, set by an admin (`users.employer_profile`). It decides on-call labels and columns, on-call rates and, for Nexer, overtime pricing. New columns come from `migrate_schema.py`; `migrations/migrate_employer_profile_data.py` is the one-off data half (renames Pierre's 2026-08-22 override key to `NX_WEEKEND`, drops the per-user `oncall` rate overrides for the four affected people, and corrects Pierre's three manual overtime rows for 2026-08-30 to 2026-09-01 to two rows of 8.5 h; supports `--dry-run`).
+- Employer profile per user, set by an admin (`users.employer_profile`). It decides on-call labels and columns, on-call rates and, for Nexer, overtime pricing. New columns come from `migrate_schema.py`; `migrations/migrate_employer_profile_data.py` is the one-off data half (renames one person's 2026-08-22 override key to `NX_WEEKEND`, drops the per-user `oncall` rate overrides for the four affected people, and corrects one person's three manual overtime rows for 2026-08-30 to 2026-09-01 to two rows of 8.5 h; supports `--dry-run`).
 - Excel export is offered to everyone, with headers per employer profile.
 - Nexer on-call rule set: four tiers priced as monthly salary / 1400, 900, 600 and 350, with the weekend code `NX_WEEKEND`.
 - Nexer overtime priced by time of day: monthly salary / 94 for 06:00 to 20:00 Monday to Friday on a day that is not a red day, salary / 72 for all other time.

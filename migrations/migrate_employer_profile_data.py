@@ -8,7 +8,6 @@ Three steps, each skipped when already done, so the script is safe to run twice:
 2. Drop the `oncall` key from users.custom_rates and every rate_history.rates
    row for Al-Amin, Pierre, Adriana and Rickard. Their on-call pricing now comes
    from the employer profile. Every other key is left alone.
-
 3. Pierre's manual overtime rows 2026-08-30 (2.0 h), 2026-08-31 (8.5 h) and
    2026-09-01 (6.5 h), all 22:00-06:30: set the first to 8.5 h and delete the
    third. Only done when exactly that pattern is present. The stored ot_pay is
@@ -32,8 +31,6 @@ NAMES = ("Pierre", "Al-Amin", "Adriana", "Rickard")
 OVERRIDE_USER = "Pierre"
 OVERRIDE_DATE = "2026-08-22"
 OLD_KEY, NEW_KEY = "OC_WEEKEND_SAT", "NX_WEEKEND"
-
-
 OT_ROWS = {"2026-08-30": 2.0, "2026-08-31": 8.5, "2026-09-01": 6.5}
 
 
@@ -42,7 +39,7 @@ def _load(value):
 
 
 def migrate(engine, dry_run: bool = False) -> dict[str, int]:
-    """Apply both steps. Returns how many rows each one changed (or would change)."""
+    """Apply all three steps. Returns how many rows each one changed (or would change)."""
     result = {"override_renamed": 0, "custom_rates_cleaned": 0, "rate_history_cleaned": 0, "overtime_fixed": 0}
     marks = ",".join(f":n{i}" for i in range(len(NAMES)))
     names = {f"n{i}": n for i, n in enumerate(NAMES)}
