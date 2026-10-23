@@ -48,8 +48,8 @@ def migrate(engine, dry_run: bool = False) -> dict[str, int]:
             {"name": OVERRIDE_USER, "d": OVERRIDE_DATE},
         ).all()
         for row_id, raw in rows:
-            hours = _load(raw) or {}
-            if OLD_KEY not in hours or NEW_KEY in hours:
+            hours = _load(raw)
+            if not isinstance(hours, dict) or OLD_KEY not in hours or NEW_KEY in hours:
                 continue
             renamed = {(NEW_KEY if k == OLD_KEY else k): v for k, v in hours.items()}
             result["override_renamed"] += 1

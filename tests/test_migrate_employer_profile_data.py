@@ -79,3 +79,18 @@ def test_dry_run_writes_nothing(engine):
     assert migrate(engine, dry_run=True)["override_renamed"] == 1
     assert migrate(engine, dry_run=True)["custom_rates_cleaned"] == 4
     assert _rates(engine, "users")[1] == {"oncall": {"x": 1}, "ob1": 50}
+
+
+def test_null_and_non_dict_values_are_skipped(engine):
+    with engine.begin() as c:
+        c.exec_driver_sql("UPDATE users SET custom_rates = NULL WHERE id = 1")
+        c.exec_driver_sql("UPDATE users SET custom_rates = '[\"oncall\"]' WHERE id = 2")
+        c.exec_driver_sql("UPDATE day_pay_overrides SET oncall_hours_override = '\"OC_WEEKEND_SAT\"' WHERE id = 1")
+        c.exec_driver_sql("INSERT INTO day_pay_overrides VALUES (3, 1, '2026-08-22', '7')")
+        c.exec_driver_sql("INSERT INTO day_pay_overrides VALUES (4, 1, '2026-08-22', NULL)")
+    result = migrate(engine)
+    assert result == {"override_renamed": 0, "custom_rates_cleaned": 2, "rate_history_cleaned": 4}
+    with engine.connect() as c:
+        users = dict(c.execute(text("SELECT id, custom_rates FROM users")).all())
+    assert users[1] is None
+    assert json.loads(users[2]) == ["oncall"]
