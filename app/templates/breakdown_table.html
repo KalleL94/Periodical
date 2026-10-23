@@ -138,6 +138,8 @@
                                 {% if d.ot_details and d.ot_details.get('is_extension') %}
                                     {% set t_end = d.ot_details.end_time[:5] %}
                                 {% endif %}
+                                {# A shift ending at midnight ends the day: 24:00, not 00:00 #}
+                                {% if t_end == '00:00' %}{% set t_end = '24:00' %}{% endif %}
 
                                 {% set has_oncall = (oc_vardag + oc_helg + oc_helgdag + oc_storhelg) > 0 %}
                                 {% set has_ot = ot > 0 %}
