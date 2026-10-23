@@ -22,6 +22,12 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.13.1] - 2026-10-24
+
+### Fixed
+- The day view's back button returns to the page that opened it (month, year, handover) and keeps that origin across previous/next-day steps, person switches and form saves. It falls back to the week view when there is no same-site origin. The login redirect is not counted as an origin.
+- Native select popups were light with light text on the dark theme, which made options such as the month CSV format unreadable. `input` and `select` now use `color-scheme: dark` and options get the panel colours.
+
 ## [1.13.0] - 2026-10-23
 
 ### Added

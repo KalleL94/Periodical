@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.13.1",
+    "date": "2026-10-24",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Tillbaka-knappen i dagvyn tar dig nu tillbaka dit du kom ifrån, till exempel månads- eller årsvyn, även efter att du bläddrat mellan dagar. Utan sådan sida går den till veckan som förut.",
+        "en": "The back button in the day view now takes you back to where you came from, such as the month or year view, even after stepping between days. Without such a page it goes to the week as before."
+      },
+      {
+        "type": "fix",
+        "sv": "Rullgardinsmenyer, till exempel valet av CSV-format, gick knappt att läsa. Nu visas de med mörk bakgrund och läsbar text.",
+        "en": "Dropdown menus, such as the CSV format choice, were hard to read. They now show with a dark background and legible text."
+      }
+    ]
+  },
+  {
     "version": "1.13.0",
     "date": "2026-10-23",
     "entries": [
