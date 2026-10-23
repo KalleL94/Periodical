@@ -1769,16 +1769,32 @@ def _compute_overtime_pay(
         return 0.0, 0.0, {}
     ot_hours = sum(r.hours for r in ot_rows if r.kind == "ot")
     ot_pay = hourly_rate * ot_hours
-    if (
-        ot_rate_override is None
-        and ot_hours
-        and rule_set_for(profile) == "nexer"
-        and _get_wage_type(session, wage_user_id) != WageType.HOURLY
-    ):
+    is_nexer = rule_set_for(profile) == "nexer"
+    nexer_priced = (
+        ot_rate_override is None and ot_hours and is_nexer and _get_wage_type(session, wage_user_id) != WageType.HOURLY
+    )
+    if nexer_priced:
         ot_pay = sum(
             nexer_overtime_pay(wage_for_date, *parse_ot_times(r, current_day)) for r in ot_rows if r.kind == "ot"
         )
         hourly_rate = ot_pay / ot_hours
+    by_day: dict = {}
+    if is_nexer and ot_hours:
+        # Nexer counts every hour on the calendar day it is worked, so the month
+        # summary needs each row's hours and pay clipped at midnight.
+        for r in ot_rows:
+            if r.kind != "ot":
+                continue
+            start, end = parse_ot_times(r, current_day)
+            span = (end - start).total_seconds() / 3600
+            while start < end:
+                stop = min(end, datetime.datetime.combine(start.date() + datetime.timedelta(days=1), datetime.time()))
+                part = (stop - start).total_seconds() / 3600 * (r.hours / span if span else 0.0)
+                pay = nexer_overtime_pay(wage_for_date, start, stop) if nexer_priced else hourly_rate * part
+                bucket = by_day.setdefault(start.date(), {"hours": 0.0, "pay": 0.0})
+                bucket["hours"] += part
+                bucket["pay"] += pay
+                start = stop
     ot_details = {
         "start_time": str(primary.start_time),
         "end_time": str(primary.end_time),
@@ -1788,6 +1804,8 @@ def _compute_overtime_pay(
         # Derived, not stored: the column is gone, the output contract is not.
         "is_extension": primary.side != "full",
     }
+    if by_day:
+        ot_details["by_day"] = by_day
     return ot_pay, ot_hours, ot_details
 
 
@@ -1842,6 +1860,16 @@ def _populate_single_person_day(
     parental_dates = ctx.parental_dates
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
+
+    _person_rates = (user_rates_map or {}).get(person_id) or {}
+    # Wages and, without a rates map, the profile come from whoever holds the
+    # position that day: the holder's user id need not equal the position.
+    _wage_uid, _holder_profile = ctx.holder(person_id, current_day) if ctx.holder else (person_id, "ica")
+    _profile = _person_rates.get("profile") or _holder_profile
+    # Set before any early return: the month summary reads both to decide which
+    # calendar day a Nexer hour counts on, and whether a previous day is this user's.
+    day_info["employer_profile"] = _profile
+    day_info["holder_user_id"] = _wage_uid
 
     # Get person name via PersonHistory (shows correct person for this specific date)
     person_name, show_off_before_employment = _resolve_day_person(session, person_id, current_day, employment_start)
@@ -1928,11 +1956,6 @@ def _populate_single_person_day(
     shift, segments, ob = _apply_oncall_override(oncall_override, shift, segments, ob, shift_types)
 
     # Calculate on-call pay
-    _person_rates = (user_rates_map or {}).get(person_id) or {}
-    # Wages and, without a rates map, the profile come from whoever holds the
-    # position that day: the holder's user id need not equal the position.
-    _wage_uid, _holder_profile = ctx.holder(person_id, current_day) if ctx.holder else (person_id, "ica")
-    _profile = _person_rates.get("profile") or _holder_profile
     _rule_set = rule_set_for(_profile)
     _oc_rates = day_oncall_rates({**_person_rates, "profile": _profile}, current_day)
     oncall_pay, oncall_details = (

@@ -139,14 +139,23 @@ def _aggregate_days(days: list[dict]) -> dict[str, dict]:
         ob_h = d.get("ob_hours", {}) or {}
         ob_p = d.get("ob_pay", {}) or {}
 
+        # A Nexer month counts OB and overtime per calendar day (summary
+        # _count_on_calendar_days); the rows must match those totals.
+        cal = d.get("calendar_day_pay")
+
         # Normal hours are the worked hours that carry no OB supplement.
         if shift and getattr(shift, "code", None) not in ("OFF", "OC", "OT") and hours:
             norm = max(hours - sum(ob_h.values()), 0.0)
             agg["norm"]["hours"] += norm
+            if cal is None:
+                for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
+                    agg[code]["hours"] += ob_h.get(code, 0.0) or 0.0
+                    # OB pay is the supplement only, never the base hourly pay.
+                    agg[code]["pay"] += ob_p.get(code, 0.0) or 0.0
+        if cal is not None:
             for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
-                agg[code]["hours"] += ob_h.get(code, 0.0) or 0.0
-                # OB pay is the supplement only, never the base hourly pay.
-                agg[code]["pay"] += ob_p.get(code, 0.0) or 0.0
+                agg[code]["hours"] += cal["ob_hours"].get(code, 0.0)
+                agg[code]["pay"] += cal["ob_pay"].get(code, 0.0)
 
         oc_bd = (d.get("oncall_details") or {}).get("breakdown", {}) or {}
         for oc_code, group in ONCALL_GROUP_BY_CODE.items():
@@ -154,8 +163,9 @@ def _aggregate_days(days: list[dict]) -> dict[str, dict]:
             agg[group]["hours"] += entry.get("hours", 0.0) or 0.0
             agg[group]["pay"] += entry.get("pay", 0.0) or 0.0
 
-        agg["ot"]["hours"] += d.get("ot_hours", 0.0) or 0.0
-        agg["ot"]["pay"] += d.get("ot_pay", 0.0) or 0.0
+        ot_src = cal if cal is not None else d
+        agg["ot"]["hours"] += ot_src.get("ot_hours", 0.0) or 0.0
+        agg["ot"]["pay"] += ot_src.get("ot_pay", 0.0) or 0.0
     return agg
 
 

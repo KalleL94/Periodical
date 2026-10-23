@@ -2,14 +2,16 @@
    Expects: bd_days (list of day dicts), optional bd_csv_filename for the CSV button,
    optional employer_profile (on-call column labels; ica when absent). #}
 {% set oc_labels = oncall_column_labels.get(employer_profile|default('ica'), oncall_column_labels.ica) %}
-<div id="breakdown-section" class="ob-by-shift" hidden>
+{# Nexer counts every hour on the calendar day it is worked, so its table opens in that mode. #}
+{% set by_day_default = employer_profile|default('ica') == 'nexer' %}
+<div id="breakdown-section" class="{{ 'ob-by-day' if by_day_default else 'ob-by-shift' }}" hidden>
         <div class="flex-between">
             <h3 class="title-inline">{{ t.month_breakdown_title }}</h3>
             <div class="flex-row-gap">
                 <button class="btn secondary btn-sm" id="ob-day-toggle" onclick="toggleObDayMode()"
                     data-label-shift="{{ t.month_ob_per_shift }}"
                     data-label-calendar="{{ t.month_ob_per_calendar_day }}">
-                    {{ t.month_ob_per_calendar_day }}
+                    {{ t.month_ob_per_shift if by_day_default else t.month_ob_per_calendar_day }}
                 </button>
                 {% if bd_csv_filename %}<select id="breakdown-csv-format" class="btn secondary btn-sm"
                     aria-label="{{ t.month_csv_format_label }}" onchange="saveBreakdownCsvFormat()">
@@ -96,32 +98,54 @@
                         {% if row_total > 0 or cd_row_total > 0 %}
                             {% if row_total > 0 or cd_row_total > 0 %}{% set ns.has_rows = true %}{% endif %}
 
+                            {# Nexer months count OB and overtime per calendar day; the footer
+                               follows the same figures as the month totals and the payslip. #}
+                            {% set cdp = d.calendar_day_pay if d.calendar_day_pay is defined else none %}
+                            {% if cdp %}
+                                {% set ns.tot_ob1 = ns.tot_ob1 + (cdp.ob_hours.get('OB1', 0) or 0) %}
+                                {% set ns.tot_ob2 = ns.tot_ob2 + (cdp.ob_hours.get('OB2', 0) or 0) %}
+                                {% set ns.tot_ob3 = ns.tot_ob3 + (cdp.ob_hours.get('OB3', 0) or 0) %}
+                                {% set ns.tot_ob4 = ns.tot_ob4 + (cdp.ob_hours.get('OB4', 0) or 0) %}
+                                {% set ns.tot_ob5 = ns.tot_ob5 + (cdp.ob_hours.get('OB5', 0) or 0) %}
+                                {% set ns.tot_ot = ns.tot_ot + cdp.ot_hours %}
+                                {% set ns.pay_ob1 = ns.pay_ob1 + (cdp.ob_pay.get('OB1', 0) or 0) %}
+                                {% set ns.pay_ob2 = ns.pay_ob2 + (cdp.ob_pay.get('OB2', 0) or 0) %}
+                                {% set ns.pay_ob3 = ns.pay_ob3 + (cdp.ob_pay.get('OB3', 0) or 0) %}
+                                {% set ns.pay_ob4 = ns.pay_ob4 + (cdp.ob_pay.get('OB4', 0) or 0) %}
+                                {% set ns.pay_ob5 = ns.pay_ob5 + (cdp.ob_pay.get('OB5', 0) or 0) %}
+                                {% set ns.pay_ot = ns.pay_ot + cdp.ot_pay %}
+                            {% endif %}
+
                             {% if row_total > 0 %}
                                 {% set ns.tot_norm = ns.tot_norm + norm %}
+                                {% if not cdp %}
                                 {% set ns.tot_ob1 = ns.tot_ob1 + ob1 %}
                                 {% set ns.tot_ob2 = ns.tot_ob2 + ob2 %}
                                 {% set ns.tot_ob3 = ns.tot_ob3 + ob3 %}
                                 {% set ns.tot_ob4 = ns.tot_ob4 + ob4 %}
                                 {% set ns.tot_ob5 = ns.tot_ob5 + ob5 %}
+                                {% endif %}
                                 {% set ns.tot_vardag = ns.tot_vardag + oc_vardag %}
                                 {% set ns.tot_helg = ns.tot_helg + oc_helg %}
                                 {% set ns.tot_helgdag = ns.tot_helgdag + oc_helgdag %}
                                 {% set ns.tot_storhelg = ns.tot_storhelg + oc_storhelg %}
-                                {% set ns.tot_ot = ns.tot_ot + ot %}
+                                {% if not cdp %}{% set ns.tot_ot = ns.tot_ot + ot %}{% endif %}
 
                                 {# Amounts: the pay already computed per day, so a rate change
                                    mid-period is priced with the rate in force on each day. #}
+                                {% if not cdp %}
                                 {% set ns.pay_ob1 = ns.pay_ob1 + (d.ob_pay.get('OB1', 0) or 0) %}
                                 {% set ns.pay_ob2 = ns.pay_ob2 + (d.ob_pay.get('OB2', 0) or 0) %}
                                 {% set ns.pay_ob3 = ns.pay_ob3 + (d.ob_pay.get('OB3', 0) or 0) %}
                                 {% set ns.pay_ob4 = ns.pay_ob4 + (d.ob_pay.get('OB4', 0) or 0) %}
                                 {% set ns.pay_ob5 = ns.pay_ob5 + (d.ob_pay.get('OB5', 0) or 0) %}
+                                {% endif %}
                                 {% set oc_p = oncall_pay_by_group(oc_bd) %}
                                 {% set ns.pay_vardag = ns.pay_vardag + oc_p.oc_vardag %}
                                 {% set ns.pay_helg = ns.pay_helg + oc_p.oc_helg %}
                                 {% set ns.pay_helgdag = ns.pay_helgdag + oc_p.oc_helgdag %}
                                 {% set ns.pay_storhelg = ns.pay_storhelg + oc_p.oc_storhelg %}
-                                {% set ns.pay_ot = ns.pay_ot + (d.ot_pay or 0) %}
+                                {% if not cdp %}{% set ns.pay_ot = ns.pay_ot + (d.ot_pay or 0) %}{% endif %}
 
                                 {# Shift start/end times #}
                                 {% if d.start and d.end %}
