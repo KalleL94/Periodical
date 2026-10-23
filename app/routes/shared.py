@@ -13,6 +13,7 @@ from app.auth.csrf import get_csrf_token
 from app.core.constants import MAX_PERSONS, PERSON_IDS
 from app.core.helpers import contrast_color
 from app.core.news import has_unseen_news
+from app.core.oncall import ONCALL_COLUMN_LABELS, breakdown_csv_headers, oncall_hours_by_group, oncall_pay_by_group
 from app.core.translations import TRANSLATIONS
 from app.core.utils import get_today
 
@@ -32,6 +33,10 @@ templates.env.filters["from_json"] = _json.loads
 # Expose person/rotation constants so templates don't need to hardcode range(1, 11)
 templates.env.globals["person_ids"] = PERSON_IDS
 templates.env.globals["max_persons"] = MAX_PERSONS
+templates.env.globals["oncall_hours_by_group"] = oncall_hours_by_group
+templates.env.globals["oncall_pay_by_group"] = oncall_pay_by_group
+templates.env.globals["oncall_column_labels"] = ONCALL_COLUMN_LABELS
+templates.env.globals["breakdown_csv_headers"] = breakdown_csv_headers
 
 
 def render(template_name: str, context: dict, status_code: int = 200, headers: dict | None = None):

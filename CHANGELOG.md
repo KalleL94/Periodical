@@ -22,13 +22,26 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
-## [Unreleased]
+## [1.13.0] - 2026-10-23
 
 ### Added
 - Admin quick-add on the week view: type a name, a date range and a shift, and the person gets their own substitute row. A known name (case-insensitive) reuses its substitute, an unknown one creates it, an archived one is restored.
+- Employer profile per user, set by an admin (`users.employer_profile`). It decides on-call labels and columns, on-call rates and, for Nexer, overtime pricing. New columns come from `migrate_schema.py`; `migrations/migrate_employer_profile_data.py` is the one-off data half (renames one person's 2026-08-22 override key to `NX_WEEKEND`, drops the per-user `oncall` rate overrides for the four affected people, and corrects one person's three manual overtime rows for 2026-08-30 to 2026-09-01 to two rows of 8.5 h; supports `--dry-run`).
+- Excel export is offered to everyone, with headers per employer profile.
+- Nexer on-call rule set: four tiers priced as monthly salary / 1400, 900, 600 and 350, with the weekend code `NX_WEEKEND`.
+- Nexer overtime priced by time of day: monthly salary / 94 for 06:00 to 20:00 Monday to Friday on a day that is not a red day, salary / 72 for all other time.
+- Month CSV lets you choose the format (Swedish Excel with `;` and decimal comma, or Standard) and adds Weekday and Shift type columns. Headers follow the employer profile, and on-call columns are grouped through one shared map.
+
+### Changed
+- ICA on-call rates are dated: 78/100/116/198 kr/h from 2026-05-01, earlier 75/97/112/192. Agiremus and Experis stay on 75/97/112/192. On-call is priced per day from the dated profile table.
 
 ### Fixed
 - Admin monthly report: a person who swapped rotation positions mid-month no longer appears twice. The table, CSV and Excel summary show one row per person, sorted by name with substitutes last, and the Excel export has one tab per person.
+- On-call hours split by overtime are priced by the same rules as a full day (`calculate_oncall_pay_for_period` de-duplicates rules by identity), so a split day no longer prices hours differently.
+- On-call and overtime were priced by rotation position instead of by the user who held the day, so a person whose user id differed from their position got the wrong wage. Pricing now follows the holder's user id.
+- On-call is reduced by every overlapping overtime interval, not just the first, and the same holds for substitutes.
+- A shift ending at midnight shows as 24:00 instead of 00:00 in the month breakdown table.
+- Nexer OB and overtime count on the calendar day worked, including the month and week totals, and the night before the first day of employment no longer lands in the first month.
 
 ## [1.12.0] - 2026-09-25
 

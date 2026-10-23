@@ -114,3 +114,22 @@ def get_holiday_dates_for_year(year: int) -> set[datetime.date]:
         kristi_himmelsfardsdag(year),
         alla_helgons_dag(year),
     }
+
+
+def swedish_red_days(year: int) -> set[datetime.date]:
+    """Every Swedish public holiday (röd dag) in a year."""
+    return {
+        nyarsdagen(year),
+        trettondagen(year),
+        langfredagen(year),
+        easter_sunday(year),
+        annandagpask(year),
+        forsta_maj(year),
+        kristi_himmelsfardsdag(year),
+        pingstafton(year) + datetime.timedelta(days=1),
+        nationaldagen(year),
+        midsommarafton(year) + datetime.timedelta(days=1),
+        alla_helgons_dag(year),
+        datetime.date(year, 12, 25),
+        datetime.date(year, 12, 26),
+    }

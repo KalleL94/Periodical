@@ -12,6 +12,8 @@ from datetime import date as _date
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from app.core.oncall import oncall_hours_by_group
+
 # Column layout for an agent's month sheet (index used to decide merge and filter).
 COL_HEADERS = [
     "Datum",
@@ -55,6 +57,30 @@ REPORT_COL_HEADERS = [
     "Kommentar",
 ]
 
+_FIXED = REPORT_COL_HEADERS[:6]
+_TAIL = ["Övertid", "Kommentar"]
+_PLAIN_OC = ["Beredskap Vardag", "Beredskap Helg", "Beredskap Helgdag", "Beredskap Storhelg"]
+
+# Excel header list per employer profile. Nexer is the only one with a separate OB4 column.
+EXCEL_HEADERS_BY_PROFILE: dict[str, list[str]] = {
+    "agiremus": COL_HEADERS,
+    "ica": REPORT_COL_HEADERS,
+    "experis": [*_FIXED, "OB Kväll", "OB Natt", "OB Helg", "OB Storhelg", *_PLAIN_OC, *_TAIL],
+    "nexer": [
+        *_FIXED,
+        "OB Kväll",
+        "OB Natt",
+        "OB Helg",
+        "OB Helgdag",
+        "OB Storhelg",
+        "Beredskap Vardag",
+        "Beredskap Natt",
+        "Beredskap Helg",
+        "Beredskap Storhelg",
+        *_TAIL,
+    ],
+}
+
 _SV_DAYS = ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]
 
 
@@ -80,7 +106,12 @@ def _fmt_time(t) -> str:
 
 
 def _build_month_rows(
-    summary: dict, year: int, month: int, headers: list[str] = COL_HEADERS, split_oncall_overtime: bool = True
+    summary: dict,
+    year: int,
+    month: int,
+    headers: list[str] = COL_HEADERS,
+    split_oncall_overtime: bool = True,
+    split_ob4: bool = False,
 ):
     """Build (final_headers, final_rows, final_totals) for one agent's month.
 
@@ -88,13 +119,14 @@ def _build_month_rows(
     data dropped (text columns always kept). `headers` selects the displayed labels (same
     structure as COL_HEADERS). With split_oncall_overtime=True a day with both on-call and
     overtime is shown as two rows; with False they share one "Beredskap/Övertid" row.
+    With split_ob4=True OB4 gets its own column after OB3 instead of being merged into it.
     """
     num_days_in_month = _cal.monthrange(year, month)[1]
     all_dates = [_date(year, month, d) for d in range(1, num_days_in_month + 1)]
     day_lookup = {d["date"]: d for d in summary.get("days", [])}
 
     rows = []
-    totals = [0.0] * len(COL_HEADERS)
+    totals = [0.0] * len(headers)
 
     for day_date in all_dates:
         d = day_lookup.get(day_date)
@@ -130,37 +162,34 @@ def _build_month_rows(
 
             ob1 = d["ob_hours"].get("OB1", 0) or 0
             ob2 = d["ob_hours"].get("OB2", 0) or 0
-            ob3 = (d["ob_hours"].get("OB3", 0) or 0) + (d["ob_hours"].get("OB4", 0) or 0)
+            ob3 = d["ob_hours"].get("OB3", 0) or 0
+            ob4 = d["ob_hours"].get("OB4", 0) or 0
             ob5 = d["ob_hours"].get("OB5", 0) or 0
+            ob_vals = [ob1, ob2, ob3, ob4, ob5] if split_ob4 else [ob1, ob2, ob3 + ob4, ob5]
 
-            ob_sum = ob1 + ob2 + ob3 + ob5
+            ob_sum = sum(ob_vals)
             is_work = shift.code not in ("OC", "OT")
             hours = d.get("hours", 0) or 0
             norm = max((hours - ob_sum), 0) if is_work else 0
 
             oc_bd = d.get("oncall_details", {}).get("breakdown", {}) if d.get("oncall_details") else {}
-            oc_vardag = oc_bd.get("OC_WEEKDAY", {}).get("hours", 0) or 0
-            oc_helg = (
-                (oc_bd.get("OC_WEEKEND", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_WEEKEND_SAT", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_WEEKEND_SUN", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_WEEKEND_MON", {}).get("hours", 0) or 0)
+            oc_h = oncall_hours_by_group(oc_bd)
+            oc_vardag, oc_helg, oc_helgdag, oc_storhelg = (
+                oc_h["oc_vardag"],
+                oc_h["oc_helg"],
+                oc_h["oc_helgdag"],
+                oc_h["oc_storhelg"],
             )
-            oc_helgdag = (
-                (oc_bd.get("OC_HOLIDAY", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_HOLIDAY_EVE", {}).get("hours", 0) or 0)
-                + (oc_bd.get("OC_NATIONALDAGEN", {}).get("hours", 0) or 0)
-            )
-            oc_storhelg = oc_bd.get("OC_SPECIAL", {}).get("hours", 0) or 0
             ot = d.get("ot_hours", 0) or 0
 
-            num_vals = [norm, ob1, ob2, ob3, ob5, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, ot, comment]
+            oc_vals4 = [oc_vardag, oc_helg, oc_helgdag, oc_storhelg]
+            num_vals = [norm, *ob_vals, *oc_vals4, ot, comment]
 
             oc_total = oc_vardag + oc_helg + oc_helgdag + oc_storhelg
             if oc_total > 0 and ot > 0 and split_oncall_overtime:
                 # Split into an on-call row and an overtime row
-                oc_vals = [0, 0, 0, 0, 0, oc_vardag, oc_helg, oc_helgdag, oc_storhelg, 0, ""]
-                ot_vals = [norm, ob1, ob2, ob3, ob5, 0, 0, 0, 0, ot, comment]
+                oc_vals = [0] * (1 + len(ob_vals)) + oc_vals4 + [0, ""]
+                ot_vals = [norm, *ob_vals, 0, 0, 0, 0, ot, comment]
                 rows.append([str(day_date), _SV_DAYS[day_date.weekday()], "Beredskap", "", ""] + oc_vals)
                 rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + ot_vals)
             elif oc_total > 0 and ot > 0:
@@ -171,14 +200,14 @@ def _build_month_rows(
             else:
                 rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, start_str, end_t_str] + num_vals)
         else:
-            num_vals = [0.0] * 10 + [comment]
+            num_vals = [0.0] * (len(headers) - NUM_START - 1) + [comment]
             rows.append([str(day_date), _SV_DAYS[day_date.weekday()], shift_label, "", ""] + num_vals)
 
         for i, v in enumerate(num_vals[:-1]):  # exclude comment column
             totals[NUM_START + i] = totals[NUM_START + i] + v
 
     # Drop numeric columns with no data anywhere; always keep the fixed text columns.
-    active_num = [any(row[NUM_START + i] for row in rows) for i in range(len(COL_HEADERS) - NUM_START)]
+    active_num = [any(row[NUM_START + i] for row in rows) for i in range(len(headers) - NUM_START)]
     keep_cols = list(range(NUM_START)) + [NUM_START + i for i, v in enumerate(active_num) if v]
 
     final_headers = [headers[i] for i in keep_cols]
@@ -194,6 +223,7 @@ def populate_month_sheet(
     month: int,
     headers: list[str] = COL_HEADERS,
     split_oncall_overtime: bool = True,
+    split_ob4: bool = False,
 ) -> None:
     """Fill a worksheet with one agent's month, matching the per-person Excel export.
 
@@ -201,7 +231,9 @@ def populate_month_sheet(
     monthly report's agent tabs); the column structure is unchanged. With
     split_oncall_overtime=False, on-call and overtime share one row instead of two.
     """
-    final_headers, final_rows, final_totals = _build_month_rows(summary, year, month, headers, split_oncall_overtime)
+    final_headers, final_rows, final_totals = _build_month_rows(
+        summary, year, month, headers, split_oncall_overtime, split_ob4
+    )
 
     header_fill = PatternFill("solid", fgColor="2D3748")
     header_font = Font(bold=True, color="FFFFFF")

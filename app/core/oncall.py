@@ -44,7 +44,9 @@ from .holidays import (
     nationaldagen,
     nyarsafton,
     nyarsdagen,
+    pingstafton,
     skartorsdagen,
+    swedish_red_days,
     trettondagen,
 )
 from .models import OnCallRule
@@ -62,6 +64,93 @@ oncall_rules_base = load_oncall_rules()
 # here: the JSON file no longer carries holiday entries to edit by mistake.
 RATE_STORHELG = 192
 RATE_RED_DAY = 112
+
+# On-call rule code -> payslip column slot. One map for the payslip, the payslip
+# import and the per-profile rate table. The slots are positions, not labels:
+# Nexer's night tier sits in oc_helg and its weekend tier in oc_helgdag.
+ONCALL_GROUP_BY_CODE: dict[str, str] = {
+    "OC_WEEKDAY": "oc_vardag",
+    "OC_WEEKEND": "oc_helg",
+    "OC_WEEKEND_SAT": "oc_helg",
+    "OC_WEEKEND_SUN": "oc_helg",
+    "OC_WEEKEND_MON": "oc_helg",
+    "OC_HOLIDAY_EVE": "oc_helgdag",
+    "OC_HOLIDAY": "oc_helgdag",
+    "OC_NATIONALDAGEN": "oc_helgdag",
+    "OC_SPECIAL": "oc_storhelg",
+    "NX_WEEKDAY": "oc_vardag",
+    "NX_NIGHT": "oc_helg",
+    "NX_WEEKEND": "oc_helgdag",
+    "NX_SPECIAL": "oc_storhelg",
+}
+
+_ICA_LABELS = {
+    "oc_vardag": "B.Vardag(75)",
+    "oc_helg": "B.Helg(97)",
+    "oc_helgdag": "B.Helgdag(112)",
+    "oc_storhelg": "B.Storhelg(192)",
+}
+
+# Column headers per employer profile, keyed by the slots above.
+ONCALL_COLUMN_LABELS: dict[str, dict[str, str]] = {
+    "ica": _ICA_LABELS,
+    "agiremus": _ICA_LABELS,
+    "experis": {
+        "oc_vardag": "B.Vardag",
+        "oc_helg": "B.Helg",
+        "oc_helgdag": "B.Helgdag",
+        "oc_storhelg": "B.Storhelg",
+    },
+    "nexer": {
+        "oc_vardag": "B.Vardag",
+        "oc_helg": "B.Natt",
+        "oc_helgdag": "B.Helg",
+        "oc_storhelg": "B.Storhelg",
+    },
+}
+
+
+_CSV_ICA_OB = ["Kväll 150", "Natt 151", "Helg 152", "Storhelg 153"]
+_CSV_ICA_OC = ["Beredskap Vardag 75", "Beredskap Helg 97", "Beredskap Helgdag 112", "Beredskap Storhelg 192"]
+_CSV_PLAIN_OC = ["Beredskap Vardag", "Beredskap Helg", "Beredskap Helgdag", "Beredskap Storhelg"]
+
+# (OB headers, on-call headers) per profile for the breakdown CSV. Four OB headers
+# mean OB3 and OB4 share one column, five mean one column per OB level.
+_CSV_PROFILE_COLUMNS: dict[str, tuple[list[str], list[str]]] = {
+    "ica": (_CSV_ICA_OB, _CSV_ICA_OC),
+    "agiremus": (["OB1(x1,12)", "OB2(x1,18)", "OB3(x1,24)", "OB4(x1,24)", "OB5(x1,47)"], _CSV_ICA_OC),
+    "nexer": (
+        ["OB Kväll", "OB Natt", "OB Helg", "OB Helgdag", "OB Storhelg"],
+        ["Beredskap Vardag", "Beredskap Natt", "Beredskap Helg", "Beredskap Storhelg"],
+    ),
+    "experis": (["OB Kväll", "OB Natt", "OB Helg", "OB Storhelg"], _CSV_PLAIN_OC),
+}
+
+
+def breakdown_csv_headers(profile: str | None) -> list[str]:
+    """Header row of the breakdown CSV for an employer profile."""
+    ob, oc = _CSV_PROFILE_COLUMNS.get(profile or "ica", _CSV_PROFILE_COLUMNS["ica"])
+    return ["Datum", "Veckodag", "Passtyp", "Start", "Slut", "Vanliga timmar", *ob, *oc, "Övertid"]
+
+
+def _by_group(breakdown: dict, field: str) -> dict[str, float]:
+    out = dict.fromkeys(("oc_vardag", "oc_helg", "oc_helgdag", "oc_storhelg"), 0)
+    for code, entry in (breakdown or {}).items():
+        group = ONCALL_GROUP_BY_CODE.get(code)
+        if group:
+            out[group] += entry.get(field, 0) or 0
+    return out
+
+
+def oncall_hours_by_group(breakdown: dict) -> dict[str, float]:
+    """Sum an on-call breakdown's hours into the four payslip columns."""
+    return _by_group(breakdown, "hours")
+
+
+def oncall_pay_by_group(breakdown: dict) -> dict[str, float]:
+    """Sum an on-call breakdown's pay into the four payslip columns."""
+    return _by_group(breakdown, "pay")
+
 
 # Replacement priorities. The highest-priority rule covering an hour wins outright.
 PRIORITY_NATIONALDAGEN = 6
@@ -246,8 +335,7 @@ def build_oncall_rules_for_year(year: int) -> list[OnCallRule]:
     1. Static rules from oncall_rules.json (weekday-based)
     2. Dynamically generated rules for specific holiday dates
 
-    Emission order is part of the contract: calculate_oncall_pay_for_period keeps the
-    first rule it sees per code. See tests/test_oncall_rules_golden.py.
+    Emission order is pinned by tests/test_oncall_rules_golden.py.
     """
     rules: list[OnCallRule] = list(oncall_rules_base)
 
@@ -319,10 +407,109 @@ def build_oncall_rules_for_year(year: int) -> list[OnCallRule]:
     return rules
 
 
-@lru_cache(maxsize=10)
-def _cached_oncall_rules(year: int) -> list[OnCallRule]:
-    """Cached version of build_oncall_rules_for_year."""
+# Nexer tiers: monthly salary / divisor per hour, highest tier wins.
+_NEXER_TIERS = {
+    "NX_WEEKDAY": ("Beredskap vardag", 1400, 1),
+    "NX_NIGHT": ("Beredskap natt", 900, 2),
+    "NX_WEEKEND": ("Beredskap helg", 600, 3),
+    "NX_SPECIAL": ("Beredskap storhelg", 350, 4),
+}
+
+
+def _nexer_rule(
+    code: str,
+    start: str,
+    end: str,
+    days: list[int] | None = None,
+    date: datetime.date | None = None,
+) -> OnCallRule:
+    label, divisor, priority = _NEXER_TIERS[code]
+    return OnCallRule(
+        code=code,
+        label=label,
+        days=days,
+        specific_dates=[date.isoformat()] if date else None,
+        start_time=start,
+        end_time=end,
+        rate=divisor,
+        priority=priority,
+        generated=date is not None,
+    )
+
+
+def _nexer_block_end(day: datetime.date) -> datetime.date:
+    """First Monday to Friday after day that is not a red day. The block ends at its 00:00."""
+    d = day + datetime.timedelta(days=1)
+    while d.weekday() >= 5 or d in swedish_red_days(d.year):
+        d += datetime.timedelta(days=1)
+    return d
+
+
+def _nexer_block(code: str, first: datetime.date, start: str, last: datetime.date) -> list[OnCallRule]:
+    """first from start to midnight, then full days up to _nexer_block_end(last)."""
+    rules = [_nexer_rule(code, start, "24:00", date=first)]
+    d = first + datetime.timedelta(days=1)
+    while d < _nexer_block_end(last):
+        rules.append(_nexer_rule(code, "00:00", "24:00", date=d))
+        d += datetime.timedelta(days=1)
+    return rules
+
+
+def build_nexer_oncall_rules_for_year(year: int) -> list[OnCallRule]:
+    """Nexer on-call rules for a year: weekday, night, weekend and storhelg tiers.
+
+    The Friday night runs to Saturday 07:00 as two rules, not one spans_to_next_day
+    rule: _get_rule_intervals_for_shift only looks at rules for the shift's own
+    dates, so a Saturday shift would never see Friday's spill past midnight.
+    """
+    one_day = datetime.timedelta(days=1)
+    rules = [
+        _nexer_rule("NX_WEEKDAY", "00:00", "24:00", days=[0, 1, 2, 3, 4]),
+        _nexer_rule("NX_NIGHT", "18:00", "24:00", days=[4]),
+        _nexer_rule("NX_NIGHT", "00:00", "07:00", days=[5]),
+        _nexer_rule("NX_WEEKEND", "07:00", "24:00", days=[5]),
+        _nexer_rule("NX_WEEKEND", "00:00", "24:00", days=[6]),
+    ]
+
+    for holiday in sorted(
+        (
+            trettondagen(year),
+            forsta_maj(year),
+            kristi_himmelsfardsdag(year),
+            nationaldagen(year),
+            alla_helgons_dag(year),
+        )
+    ):
+        rules.append(_nexer_rule("NX_NIGHT", "18:00", "24:00", date=holiday - one_day))
+        rules.append(_nexer_rule("NX_NIGHT", "00:00", "07:00", date=holiday))
+        rules.extend(_nexer_block("NX_WEEKEND", holiday, "07:00", holiday))
+
+    # The New Year block that opened on 31 Dec the year before runs into this year.
+    rules.extend(_nexer_block("NX_SPECIAL", nyarsafton(year - 1), "07:00", nyarsdagen(year)))
+    rules.extend(_nexer_block("NX_SPECIAL", skartorsdagen(year), "18:00", annandagpask(year)))
+    rules.extend(_nexer_block("NX_SPECIAL", pingstafton(year), "07:00", pingstafton(year) + one_day))
+    rules.extend(_nexer_block("NX_SPECIAL", midsommarafton(year), "07:00", midsommarafton(year) + one_day))
+    rules.extend(_nexer_block("NX_SPECIAL", julafton(year), "07:00", datetime.date(year, 12, 26)))
+    rules.extend(_nexer_block("NX_SPECIAL", nyarsafton(year), "07:00", nyarsdagen(year + 1)))
+    return rules
+
+
+def rule_set_for(profile: str | None) -> str:
+    """The on-call rule set an employer profile uses."""
+    return "nexer" if profile == "nexer" else "ica"
+
+
+@lru_cache(maxsize=20)
+def get_oncall_rules(year: int, rule_set: str = "ica") -> list[OnCallRule]:
+    """Cached on-call rules for a year: "nexer" gets the Nexer set, anything else ICA."""
+    if rule_set == "nexer":
+        return build_nexer_oncall_rules_for_year(year)
     return build_oncall_rules_for_year(year)
+
+
+def _cached_oncall_rules(year: int) -> list[OnCallRule]:
+    """The ICA rules for a year."""
+    return get_oncall_rules(year, "ica")
 
 
 def _select_oncall_rules_for_date(
@@ -600,13 +787,11 @@ def calculate_oncall_pay_for_period(
         applicable_rules.extend(rules)
         current_date += datetime.timedelta(days=1)
 
-    # Remove duplicates
-    unique_rules = []
-    seen_codes = set()
-    for rule in applicable_rules:
-        if rule.code not in seen_codes:
-            unique_rules.append(rule)
-            seen_codes.add(rule.code)
+    # A weekly rule matches every day in the period: keep it once. Deduplicate by
+    # rule, not by code: several rules share a code (a holiday block emits one per
+    # day, and a day can have a weekly and a generated rule of the same tier), and
+    # dropping all but the first left hours to a lower tier.
+    unique_rules = list({id(rule): rule for rule in applicable_rules}.values())
 
     # Sort by priority (highest first)
     sorted_rules = sorted(unique_rules, key=lambda r: r.priority, reverse=True)
@@ -745,4 +930,4 @@ def apply_oncall_hours_override(
 
 def clear_oncall_cache():
     """Clear cached on-call rules (call after rule changes)."""
-    _cached_oncall_rules.cache_clear()
+    get_oncall_rules.cache_clear()

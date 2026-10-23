@@ -517,6 +517,7 @@ async def show_month_all(
                 fetch_tax_table=is_admin,
                 payment_year=year,
                 wage_user_id=user_id,
+                employment_window=(seg["effective_from"], seg["effective_to"]),
             )
             s["person_name"] = seg["name"]
             per_segment_summaries.append(s)

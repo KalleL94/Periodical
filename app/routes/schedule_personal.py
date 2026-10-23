@@ -15,10 +15,9 @@ from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, strip_salary_data, strip_year_summary
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.oncall import (
-    _cached_oncall_rules as _get_oncall_rules,
-)
-from app.core.oncall import (
     _get_storhelg_dates_for_year,
+    get_oncall_rules,
+    rule_set_for,
 )
 from app.core.schedule import (
     _cached_special_rules,
@@ -145,7 +144,9 @@ async def show_day_for_person(
         else current_user
     )
     _user_rates = (
-        get_user_rates(_rate_user, session=db, effective_date=date_obj) if _rate_user else get_user_rates(current_user)
+        get_user_rates(_rate_user, session=db, effective_date=date_obj)
+        if _rate_user
+        else get_user_rates(current_user, effective_date=date_obj)
     )
 
     # === Canonical shift resolution (issue #206) ===
@@ -320,7 +321,7 @@ async def show_day_for_person(
     show_salary = can_see_salary(current_user, user_id_for_wages)
 
     # Build deduplicated ordered list of all on-call type codes+labels for the override form
-    _all_oc_rules = _get_oncall_rules(year)
+    _all_oc_rules = get_oncall_rules(year, rule_set_for(_user_rates.get("profile")))
     seen_oc_codes: set[str] = set()
     all_oncall_types: list[dict] = []
     for _r in sorted(_all_oc_rules, key=lambda r: r.priority):
@@ -782,6 +783,7 @@ async def show_range_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "breakdown_days": breakdown_days,
+            "employer_profile": target_user.employer_profile if target_user is not None else "ica",
         },
     )
 
@@ -926,6 +928,7 @@ async def show_month_for_person(
             "jump_options": get_jump_options("month", date(year, month, 1)),
             "person_id": person_id,
             "person_name": person_name,
+            "employer_profile": target_user.employer_profile if target_user is not None else "ica",
             "days": days_in_month,
             "success": success,
             # The drawer renders the day page's edit partial against a calendar
@@ -962,7 +965,7 @@ async def export_month_excel(
     import openpyxl
 
     from app.core.schedule.summary import summarize_month_for_person
-    from app.routes.excel_shared import populate_month_sheet
+    from app.routes.excel_shared import EXCEL_HEADERS_BY_PROFILE, populate_month_sheet
 
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
@@ -1034,6 +1037,7 @@ async def export_month_excel(
             year_days=month_days,
             payment_year=year,
             wage_user_id=user_id_for_wages,
+            employment_window=(emp_start, emp_end),
         )
     else:
         days_in_month = summarize_month_for_person(
@@ -1044,7 +1048,17 @@ async def export_month_excel(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = f"{year}-{month:02d}"
-    populate_month_sheet(ws, days_in_month, year, month)
+    profile = (target_user.employer_profile if target_user is not None else None) or "ica"
+    if profile not in EXCEL_HEADERS_BY_PROFILE:
+        profile = "ica"  # An unknown stored value exports like the default.
+    populate_month_sheet(
+        ws,
+        days_in_month,
+        year,
+        month,
+        headers=EXCEL_HEADERS_BY_PROFILE[profile],
+        split_ob4=profile == "nexer",
+    )
 
     # ── Stream response ──────────────────────────────────────────────────
     buf = io.BytesIO()

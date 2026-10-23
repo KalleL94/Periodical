@@ -93,6 +93,15 @@ class AbsenceType(enum.StrEnum):
     LATE_PAID = "LATE_PAID"  # Sen ankomst utan löneavdrag
 
 
+class EmployerProfile(enum.StrEnum):
+    """Which employer's pay rules apply to a user."""
+
+    ICA = "ica"
+    AGIREMUS = "agiremus"
+    NEXER = "nexer"
+    EXPERIS = "experis"
+
+
 class WageType(enum.StrEnum):
     """Whether the user is paid a monthly salary or an hourly rate."""
 
@@ -135,6 +144,8 @@ class User(Base):
     role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
     wage = Column(Integer, nullable=False)
     wage_type = Column(SQLEnum(WageType), default=WageType.MONTHLY, nullable=False)
+    # Plain string so an unknown value never crashes a load; compare against EmployerProfile.
+    employer_profile = Column(String(20), default="ica", nullable=False, server_default="ica")
     vacation = Column(JSON, default=dict)  # {"2026": [1,2,3], "2027": []}
     parental_leave = Column(JSON, default=dict)  # {"2026": [1,2,3]} - veckonummer per år
     tax_table = Column(String(10), default="33", nullable=True)  # Swedish tax table number (e.g., "29", "30", "33")

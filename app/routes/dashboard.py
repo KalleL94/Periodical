@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary
+from app.core.oncall import rule_set_for
 from app.core.rates import get_user_rates
 from app.core.schedule import (
     _cached_special_rules,
@@ -24,7 +25,7 @@ from app.core.schedule import (
 )
 from app.core.schedule.ob import compute_day_ob_pay
 from app.core.schedule.person_history import get_user_person_id
-from app.core.schedule.summary import day_worked_hours
+from app.core.schedule.summary import calendar_day_totals, day_worked_hours
 from app.core.schedule.wages import (
     KARENS_HOURS,
     calculate_absence_deduction,
@@ -192,7 +193,7 @@ async def read_root(
     next_month_url = f"/?month={next_m}&year={next_m_y}"
 
     user_wage = get_effective_monthly_wage(db, current_user.id)
-    _user_rates = get_user_rates(current_user, session=db)
+    _user_rates = get_user_rates(current_user, session=db, effective_date=view_week_monday)
     show_salary = can_see_salary(current_user, current_user.id)
 
     # Build the viewed week on the canonical period path, the same one the month and
@@ -318,12 +319,31 @@ async def read_root(
 
             total_hours += day_worked_hours(day)
 
+        ot_pay = sum(d.get("ot_pay", 0.0) for d in week_data)
+
+        # Nexer counts every hour on the calendar day it is worked, the same rule
+        # as the month summary: the week takes the after-midnight part of the
+        # Sunday before and gives away its own Sunday night's.
+        if any(rule_set_for(d.get("employer_profile")) == "nexer" for d in week_data):
+            sunday_before = view_week_monday - timedelta(days=1)
+            prev_days = _days_following_positions(db, current_user, sunday_before, sunday_before, _user_rates)
+            cal = calendar_day_totals(
+                prev_days + week_data,
+                {d["date"] for d in week_data},
+                combined_rules_w,
+                user_wage,
+                _user_rates["ob"] if _user_rates else None,
+            )
+            total_hours, ob_hours, ot_pay = cal["worked_hours"], cal["ob_hours"], cal["ot_pay"]
+            if show_salary:
+                total_pay = cal["ob_pay"]
+
         week_summary = {
             "total_hours": total_hours,
             "ob_hours": ob_hours,
             "total_pay": total_pay,
             "oc_pay": sum(d.get("oncall_pay", 0.0) for d in week_data) if show_salary else 0.0,
-            "ot_pay": sum(d.get("ot_pay", 0.0) for d in week_data) if show_salary else 0.0,
+            "ot_pay": ot_pay if show_salary else 0.0,
             "absence_deduction": absence_deduction,
         }
 

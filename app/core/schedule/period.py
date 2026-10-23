@@ -3,13 +3,20 @@
 import calendar
 import datetime
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import time as dt_time
 from typing import NamedTuple
 
 from app.core.constants import PERSON_IDS, placeholder_person_name
-from app.core.oncall import _cached_oncall_rules as get_oncall_rules
-from app.core.oncall import calculate_oncall_pay, calculate_oncall_pay_for_period
+from app.core.oncall import (
+    apply_oncall_hours_override,
+    calculate_oncall_pay,
+    calculate_oncall_pay_for_period,
+    get_oncall_rules,
+    rule_set_for,
+)
+from app.core.rates import day_oncall_rates
 from app.core.time_utils import parse_ot_times
 from app.database.database import (
     Absence,
@@ -30,7 +37,6 @@ from .core import (
     weekday_names,
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year
-from .overtime import preferred_ot_row
 from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .segments import DaySegment, extra_segments, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
@@ -61,6 +67,10 @@ class DayLookupContext:
     linked_sub_shift_map: dict | None = None
     linked_sub_absence_map: dict | None = None
     linked_sub_ot_map: dict | None = None
+    # (position, date) -> (user id, employer_profile) of the user holding the position
+    # that day. The id keys the wage lookups; the profile prices on-call for views
+    # that pass no user_rates_map.
+    holder: Callable[[int, datetime.date], tuple[int, str]] | None = None
 
 
 def build_week_data(
@@ -301,6 +311,7 @@ def generate_period_data(
         linked_sub_shift_map=linked_sub_shift_map,
         linked_sub_absence_map=linked_sub_absence_map,
         linked_sub_ot_map=linked_sub_ot_map,
+        holder=_build_holder_resolver(session, person_ids) if with_pay else None,
     )
 
     days_out = []
@@ -439,6 +450,46 @@ def _range_holder_user_ids(
         .all()
     )
     return {row[0] for row in rows}
+
+
+def _build_holder_resolver(session, positions: list[int]) -> Callable[[int, datetime.date], tuple[int, str]]:
+    """Return a (position, date) -> (user id, employer_profile) resolver for the day's holder.
+
+    Holder resolution mirrors get_person_for_date: the PersonHistory record covering
+    the date, else the User whose id is the position when the position has no
+    history at all. Two queries per generate call, none per day. The id falls back
+    to the position and the profile to "ica" when nobody holds the position or
+    there is no session.
+    """
+    if not session:
+        return lambda position, on_date: (position, "ica")
+    from app.database.database import PersonHistory, User
+
+    history: dict[int, list] = defaultdict(list)
+    for r in (
+        session.query(PersonHistory)
+        .filter(PersonHistory.person_id.in_(positions))
+        .order_by(PersonHistory.effective_from.asc())
+        .all()
+    ):
+        history[r.person_id].append(r)
+    user_ids = {r.user_id for recs in history.values() for r in recs} | set(positions)
+    profiles = dict(session.query(User.id, User.employer_profile).filter(User.id.in_(user_ids)).all())
+
+    def resolve(position: int, on_date: datetime.date) -> tuple[int, str]:
+        recs = history.get(position)
+        if not recs:
+            return position, profiles.get(position) or "ica"
+        # Ascending by effective_from: the last covering record is the latest one.
+        holder = None
+        for r in recs:
+            if r.effective_from <= on_date and (r.effective_to is None or r.effective_to >= on_date):
+                holder = r.user_id
+        if holder is None:
+            return position, "ica"
+        return holder, profiles.get(holder) or "ica"
+
+    return resolve
 
 
 def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]):
@@ -973,7 +1024,8 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
 
     sub_ids = [s.id for s in substitutes]
     shift_map = _fetch_substitute_shifts(session, sub_ids, start_date, end_date)
-    ot_by_date = _fetch_substitute_ot_by_date(session, sub_ids, start_date, end_date)
+    # From the day before the month: overtime past midnight cuts the 1st's on-call.
+    ot_by_date = _fetch_substitute_ot_by_date(session, sub_ids, start_date - datetime.timedelta(days=1), end_date)
     absence_counts = _fetch_substitute_absence_counts(session, sub_ids, start_date, end_date)
     absence_by_date = _fetch_substitute_absences_by_date(session, sub_ids, start_date, end_date)
     shift_types = get_shift_types()
@@ -1019,8 +1071,11 @@ def build_substitute_month_summaries(year: int, month: int, session, include_ove
             elif code == "OC":
                 # On-call standby is reduced by overtime worked during the on-call period.
                 # Reuse the agent on-call calc for the per-code breakdown (hours only; no pay).
-                if ot_entries_today:
-                    _, oc_details = _recalculate_oncall_before_ot(current, ot_entries_today[0], {}, 0, settings, None)
+                oc_ot_rows = _oncall_ot_rows(
+                    ot_entries_today, ot_by_date.get((sub.id, current - datetime.timedelta(days=1)), []), current
+                )
+                if oc_ot_rows:
+                    _, oc_details = _recalculate_oncall_before_ot(current, oc_ot_rows, {}, 0, settings, None)
                 else:
                     oc_shift = next((s for s in shift_types if s.code == "OC"), None)
                     _, oc_details = _compute_oncall_pay(oc_shift, current, 0, {}, settings, None)
@@ -1230,26 +1285,31 @@ def _lookup_for_day(batch_map, person_id: int, date: datetime.date):
 
 
 def _lookup_ot_shifts(person_id: int, date: datetime.date, ot_shift_map, session):
-    """Returns (overtime rows on the date, the row that affects on-call).
+    """Returns (overtime rows on the date, the rows that affect on-call).
 
-    The second may come from the previous day when that overtime crosses midnight; it
+    The second list may hold previous-day overtime that crosses midnight; it
     affects the on-call calculation but is never displayed as the day's shift.
     """
     ot_rows = _lookup_ot_shift(person_id, date, ot_shift_map)
-    if ot_rows:
-        return ot_rows, preferred_ot_row(ot_rows)
+    prev_rows = _lookup_ot_shift(person_id, date - datetime.timedelta(days=1), ot_shift_map)
+    return ot_rows, _oncall_ot_rows(ot_rows, prev_rows, date)
 
+
+def _oncall_ot_rows(day_rows: list, prev_rows: list, date: datetime.date) -> list:
+    """Overtime rows that interrupt on-call on the date: all of the day's own, plus
+    every previous-day row that runs past midnight. Extra time never interrupts it."""
+    rows = [r for r in day_rows if r.kind == "ot"]
     prev_day = date - datetime.timedelta(days=1)
-    prev_rows = _lookup_ot_shift(person_id, prev_day, ot_shift_map)
-    prev_ot = preferred_ot_row(prev_rows)
-    if prev_ot:
+    for r in prev_rows:
+        if r.kind != "ot":
+            continue
         try:
-            _, ot_end_dt = parse_ot_times(prev_ot, prev_day)
-            if ot_end_dt.date() > prev_day:
-                return [], prev_ot
+            _, end = parse_ot_times(r, prev_day)
         except ValueError:
-            pass
-    return [], None
+            continue
+        if end.date() > prev_day:
+            rows.append(r)
+    return rows
 
 
 def _lookup_ot_shift(person_id: int, date: datetime.date, ot_shift_map):
@@ -1633,13 +1693,20 @@ def oncall_window(current_day: datetime.date, override=None) -> tuple[datetime.d
 
 
 def _compute_oncall_pay(
-    shift, current_day, person_id, user_wages, settings, oncall_rate_override, oncall_override=None
+    shift,
+    current_day,
+    wage_user_id,
+    user_wages,
+    settings,
+    oncall_rate_override,
+    oncall_override=None,
+    rule_set: str = "ica",
 ) -> tuple[float, dict]:
     """On-call pay for a day. Returns (pay, details); (0.0, {}) for non-OC shifts."""
     if not (shift and shift.code == "OC"):
         return 0.0, {}
-    oncall_rules = get_oncall_rules(current_day.year)
-    monthly_salary = user_wages.get(person_id, settings.monthly_salary)
+    oncall_rules = get_oncall_rules(current_day.year, rule_set)
+    monthly_salary = user_wages.get(wage_user_id, settings.monthly_salary)
     start, end = oncall_window(current_day, oncall_override)
     if (start, end) == oncall_window(current_day):
         oncall_calc = calculate_oncall_pay(
@@ -1679,26 +1746,55 @@ def _primary_ot_row(ot_rows):
 
 
 def _compute_overtime_pay(
-    ot_rows, current_day, person_id, session, settings, ot_rate_override
+    ot_rows, current_day, wage_user_id, session, settings, ot_rate_override, profile: str = "ica"
 ) -> tuple[float, float, dict]:
     """Overtime pay/hours/details for a day, using the historical wage for the date.
 
     Sums every kind == "ot" row; extra-time rows are worked time, not overtime, and
     are priced through the segment list instead.
     """
-    from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
+    from app.database.database import WageType
 
-    wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
+    from .overtime import nexer_overtime_pay
+    from .wages import _get_wage_type, get_ot_hourly_rate_from_stored_wage, get_user_wage
+
+    wage_for_date = get_user_wage(session, wage_user_id, settings.monthly_salary, effective_date=current_day)
     hourly_rate = (
         float(ot_rate_override)
         if ot_rate_override is not None
-        else get_ot_hourly_rate_from_stored_wage(session, person_id, wage_for_date)
+        else get_ot_hourly_rate_from_stored_wage(session, wage_user_id, wage_for_date)
     )
     primary = _primary_ot_row(ot_rows)
     if primary is None:
         return 0.0, 0.0, {}
     ot_hours = sum(r.hours for r in ot_rows if r.kind == "ot")
     ot_pay = hourly_rate * ot_hours
+    is_nexer = rule_set_for(profile) == "nexer"
+    nexer_priced = (
+        ot_rate_override is None and ot_hours and is_nexer and _get_wage_type(session, wage_user_id) != WageType.HOURLY
+    )
+    if nexer_priced:
+        ot_pay = sum(
+            nexer_overtime_pay(wage_for_date, *parse_ot_times(r, current_day)) for r in ot_rows if r.kind == "ot"
+        )
+        hourly_rate = ot_pay / ot_hours
+    by_day: dict = {}
+    if is_nexer and ot_hours:
+        # Nexer counts every hour on the calendar day it is worked, so the month
+        # summary needs each row's hours and pay clipped at midnight.
+        for r in ot_rows:
+            if r.kind != "ot":
+                continue
+            start, end = parse_ot_times(r, current_day)
+            span = (end - start).total_seconds() / 3600
+            while start < end:
+                stop = min(end, datetime.datetime.combine(start.date() + datetime.timedelta(days=1), datetime.time()))
+                part = (stop - start).total_seconds() / 3600 * (r.hours / span if span else 0.0)
+                pay = nexer_overtime_pay(wage_for_date, start, stop) if nexer_priced else hourly_rate * part
+                bucket = by_day.setdefault(start.date(), {"hours": 0.0, "pay": 0.0})
+                bucket["hours"] += part
+                bucket["pay"] += pay
+                start = stop
     ot_details = {
         "start_time": str(primary.start_time),
         "end_time": str(primary.end_time),
@@ -1708,6 +1804,8 @@ def _compute_overtime_pay(
         # Derived, not stored: the column is gone, the output contract is not.
         "is_extension": primary.side != "full",
     }
+    if by_day:
+        ot_details["by_day"] = by_day
     return ot_pay, ot_hours, ot_details
 
 
@@ -1762,6 +1860,16 @@ def _populate_single_person_day(
     parental_dates = ctx.parental_dates
     vacation_shift = get_vacation_shift()
     shift_types = get_shift_types()
+
+    _person_rates = (user_rates_map or {}).get(person_id) or {}
+    # Wages and, without a rates map, the profile come from whoever holds the
+    # position that day: the holder's user id need not equal the position.
+    _wage_uid, _holder_profile = ctx.holder(person_id, current_day) if ctx.holder else (person_id, "ica")
+    _profile = _person_rates.get("profile") or _holder_profile
+    # Set before any early return: the month summary reads both to decide which
+    # calendar day a Nexer hour counts on, and whether a previous day is this user's.
+    day_info["employer_profile"] = _profile
+    day_info["holder_user_id"] = _wage_uid
 
     # Get person name via PersonHistory (shows correct person for this specific date)
     person_name, show_off_before_employment = _resolve_day_person(session, person_id, current_day, employment_start)
@@ -1848,17 +1956,16 @@ def _populate_single_person_day(
     shift, segments, ob = _apply_oncall_override(oncall_override, shift, segments, ob, shift_types)
 
     # Calculate on-call pay
-    _person_rates = (user_rates_map or {}).get(person_id) or {}
+    _rule_set = rule_set_for(_profile)
+    _oc_rates = day_oncall_rates({**_person_rates, "profile": _profile}, current_day)
     oncall_pay, oncall_details = (
-        _compute_oncall_pay(
-            shift, current_day, person_id, user_wages, settings, _person_rates.get("oncall"), oncall_override
-        )
+        _compute_oncall_pay(shift, current_day, _wage_uid, user_wages, settings, _oc_rates, oncall_override, _rule_set)
         if settings is not None
         else (0.0, {})
     )
 
     # Kolla övertid - både på aktuell dag (för visning) och föregående dag (för beredskap)
-    ot_rows, ot_shift_for_oncall = _lookup_ot_shifts(person_id, current_day, ot_shift_map, session)
+    ot_rows, oncall_ot_rows = _lookup_ot_shifts(person_id, current_day, ot_shift_map, session)
 
     # Extra time is worked time: it joins the segment list and earns OB on its own
     # interval. Overtime never does, because summary.day_worked_hours adds
@@ -1873,15 +1980,16 @@ def _populate_single_person_day(
         ob = segment_ob(segments, combined_ob_rules)
 
     # Om beredskap + övertid (samma dag ELLER föregående dag över midnatt), räkna om beredskap
-    if settings is not None and shift and shift.code == "OC" and ot_shift_for_oncall:
+    if settings is not None and shift and shift.code == "OC" and oncall_ot_rows:
         oncall_pay, oncall_details = _recalculate_oncall_before_ot(
             current_day,
-            ot_shift_for_oncall,
+            oncall_ot_rows,
             user_wages,
-            person_id,
+            _wage_uid,
             settings,
-            oncall_rate_overrides=_person_rates.get("oncall"),
+            oncall_rate_overrides=_oc_rates,
             oncall_override=oncall_override,
+            rule_set=_rule_set,
         )
 
     ot_pay = 0.0
@@ -1891,7 +1999,7 @@ def _populate_single_person_day(
     if ot_rows and not is_vacation_day:
         if settings is not None:
             ot_pay, ot_hours, ot_details = _compute_overtime_pay(
-                ot_rows, current_day, person_id, session, settings, _person_rates.get("ot")
+                ot_rows, current_day, _wage_uid, session, settings, _person_rates.get("ot"), _profile
             )
 
         # Ersätt skift med OT för visning, men bara för ett inkallat pass. Display,
@@ -1904,17 +2012,13 @@ def _populate_single_person_day(
     ob_hours_override = None
     if day_pay_override:
         if day_pay_override.oncall_hours_override:
-            from app.core.oncall import _cached_oncall_rules as _get_oc_rules
-            from app.core.oncall import apply_oncall_hours_override
-
-            _oc_rules = _get_oc_rules(current_day.year)
-            _person_oc_rates = (_person_rates or {}).get("oncall")
+            _oc_rules = get_oncall_rules(current_day.year, _rule_set)
             oncall_pay, oncall_details = apply_oncall_hours_override(
                 day_pay_override.oncall_hours_override,
                 oncall_details.get("breakdown", {}),
-                user_wages.get(person_id, settings.monthly_salary),
+                user_wages.get(_wage_uid, settings.monthly_salary),
                 _oc_rules,
-                _person_oc_rates,
+                _oc_rates,
             )
         if day_pay_override.ob_hours_override:
             ob_hours_override = day_pay_override.ob_hours_override
@@ -1934,6 +2038,9 @@ def _populate_single_person_day(
             "hours": hours,
             "start": start,
             "end": end,
+            # The intervals behind hours/start/end, so a Nexer day splits its
+            # worked hours at midnight by the real clock and not the outer span.
+            "segments": segments,
             "ob": ob,
             "oncall_pay": oncall_pay,
             "oncall_details": oncall_details,
@@ -1948,29 +2055,42 @@ def _populate_single_person_day(
 
 def _recalculate_oncall_before_ot(
     current_day: datetime.date,
-    ot_shift,
+    ot_shifts: list,
     user_wages: dict[int, int],
-    person_id: int,
+    wage_user_id: int,
     settings,
     oncall_rate_overrides: dict[str, int | float] | None = None,
     oncall_override=None,
+    rule_set: str = "ica",
 ) -> tuple[float, dict]:
-    """Recalculates on-call pay for the period before AND after overtime.
+    """Recalculates on-call pay for the on-call window minus every overtime interval.
 
-    On-call is paid for the on-call window minus the overtime hours.
-    Ex: 24h beredskap - 8.5h övertid = 15.5h beredskapsersättning
+    The union of the rows' intervals is removed once, so overlapping rows are not
+    deducted twice. Ex: 24h beredskap - 8.5h övertid = 15.5h beredskapsersättning
     """
     day_start, day_end = oncall_window(current_day, oncall_override)
 
-    try:
-        # Use ot_shift.date for parsing, not current_day (in case OT crosses midnight)
-        ot_start_dt, ot_end_dt = parse_ot_times(ot_shift, ot_shift.date)
-    except ValueError:
-        # Om parsing misslyckas, betala ingen beredskap
-        return 0.0, {"note": "Could not parse OT times", "total_pay": 0.0}
+    intervals = []
+    for ot_shift in ot_shifts:
+        try:
+            # Use ot_shift.date for parsing, not current_day (in case OT crosses midnight)
+            ot_start_dt, ot_end_dt = parse_ot_times(ot_shift, ot_shift.date)
+        except ValueError:
+            # Om parsing misslyckas, betala ingen beredskap
+            return 0.0, {"note": "Could not parse OT times", "total_pay": 0.0}
+        intervals.append((max(ot_start_dt, day_start), min(ot_end_dt, day_end)))
 
-    oncall_rules = get_oncall_rules(current_day.year)
-    monthly_salary = user_wages.get(person_id, settings.monthly_salary)
+    # Beredskap betalas för fönstren mellan övertidspassen.
+    free_windows = []
+    cursor = day_start
+    for ot_start_dt, ot_end_dt in sorted(i for i in intervals if i[1] > i[0]):
+        if ot_start_dt > cursor:
+            free_windows.append((cursor, ot_start_dt))
+        cursor = max(cursor, ot_end_dt)
+    free_windows.append((cursor, day_end))
+
+    oncall_rules = get_oncall_rules(current_day.year, rule_set)
+    monthly_salary = user_wages.get(wage_user_id, settings.monthly_salary)
 
     total_pay = 0.0
     combined_breakdown = {}
@@ -1980,11 +2100,7 @@ def _recalculate_oncall_before_ot(
         "total_hours": 0.0,
     }
 
-    # Beredskap betalas för fönstret före övertiden och för fönstret efter den.
-    for seg_start, seg_end in (
-        (day_start, min(ot_start_dt, day_end)),
-        (max(ot_end_dt, day_start), day_end),
-    ):
+    for seg_start, seg_end in free_windows:
         if seg_end <= seg_start:
             continue
 

@@ -20,6 +20,8 @@ from dataclasses import dataclass
 
 from pypdf import PdfReader
 
+from app.core.oncall import ONCALL_GROUP_BY_CODE
+
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _NUM_RE = re.compile(r"^-?\d[\d ]*(?:,\d+)?$")
 _FACTOR_RE = re.compile(r"faktor\s+(\d+,\d+)")
@@ -28,19 +30,6 @@ _FACTOR_RE = re.compile(r"faktor\s+(\d+,\d+)")
 # so a stored rate can sit half an öre off, and float comparison needs a little air on top.
 _PRICE_TOLERANCE = 0.015
 
-# On-call rate keys (see rates.DEFAULT_ONCALL_RATES) -> category. Same mapping as
-# routes/schedule_personal.py uses when it aggregates on-call pay.
-_ONCALL_CATEGORIES: dict[str, str] = {
-    "OC_WEEKDAY": "oc_vardag",
-    "OC_WEEKEND": "oc_helg",
-    "OC_WEEKEND_SAT": "oc_helg",
-    "OC_WEEKEND_SUN": "oc_helg",
-    "OC_WEEKEND_MON": "oc_helg",
-    "OC_HOLIDAY": "oc_helgdag",
-    "OC_HOLIDAY_EVE": "oc_helgdag",
-    "OC_NATIONALDAGEN": "oc_helgdag",
-    "OC_SPECIAL": "oc_storhelg",
-}
 
 # Last resort á-price -> category, used when no rates were supplied or they did not match.
 # These are one employer's rates and change with every wage revision, so treat them as a
@@ -93,7 +82,7 @@ def _find_amount(text: str, label: str) -> float | None:
 def _rate_category(unit_price: float, rates: dict) -> str | None:
     """Match an á-price against a user's own rates, as returned by rates.get_user_rates()."""
     pairs = [(code, rate) for code, rate in (rates.get("ob") or {}).items()]
-    pairs += [(_ONCALL_CATEGORIES[k], v) for k, v in (rates.get("oncall") or {}).items() if k in _ONCALL_CATEGORIES]
+    pairs += [(ONCALL_GROUP_BY_CODE[k], v) for k, v in (rates.get("oncall") or {}).items() if k in ONCALL_GROUP_BY_CODE]
     if rates.get("ot"):
         pairs.append(("ot", rates["ot"]))
 

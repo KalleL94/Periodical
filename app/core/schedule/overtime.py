@@ -4,6 +4,9 @@ import datetime
 
 from app.core.constants import OT_RATE_DIVISOR
 
+NEXER_OT_DAY_DIVISOR = 94  # 06:00-20:00 Mon-Fri, not a red day
+NEXER_OT_OTHER_DIVISOR = 72
+
 
 def calculate_overtime_pay(monthly_salary: int, hours: float, ot_hourly_rate: float | None = None) -> float:
     """
@@ -20,6 +23,32 @@ def calculate_overtime_pay(monthly_salary: int, hours: float, ot_hourly_rate: fl
     if ot_hourly_rate is not None:
         return ot_hourly_rate * hours
     return (monthly_salary / OT_RATE_DIVISOR) * hours
+
+
+def nexer_overtime_pay(monthly_salary: int, start: datetime.datetime, end: datetime.datetime) -> float:
+    """Nexer overtime for an interval, priced by clock: salary / 94 for 06:00-20:00 Mon-Fri on a
+    non-red day, salary / 72 for everything else. Handles intervals crossing midnight."""
+    from app.core.holidays import swedish_red_days
+
+    pay = 0.0
+    cursor = start
+    while cursor < end:
+        midnight = datetime.datetime.combine(cursor.date() + datetime.timedelta(days=1), datetime.time())
+        day_start = datetime.datetime.combine(cursor.date(), datetime.time(6))
+        day_end = datetime.datetime.combine(cursor.date(), datetime.time(20))
+        if cursor < day_start:
+            stop = day_start
+        elif cursor < day_end:
+            stop = day_end
+        else:
+            stop = midnight
+        stop = min(stop, end)
+        in_day_window = day_start <= cursor < day_end
+        weekday = cursor.weekday() < 5 and cursor.date() not in swedish_red_days(cursor.year)
+        divisor = NEXER_OT_DAY_DIVISOR if in_day_window and weekday else NEXER_OT_OTHER_DIVISOR
+        pay += (stop - cursor).total_seconds() / 3600 * monthly_salary / divisor
+        cursor = stop
+    return pay
 
 
 def get_overtime_rows_for_date(session, user_id: int, date: datetime.date) -> list:

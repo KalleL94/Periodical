@@ -4,11 +4,13 @@ import logging
 from typing import NamedTuple
 
 from app.core.constants import placeholder_person_name
+from app.core.oncall import rule_set_for
 from app.core.storage import load_tax_brackets
 
 from .core import get_settings
 from .ob import compute_day_ob_pay, get_combined_rules_for_year
 from .period import generate_month_data, generate_period_data, mask_days_to_employment
+from .segments import DaySegment
 from .wages import (
     _MONTHLY_HOURS,
     get_absence_deductions_for_month,
@@ -72,6 +74,176 @@ def _attach_calendar_day_breakdown(days_out: list[dict]) -> None:
         day_data["ot_hours_calendar_day"] = calendar_day_ot.get(day_data["date"], 0.0)
 
 
+def _empty_part() -> dict:
+    return {"ob_hours": {}, "ob_pay": {}, "ot_hours": 0.0, "ot_pay": 0.0, "worked_hours": 0.0}
+
+
+def _calendar_day_parts(day_data: dict) -> dict:
+    """Where one day's worked hours, OB and overtime count, keyed by calendar date.
+
+    Nexer counts every hour on the calendar day it is worked. Every other profile,
+    and a linked-substitute day (priced on its own), keeps the whole shift on its
+    start date.
+    """
+    import datetime as _dt_mod
+
+    start_date = day_data["date"]
+    ob_h, ob_p = day_data["ob_hours"], day_data["ob_pay"]
+    if rule_set_for(day_data.get("employer_profile")) != "nexer" or day_data.get("is_substitute"):
+        return {
+            start_date: {
+                "ob_hours": dict(ob_h),
+                "ob_pay": dict(ob_p),
+                "ot_hours": day_data.get("ot_hours") or 0.0,
+                "ot_pay": day_data.get("ot_pay") or 0.0,
+                "worked_hours": day_worked_hours(day_data),
+            }
+        }
+    parts: dict = {}
+
+    def part(on_date):
+        return parts.setdefault(on_date, _empty_part())
+
+    for on_date, hrs in (day_data.get("ob_hours_by_day") or {start_date: ob_h}).items():
+        for code, h in hrs.items():
+            part(on_date)["ob_hours"][code] = h
+            # OB pay is hours times one rate per code, so it splits in proportion.
+            part(on_date)["ob_pay"][code] = ob_p.get(code, 0.0) * h / ob_h[code] if ob_h.get(code) else 0.0
+
+    ot_by_day = (day_data.get("ot_details") or {}).get("by_day")
+    if ot_by_day:
+        for on_date, v in ot_by_day.items():
+            part(on_date)["ot_hours"] += v["hours"]
+            part(on_date)["ot_pay"] += v["pay"]
+    else:
+        part(start_date)["ot_hours"] += day_data.get("ot_hours") or 0.0
+        part(start_date)["ot_pay"] += day_data.get("ot_pay") or 0.0
+
+    # Shift hours (worked hours without overtime) split by the clock at midnight,
+    # interval by interval, so the gap between a shift and later extra time counts
+    # nowhere. A day without a segment list is one interval from start to end.
+    shift_hours = day_worked_hours(day_data) - (day_data.get("ot_hours") or 0.0)
+    segments = day_data.get("segments") or [DaySegment(day_data.get("start"), day_data.get("end"), shift_hours)]
+    seg_total = sum(s.hours for s in segments)
+    if not seg_total:
+        part(start_date)["worked_hours"] += shift_hours
+    for seg in segments if seg_total else ():
+        hours = shift_hours * seg.hours / seg_total
+        start, end = seg.start, seg.end
+        if not (start and end and end > start):
+            part(start_date)["worked_hours"] += hours
+            continue
+        span = (end - start).total_seconds()
+        cursor = start
+        while cursor < end:
+            stop = min(end, _dt_mod.datetime.combine(cursor.date() + _dt_mod.timedelta(days=1), _dt_mod.time()))
+            part(cursor.date())["worked_hours"] += hours * (stop - cursor).total_seconds() / span
+            cursor = stop
+    for p in parts.values():
+        p["worked_hours"] += p["ot_hours"]
+    return parts
+
+
+def _calendar_day_buckets(day_datas: list[dict], dates: set) -> dict:
+    """Per calendar date in dates: the worked hours, OB and overtime that count on it."""
+    by_date: dict = {}
+    for day_data in day_datas:
+        for on_date, part in _calendar_day_parts(day_data).items():
+            if on_date not in dates:
+                continue
+            acc = by_date.setdefault(on_date, _empty_part())
+            for key in ("ob_hours", "ob_pay"):
+                for code, v in part[key].items():
+                    acc[key][code] = acc[key].get(code, 0.0) + v
+            for key in ("ot_hours", "ot_pay", "worked_hours"):
+                acc[key] += part[key]
+    return by_date
+
+
+def calendar_day_totals(days: list[dict], dates: set, combined_rules: list, base_salary, ob_overrides) -> dict:
+    """Worked hours, OB and overtime of generated days, counted on the calendar dates in dates.
+
+    For views that sum a window outside summarize_month_for_person (the dashboard
+    week). Pass the day before the window too, so its after-midnight part counts.
+    """
+    day_datas = [
+        _process_day_for_summary(d, combined_rules, base_salary, _throwaway_totals(), ob_overrides) for d in days
+    ]
+    buckets = _calendar_day_buckets(day_datas, dates).values()
+    return {
+        "worked_hours": sum(b["worked_hours"] for b in buckets),
+        "ob_hours": sum(sum(b["ob_hours"].values()) for b in buckets),
+        "ob_pay": sum(sum(b["ob_pay"].values()) for b in buckets),
+        "ot_pay": sum(b["ot_pay"] for b in buckets),
+    }
+
+
+def _count_on_calendar_days(totals: dict, days_out: list[dict], prev_day_data: dict | None) -> None:
+    """Replace the month's worked hours, OB and overtime totals with the sum of its calendar days.
+
+    Each day in days_out gets its calendar day's share as "calendar_day_pay", which
+    the payslip rows read so they agree with the totals.
+    """
+    by_date = _calendar_day_buckets(
+        days_out + ([prev_day_data] if prev_day_data else []), {d["date"] for d in days_out}
+    )
+
+    ob_hours = {code: 0.0 for code in totals["ob_hours"]}
+    ob_pay = {code: 0.0 for code in totals["ob_pay"]}
+    for acc in by_date.values():
+        for code, v in acc["ob_hours"].items():
+            ob_hours[code] = ob_hours.get(code, 0.0) + v
+        for code, v in acc["ob_pay"].items():
+            ob_pay[code] = ob_pay.get(code, 0.0) + v
+    ot_hours = sum(acc["ot_hours"] for acc in by_date.values())
+    ot_pay = sum(acc["ot_pay"] for acc in by_date.values())
+    worked = sum(acc["worked_hours"] for acc in by_date.values())
+
+    totals["brutto_pay"] += sum(ob_pay.values()) + ot_pay - sum(totals["ob_pay"].values()) - totals["ot_pay"]
+    totals["total_hours"] += worked - sum(day_worked_hours(d) for d in days_out)
+    totals.update(ob_hours=ob_hours, ob_pay=ob_pay, ot_hours=ot_hours, ot_pay=ot_pay)
+    for day_data in days_out:
+        day_data["calendar_day_pay"] = by_date.get(day_data["date"], _empty_part())
+
+
+def _throwaway_totals() -> dict:
+    """A totals dict for _process_day_for_summary when only the per-day output is wanted."""
+    totals = {"total_hours": 0.0, "num_shifts": 0, "ob_hours": {}, "ob_pay": {}, "brutto_pay": 0.0}
+    totals.update({k: 0.0 for k in ("oncall_pay", "oncall_hours", "ot_pay", "ot_hours")})
+    return totals
+
+
+def _previous_day_for_month(
+    session, person_id, uid_for_wages, settings, user_wages, days, month_start, employment_window=None
+) -> dict | None:
+    """The last day of the previous month, priced as that month prices it, or None.
+
+    Only the hours after midnight are used. The day is skipped when it falls
+    outside the employment window the caller masked the month to, or when someone
+    else held the position then, so a predecessor's night never reaches this user.
+    """
+    import datetime as _dt_mod
+
+    first_day = next((d for d in days if d["date"] == month_start), None)
+    if first_day is None or "holder_user_id" not in first_day:
+        return None
+    prev = month_start - _dt_mod.timedelta(days=1)
+    emp_from, emp_to = employment_window or (None, None)
+    if (emp_from is not None and prev < emp_from) or (emp_to is not None and prev > emp_to):
+        return None
+    ctx = _resolve_month_wage_context(session, uid_for_wages, settings, prev.replace(day=1), False, user_wages)
+    rates_map = {person_id: ctx.user_rates} if ctx.user_rates else None
+    generated = generate_period_data(
+        prev, prev, person_id, session=session, user_wages=user_wages, user_rates_map=rates_map
+    )
+    if not generated or generated[0].get("holder_user_id") != first_day.get("holder_user_id"):
+        return None
+    ob_overrides = ctx.user_rates.get("ob") if ctx.user_rates else None
+    return _process_day_for_summary(
+        generated[0], get_combined_rules_for_year(prev.year), ctx.base_salary, _throwaway_totals(), ob_overrides
+    )
+
+
 def build_range_breakdown_days(
     start_date,
     end_date,
@@ -101,8 +273,7 @@ def build_range_breakdown_days(
         days = mask_days_to_employment(days, _dt_mod.date.min, employment_end)
 
     ob_overrides = ctx.user_rates.get("ob") if ctx.user_rates else None
-    throwaway = {"total_hours": 0.0, "num_shifts": 0, "ob_hours": {}, "ob_pay": {}, "brutto_pay": 0.0}
-    throwaway.update({k: 0.0 for k in ("oncall_pay", "oncall_hours", "ot_pay", "ot_hours")})
+    throwaway = _throwaway_totals()
 
     days_out = [
         _process_day_for_summary(
@@ -228,6 +399,7 @@ def summarize_month_for_person(
     fetch_tax_table: bool = True,
     payment_year: int | None = None,
     wage_user_id: int | None = None,
+    employment_window: tuple | None = None,
 ) -> dict:
     """
     Detaljerad månadsöversikt för en person.
@@ -240,6 +412,9 @@ def summarize_month_for_person(
         user_wages: Förladdade löner
         year_days: Förgenererad årsdata (optimering)
         wage_user_id: Användar-ID för löneberäkning (om annan än person_id)
+        employment_window: (from, to) the caller masked year_days to, either end None
+            for open. A Nexer month only takes the previous month's last night when
+            that day lies inside it.
 
     Returns:
         Dict med total_hours, num_shifts, ob_hours, ob_pay, brutto/netto, days
@@ -328,8 +503,17 @@ def summarize_month_for_person(
             day_data["parental_leave"] = True
         days_out.append(day_data)
 
+    # Nexer counts OB and overtime on the calendar day worked: the month takes the
+    # after-midnight part of the previous month's last shift and gives away its own.
+    prev_day_data = None
+    if any(rule_set_for(d.get("employer_profile")) == "nexer" for d in days_out):
+        prev_day_data = _previous_day_for_month(
+            session, person_id, uid_for_wages, settings, user_wages, days, month_start_date, employment_window
+        )
+        _count_on_calendar_days(totals, days_out, prev_day_data)
+
     # Aggregate OB/OT hours per calendar day for the per-day breakdown toggle.
-    _attach_calendar_day_breakdown(days_out)
+    _attach_calendar_day_breakdown(days_out + ([prev_day_data] if prev_day_data else []))
 
     # Fetch absence deductions for the month. Absences are stored per USER id
     # (Absence.user_id), so key the lookup on uid_for_wages: identical to
@@ -575,6 +759,7 @@ def build_calendar_grid_for_month(
             year_days=stitched_month_days,
             payment_year=year,
             wage_user_id=wage_user_id,
+            employment_window=_record_window(_month_segments[0][0]),
         )
     elif employment_start is not None or employment_end is not None:
         # employment_start is threaded so the before-employment branch can inject
@@ -602,6 +787,7 @@ def build_calendar_grid_for_month(
             year_days=month_days,
             payment_year=year,
             wage_user_id=wage_user_id,
+            employment_window=(employment_start, employment_end),
         )
     else:
         month_summary = summarize_month_for_person(
@@ -852,7 +1038,10 @@ def _process_day_for_summary(
     # Compute per-calendar-day OT hours for midnight-crossing overtime shifts
     ot_details_data = day.get("ot_details", {})
     ot_hours_by_day: dict = {}
-    if ot_hours > 0 and ot_details_data:
+    if ot_details_data.get("by_day"):
+        # Nexer: already clipped at midnight per row in period.py, every row included.
+        ot_hours_by_day = {d: v["hours"] for d, v in ot_details_data["by_day"].items()}
+    elif ot_hours > 0 and ot_details_data:
         _start_str = str(ot_details_data.get("start_time", ""))
         _end_str = str(ot_details_data.get("end_time", ""))
         if _start_str and _end_str:
@@ -900,10 +1089,12 @@ def _process_day_for_summary(
         "ot_details": day.get("ot_details", {}),
         "start": start,
         "end": end,
+        "segments": day.get("segments"),
         "partial_absence": day.get("partial_absence"),
         "is_substitute": day.get("is_substitute"),
         "substitute_hourly_wage": day.get("substitute_hourly_wage"),
         "vacation_counts": day.get("vacation_counts", True),
+        "employer_profile": day.get("employer_profile"),
     }
 
 
@@ -971,6 +1162,11 @@ def _records_overlapping_work_month(records: list[dict], month_first, month_last
         if record["effective_from"] <= month_last and record_end >= month_first:
             segments.append((record, max(record["effective_from"], month_first), min(record_end, month_last)))
     return segments
+
+
+def _record_window(record: dict) -> tuple:
+    """(effective_from, effective_to) of an employment record, unclamped."""
+    return record["effective_from"], record["effective_to"]
 
 
 def _stitch_user_month_days(
@@ -1255,6 +1451,7 @@ def summarize_year_for_person(
                 year_days=stitched_days,
                 payment_year=mapping["payment_year"],
                 wage_user_id=wage_user_id,
+                employment_window=_record_window(month_segments[0][0]),
             )
         else:
             # Summarised on the WORK month, not the payment month. The rate lookup and
@@ -1569,6 +1766,8 @@ def build_month_position_summaries(
                 year_days=month_days,
                 fetch_tax_table=fetch_tax_table,
                 payment_year=year,
+                wage_user_id=seg["user_id"] if seg is not None else None,
+                employment_window=(seg["effective_from"], seg["effective_to"]) if seg is not None else None,
             )
             if seg is not None:
                 summary["person_name"] = seg["name"]

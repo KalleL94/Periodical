@@ -9,8 +9,8 @@ import datetime
 
 import pytest
 
+from app.core.oncall import ONCALL_GROUP_BY_CODE
 from app.core.rates import (
-    DEFAULT_ONCALL_RATES,
     DEFAULT_VACATION_RATES,
     _resolve_rates,
     add_new_rates,
@@ -18,6 +18,7 @@ from app.core.rates import (
     get_all_defaults,
     get_rate_history,
     get_user_rates,
+    profile_oncall_rates,
     update_rate_history_value,
 )
 from app.core.utils import get_today
@@ -47,7 +48,7 @@ class TestResolveRates:
         r = _resolve_rates({})
         assert r["ob"] == {}
         assert r["ot"] is None
-        assert r["oncall"] == DEFAULT_ONCALL_RATES
+        assert r["oncall"] == profile_oncall_rates("ica", get_today())
         assert r["vacation"] == DEFAULT_VACATION_RATES
         assert r["sick"] == {"ob_compensation": False}
 
@@ -55,7 +56,7 @@ class TestResolveRates:
         r = _resolve_rates({"oncall": {"OC_WEEKDAY": 80}})
         assert r["oncall"]["OC_WEEKDAY"] == 80
         # Unspecified on-call keys still fall back to the system default.
-        assert r["oncall"]["OC_WEEKEND"] == DEFAULT_ONCALL_RATES["OC_WEEKEND"]
+        assert r["oncall"]["OC_WEEKEND"] == profile_oncall_rates("ica", get_today())["OC_WEEKEND"]
 
     def test_sick_ob_compensation_coerced_to_bool(self):
         assert _resolve_rates({"sick": {"ob_compensation": 1}})["sick"]["ob_compensation"] is True
@@ -72,7 +73,7 @@ class TestGetAllDefaults:
         defaults = get_all_defaults()
         defaults["oncall"]["OC_WEEKDAY"] = 999
         # Mutating the returned dict must not corrupt the module-level default.
-        assert DEFAULT_ONCALL_RATES["OC_WEEKDAY"] != 999
+        assert get_all_defaults()["oncall"]["OC_WEEKDAY"] != 999
 
     def test_contains_expected_sections(self):
         assert set(get_all_defaults()) == {"ob_divisors", "ot_divisor", "oncall", "vacation"}
@@ -85,7 +86,7 @@ class TestGetUserRates:
 
     def test_none_custom_rates_resolves_to_defaults(self, test_db):
         user = _make_user(test_db, custom_rates=None)
-        assert get_user_rates(user)["oncall"] == DEFAULT_ONCALL_RATES
+        assert get_user_rates(user)["oncall"] == profile_oncall_rates("ica", get_today())
 
     def test_temporal_query_returns_record_effective_on_date(self, test_db):
         user = _make_user(test_db)
@@ -337,5 +338,58 @@ class TestUpdateRateHistoryValue:
 def test_resolve_rates_handles_falsy_sections(invalid):
     # ob/oncall/vacation given as None or {} must still resolve cleanly.
     r = _resolve_rates({"ob": invalid, "oncall": invalid, "vacation": invalid})
-    assert r["oncall"] == DEFAULT_ONCALL_RATES
+    assert r["oncall"] == profile_oncall_rates("ica", get_today())
     assert r["vacation"] == DEFAULT_VACATION_RATES
+
+
+def test_ica_oncall_rate_dated():
+    assert profile_oncall_rates("ica", datetime.date(2026, 4, 30))["OC_WEEKEND_SAT"] == 97
+    assert profile_oncall_rates("ica", datetime.date(2026, 5, 1))["OC_WEEKEND_SAT"] == 100
+    assert profile_oncall_rates("ica", datetime.date(2026, 5, 1))["OC_SPECIAL"] == 198
+    assert profile_oncall_rates("ica", datetime.date(2026, 5, 1))["OC_NATIONALDAGEN"] == 116
+
+
+def test_agiremus_keeps_old_rates():
+    assert profile_oncall_rates("agiremus", datetime.date(2026, 6, 1))["OC_WEEKDAY"] == 75
+
+
+def test_experis_follows_ica_table():
+    assert profile_oncall_rates("experis", datetime.date(2026, 6, 1)) == profile_oncall_rates(
+        "ica", datetime.date(2026, 6, 1)
+    )
+
+
+def test_nexer_has_no_fixed_rates():
+    assert profile_oncall_rates("nexer", datetime.date(2026, 6, 1)) == {}
+
+
+def test_unknown_profile_falls_back_to_ica():
+    assert profile_oncall_rates("bogus", datetime.date(2026, 6, 1)) == profile_oncall_rates(
+        "ica", datetime.date(2026, 6, 1)
+    )
+
+
+def test_custom_oncall_rate_still_wins(test_db, test_user):
+    test_user.custom_rates = {"oncall": {"OC_WEEKDAY": 50}}
+    r = get_user_rates(test_user, effective_date=datetime.date(2026, 6, 1))
+    assert r["oncall"]["OC_WEEKDAY"] == 50 and r["oncall"]["OC_WEEKEND_SAT"] == 100 and r["profile"] == "ica"
+
+
+def test_rate_history_record_gets_profile_rates_for_its_date(test_db):
+    user = _make_user(test_db)
+    user.employer_profile = "agiremus"
+    test_db.add(RateHistory(user_id=user.id, rates={"ot": 70}, effective_from=datetime.date(2026, 1, 1)))
+    test_db.commit()
+    r = get_user_rates(user, test_db, datetime.date(2026, 6, 1))
+    assert r["ot"] == 70 and r["oncall"]["OC_WEEKEND_SAT"] == 97 and r["profile"] == "agiremus"
+
+
+def test_get_all_defaults_reports_todays_ica_rates():
+    assert get_all_defaults()["oncall"] == profile_oncall_rates("ica", get_today())
+
+
+def test_oncall_group_map_keeps_ica_grouping():
+    assert ONCALL_GROUP_BY_CODE["OC_HOLIDAY_EVE"] == "oc_helgdag"
+    assert ONCALL_GROUP_BY_CODE["OC_NATIONALDAGEN"] == "oc_helgdag"
+    assert ONCALL_GROUP_BY_CODE["OC_WEEKEND_MON"] == "oc_helg"
+    assert set(ONCALL_GROUP_BY_CODE.values()) == {"oc_vardag", "oc_helg", "oc_helgdag", "oc_storhelg"}

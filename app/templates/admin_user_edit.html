@@ -84,6 +84,22 @@
         </form>
     </div>
 
+    <!-- Employer profile -->
+    <div class="card card-mt">
+        <form method="POST" action="/admin/users/{{ edit_user.id }}/set-employer-profile" id="admin-employer-profile-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-group">
+                <label for="employer_profile" class="form-label">{{ t.admin_employer_profile_label }}</label>
+                <select id="employer_profile" name="employer_profile" class="form-input">
+                    {% for value, label in [('ica', 'ICA'), ('agiremus', 'Agiremus'), ('nexer', 'Nexer'), ('experis', 'Experis')] %}
+                    <option value="{{ value }}" {% if edit_user.employer_profile == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ t.admin_save }}</button>
+        </form>
+    </div>
+
     <!-- Wage History -->
     <div class="card card-mt">
         <h3 class="form-card-title">{{ t.admin_wage_history }}</h3>
