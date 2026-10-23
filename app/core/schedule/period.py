@@ -1734,14 +1734,17 @@ def _primary_ot_row(ot_rows):
 
 
 def _compute_overtime_pay(
-    ot_rows, current_day, person_id, session, settings, ot_rate_override
+    ot_rows, current_day, person_id, session, settings, ot_rate_override, profile: str = "ica"
 ) -> tuple[float, float, dict]:
     """Overtime pay/hours/details for a day, using the historical wage for the date.
 
     Sums every kind == "ot" row; extra-time rows are worked time, not overtime, and
     are priced through the segment list instead.
     """
-    from .wages import get_ot_hourly_rate_from_stored_wage, get_user_wage
+    from app.database.database import WageType
+
+    from .overtime import nexer_overtime_pay
+    from .wages import _get_wage_type, get_ot_hourly_rate_from_stored_wage, get_user_wage
 
     wage_for_date = get_user_wage(session, person_id, settings.monthly_salary, effective_date=current_day)
     hourly_rate = (
@@ -1754,6 +1757,16 @@ def _compute_overtime_pay(
         return 0.0, 0.0, {}
     ot_hours = sum(r.hours for r in ot_rows if r.kind == "ot")
     ot_pay = hourly_rate * ot_hours
+    if (
+        ot_rate_override is None
+        and ot_hours
+        and rule_set_for(profile) == "nexer"
+        and _get_wage_type(session, person_id) != WageType.HOURLY
+    ):
+        ot_pay = sum(
+            nexer_overtime_pay(wage_for_date, *parse_ot_times(r, current_day)) for r in ot_rows if r.kind == "ot"
+        )
+        hourly_rate = ot_pay / ot_hours
     ot_details = {
         "start_time": str(primary.start_time),
         "end_time": str(primary.end_time),
@@ -1951,7 +1964,7 @@ def _populate_single_person_day(
     if ot_rows and not is_vacation_day:
         if settings is not None:
             ot_pay, ot_hours, ot_details = _compute_overtime_pay(
-                ot_rows, current_day, person_id, session, settings, _person_rates.get("ot")
+                ot_rows, current_day, person_id, session, settings, _person_rates.get("ot"), _profile
             )
 
         # Ersätt skift med OT för visning, men bara för ett inkallat pass. Display,

@@ -5,6 +5,7 @@ Overtime shift management routes - add and delete overtime shifts.
 
 from datetime import date as date_cls
 from datetime import time as time_cls
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
@@ -12,13 +13,16 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
+from app.core.oncall import rule_set_for
 from app.core.schedule import (
     calculate_overtime_pay,
     clear_schedule_cache,
     get_ot_hourly_rate_from_stored_wage,
     get_user_wage,
 )
-from app.database.database import OvertimeShift, User, get_db
+from app.core.schedule.overtime import nexer_overtime_pay
+from app.core.time_utils import parse_ot_times
+from app.database.database import OvertimeShift, User, WageType, get_db
 
 router = APIRouter(prefix="/overtime", tags=["overtime"])
 
@@ -123,6 +127,16 @@ async def add_overtime_shift(
             if rates.get("ot") is not None
             else get_ot_hourly_rate_from_stored_wage(session, user_id, raw_wage)
         )
+        if (
+            kind == "ot"
+            and rates.get("ot") is None
+            and ot_user
+            and rule_set_for(ot_user.employer_profile) == "nexer"
+            and ot_user.wage_type != WageType.HOURLY
+        ):
+            return nexer_overtime_pay(
+                raw_wage, *parse_ot_times(SimpleNamespace(start_time=start_time, end_time=end_time), ot_date)
+            )
         return calculate_overtime_pay(raw_wage, hours, ot_hourly_rate=rate)
 
     def _row_for(ot_date):
