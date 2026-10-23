@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 import app.database.database as db_module
 from app.auth.auth import create_access_token
+from app.core.rates import get_user_rates
 from app.core.schedule import (
     build_week_data,
     clear_schedule_cache,
@@ -2664,12 +2665,15 @@ def test_single_person_year_shows_pre_swap_ot_and_oncall(month_env):
     client, session = month_env
     admin, _, okan, ot_date, oc_date = _seed_okan_rickard_swap_with_pre_swap_entries(session)
 
+    # The route prices the month with Okan's own rates, which carry the dated
+    # on-call amounts, so the reference must too.
+    sep_rates = {8: get_user_rates(okan, session=session, effective_date=datetime.date(2026, 9, 1))}
     sep_ref = summarize_month_for_person(
         2026,
         9,
         8,
         session=session,
-        year_days=generate_month_data(2026, 9, 8, session=session),
+        year_days=generate_month_data(2026, 9, 8, session=session, user_rates_map=sep_rates),
         wage_user_id=okan.id,
         payment_year=2026,
     )

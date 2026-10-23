@@ -63,6 +63,25 @@ oncall_rules_base = load_oncall_rules()
 RATE_STORHELG = 192
 RATE_RED_DAY = 112
 
+# On-call rule code -> payslip column slot. One map for the payslip, the payslip
+# import and the per-profile rate table. The slots are positions, not labels:
+# Nexer's night tier sits in oc_helg and its weekend tier in oc_helgdag.
+ONCALL_GROUP_BY_CODE: dict[str, str] = {
+    "OC_WEEKDAY": "oc_vardag",
+    "OC_WEEKEND": "oc_helg",
+    "OC_WEEKEND_SAT": "oc_helg",
+    "OC_WEEKEND_SUN": "oc_helg",
+    "OC_WEEKEND_MON": "oc_helg",
+    "OC_HOLIDAY_EVE": "oc_helgdag",
+    "OC_HOLIDAY": "oc_helgdag",
+    "OC_NATIONALDAGEN": "oc_helgdag",
+    "OC_SPECIAL": "oc_storhelg",
+    "NX_WEEKDAY": "oc_vardag",
+    "NX_NIGHT": "oc_helg",
+    "NX_WEEKEND": "oc_helgdag",
+    "NX_SPECIAL": "oc_storhelg",
+}
+
 # Replacement priorities. The highest-priority rule covering an hour wins outright.
 PRIORITY_NATIONALDAGEN = 6
 PRIORITY_STORHELG = 5

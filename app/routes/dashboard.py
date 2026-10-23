@@ -192,7 +192,7 @@ async def read_root(
     next_month_url = f"/?month={next_m}&year={next_m_y}"
 
     user_wage = get_effective_monthly_wage(db, current_user.id)
-    _user_rates = get_user_rates(current_user, session=db)
+    _user_rates = get_user_rates(current_user, session=db, effective_date=view_week_monday)
     show_salary = can_see_salary(current_user, current_user.id)
 
     # Build the viewed week on the canonical period path, the same one the month and

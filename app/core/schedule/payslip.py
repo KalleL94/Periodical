@@ -11,20 +11,8 @@ be compared category by category.
 
 from dataclasses import dataclass, field
 
+from app.core.oncall import ONCALL_GROUP_BY_CODE
 from app.core.schedule.wages import _MONTHLY_HOURS
-
-# On-call rule codes grouped the way a payslip lists them.
-_OC_TO_GROUP = {
-    "OC_WEEKDAY": "oc_vardag",
-    "OC_WEEKEND": "oc_helg",
-    "OC_WEEKEND_SAT": "oc_helg",
-    "OC_WEEKEND_SUN": "oc_helg",
-    "OC_WEEKEND_MON": "oc_helg",
-    "OC_HOLIDAY": "oc_helgdag",
-    "OC_HOLIDAY_EVE": "oc_helgdag",
-    "OC_NATIONALDAGEN": "oc_helgdag",
-    "OC_SPECIAL": "oc_storhelg",
-}
 
 # Row order on the rendered payslip. The translation key is resolved in the
 # template so the labels stay in translations.py with all other user-facing text.
@@ -143,7 +131,7 @@ def _aggregate_days(days: list[dict]) -> dict[str, dict]:
     """
     agg = {
         k: {"hours": 0.0, "pay": 0.0}
-        for k in ("norm", "OB1", "OB2", "OB3", "OB4", "OB5", *set(_OC_TO_GROUP.values()), "ot")
+        for k in ("norm", "OB1", "OB2", "OB3", "OB4", "OB5", *set(ONCALL_GROUP_BY_CODE.values()), "ot")
     }
     for d in days:
         shift = d.get("shift")
@@ -161,7 +149,7 @@ def _aggregate_days(days: list[dict]) -> dict[str, dict]:
                 agg[code]["pay"] += ob_p.get(code, 0.0) or 0.0
 
         oc_bd = (d.get("oncall_details") or {}).get("breakdown", {}) or {}
-        for oc_code, group in _OC_TO_GROUP.items():
+        for oc_code, group in ONCALL_GROUP_BY_CODE.items():
             entry = oc_bd.get(oc_code) or {}
             agg[group]["hours"] += entry.get("hours", 0.0) or 0.0
             agg[group]["pay"] += entry.get("pay", 0.0) or 0.0

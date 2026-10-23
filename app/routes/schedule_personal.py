@@ -145,7 +145,9 @@ async def show_day_for_person(
         else current_user
     )
     _user_rates = (
-        get_user_rates(_rate_user, session=db, effective_date=date_obj) if _rate_user else get_user_rates(current_user)
+        get_user_rates(_rate_user, session=db, effective_date=date_obj)
+        if _rate_user
+        else get_user_rates(current_user, effective_date=date_obj)
     )
 
     # === Canonical shift resolution (issue #206) ===

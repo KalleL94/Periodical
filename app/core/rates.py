@@ -10,6 +10,8 @@ from __future__ import annotations
 import datetime
 
 from app.core.constants import OT_RATE_DIVISOR
+from app.core.oncall import ONCALL_GROUP_BY_CODE
+from app.core.utils import get_today
 
 # --- System defaults ---
 DEFAULT_OB_DIVISORS: dict[str, int] = {
@@ -20,16 +22,29 @@ DEFAULT_OB_DIVISORS: dict[str, int] = {
     "OB5": 150,
 }
 
-DEFAULT_ONCALL_RATES: dict[str, int] = {
-    "OC_WEEKDAY": 75,
-    "OC_WEEKEND": 97,
-    "OC_WEEKEND_SAT": 97,
-    "OC_WEEKEND_SUN": 97,
-    "OC_WEEKEND_MON": 97,
-    "OC_HOLIDAY_EVE": 97,
-    "OC_HOLIDAY": 112,
-    "OC_SPECIAL": 192,
+# On-call kr/h per payslip column slot, dated per employer profile. Each entry
+# holds from its date until the next one. Nexer has no fixed amounts: its rules
+# carry divisors on the monthly salary instead.
+_ICA_ONCALL = [
+    (datetime.date(2000, 1, 1), {"oc_vardag": 75, "oc_helg": 97, "oc_helgdag": 112, "oc_storhelg": 192}),
+    (datetime.date(2026, 5, 1), {"oc_vardag": 78, "oc_helg": 100, "oc_helgdag": 116, "oc_storhelg": 198}),
+]
+ONCALL_RATES_BY_PROFILE: dict[str, list[tuple[datetime.date, dict[str, int]]]] = {
+    "ica": _ICA_ONCALL,
+    "agiremus": [
+        (datetime.date(2000, 1, 1), {"oc_vardag": 75, "oc_helg": 97, "oc_helgdag": 112, "oc_storhelg": 192}),
+    ],
+    "experis": _ICA_ONCALL,
+    "nexer": [],
 }
+
+
+def profile_oncall_rates(profile: str, on_date: datetime.date) -> dict[str, int]:
+    """Per-code on-call kr/h for a profile on a date. Unknown profiles price as ICA."""
+    entries = ONCALL_RATES_BY_PROFILE.get(profile, ONCALL_RATES_BY_PROFILE["ica"])
+    by_group = next((rates for start, rates in reversed(entries) if start <= on_date), {})
+    return {code: by_group[group] for code, group in ONCALL_GROUP_BY_CODE.items() if group in by_group}
+
 
 DEFAULT_VACATION_RATES: dict[str, float] = {
     "fixed_pct": 0.008,
@@ -44,13 +59,20 @@ DEFAULT_VACATION_RATES: dict[str, float] = {
 DEFAULT_OT_DIVISOR: int = OT_RATE_DIVISOR  # 72
 
 
-def _resolve_rates(custom: dict) -> dict:
-    """Convert a raw custom_rates JSON dict into resolved rates."""
+def _resolve_rates(custom: dict, profile: str = "ica", on_date: datetime.date | None = None) -> dict:
+    """Convert a raw custom_rates JSON dict into resolved rates.
+
+    on_date picks the profile's on-call amounts. None means today's agreement, so a
+    caller pricing a past period must pass a date inside that period.
+    """
+    if on_date is None:
+        on_date = get_today()
     sick_raw = custom.get("sick") or {}
     return {
+        "profile": profile,
         "ob": custom.get("ob") or {},
         "ot": custom.get("ot"),
-        "oncall": {**DEFAULT_ONCALL_RATES, **(custom.get("oncall") or {})},
+        "oncall": {**profile_oncall_rates(profile, on_date), **(custom.get("oncall") or {})},
         "vacation": {**DEFAULT_VACATION_RATES, **(custom.get("vacation") or {})},
         "sick": {"ob_compensation": bool(sick_raw.get("ob_compensation", False))},
     }
@@ -62,11 +84,13 @@ def get_user_rates(user, session=None, effective_date: datetime.date | None = No
     Args:
         user: User model instance
         session: SQLAlchemy session (needed for temporal queries)
-        effective_date: Date to query rates for. None = current rates from User.custom_rates.
+        effective_date: Date to query rates for. None = current rates from User.custom_rates
+            and today's on-call agreement for the user's employer profile.
 
     Returns:
-        {"ob": {}, "ot": None, "oncall": {...}, "vacation": {...}}
+        {"profile": str, "ob": {}, "ot": None, "oncall": {...}, "vacation": {...}, "sick": {...}}
     """
+    profile = getattr(user, "employer_profile", None) or "ica"
     if effective_date is not None and session is not None:
         from app.database.database import RateHistory
 
@@ -85,11 +109,11 @@ def get_user_rates(user, session=None, effective_date: datetime.date | None = No
         )
 
         if record:
-            return _resolve_rates(record.rates or {})
+            return _resolve_rates(record.rates or {}, profile, effective_date)
 
     # Fallback: current rates from User model
     custom = getattr(user, "custom_rates", None) or {}
-    return _resolve_rates(custom)
+    return _resolve_rates(custom, profile, effective_date)
 
 
 def add_new_rates(session, user_id: int, rates: dict, effective_from: datetime.date, created_by: int | None = None):
@@ -248,10 +272,10 @@ def delete_rate_history(session, rate_id: int, user_id: int):
 
 
 def get_all_defaults() -> dict:
-    """Return all default rates for display in UI."""
+    """Return all default rates for display in UI. On-call shows today's ICA amounts."""
     return {
         "ob_divisors": dict(DEFAULT_OB_DIVISORS),
         "ot_divisor": DEFAULT_OT_DIVISOR,
-        "oncall": dict(DEFAULT_ONCALL_RATES),
+        "oncall": profile_oncall_rates("ica", get_today()),
         "vacation": dict(DEFAULT_VACATION_RATES),
     }
