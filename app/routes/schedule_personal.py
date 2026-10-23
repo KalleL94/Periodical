@@ -783,6 +783,7 @@ async def show_range_for_person(
             "storhelg_dates": storhelg_dates,
             "holiday_dates": holiday_dates,
             "breakdown_days": breakdown_days,
+            "employer_profile": target_user.employer_profile if target_user is not None else "ica",
         },
     )
 

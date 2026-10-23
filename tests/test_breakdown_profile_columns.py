@@ -6,7 +6,7 @@ import pytest
 
 from app.core.oncall import ONCALL_COLUMN_LABELS, oncall_hours_by_group, oncall_pay_by_group
 from app.core.schedule import clear_schedule_cache
-from app.database.database import OnCallOverride, OnCallOverrideType, RotationEra, User
+from app.database.database import OnCallOverride, OnCallOverrideType, PersonHistory, RotationEra, User
 from tests.conftest import _ROTATION_ERA_PATTERN
 from tests.test_employer_profile import _login
 
@@ -82,3 +82,25 @@ def test_ica_month_keeps_its_labels(test_client, test_db, oc_user):
     for label in ("B.Vardag(75)", "B.Helg(97)", "B.Helgdag(112)", "B.Storhelg(192)"):
         assert label in html
     assert "B.Natt" not in html
+
+
+def test_range_view_uses_the_profile_labels(test_client, test_db, oc_user, admin_user):
+    from app.auth.auth import create_access_token
+
+    test_db.query(User).filter_by(id=1).update({"employer_profile": "nexer"})
+    test_db.add(
+        PersonHistory(
+            user_id=1,
+            person_id=1,
+            name="Test User",
+            username="testuser",
+            is_active=True,
+            effective_from=datetime.date(2026, 1, 2),
+        )
+    )
+    test_db.commit()
+    clear_schedule_cache()
+    test_client.cookies.set("access_token", f"Bearer {create_access_token(data={'sub': str(admin_user.id)})}")
+    r = test_client.get("/range/1?weeks=3&from=2026-07-01")
+    assert r.status_code == 200
+    assert "B.Natt" in r.text

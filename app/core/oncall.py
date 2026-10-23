@@ -110,6 +110,29 @@ ONCALL_COLUMN_LABELS: dict[str, dict[str, str]] = {
 }
 
 
+_CSV_ICA_OB = ["Kväll 150", "Natt 151", "Helg 152", "Storhelg 153"]
+_CSV_ICA_OC = ["Beredskap Vardag 75", "Beredskap Helg 97", "Beredskap Helgdag 112", "Beredskap Storhelg 192"]
+_CSV_PLAIN_OC = ["Beredskap Vardag", "Beredskap Helg", "Beredskap Helgdag", "Beredskap Storhelg"]
+
+# (OB headers, on-call headers) per profile for the breakdown CSV. Four OB headers
+# mean OB3 and OB4 share one column, five mean one column per OB level.
+_CSV_PROFILE_COLUMNS: dict[str, tuple[list[str], list[str]]] = {
+    "ica": (_CSV_ICA_OB, _CSV_ICA_OC),
+    "agiremus": (["OB1(x1,12)", "OB2(x1,18)", "OB3(x1,24)", "OB4(x1,24)", "OB5(x1,47)"], _CSV_ICA_OC),
+    "nexer": (
+        ["OB Kväll", "OB Natt", "OB Helg", "OB Helgdag", "OB Storhelg"],
+        ["Beredskap Vardag", "Beredskap Natt", "Beredskap Helg", "Beredskap Storhelg"],
+    ),
+    "experis": (["OB Kväll", "OB Natt", "OB Helg", "OB Storhelg"], _CSV_PLAIN_OC),
+}
+
+
+def breakdown_csv_headers(profile: str | None) -> list[str]:
+    """Header row of the breakdown CSV for an employer profile."""
+    ob, oc = _CSV_PROFILE_COLUMNS.get(profile or "ica", _CSV_PROFILE_COLUMNS["ica"])
+    return ["Datum", "Veckodag", "Passtyp", "Start", "Slut", "Vanliga timmar", *ob, *oc, "Övertid"]
+
+
 def _by_group(breakdown: dict, field: str) -> dict[str, float]:
     out = dict.fromkeys(("oc_vardag", "oc_helg", "oc_helgdag", "oc_storhelg"), 0)
     for code, entry in (breakdown or {}).items():
