@@ -46,6 +46,16 @@ def profile_oncall_rates(profile: str, on_date: datetime.date) -> dict[str, int]
     return {code: by_group[group] for code, group in ONCALL_GROUP_BY_CODE.items() if group in by_group}
 
 
+def day_oncall_rates(rates: dict | None, day: datetime.date) -> dict[str, int | float]:
+    """On-call kr/h for one day: the profile's dated amounts under the user's own overrides.
+
+    rates is a get_user_rates() result or None. None prices as ICA, so callers that
+    build no rates map still follow the dated agreement.
+    """
+    rates = rates or {}
+    return {**profile_oncall_rates(rates.get("profile") or "ica", day), **(rates.get("oncall_custom") or {})}
+
+
 DEFAULT_VACATION_RATES: dict[str, float] = {
     "fixed_pct": 0.008,
     "variable_pct": 0.005,
@@ -73,6 +83,8 @@ def _resolve_rates(custom: dict, profile: str = "ica", on_date: datetime.date | 
         "ob": custom.get("ob") or {},
         "ot": custom.get("ot"),
         "oncall": {**profile_oncall_rates(profile, on_date), **(custom.get("oncall") or {})},
+        # Pricing goes per day through day_oncall_rates(), which needs the overrides alone.
+        "oncall_custom": dict(custom.get("oncall") or {}),
         "vacation": {**DEFAULT_VACATION_RATES, **(custom.get("vacation") or {})},
         "sick": {"ob_compensation": bool(sick_raw.get("ob_compensation", False))},
     }
@@ -88,7 +100,8 @@ def get_user_rates(user, session=None, effective_date: datetime.date | None = No
             and today's on-call agreement for the user's employer profile.
 
     Returns:
-        {"profile": str, "ob": {}, "ot": None, "oncall": {...}, "vacation": {...}, "sick": {...}}
+        {"profile": str, "ob": {}, "ot": None, "oncall": {...}, "oncall_custom": {...},
+         "vacation": {...}, "sick": {...}}
     """
     profile = getattr(user, "employer_profile", None) or "ica"
     if effective_date is not None and session is not None:

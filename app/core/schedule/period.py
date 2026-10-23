@@ -10,6 +10,7 @@ from typing import NamedTuple
 from app.core.constants import PERSON_IDS, placeholder_person_name
 from app.core.oncall import _cached_oncall_rules as get_oncall_rules
 from app.core.oncall import calculate_oncall_pay, calculate_oncall_pay_for_period
+from app.core.rates import day_oncall_rates
 from app.core.time_utils import parse_ot_times
 from app.database.database import (
     Absence,
@@ -1849,10 +1850,9 @@ def _populate_single_person_day(
 
     # Calculate on-call pay
     _person_rates = (user_rates_map or {}).get(person_id) or {}
+    _oc_rates = day_oncall_rates(_person_rates, current_day)
     oncall_pay, oncall_details = (
-        _compute_oncall_pay(
-            shift, current_day, person_id, user_wages, settings, _person_rates.get("oncall"), oncall_override
-        )
+        _compute_oncall_pay(shift, current_day, person_id, user_wages, settings, _oc_rates, oncall_override)
         if settings is not None
         else (0.0, {})
     )
@@ -1880,7 +1880,7 @@ def _populate_single_person_day(
             user_wages,
             person_id,
             settings,
-            oncall_rate_overrides=_person_rates.get("oncall"),
+            oncall_rate_overrides=_oc_rates,
             oncall_override=oncall_override,
         )
 
@@ -1908,13 +1908,12 @@ def _populate_single_person_day(
             from app.core.oncall import apply_oncall_hours_override
 
             _oc_rules = _get_oc_rules(current_day.year)
-            _person_oc_rates = (_person_rates or {}).get("oncall")
             oncall_pay, oncall_details = apply_oncall_hours_override(
                 day_pay_override.oncall_hours_override,
                 oncall_details.get("breakdown", {}),
                 user_wages.get(person_id, settings.monthly_salary),
                 _oc_rules,
-                _person_oc_rates,
+                _oc_rates,
             )
         if day_pay_override.ob_hours_override:
             ob_hours_override = day_pay_override.ob_hours_override
