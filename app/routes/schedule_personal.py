@@ -15,10 +15,9 @@ from app.auth.auth import get_current_user_optional
 from app.core.helpers import can_see_salary, strip_salary_data, strip_year_summary
 from app.core.holidays import get_holiday_dates_for_year
 from app.core.oncall import (
-    _cached_oncall_rules as _get_oncall_rules,
-)
-from app.core.oncall import (
     _get_storhelg_dates_for_year,
+    get_oncall_rules,
+    rule_set_for,
 )
 from app.core.schedule import (
     _cached_special_rules,
@@ -322,7 +321,7 @@ async def show_day_for_person(
     show_salary = can_see_salary(current_user, user_id_for_wages)
 
     # Build deduplicated ordered list of all on-call type codes+labels for the override form
-    _all_oc_rules = _get_oncall_rules(year)
+    _all_oc_rules = get_oncall_rules(year, rule_set_for(_user_rates.get("profile")))
     seen_oc_codes: set[str] = set()
     all_oncall_types: list[dict] = []
     for _r in sorted(_all_oc_rules, key=lambda r: r.priority):
