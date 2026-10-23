@@ -240,6 +240,7 @@ button.secondary:hover, .btn.secondary:hover, .btn-secondary:hover {
 
 /* Forms & Inputs */
 input, select {
+  color-scheme: dark;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--table-border);
@@ -247,6 +248,9 @@ input, select {
   border-radius: 6px;
 }
 
+
+/* Native dropdown lists ignore the select's own colours in some browsers. */
+select option { background: var(--panel); color: var(--text); }
 
 .form-shell { width: 100%; max-width: 500px; }
 .form-shell--md { max-width: 700px; }
