@@ -62,7 +62,14 @@ def test_header_tables():
 
 @pytest.mark.parametrize(
     "profile,headers_key,split",
-    [("nexer", "nexer", True), ("ica", "ica", False), ("agiremus", "agiremus", False), ("experis", "experis", False)],
+    [
+        ("nexer", "nexer", True),
+        ("ica", "ica", False),
+        ("agiremus", "agiremus", False),
+        ("experis", "experis", False),
+        # An unknown stored profile falls back to the ICA headers.
+        ("bogus", "ica", False),
+    ],
 )
 def test_personal_export_picks_profile_headers(
     test_client, test_db, test_user, monkeypatch, profile, headers_key, split

@@ -1048,6 +1048,8 @@ async def export_month_excel(
     ws = wb.active
     ws.title = f"{year}-{month:02d}"
     profile = (target_user.employer_profile if target_user is not None else None) or "ica"
+    if profile not in EXCEL_HEADERS_BY_PROFILE:
+        profile = "ica"  # An unknown stored value exports like the default.
     populate_month_sheet(
         ws,
         days_in_month,
