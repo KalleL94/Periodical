@@ -926,6 +926,7 @@ async def show_month_for_person(
             "jump_options": get_jump_options("month", date(year, month, 1)),
             "person_id": person_id,
             "person_name": person_name,
+            "employer_profile": target_user.employer_profile if target_user is not None else "ica",
             "days": days_in_month,
             "success": success,
             # The drawer renders the day page's edit partial against a calendar

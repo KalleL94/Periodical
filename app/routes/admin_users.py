@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_admin_user, get_password_hash, get_user_by_username, set_password
 from app.core.request_logging import log_auth_event
 from app.core.schedule import clear_schedule_cache
-from app.database.database import Passkey, User, UserRole, WageType, get_db, utcnow
+from app.database.database import EmployerProfile, Passkey, User, UserRole, WageType, get_db, utcnow
 from app.routes.shared import _parse_rates_form, render
 
 logger = logging.getLogger(__name__)
@@ -288,6 +288,24 @@ async def admin_set_wage_type(
     if not edit_user:
         raise HTTPException(status_code=404, detail="User not found")
     edit_user.wage_type = WageType.HOURLY if wage_type == "hourly" else WageType.MONTHLY
+    db.commit()
+    clear_schedule_cache()
+    return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)
+
+
+@router.post("/admin/users/{user_id}/set-employer-profile", name="admin_set_employer_profile")
+async def admin_set_employer_profile(
+    user_id: int,
+    employer_profile: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Admin: set which employer's pay rules apply to a user."""
+    if employer_profile not in {p.value for p in EmployerProfile}:
+        raise HTTPException(status_code=400, detail="Unknown employer profile")
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    edit_user.employer_profile = employer_profile
     db.commit()
     clear_schedule_cache()
     return RedirectResponse(url=f"/admin/users/{user_id}", status_code=302)

@@ -14,8 +14,8 @@ class TestBreakdownCsvExport:
         html = response.text
         assert 'id="breakdown-csv"' in html
         assert "exportBreakdownCsv" in html
-        # The Excel export must stay untouched for the positions that have it.
-        assert "export-excel" in html or test_user.id not in (6, 8)
+        # The Excel export is offered to every salary viewer.
+        assert "export-excel" in html
 
         # Optional dump for manual browser verification of the JS export.
         dump = os.environ.get("BREAKDOWN_HTML_DUMP")

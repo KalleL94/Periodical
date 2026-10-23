@@ -228,13 +228,11 @@
         <a class="btn secondary" href="/month/{{ person_id }}/payslip?year={{ year }}&month={{ month }}">
             {{ t.payslip_link }}
         </a>
-        {% if person_id in (6, 8) %}
         <a class="btn secondary"
            href="/month/{{ person_id }}/export-excel?year={{ year }}&month={{ month }}"
            download>
             {{ t.month_export_excel }}
         </a>
-        {% endif %}
     </div>
     {% with bd_days = days.days,
             bd_csv_filename = (person_name or ('person-' ~ person_id)) | replace(' ', '_') ~ '_' ~ year ~ '-' ~ '%02d'|format(month) %}
