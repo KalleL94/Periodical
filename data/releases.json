@@ -1,5 +1,41 @@
 [
   {
+    "version": "1.13.0",
+    "date": "2026-10-23",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Varje person har nu en arbetsgivarprofil som styr hur beredskap och övertid räknas och vad kolumnerna heter. Profilen sätts av en admin.",
+        "en": "Each person now has an employer profile that decides how on-call and overtime are calculated and what the columns are called. An admin sets the profile."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Excel-exporten finns för alla, med rubriker som passar din arbetsgivare.",
+        "en": "The Excel export is available to everyone, with headers that match your employer."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Beredskapen räknas efter de regler som gäller hos din arbetsgivare, och övertiden efter tid på dygnet där det gäller.",
+        "en": "On-call is calculated by the rules that apply at your employer, and overtime by time of day where that applies."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Månadsexporten som CSV låter dig välja format: svensk Excel (semikolon och decimalkomma) eller standard. Veckodag och passtyp är nya kolumner.",
+        "en": "The month CSV export lets you choose the format: Swedish Excel (semicolon and decimal comma) or standard. Weekday and shift type are new columns."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Beredskapsersättningen hos ICA höjdes från 1 maj 2026 och räknas nu med rätt belopp för varje dag.",
+        "en": "The ICA on-call rates went up on 1 May 2026 and each day is now calculated with the correct amount."
+      },
+      {
+        "type": "fix",
+        "sv": "Beredskap som delats av övertid räknades inte med samma regler som en hel dag. Nu får timmarna samma pris.",
+        "en": "On-call that was split by overtime was not priced by the same rules as a full day. The hours now get the same price."
+      }
+    ]
+  },
+  {
     "version": "1.12.0",
     "date": "2026-09-25",
     "entries": [
