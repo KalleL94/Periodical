@@ -965,7 +965,7 @@ async def export_month_excel(
     import openpyxl
 
     from app.core.schedule.summary import summarize_month_for_person
-    from app.routes.excel_shared import populate_month_sheet
+    from app.routes.excel_shared import EXCEL_HEADERS_BY_PROFILE, populate_month_sheet
 
     if current_user is None:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
@@ -1047,7 +1047,15 @@ async def export_month_excel(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = f"{year}-{month:02d}"
-    populate_month_sheet(ws, days_in_month, year, month)
+    profile = (target_user.employer_profile if target_user is not None else None) or "ica"
+    populate_month_sheet(
+        ws,
+        days_in_month,
+        year,
+        month,
+        headers=EXCEL_HEADERS_BY_PROFILE[profile],
+        split_ob4=profile == "nexer",
+    )
 
     # ── Stream response ──────────────────────────────────────────────────
     buf = io.BytesIO()
