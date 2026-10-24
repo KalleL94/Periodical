@@ -264,6 +264,12 @@ def check_swap(
             return "Du jobbar inte det datumet"
         if tgt_code == "OFF":
             return "Kollegan jobbar inte det datumet"
+        # Shifts are exchanged on both dates, so each side must be free on the other's date.
+        # This is also what lets the rest checks below treat the given-away date as OFF.
+        if shift_code_on(tgt_date, req_pid) != "OFF":
+            return "Du jobbar redan det datumet"
+        if shift_code_on(req_date, tgt_pid) != "OFF":
+            return "Kollegan jobbar redan det datumet"
     elif req_code == "OFF" and tgt_code == "OFF":
         return "Ingen av er jobbar den dagen"
 

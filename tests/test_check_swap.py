@@ -148,18 +148,13 @@ CASES = [
     ("target_off", _none, 8, 10, D(2026, 10, 28), D(2026, 10, 27), "Kollegan jobbar inte det datumet"),
     ("both_off_same_day", _none, 8, 10, D(2026, 10, 25), D(2026, 10, 25), "Ingen av er jobbar den dagen"),
     ("same_shift", _none, 7, 11, D(2026, 10, 26), D(2026, 10, 26), "Ni jobbar redan samma pass"),
-    ("rest_11h_requester", _none, 8, 7, D(2026, 10, 26), D(2026, 10, 28), "Bryter mot 11 timmars dygnsvila (du)"),
-    ("rest_11h_target", _none, 10, 8, D(2026, 10, 28), D(2026, 10, 26), "Bryter mot 11 timmars dygnsvila (kollegan)"),
-    ("rest_36h_requester", _none, 9, 7, D(2026, 10, 28), D(2026, 10, 29), "Bryter mot 36 timmars veckovila (du)"),
-    (
-        "rest_36h_target",
-        _none,
-        9,
-        11,
-        D(2026, 10, 29),
-        D(2026, 10, 30),
-        "Bryter mot 36 timmars veckovila (kollegan)",
-    ),
+    ("req_works_tgt_date", _none, 7, 8, D(2026, 10, 26), D(2026, 10, 27), "Du jobbar redan det datumet"),
+    ("tgt_works_req_date", _none, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Kollegan jobbar redan det datumet"),
+    ("rest_11h_requester", _none, 8, 10, D(2026, 10, 26), D(2026, 10, 29), "Bryter mot 11 timmars dygnsvila (du)"),
+    ("rest_11h_target", _none, 7, 8, D(2026, 10, 29), D(2026, 11, 1), "Bryter mot 11 timmars dygnsvila (kollegan)"),
+    ("rest_36h_requester", _none, 8, 10, D(2026, 10, 26), D(2026, 10, 24), "Bryter mot 36 timmars veckovila (du)"),
+    ("rest_36h_target", _none, 7, 9, D(2026, 10, 27), D(2026, 10, 30), "Bryter mot 36 timmars veckovila (kollegan)"),
+    ("cross_day_ok", _none, 7, 8, D(2026, 10, 25), D(2026, 11, 1), None),
     ("one_way_same_day", _none, 8, 10, D(2026, 10, 27), D(2026, 10, 27), None),
     ("mutual_same_day", _none, 8, 7, D(2026, 10, 27), D(2026, 10, 27), None),
 ]
@@ -177,16 +172,6 @@ def test_check_swap_reasons(db, setup, req_id, tgt_id, req_date, tgt_date, expec
     assert reason == expected
 
 
-def test_rest_ignores_shift_given_away(db):
-    # User 12 gives away N3 on Wed 28 Oct (ends 06:30 on the 29th) and takes
-    # user 7's N2 on Thu 29 Oct (starts 14:00). User 7 takes the N3 and gives
-    # away the N2 on the 29th. Counting the given-away shifts refused this before.
-    requester, target = db.get(User, 12), db.get(User, 7)
-    assert not check_rest_ok(D(2026, 10, 29), "N2", requester.rotation_person_id, session=db)
-    assert not check_rest_ok(D(2026, 10, 28), "N3", target.rotation_person_id, session=db)
-    assert check_swap(db, requester, target, D(2026, 10, 28), D(2026, 10, 29)) is None
-
-
 def test_rest_off_dates_dev_reproduction(db):
     # Dev case: user 8 works N3 on 26-28 Oct, user 7 works N2 on 26-29 Oct.
     # Giving away N3 on the 28th for N2 on the 29th passes 11 h rest on both sides
@@ -202,9 +187,9 @@ def test_rest_off_dates_dev_reproduction(db):
 
 def test_exclude_swap_id_ignores_own_swap(db):
     # accept re-runs the rules on a PENDING swap; the swap must not block itself.
-    _swap(db, 12, 7, D(2026, 10, 28), D(2026, 10, 29), SwapStatus.PENDING)
+    _swap(db, 7, 8, D(2026, 10, 25), D(2026, 11, 1), SwapStatus.PENDING)
     db.commit()
     own = db.query(ShiftSwap).one()
-    requester, target = db.get(User, 12), db.get(User, 7)
-    assert check_swap(db, requester, target, D(2026, 10, 28), D(2026, 10, 29)) is not None
-    assert check_swap(db, requester, target, D(2026, 10, 28), D(2026, 10, 29), exclude_swap_id=own.id) is None
+    requester, target = db.get(User, 7), db.get(User, 8)
+    assert check_swap(db, requester, target, D(2026, 10, 25), D(2026, 11, 1)) is not None
+    assert check_swap(db, requester, target, D(2026, 10, 25), D(2026, 11, 1), exclude_swap_id=own.id) is None
