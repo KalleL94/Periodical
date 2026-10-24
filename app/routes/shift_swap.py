@@ -1,7 +1,9 @@
 # app/routes/shift_swap.py
 """Shift swap management routes - propose, accept, reject, cancel swaps."""
 
+import json
 from datetime import date as date_cls
+from datetime import time as time_cls
 from datetime import timedelta
 from uuid import uuid4
 
@@ -15,7 +17,17 @@ from app.core.helpers import contrast_color
 from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache, get_shift_types
 from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, effective_code, swap_warnings, validate_proposal
 from app.core.utils import get_today
-from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, get_db, utcnow
+from app.database.database import (
+    OnCallOverride,
+    OnCallOverrideType,
+    ShiftOverride,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+    get_db,
+    utcnow,
+)
 from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
@@ -37,8 +49,66 @@ def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_co
         (target.id, td): effective_code(db, requester, td, cache),
         (requester.id, td): tgt_code,  # same day: overwrites the first key
     }
+    swap.replaced_rows = json.dumps(_take_manual_rows(db, rows))
     for (user_id, day), code in rows.items():
         db.add(ShiftOverride(user_id=user_id, date=day, shift_code=code, swap_id=swap.id, created_by=target.id))
+
+
+def _iso(value) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _take_manual_rows(db: Session, slots) -> list[dict]:
+    """Snapshot and delete the ShiftOverride and OnCallOverride rows on slots, so cancel can restore them.
+
+    An OnCallOverride left in place would run after the swap's row and undo it.
+    """
+    snapshot = []
+    for user_id, day in slots:
+        base = {"user_id": user_id, "date": day.isoformat()}
+        for row in db.query(ShiftOverride).filter(ShiftOverride.user_id == user_id, ShiftOverride.date == day):
+            snapshot.append(
+                {
+                    "kind": "shift",
+                    **base,
+                    "shift_code": row.shift_code,
+                    "start_time": _iso(row.start_time),
+                    "end_time": _iso(row.end_time),
+                    "label": row.label,
+                    "created_by": row.created_by,
+                }
+            )
+            db.delete(row)
+        for row in db.query(OnCallOverride).filter(OnCallOverride.user_id == user_id, OnCallOverride.date == day):
+            snapshot.append(
+                {
+                    "kind": "oncall",
+                    **base,
+                    "override_type": row.override_type.value,
+                    "start_time": row.start_time,
+                    "end_time": row.end_time,
+                    "reason": row.reason,
+                    "created_by": row.created_by,
+                }
+            )
+            db.delete(row)
+    return snapshot
+
+
+def _restore_manual_rows(db: Session, swap: ShiftSwap) -> None:
+    """Re-insert the rows accepting replaced, except on a slot that has a row of that kind again."""
+    for fields in json.loads(swap.replaced_rows or "[]"):
+        model = ShiftOverride if fields.pop("kind") == "shift" else OnCallOverride
+        fields["date"] = date_cls.fromisoformat(fields["date"])
+        taken = db.query(model.id).filter(model.user_id == fields["user_id"], model.date == fields["date"]).first()
+        if taken:
+            continue  # an admin changed the slot after the swap, the newer row wins
+        if model is ShiftOverride:
+            for key in ("start_time", "end_time"):
+                fields[key] = time_cls.fromisoformat(fields[key]) if fields[key] else None
+        else:
+            fields["override_type"] = OnCallOverrideType(fields["override_type"])
+        db.add(model(**fields))
 
 
 def _kind(req_date: date_cls, tgt_date: date_cls, req_code: str, tgt_code: str) -> str | None:
@@ -420,6 +490,7 @@ async def cancel_swap(
     db.query(ShiftOverride).filter(ShiftOverride.swap_id.in_([s.id for s in group])).delete()
     now = utcnow()
     for swap in group:
+        _restore_manual_rows(db, swap)
         swap.status = SwapStatus.CANCELLED
         swap.responded_at = now
     db.commit()

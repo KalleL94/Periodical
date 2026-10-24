@@ -18,6 +18,8 @@ MIN_REST_HOURS = 11
 MAX_PAIRS = 10
 MIN_WEEKLY_REST_HOURS = 36
 
+SWAPPABLE_CODES = frozenset({"N1", "N2", "N3", "OC", "OFF"})
+
 SLOT_TAKEN = "Ett byte finns redan för någon av personerna på dessa datum"
 
 
@@ -289,6 +291,9 @@ def check_swap(
     cache = {} if cache is None else cache
     req_code = effective_code(db, requester, req_date, cache)
     tgt_code = effective_code(db, target, tgt_date, cache)
+    # Called-in overtime ("OT") and other synthetic codes would be written as a ShiftOverride.
+    if req_code not in SWAPPABLE_CODES or tgt_code not in SWAPPABLE_CODES:
+        return "Passet kan inte bytas"
 
     is_same_day = req_date == tgt_date
     if not is_same_day:

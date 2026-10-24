@@ -22,6 +22,7 @@ from app.database.database import (
     AbsenceType,
     OnCallOverride,
     OnCallOverrideType,
+    OvertimeShift,
     ShiftOverride,
     ShiftSwap,
     SwapStatus,
@@ -249,3 +250,24 @@ def test_exclude_swap_ids_ignores_own_swap(db):
     assert (
         check_swap(db, requester, target, D(2026, 10, 25), D(2026, 11, 1), exclude_swap_ids=frozenset({own.id})) is None
     )
+
+
+def test_called_in_overtime_cannot_be_swapped(db):
+    # User 10 is OFF on 27 Oct; a called-in overtime row makes the day show "OT".
+    db.add(
+        OvertimeShift(
+            user_id=10,
+            date=D(2026, 10, 27),
+            start_time=datetime.time(8, 0),
+            end_time=datetime.time(16, 0),
+            hours=8.0,
+            ot_pay=0.0,
+            kind="ot",
+            side="full",
+        )
+    )
+    db.commit()
+    assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 27)) == "OT"
+    refused = "Passet kan inte bytas"
+    assert check_swap(db, db.get(User, 10), db.get(User, 8), D(2026, 10, 27), D(2026, 10, 27)) == refused
+    assert check_swap(db, db.get(User, 8), db.get(User, 10), D(2026, 10, 27), D(2026, 10, 27)) == refused

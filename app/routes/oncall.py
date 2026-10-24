@@ -14,6 +14,7 @@ from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
 from app.database.database import OnCallOverride, OnCallOverrideType, User, get_db
+from app.routes.shift_override import refuse_swap_rows
 
 router = APIRouter(prefix="/oncall", tags=["oncall"])
 
@@ -64,6 +65,7 @@ async def add_oncall_override(
     - User: can only add for themselves
     """
     require_own_or_admin(current_user, user_id, "Not authorized to add on-call for other users")
+    refuse_swap_rows(session, current_user, user_id, dates)
 
     window_start, window_end = _parse_window(start_time, end_time)
 
@@ -128,6 +130,7 @@ async def remove_oncall_override(
     """
     # Permission check
     require_own_or_admin(current_user, user_id, "Not authorized to remove on-call for other users")
+    refuse_swap_rows(session, current_user, user_id, [date])
 
     oc_date = date
 

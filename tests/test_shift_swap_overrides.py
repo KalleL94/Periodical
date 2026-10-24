@@ -11,13 +11,23 @@ N3 on Sun 1 Nov (user 7 is free).
 """
 
 import datetime
+import json
 
 import pytest
 from fastapi import HTTPException
 
 from app.core import swaps
 from app.core.schedule import build_week_data, clear_schedule_cache
-from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, WageType
+from app.database.database import (
+    OnCallOverride,
+    OnCallOverrideType,
+    ShiftOverride,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+    WageType,
+)
 from app.routes.shift_override import upsert_shift_override
 from app.routes.shift_swap import accept_swap, cancel_swap, propose_swap
 
@@ -259,3 +269,138 @@ async def test_override_swap_matches_legacy_swap(db, req_id, tgt_id, rd, td):
 
     await _accepted(db, req_id, tgt_id, rd, td)
     assert _week(db, users) == legacy
+
+
+def _oncall(db):
+    return {
+        (r.user_id, r.date): (r.override_type, r.start_time, r.end_time, r.reason, r.created_by)
+        for r in db.query(OnCallOverride).all()
+    }
+
+
+def _manual_n1(db):
+    db.add(
+        ShiftOverride(
+            user_id=7,
+            date=OCT26,
+            shift_code="N1",
+            start_time=datetime.time(6, 0),
+            end_time=datetime.time(16, 30),
+            created_by=1,
+        )
+    )
+    db.commit()
+
+
+@pytest.mark.anyio
+async def test_accept_over_manual_row_snapshots_and_replaces_it(db):
+    _manual_n1(db)
+    swap = await _accepted(db, 7, 8, OCT26, OCT26)
+    db.refresh(swap)
+    # Only the swap's own rows are left on the slots.
+    assert _rows(db) == {(7, OCT26): ("N3", swap.id), (8, OCT26): ("N1", swap.id)}
+    assert json.loads(swap.replaced_rows) == [
+        {
+            "kind": "shift",
+            "user_id": 7,
+            "date": "2026-10-26",
+            "shift_code": "N1",
+            "start_time": "06:00:00",
+            "end_time": "16:30:00",
+            "label": None,
+            "created_by": 1,
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_accept_over_oncall_add(db):
+    # User 10 is OFF on 27 Oct; the ADD makes it OC, swapped against user 7's N2.
+    db.add(OnCallOverride(user_id=10, date=OCT27, override_type=OnCallOverrideType.ADD, reason="Extra", created_by=1))
+    db.commit()
+    swap = await _accepted(db, 10, 7, OCT27, OCT27)
+    db.refresh(swap)
+    assert (swap.requester_shift_code, swap.target_shift_code) == ("OC", "N2")
+    assert _oncall(db) == {}
+    assert json.loads(swap.replaced_rows) == [
+        {
+            "kind": "oncall",
+            "user_id": 10,
+            "date": "2026-10-27",
+            "override_type": "ADD",
+            "start_time": None,
+            "end_time": None,
+            "reason": "Extra",
+            "created_by": 1,
+        }
+    ]
+    week = _week(db, [7, 10])
+    assert week[(10, OCT27)][0] == "N2"
+    assert week[(7, OCT27)][0] == "OC"
+
+
+@pytest.mark.anyio
+async def test_accept_over_oncall_remove(db):
+    # User 8's rotation OC on 31 Oct is removed, so user 8 is free; user 10 gives away N1.
+    db.add(OnCallOverride(user_id=8, date=OCT31, override_type=OnCallOverrideType.REMOVE, created_by=1))
+    db.commit()
+    swap = await _accepted(db, 10, 8, OCT31, OCT31)
+    db.refresh(swap)
+    assert _oncall(db) == {}
+    assert [r["override_type"] for r in json.loads(swap.replaced_rows)] == ["REMOVE"]
+    assert _rows(db) == {(10, OCT31): ("OFF", swap.id), (8, OCT31): ("N1", swap.id)}
+
+
+@pytest.mark.anyio
+async def test_cancel_restores_replaced_rows(db):
+    _manual_n1(db)
+    db.add(
+        OnCallOverride(
+            user_id=10,
+            date=OCT27,
+            override_type=OnCallOverrideType.ADD,
+            start_time="08:00",
+            end_time="20:00",
+            reason="Extra",
+            created_by=1,
+        )
+    )
+    db.commit()
+    shift_swap = await _accepted(db, 7, 8, OCT26, OCT26)
+    oncall_swap = await _accepted(db, 10, 7, OCT27, OCT27)
+
+    await cancel_swap(shift_swap.id, current_user=db.get(User, 7), db=db)
+    await cancel_swap(oncall_swap.id, current_user=db.get(User, 10), db=db)
+    db.expire_all()
+    restored = db.query(ShiftOverride).one()
+    assert (restored.user_id, restored.date, restored.shift_code, restored.swap_id) == (7, OCT26, "N1", None)
+    assert (restored.start_time, restored.end_time, restored.created_by) == (
+        datetime.time(6, 0),
+        datetime.time(16, 30),
+        1,
+    )
+    assert _oncall(db) == {(10, OCT27): (OnCallOverrideType.ADD, "08:00", "20:00", "Extra", 1)}
+    week = _week(db, [7, 10])
+    assert week[(7, OCT26)][0] == "N1"
+    assert week[(10, OCT27)][0] == "OC"
+
+
+@pytest.mark.anyio
+async def test_cancel_keeps_admin_rows_added_since(db):
+    _manual_n1(db)
+    db.add(OnCallOverride(user_id=10, date=OCT27, override_type=OnCallOverrideType.ADD, reason="Extra", created_by=1))
+    db.commit()
+    shift_swap = await _accepted(db, 7, 8, OCT26, OCT26)
+    oncall_swap = await _accepted(db, 10, 7, OCT27, OCT27)
+    # An admin changes both slots after the swaps were accepted.
+    upsert_shift_override(
+        db, user_id=7, date=OCT26, shift_code="N2", start_time=None, end_time=None, label="", created_by=1
+    )
+    db.add(OnCallOverride(user_id=10, date=OCT27, override_type=OnCallOverrideType.REMOVE, reason="Admin"))
+    db.commit()
+
+    await cancel_swap(shift_swap.id, current_user=db.get(User, 7), db=db)
+    await cancel_swap(oncall_swap.id, current_user=db.get(User, 10), db=db)
+    db.expire_all()
+    assert _rows(db) == {(7, OCT26): ("N2", None)}
+    assert _oncall(db) == {(10, OCT27): (OnCallOverrideType.REMOVE, None, None, "Admin", None)}

@@ -9,7 +9,7 @@ import datetime
 import pytest
 
 from app.auth.auth import create_access_token
-from app.database.database import ShiftOverride, ShiftSwap, SwapStatus
+from app.database.database import OnCallOverride, ShiftOverride, ShiftSwap, SwapStatus
 
 DAY = datetime.date(2026, 11, 2)
 REFUSAL = "Passet hör till ett byte, avbryt bytet i stället"
@@ -126,3 +126,43 @@ def test_admin_delete_removes_row(as_admin, test_db, swap_row):
     assert r.status_code == 303
     test_db.expire_all()
     assert test_db.get(ShiftOverride, row_id) is None
+
+
+def test_participant_oncall_add_over_swap_row_refused(as_user, test_db, test_user, swap_row):
+    r = as_user.post(
+        "/oncall/add",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat()]},
+        follow_redirects=False,
+    )
+    _assert_refused(r)
+    assert test_db.query(OnCallOverride).count() == 0
+
+
+def test_participant_oncall_remove_over_swap_row_refused(as_user, test_db, test_user, swap_row):
+    r = as_user.post(
+        "/oncall/remove",
+        data={"user_id": test_user.id, "date": DAY.isoformat()},
+        follow_redirects=False,
+    )
+    _assert_refused(r)
+    assert test_db.query(OnCallOverride).count() == 0
+
+
+def test_participant_oncall_clear_over_swap_row_refused(as_user, test_db, test_user, swap_row):
+    r = as_user.post(
+        "/day-edit/clear",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat()], "what": "oncall"},
+        follow_redirects=False,
+    )
+    _assert_refused(r)
+
+
+def test_admin_oncall_add_over_swap_row_allowed(as_admin, test_db, test_user, swap_row):
+    r = as_admin.post(
+        "/oncall/add",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat()]},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert test_db.query(OnCallOverride).count() == 1
+    _assert_untouched(test_db, swap_row)

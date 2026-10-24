@@ -89,7 +89,7 @@ async def clear_days(
 
     if what not in _TARGETS:
         raise HTTPException(status_code=400, detail=f"Invalid target, use one of {sorted(_TARGETS)}")
-    if what in ("shift", "all"):
+    if what in ("shift", "oncall", "all"):
         refuse_swap_rows(session, current_user, user_id, dates)
 
     def conflicts(date):

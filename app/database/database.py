@@ -599,6 +599,9 @@ class ShiftSwap(Base):
     applied_as_override = Column(Boolean, default=False, nullable=False)
     # Shared by the pairs of one proposal; None for legacy rows (a group of one)
     group_id = Column(String(32), nullable=True, index=True)
+    # JSON list of the manual ShiftOverride and OnCallOverride rows accepting replaced,
+    # restored on cancel; None for swaps accepted before this existed
+    replaced_rows = Column(Text, nullable=True)
 
     # Relationships
     requester = relationship("User", foreign_keys=[requester_id])

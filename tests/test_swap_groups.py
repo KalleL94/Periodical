@@ -11,6 +11,7 @@ Pair B: user 7 and user 8 swap N2 and N3 on Tue 27 Oct (same day).
 """
 
 import datetime
+import json
 
 import pytest
 from fastapi import HTTPException
@@ -136,6 +137,36 @@ async def test_accept_group_all_or_nothing(db):
     assert exc.value.detail == "Schemat har ändrats sedan förslaget"
     assert _statuses(db) == [SwapStatus.PENDING] * 2
     assert db.query(ShiftOverride).count() == 0
+
+
+def _manual_n1_on_pair_b(db):
+    db.add(ShiftOverride(user_id=7, date=OCT27, shift_code="N1", created_by=1))
+    db.commit()
+
+
+@pytest.mark.anyio
+async def test_accept_group_over_manual_row(db):
+    _manual_n1_on_pair_b(db)
+    rows = await _propose(db, [PAIR_A, PAIR_B])
+    await accept_swap(rows[0].id, current_user=db.get(User, 8), db=db)
+    db.expire_all()
+    assert db.query(ShiftOverride).filter(ShiftOverride.swap_id.is_(None)).count() == 0
+    assert json.loads(rows[0].replaced_rows) == []
+    assert [(r["kind"], r["shift_code"]) for r in json.loads(rows[1].replaced_rows)] == [("shift", "N1")]
+
+
+@pytest.mark.anyio
+async def test_accept_group_over_manual_row_all_or_nothing(db):
+    _manual_n1_on_pair_b(db)
+    rows = await _propose(db, [PAIR_A, PAIR_B])
+    rows[0].requester_shift_code = "N1"  # the schedule changed under pair 1
+    db.commit()
+    with pytest.raises(HTTPException):
+        await accept_swap(rows[0].id, current_user=db.get(User, 8), db=db)
+    db.expire_all()
+    assert _statuses(db) == [SwapStatus.PENDING] * 2
+    assert [(r.user_id, r.date, r.shift_code, r.swap_id) for r in db.query(ShiftOverride)] == [(7, OCT27, "N1", None)]
+    assert all(r.replaced_rows is None for r in db.query(ShiftSwap))
 
 
 @pytest.mark.anyio

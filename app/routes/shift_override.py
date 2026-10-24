@@ -20,7 +20,10 @@ _ALLOWED_CODES = {"N1", "N2", "N3", "ETC"}
 
 
 def refuse_swap_rows(session, current_user: User, user_id: int, dates) -> None:
-    """Raise 400 if a non-admin would edit or delete a row an accepted swap wrote.
+    """Raise 400 if a non-admin would change a slot that holds a row an accepted swap wrote.
+
+    Covers ShiftOverride and OnCallOverride writes: an on-call change would run after
+    the swap's row and undo it.
 
     A participant undoes a swap by cancelling it, which removes every row at once.
     An admin may change one row; upsert_shift_override then makes it manual.
