@@ -18,6 +18,7 @@ from app.core.schedule import clear_schedule_cache, generate_period_data
 from app.database.database import (
     OnCallOverride,
     OnCallOverrideType,
+    PersonHistory,
     ShiftOverride,
     ShiftSwap,
     User,
@@ -169,3 +170,41 @@ async def test_accept_refuses_when_on_call_window_changed(db):
     with pytest.raises(HTTPException) as exc:
         await accept_swap(swap.id, current_user=db.get(User, 7), db=db)
     assert exc.value.detail == "Schemat har ändrats sedan förslaget"
+
+
+def _history(db, uid, *spans):
+    for pos, start, end in spans:
+        db.add(
+            PersonHistory(
+                user_id=uid,
+                person_id=pos,
+                name=f"User {uid}",
+                username=f"u{uid}",
+                is_active=1,
+                effective_from=start,
+                effective_to=end,
+            )
+        )
+    db.commit()
+
+
+def test_position_change_mid_iso_week_reads_each_side(db):
+    # User 20 holds position 7 until Wed 28 Oct and position 10 from Thu 29 Oct.
+    db.add(_user(20, 10))
+    _history(db, 20, (7, D(2026, 1, 1), D(2026, 10, 28)), (10, D(2026, 10, 29), None))
+    user = db.get(User, 20)
+    cache: dict = {}
+    assert swaps.effective_code(db, user, D(2026, 10, 27), cache) == "N2"  # pos 7; pos 10 is OFF
+    assert swaps.effective_code(db, user, D(2026, 10, 30), cache) == "N1"  # pos 10; pos 7 is OFF
+
+
+def test_position_change_across_iso_year_boundary(db):
+    # ISO week 53 of 2026 runs Mon 28 Dec to Sun 3 Jan. Position 7 until 31 Dec, then 8.
+    #   pos 7: N1 N1 OC OFF OFF N2 N2      pos 8: N2 N2 N2 N2 OFF OFF OFF
+    db.add(_user(21, 8))
+    _history(db, 21, (7, D(2026, 1, 1), D(2026, 12, 31)), (8, D(2027, 1, 1), None))
+    user = db.get(User, 21)
+    cache: dict = {}
+    assert swaps.effective_code(db, user, D(2026, 12, 29), cache) == "N1"
+    assert swaps.effective_code(db, user, D(2027, 1, 2), cache) == "OFF"
+    assert swaps.effective_code(db, user, D(2027, 1, 7), cache) == "N3"  # week 1 of 2027, pos 8; pos 7 is OFF

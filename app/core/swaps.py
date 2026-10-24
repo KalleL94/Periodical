@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.schedule import build_week_data, calculate_shift_hours, get_shift_types
-from app.core.schedule.period import oncall_window
+from app.core.schedule.period import _build_user_position_resolver, oncall_window
 from app.core.schedule.vacation import get_vacation_dates_for_year
 from app.core.utils import get_today
 from app.database.database import (
@@ -81,7 +81,9 @@ def _rows_on_slots(db: Session, model, slots: set[tuple[int, date]]) -> bool:
     return any((u, d) in slots for u, d in rows)
 
 
-def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_date, exclude_swap_ids) -> str | None:
+def _slot_conflict(
+    db: Session, requester: User, target: User, req_date, tgt_date, exclude_swap_ids, cache: dict
+) -> str | None:
     slots = swap_participant_dates(requester.id, target.id, req_date, tgt_date)
     if find_active_swap_conflict(db, slots, (SwapStatus.PENDING, SwapStatus.ACCEPTED), exclude_swap_ids):
         return SLOT_TAKEN
@@ -96,11 +98,19 @@ def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_dat
     if _rows_on_slots(db, Absence, slots):
         return "Någon av personerna är frånvarande ett av datumen"
     # Week-based vacation outranks overrides in the resolver, so a swap there would apply on one side only.
-    positions = {requester.id: requester.rotation_person_id, target.id: target.rotation_person_id}
+    users = {requester.id: requester, target.id: target}
     vacation = {year: get_vacation_dates_for_year(year, session=db) for year in {req_date.year, tgt_date.year}}
-    if any(d in vacation[d.year].get(positions[u], set()) for u, d in slots):
+    if any(d in vacation[d.year].get(_position(db, users[u], d, cache), set()) for u, d in slots):
         return "Någon av personerna har semester ett av datumen"
     return None
+
+
+def _position(db: Session, user: User, day: date, cache: dict) -> int:
+    """The rotation position user holds on day, read the way the schedule buckets their rows."""
+    key = ("position", user.id)
+    if key not in cache:
+        cache[key] = _build_user_position_resolver(db, {user.id}, {user.id: user.rotation_person_id})
+    return cache[key](user.id, day)
 
 
 def _custom_times(shift) -> tuple[str | None, str | None]:
@@ -116,9 +126,10 @@ def _day(db: Session, user: User, day: date, cache: dict) -> tuple:
     start and end are the real datetimes of the day's work (custom and overtime clock
     times included), None when the day has none. times is (start, end, oc_start, oc_end):
     the custom shift window and the OnCallOverride window as "HH:MM", None for the
-    shift type's own times and for whole-day on-call. Cached per user, position and ISO week.
+    shift type's own times and for whole-day on-call. The week is read from the position
+    user holds on day and cached per user, position and ISO week.
     """
-    pos = user.rotation_person_id
+    pos = _position(db, user, day, cache)
     year, week, _ = day.isocalendar()
     key = (user.id, pos, year, week)
     if key not in cache:
@@ -212,11 +223,11 @@ def check_swap(
     if duplicate.first():
         return "Byte redan föreslaget för dessa datum"
 
-    reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_ids)
+    cache = {} if cache is None else cache
+    reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_ids, cache)
     if reason:
         return reason
 
-    cache = {} if cache is None else cache
     req_code = effective_code(db, requester, req_date, cache)
     tgt_code = effective_code(db, target, tgt_date, cache)
     # Called-in overtime ("OT") and other synthetic codes would be written as a ShiftOverride.
