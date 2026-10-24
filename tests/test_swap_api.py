@@ -154,9 +154,13 @@ def test_compare_clamps_window(client, test_db):
     test_db.commit()
     _login(client, 7)
 
+    # A start before this week's Monday is clamped to that Monday, weeks capped at 6.
     days = client.get("/swaps/api/compare", params={"target_id": 8, "start": "2026-10-01", "weeks": 10}).json()["days"]
-    assert days[0]["date"] == "2026-10-20"
+    assert days[0]["date"] == "2026-10-19"
+    assert days[-1]["date"] == "2026-11-29"
     assert len(days) == 42
+    # Today and earlier are past.
+    assert [d.get("past", False) for d in days[:3]] == [True, True, False]
     by_date = {d["date"]: d for d in days}
     tue = by_date["2026-10-27"]
     assert (tue["me"]["code"], tue["them"]["code"]) == ("N2", "N3")
@@ -165,9 +169,17 @@ def test_compare_clamps_window(client, test_db):
     # Effective days: the override on 28 Oct frees user 7.
     assert by_date["2026-10-28"]["me"]["code"] == "OFF"
 
-    default = client.get("/swaps/api/compare", params={"target_id": 8, "weeks": 0}).json()["days"]
-    assert default[0]["date"] == "2026-10-20"
-    assert len(default) == 7
+    one = client.get("/swaps/api/compare", params={"target_id": 8, "weeks": 0}).json()["days"]
+    assert (one[0]["date"], len(one)) == ("2026-10-19", 7)
+
+    # Default: five whole Mon to Sun weeks.
+    default = client.get("/swaps/api/compare", params={"target_id": 8}).json()["days"]
+    assert (default[0]["date"], default[-1]["date"], len(default)) == ("2026-10-19", "2026-11-22", 35)
+
+    # A mid-week start snaps back to its Monday, no past days in the future.
+    later = client.get("/swaps/api/compare", params={"target_id": 8, "start": "2026-11-26"}).json()["days"]
+    assert (later[0]["date"], later[-1]["date"]) == ("2026-11-23", "2026-12-27")
+    assert not any(d.get("past") for d in later)
 
 
 def test_day_takers_lists_colleagues(client):

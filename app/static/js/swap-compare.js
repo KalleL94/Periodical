@@ -12,7 +12,7 @@
     const data = JSON.parse(document.getElementById('swap-data').textContent);
     const T = data.t;
     const MAX = parseInt(root.dataset.max, 10);
-    const WEEKS = 4; // weeks per window and per step
+    const WEEKS = 5; // whole Mon to Sun weeks per window and per step
     const preDate = root.dataset.date || null;
     const csrf = root.querySelector("input[name='csrf_token']").value;
     const $ = (id) => document.getElementById(id);
@@ -125,12 +125,12 @@
         $('swap-target-id').value = state.target.id;
         takersBox.hidden = true;
         say('');
-        // From the chosen day's week, 5 weeks covers the 4 weeks of suggestions after it.
+        // From the chosen day's Monday, WEEKS weeks covers the 4 weeks of suggestions after it.
         byDate = {};
         const seq = loadSeq + 1;
-        loadWindow(preDate ? monday(preDate) : null, preDate ? WEEKS + 1 : WEEKS).then((ok) => {
+        loadWindow(preDate ? monday(preDate) : null, WEEKS).then((ok) => {
             if (!ok) return;
-            if (preDate && byDate[preDate]) {
+            if (preDate && byDate[preDate] && !byDate[preDate].past) {
                 state.pendingOwn = preDate;
                 findSuggestions(seq);
             }
@@ -140,7 +140,7 @@
         });
     }
 
-    // Load days from start (null = today) and make them the visible window. byDate
+    // Load whole weeks from the Monday of start (null = this week) and make them the visible window. byDate
     // keeps days from earlier windows so chosen pairs outside the window still render.
     // Resolves true when applied, false when a newer load superseded it or it failed.
     function loadWindow(start, weeks) {
@@ -165,8 +165,7 @@
 
     function renderNav() {
         const bar = el('div', 'swap-nav');
-        const todayIso = toIso(new Date());
-        const atStart = windowStart <= todayIso;
+        const atStart = windowStart <= monday(toIso(new Date()));
         [['prev', T.prev, () => addDays(windowStart, -7 * WEEKS), atStart],
          ['today', T.today, () => null, atStart],
          ['next', T.next, () => addDays(windowStart, 7 * WEEKS), false]].forEach(([name, label, startFn, off]) => {
@@ -212,11 +211,13 @@
         const td = el('td');
         const day = byDate[iso];
         if (!day) return td;
+        if (day.past) td.className = 'swap-day--past';
         const info = day[side];
         const btn = el('button', 'swap-cell', info.code === 'OFF' ? '-' : info.code);
         btn.type = 'button';
         btn.dataset.side = side;
         btn.dataset.date = iso;
+        btn.disabled = !!day.past;
         btn.title = dayLabel(iso) + (info.start ? ' ' + info.start + '-' + info.end : '');
         const color = data.colors[info.code];
         if (color) {
@@ -257,7 +258,7 @@
             rowThem.appendChild(el('th', 'swap-who', state.target.name));
             for (let i = 0; i < 7; i++) {
                 const iso = addDays(m, i);
-                const th = el('th', 'swap-day');
+                const th = el('th', 'swap-day' + (byDate[iso] && byDate[iso].past ? ' swap-day--past' : ''));
                 th.appendChild(el('span', null, fmt(iso, { weekday: 'short' })));
                 th.appendChild(el('span', 'swap-day-num', fmt(iso, { day: 'numeric', month: 'numeric' })));
                 head.appendChild(th);
@@ -328,7 +329,7 @@
 
     grid.addEventListener('click', (e) => {
         const btn = e.target.closest('.swap-cell');
-        if (!btn) return;
+        if (!btn || btn.disabled) return;
         const iso = btn.dataset.date;
         if (btn.dataset.side === 'me') {
             state.pendingOwn = state.pendingOwn === iso ? null : iso;

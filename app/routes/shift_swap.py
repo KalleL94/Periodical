@@ -197,11 +197,11 @@ def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> 
 async def compare_days(
     target_id: int,
     start: date_cls | None = None,
-    weeks: int = 4,
+    weeks: int = 5,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Both users' effective days side by side, from today at the earliest, 1 to 6 weeks."""
+    """Both users' effective days side by side in 1 to 6 whole Mon to Sun weeks, from this week at the earliest."""
     target = db.get(User, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
@@ -211,14 +211,16 @@ async def compare_days(
         raise HTTPException(status_code=400, detail="Du kan inte byta pass")
     if start and start > get_today() + timedelta(days=MAX_START_DAYS):
         raise HTTPException(status_code=400, detail="Ogiltigt startdatum")
-    first = max(start or get_today(), get_today())
+    today = get_today()
+    first = max(start or today, today)
+    first -= timedelta(days=first.weekday())
     last = first + timedelta(days=7 * min(max(weeks, 1), MAX_WEEKS) - 1)
     mine = _effective_days(db, current_user, first, last)
     theirs = _effective_days(db, target, first, last)
     days = []
     for n in range((last - first).days + 1):
         d = first + timedelta(days=n)
-        days.append({"date": d.isoformat(), "me": mine[d], "them": theirs[d]})
+        days.append({"date": d.isoformat(), "me": mine[d], "them": theirs[d], "past": d <= today})
     return {"days": days}
 
 

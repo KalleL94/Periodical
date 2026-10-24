@@ -1312,6 +1312,8 @@ td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 1
 .swap-cell.is-selected { outline: 3px solid var(--text); outline-offset: 1px; }
 .swap-cell.is-suggested { border-color: var(--success); border-style: dashed; }
 .swap-cell.is-paired { opacity: 0.45; }
+.swap-day--past { opacity: 0.35; }
+.swap-day--past .swap-cell { cursor: not-allowed; pointer-events: none; }
 .swap-status { color: var(--warning); min-height: 1.5em; margin: 0 0 1rem; }
 .swap-takers-list, .swap-pairs { list-style: none; padding: 0; margin: 0 0 1rem; }
 .swap-taker, .swap-pair {
