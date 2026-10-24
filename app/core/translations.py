@@ -287,6 +287,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "swap_new_max": "Högst {n} byten per förslag",
         "swap_new_send": "Skicka förslag",
         "swap_new_load_error": "Kunde inte hämta schemat. Försök igen.",
+        "swap_new_prev": "Föregående period",
+        "swap_new_next": "Nästa period",
+        "swap_new_today": "Idag",
         # ── Statistics ─────────────────────────────────────────────
         "stats_title": "Statistik {year} - {name}",
         "stats_pay_trend": "Löneutveckling",
@@ -1479,6 +1482,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "swap_new_max": "At most {n} swaps per proposal",
         "swap_new_send": "Send proposal",
         "swap_new_load_error": "Could not load the schedule. Try again.",
+        "swap_new_prev": "Previous period",
+        "swap_new_next": "Next period",
+        "swap_new_today": "Today",
         # ── Statistics ─────────────────────────────────────────────
         "stats_title": "Statistics {year} - {name}",
         "stats_pay_trend": "Pay trend",

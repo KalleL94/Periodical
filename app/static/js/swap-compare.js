@@ -12,6 +12,7 @@
     const data = JSON.parse(document.getElementById('swap-data').textContent);
     const T = data.t;
     const MAX = parseInt(root.dataset.max, 10);
+    const WEEKS = 4; // weeks per window and per step
     const preDate = root.dataset.date || null;
     const csrf = root.querySelector("input[name='csrf_token']").value;
     const $ = (id) => document.getElementById(id);
@@ -27,7 +28,8 @@
     const state = { target: null, days: [], pairs: [], pendingOwn: null };
     let byDate = {};
     let suggested = {}; // return days for preDate, shown while preDate is the pending own day
-    let loadSeq = 0;
+    let loadSeq = 0; // bumped by every compare load, including period navigation
+    let windowStart = null; // first day of the loaded window, as returned by the endpoint
 
     function el(tag, cls, text) {
         const node = document.createElement(tag);
@@ -124,14 +126,10 @@
         takersBox.hidden = true;
         say('');
         // From the chosen day's week, 5 weeks covers the 4 weeks of suggestions after it.
-        const params = new URLSearchParams({ target_id: state.target.id, weeks: preDate ? 5 : 4 });
-        if (preDate) params.set('start', monday(preDate));
-        const seq = ++loadSeq;
-        api('/swaps/api/compare?' + params).then((body) => {
-            if (seq !== loadSeq) return;
-            state.days = body.days;
-            byDate = {};
-            body.days.forEach((d) => { byDate[d.date] = d; });
+        byDate = {};
+        const seq = loadSeq + 1;
+        loadWindow(preDate ? monday(preDate) : null, preDate ? WEEKS + 1 : WEEKS).then((ok) => {
+            if (!ok) return;
             if (preDate && byDate[preDate]) {
                 state.pendingOwn = preDate;
                 findSuggestions(seq);
@@ -139,7 +137,50 @@
             grid.hidden = false;
             form.hidden = false;
             render();
-        }).catch(() => say(T.load_error));
+        });
+    }
+
+    // Load days from start (null = today) and make them the visible window. byDate
+    // keeps days from earlier windows so chosen pairs outside the window still render.
+    // Resolves true when applied, false when a newer load superseded it or it failed.
+    function loadWindow(start, weeks) {
+        const params = new URLSearchParams({ target_id: state.target.id, weeks: weeks });
+        if (start) params.set('start', start);
+        const seq = ++loadSeq;
+        return api('/swaps/api/compare?' + params).then((body) => {
+            if (seq !== loadSeq) return false;
+            state.days = body.days;
+            body.days.forEach((d) => { byDate[d.date] = d; });
+            windowStart = body.days[0].date;
+            return true;
+        }).catch(() => {
+            if (seq === loadSeq) say(T.load_error);
+            return false;
+        });
+    }
+
+    function goTo(start) {
+        loadWindow(start, WEEKS).then((ok) => { if (ok) render(); });
+    }
+
+    function renderNav() {
+        const bar = el('div', 'swap-nav');
+        const todayIso = toIso(new Date());
+        const atStart = windowStart <= todayIso;
+        [['prev', T.prev, () => addDays(windowStart, -7 * WEEKS), atStart],
+         ['today', T.today, () => null, atStart],
+         ['next', T.next, () => addDays(windowStart, 7 * WEEKS), false]].forEach(([name, label, startFn, off]) => {
+            const btn = el('button', 'btn-compact secondary', label);
+            btn.type = 'button';
+            btn.dataset.nav = name;
+            btn.disabled = off;
+            btn.addEventListener('click', () => goTo(startFn()));
+            bar.appendChild(btn);
+        });
+        const last = state.days[state.days.length - 1].date;
+        const range = { day: 'numeric', month: 'short' };
+        bar.appendChild(el('span', 'swap-range', fmt(windowStart, range) + ' \u2013 ' + fmt(last, range)));
+        return bar;
     }
 
     // Days the colleague works and you are free, within 4 weeks after preDate,
@@ -197,6 +238,7 @@
 
     function renderGrid() {
         grid.textContent = '';
+        grid.appendChild(renderNav());
         const suggesting = state.pendingOwn && state.pendingOwn === preDate && Object.keys(suggested).length;
         grid.appendChild(el('p', 'swap-hint', state.pendingOwn ? T.tap_theirs + (suggesting ? ' ' + T.suggested : '') : T.tap_mine));
         const used = usedSlots();
@@ -272,9 +314,9 @@
         if (state.pairs.length >= MAX) return say(T.max.replace('{n}', MAX));
         const clash = () => slots(req, tgt).some((s) => usedSlots().has(s));
         if (clash()) return say(T.slot_used);
-        const seq = loadSeq;
+        const target = state.target; // navigating periods must not drop this answer
         check([{ req_date: req, tgt_date: tgt }]).then(([r]) => {
-            if (seq !== loadSeq) return;
+            if (target !== state.target) return;
             if (r.blocked) return say(r.blocked);
             if (clash() || state.pairs.length >= MAX) return; // a double tap already added it
             state.pairs.push({ req: req, tgt: tgt, kind: r.kind, warnings: r.warnings });
