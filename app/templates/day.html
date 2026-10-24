@@ -230,7 +230,10 @@
                         let html = '<option value="">' + msgChooseShift + '</option>';
                         data.shifts.forEach(s => {
                             const ob = s.ob_hours > 0 ? ' (' + s.ob_hours + 'h OB)' : '';
-                            html += '<option value="' + s.date + '">' + s.date_display + ': ' + s.label + ob + '</option>';
+                            // Blocked days stay visible with the reason but cannot be chosen
+                            const reason = s.blocked ? ' (' + s.blocked + ')' : '';
+                            const disabled = s.blocked ? ' disabled' : '';
+                            html += '<option value="' + s.date + '"' + disabled + '>' + s.date_display + ': ' + s.label + ob + reason + '</option>';
                         });
                         targetSelect.innerHTML = html;
                         targetSelect.disabled = false;

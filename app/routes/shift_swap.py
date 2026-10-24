@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.core.schedule import build_week_data, clear_schedule_cache
-from app.core.swaps import check_swap, check_weekly_rest_ok, shift_code_on
+from app.core.swaps import check_swap, shift_code_on
 from app.core.utils import get_today
 from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, get_db, utcnow
 from app.routes.shared import render
@@ -44,7 +44,11 @@ async def get_user_shifts(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return target's shifts within ±3 months of ref_date, only on days the requester is free."""
+    """Return target's shifts within ±3 months of ref_date that make sense to swap for.
+
+    Each item carries "blocked": the check_swap reason the swap would be refused, or None.
+    The requester gives ref_date and takes the listed date, as the propose form sends them.
+    """
     from app.core.schedule import calculate_ob_hours, calculate_shift_hours
     from app.core.schedule.ob import get_combined_rules_for_year
 
@@ -62,22 +66,14 @@ async def get_user_shifts(
     scan_end = center + timedelta(days=90)
     total_days = (scan_end - scan_start).days + 1
 
-    # Fetch week data for both users, grouped by ISO week
-    # Include adjacent days for 11h rest rule checks
+    # Fetch week data for both users once per ISO week (center included for the same-day check)
     target_weeks = {}
     my_weeks = {}
-    for day_offset in range(total_days):
-        d = scan_start + timedelta(days=day_offset)
-        for adj in (d - timedelta(days=1), d, d + timedelta(days=1)):
-            iso = adj.isocalendar()
-            wk = (iso[0], iso[1])
-            if wk not in my_weeks:
-                target_weeks[wk] = {
-                    day["date"]: day for day in build_week_data(wk[0], wk[1], person_id=target_pid, session=db)
-                }
-                my_weeks[wk] = {day["date"]: day for day in build_week_data(wk[0], wk[1], person_id=my_pid, session=db)}
-
-    MIN_REST_HOURS = 11
+    for d in [center] + [scan_start + timedelta(days=i) for i in range(total_days)]:
+        wk = d.isocalendar()[:2]
+        if wk not in my_weeks:
+            target_weeks[wk] = {day["date"]: day for day in build_week_data(*wk, person_id=target_pid, session=db)}
+            my_weeks[wk] = {day["date"]: day for day in build_week_data(*wk, person_id=my_pid, session=db)}
 
     # Determine if requester is working on center (only same-day swap is offered then)
     center_wk = center.isocalendar()[:2]
@@ -86,23 +82,11 @@ async def get_user_shifts(
     center_my_code = center_my_shift.code if center_my_shift else "OFF"
     requester_working_on_center = center_my_code not in ("OFF", "OC")
 
-    def get_my_shift_times(d):
-        """Get start/end datetimes for my shift on date d."""
-        iso = d.isocalendar()
-        wk = (iso[0], iso[1])
-        info = my_weeks.get(wk, {}).get(d, {})
-        s = info.get("shift")
-        if not s or not s.start_time or not s.end_time:
-            return None, None
-        _, start_dt, end_dt = calculate_shift_hours(d, s)
-        return start_dt, end_dt
-
     shifts = []
     ob_rules_cache = {}
     for day_offset in range(total_days):
         d = scan_start + timedelta(days=day_offset)
-        iso = d.isocalendar()
-        wk = (iso[0], iso[1])
+        wk = d.isocalendar()[:2]
 
         # Determine what I have on this day
         my_info = my_weeks[wk].get(d, {})
@@ -116,12 +100,12 @@ async def get_user_shifts(
 
         is_same_day = d == center
 
-        # Skip days where target is free — unless it's a same-day give-away
+        # Skip days where target is free, unless it is a same-day give-away
         if tgt_code == "OFF" and not (is_same_day and requester_working_on_center):
             continue
 
         if requester_working_on_center:
-            # Requester is working on center — only same-day is relevant
+            # Requester is working on center, so only same-day is relevant
             if not is_same_day:
                 continue
             if tgt_code == "OFF":
@@ -133,6 +117,7 @@ async def get_user_shifts(
                         "code": "OFF",
                         "label": "Ledig",
                         "ob_hours": 0.0,
+                        "blocked": check_swap(db, current_user, target, center, d),
                     }
                 )
                 continue
@@ -140,45 +125,27 @@ async def get_user_shifts(
             if not my_shift:
                 continue
             if tgt_code == my_code:
-                continue  # Same shift code — pointless swap
+                continue  # Same shift code, pointless swap
             if (my_code == "OC") != (tgt_code == "OC"):
                 continue
         else:
-            # Requester is free — can take target's shift on a different day
+            # Requester is free, can take target's shift on a different day
 
             # OC-to-OC: when offering OC, only show target's OC shifts (requester must be OFF)
             # Regular: when offering a regular shift, only show target's regular shifts
             if offering == "OC":
                 if tgt_code != "OC":
-                    continue  # Offering OC — only interested in target's OC
+                    continue  # Offering OC, only interested in target's OC
                 if my_code != "OFF":
                     continue  # Must be OFF to take their OC
             else:
                 if tgt_code == "OC":
-                    continue  # Offering regular — can't take OC
+                    continue  # Offering regular, can't take OC
                 if my_code != "OFF":
                     continue  # Must be OFF to take their shift
 
         # Calculate target shift times (the shift I would work)
         _, tgt_start, tgt_end = calculate_shift_hours(d, tgt_shift) if tgt_shift else (None, None, None)
-
-        # Same-day operations skip rest checks.
-        if not is_same_day:
-            # 11h rest rule: check against my shifts on adjacent days
-            if tgt_start and tgt_end:
-                rest_ok = True
-                prev_start, prev_end = get_my_shift_times(d - timedelta(days=1))
-                if prev_end and (tgt_start - prev_end).total_seconds() / 3600 < MIN_REST_HOURS:
-                    rest_ok = False
-                next_start, next_end = get_my_shift_times(d + timedelta(days=1))
-                if rest_ok and next_start and (next_start - tgt_end).total_seconds() / 3600 < MIN_REST_HOURS:
-                    rest_ok = False
-                if not rest_ok:
-                    continue
-
-            # 36h weekly rest rule: OC (beredskap) blocks weekly rest per ATL §14
-            if not check_weekly_rest_ok(d, tgt_code, my_pid):
-                continue
 
         # Calculate OB hours for the target's shift
         ob_total = 0.0
@@ -196,6 +163,8 @@ async def get_user_shifts(
                 "code": tgt_code,
                 "label": (tgt_shift.label or tgt_code) if tgt_shift else tgt_code,
                 "ob_hours": round(ob_total, 1),
+                # The rules (rest, slot conflicts, OC) live in check_swap; failing days stay listed, greyed.
+                "blocked": check_swap(db, current_user, target, center, d),
             }
         )
 
