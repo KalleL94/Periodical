@@ -6,10 +6,20 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.core.schedule import build_week_data, calculate_shift_hours
+from app.core.schedule import build_week_data, calculate_shift_hours, get_shift_types
+from app.core.schedule.period import oncall_window
 from app.core.schedule.vacation import get_vacation_dates_for_year
 from app.core.utils import get_today
-from app.database.database import Absence, ShiftOverride, ShiftSwap, SwapStatus, User, UserRole
+from app.database.database import (
+    Absence,
+    OnCallOverride,
+    OnCallOverrideType,
+    ShiftOverride,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +29,7 @@ MIN_WEEKLY_REST_HOURS = 36
 
 SWAPPABLE_CODES = frozenset({"N1", "N2", "N3", "OC", "OFF"})
 
-OFF_DAY = ("OFF", None, None)
+OFF_DAY = ("OFF", None, None, (None, None, None, None))
 
 SLOT_TAKEN = "Ett byte finns redan för någon av personerna på dessa datum"
 
@@ -93,24 +103,50 @@ def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_dat
     return None
 
 
-def _week(db: Session, user: User, day: date, cache: dict) -> dict:
-    """{date: (code, start, end)} for user's ISO week of day, from build_week_data.
+def _custom_times(shift) -> tuple[str | None, str | None]:
+    """The shift's own "HH:MM" window when it differs from its shift type's, else (None, None)."""
+    default = next((s for s in get_shift_types() if s.code == shift.code), None)
+    times = (shift.start_time, shift.end_time)
+    return (None, None) if default and times == (default.start_time, default.end_time) else times
+
+
+def _day(db: Session, user: User, day: date, cache: dict) -> tuple:
+    """(code, start, end, times) for user on day, from build_week_data.
 
     start and end are the real datetimes of the day's work (custom and overtime clock
-    times included), None when the day has none. Cached per user and ISO week.
+    times included), None when the day has none. times is (start, end, oc_start, oc_end):
+    the custom shift window and the OnCallOverride window as "HH:MM", None for the
+    shift type's own times and for whole-day on-call. Cached per user, position and ISO week.
     """
+    pos = user.rotation_person_id
     year, week, _ = day.isocalendar()
-    key = (user.id, year, week)
+    key = (user.id, pos, year, week)
     if key not in cache:
+        monday = date.fromisocalendar(year, week, 1)
+        oncall = {
+            r.date: r
+            for r in db.query(OnCallOverride).filter(
+                OnCallOverride.user_id == user.id,
+                OnCallOverride.date.between(monday, monday + timedelta(days=6)),
+                OnCallOverride.override_type == OnCallOverrideType.ADD,
+            )
+        }
         cache[key] = {}
-        for d in build_week_data(year, week, person_id=user.rotation_person_id, session=db):
-            code = d["shift"].code if d.get("shift") else "OFF"
+        for d in build_week_data(year, week, person_id=pos, session=db):
+            shift = d.get("shift")
+            code = shift.code if shift else "OFF"
             start, end = d.get("start"), d.get("end")
             if code == "OC" and not (start and end):
                 # An on-call day can come back without clock times; it still blocks weekly rest.
                 _, start, end = calculate_shift_hours(d["date"], code)
-            cache[key][d["date"]] = (code, start, end)
-    return cache[key]
+            times = _custom_times(shift) if shift and code != "OFF" else (None, None)
+            row = oncall.get(d["date"]) if code == "OC" else None
+            if row and oncall_window(d["date"], row) != oncall_window(d["date"]):
+                times += (row.start_time, row.end_time)
+            else:
+                times += (None, None)
+            cache[key][d["date"]] = (code, start, end, times)
+    return cache[key].get(day, OFF_DAY)
 
 
 def effective_code(db: Session, user: User, day: date, cache: dict | None = None) -> str:
@@ -120,7 +156,17 @@ def effective_code(db: Session, user: User, day: date, cache: dict | None = None
     rotation and OnCallOverride all count. Pass the same cache dict across calls to
     build each user's ISO week once.
     """
-    return _week(db, user, day, {} if cache is None else cache).get(day, OFF_DAY)[0]
+    return _day(db, user, day, {} if cache is None else cache)[0]
+
+
+def assignment(db: Session, user: User, day: date, cache: dict | None = None) -> tuple:
+    """Everything a swap hands over for user on day: (code, start, end, oc_start, oc_end).
+
+    start and end are the custom shift window, oc_start and oc_end the on-call window,
+    "HH:MM" strings or None for the defaults. See _day.
+    """
+    code, _, _, times = _day(db, user, day, {} if cache is None else cache)
+    return (code, *times)
 
 
 def _can_swap(user: User) -> bool:
@@ -231,7 +277,7 @@ def _days(db: Session, user: User, first: date, last: date, cache: dict) -> dict
     days = {}
     for n in range((last - first).days + 1):
         d = first + timedelta(days=n)
-        days[d] = _week(db, user, d, cache).get(d, OFF_DAY)
+        days[d] = _day(db, user, d, cache)
     return days
 
 
@@ -241,7 +287,7 @@ def _hours(delta: timedelta) -> float:
 
 def _work(days: dict, with_oc: bool) -> list[tuple[datetime, datetime, date]]:
     """Sorted (start, end, day) of the work in days. On call (OC) blocks weekly rest only."""
-    return sorted((s, e, d) for d, (code, s, e) in days.items() if s and e and (with_oc or code != "OC"))
+    return sorted((s, e, d) for d, (code, s, e, _) in days.items() if s and e and (with_oc or code != "OC"))
 
 
 def _shortest_daily_rest(days: dict, dates: set[date]) -> float | None:

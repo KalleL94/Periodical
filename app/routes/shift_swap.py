@@ -14,8 +14,16 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user, get_current_user_optional
 from app.core.helpers import contrast_color
-from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache, get_shift_types
-from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, effective_code, proposal_warnings, validate_proposal
+from app.core.schedule import calculate_shift_hours, clear_schedule_cache, get_shift_types
+from app.core.swaps import (
+    MAX_PAIRS,
+    _can_swap,
+    assignment,
+    check_swap,
+    effective_code,
+    proposal_warnings,
+    validate_proposal,
+)
 from app.core.utils import get_today
 from app.database.database import (
     OnCallOverride,
@@ -35,23 +43,64 @@ router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
 MAX_WEEKS = 6
 
 
-def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_code: str, cache: dict) -> None:
-    """Write the swap as ShiftOverride rows, the same result the legacy swap_map gives.
+def _swap_rows(db: Session, swap: ShiftSwap, cache: dict) -> dict:
+    """{(user_id, date): assignment} each slot gets, read before anything is written.
 
-    On each date the two people exchange their effective shifts (OC included). A same-day
-    swap collapses to two rows. "OFF" is written as a code so a shift given away stays free.
+    On each date the two people exchange their effective days (OC included). A same-day
+    swap collapses to two slots.
     """
     requester, target = swap.requester, swap.target
     rd, td = swap.requester_date, swap.target_date
-    rows = {
-        (requester.id, rd): effective_code(db, target, rd, cache),
-        (target.id, rd): req_code,
-        (target.id, td): effective_code(db, requester, td, cache),
-        (requester.id, td): tgt_code,  # same day: overwrites the first key
+    return {
+        (requester.id, rd): assignment(db, target, rd, cache),
+        (target.id, rd): assignment(db, requester, rd, cache),
+        (target.id, td): assignment(db, requester, td, cache),
+        (requester.id, td): assignment(db, target, td, cache),  # same day: overwrites the first key
     }
+
+
+def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, rows: dict) -> None:
+    """Write the swap's rows from _swap_rows: a ShiftOverride per slot, plus an on-call window.
+
+    "OFF" is written as a code so a shift given away stays free. A custom shift window
+    goes on the ShiftOverride, an on-call window on an OnCallOverride ADD owned by the swap.
+    """
     swap.replaced_rows = json.dumps(_take_manual_rows(db, rows))
-    for (user_id, day), code in rows.items():
-        db.add(ShiftOverride(user_id=user_id, date=day, shift_code=code, swap_id=swap.id, created_by=target.id))
+    for (user_id, day), (code, start, end, oc_start, oc_end) in rows.items():
+        db.add(
+            ShiftOverride(
+                user_id=user_id,
+                date=day,
+                shift_code=code,
+                start_time=time_cls.fromisoformat(start) if start else None,
+                end_time=time_cls.fromisoformat(end) if end else None,
+                swap_id=swap.id,
+                created_by=swap.target_id,
+            )
+        )
+        if oc_start or oc_end:
+            db.add(
+                OnCallOverride(
+                    user_id=user_id,
+                    date=day,
+                    override_type=OnCallOverrideType.ADD,
+                    start_time=oc_start,
+                    end_time=oc_end,
+                    swap_id=swap.id,
+                    created_by=swap.target_id,
+                )
+            )
+
+
+def _proposed(swap: ShiftSwap) -> list:
+    """[requester's day, target's day] as captured at propose, see assignment.
+
+    A proposal from before the capture existed only knows the codes, so default times
+    are assumed and a day with its own times reads as changed.
+    """
+    if swap.proposed_assignments:
+        return json.loads(swap.proposed_assignments)
+    return [[swap.requester_shift_code, None, None, None, None], [swap.target_shift_code, None, None, None, None]]
 
 
 def _iso(value) -> str | None:
@@ -186,21 +235,17 @@ async def check_pairs(
 
 
 def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
-    """{date: {"code", "start", "end"}} from build_week_data, so overrides and swaps count."""
-    days = {}
-    for monday in range(start.toordinal() - start.weekday(), end.toordinal() + 1, 7):
-        week = date_cls.fromordinal(monday).isocalendar()
-        for info in build_week_data(week[0], week[1], person_id=user.rotation_person_id, session=db):
-            shift = info.get("shift")
-            code = shift.code if shift else "OFF"
-            start_dt = end_dt = None
-            if code != "OFF":
-                _, start_dt, end_dt = calculate_shift_hours(info["date"], shift)
-            days[info["date"]] = {
-                "code": code,
-                "start": start_dt.strftime("%H:%M") if start_dt else None,
-                "end": end_dt.strftime("%H:%M") if end_dt else None,
-            }
+    """{date: {"code", "start", "end"}} as a swap would hand the day over, see assignment."""
+    days, cache = {}, {}
+    for n in range((end - start).days + 1):
+        d = start + timedelta(days=n)
+        code, custom_start, custom_end, _, _ = assignment(db, user, d, cache)
+        _, start_dt, end_dt = calculate_shift_hours(d, code)
+        days[d] = {
+            "code": code,
+            "start": custom_start or (start_dt.strftime("%H:%M") if start_dt else None),
+            "end": custom_end or (end_dt.strftime("%H:%M") if end_dt else None),
+        }
     return days
 
 
@@ -407,14 +452,17 @@ async def propose_swap(
 
     group_id = uuid4().hex
     for rd, td in pairs:
+        given = assignment(db, current_user, rd, cache)
+        taken = assignment(db, target_user, td, cache)
         db.add(
             ShiftSwap(
                 requester_id=current_user.id,
                 target_id=target_id,
                 requester_date=rd,
                 target_date=td,
-                requester_shift_code=effective_code(db, current_user, rd, cache),
-                target_shift_code=effective_code(db, target_user, td, cache),
+                requester_shift_code=given[0],
+                target_shift_code=taken[0],
+                proposed_assignments=json.dumps([given, taken]),
                 message=message,
                 applied_as_override=True,
                 group_id=group_id,
@@ -436,7 +484,7 @@ async def accept_swap(
     group_ids = frozenset(s.id for s in group)
 
     # Check every pair before writing anything, so a failure leaves the group PENDING.
-    codes = []
+    planned = []
     cache: dict = {}
     for swap in group:
         reason = check_swap(
@@ -450,16 +498,18 @@ async def accept_swap(
         )
         if reason:
             raise HTTPException(status_code=400, detail=reason)
-        req_code = effective_code(db, swap.requester, swap.requester_date, cache)
-        tgt_code = effective_code(db, swap.target, swap.target_date, cache)
-        if (req_code, tgt_code) != (swap.requester_shift_code, swap.target_shift_code):
+        rows = _swap_rows(db, swap, cache)
+        # The whole day is compared, custom times and the on-call window included.
+        given = rows[(swap.target_id, swap.requester_date)]
+        taken = rows[(swap.requester_id, swap.target_date)]
+        if _proposed(swap) != [list(given), list(taken)]:
             raise HTTPException(status_code=400, detail="Schemat har ändrats sedan förslaget")
-        codes.append((req_code, tgt_code))
+        planned.append(rows)
 
     now = utcnow()
-    for swap, (req_code, tgt_code) in zip(group, codes, strict=True):
-        # Codes come from the cache filled before any write, so earlier pairs cannot leak in.
-        _apply_swap_as_overrides(db, swap, req_code, tgt_code, cache)
+    for swap, rows in zip(group, planned, strict=True):
+        # Rows were read before any write, so earlier pairs cannot leak in.
+        _apply_swap_as_overrides(db, swap, rows)
         # A swap proposed before overrides existed must leave swap_map too, or it counts twice.
         swap.applied_as_override = True
         swap.status = SwapStatus.ACCEPTED
@@ -504,7 +554,9 @@ async def cancel_swap(
         raise HTTPException(status_code=400, detail="Kan bara avbryta väntande eller accepterade byten")
 
     # Legacy swaps own no rows; rows an admin has since edited have swap_id cleared.
-    db.query(ShiftOverride).filter(ShiftOverride.swap_id.in_([s.id for s in group])).delete()
+    swap_ids = [s.id for s in group]
+    db.query(ShiftOverride).filter(ShiftOverride.swap_id.in_(swap_ids)).delete()
+    db.query(OnCallOverride).filter(OnCallOverride.swap_id.in_(swap_ids)).delete()
     now = utcnow()
     for swap in group:
         _restore_manual_rows(db, swap)

@@ -87,6 +87,8 @@ async def add_oncall_override(
             existing.end_time = window_end
             existing.reason = reason
             existing.created_by = current_user.id
+            # An edited swap row becomes a manual row, so cancelling the swap leaves it.
+            existing.swap_id = None
             return
         session.add(
             OnCallOverride(
@@ -146,6 +148,7 @@ async def remove_oncall_override(
         existing.end_time = None
         existing.reason = reason
         existing.created_by = current_user.id
+        existing.swap_id = None
     else:
         # Create new override
         override = OnCallOverride(
@@ -185,6 +188,7 @@ async def delete_oncall_override(
 
     # Permission check
     require_own_or_admin(current_user, override.user_id, "Not authorized to delete this on-call override")
+    refuse_swap_rows(session, current_user, override.user_id, [override.date])
 
     # Save info for redirect
     user_id = override.user_id

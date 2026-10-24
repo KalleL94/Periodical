@@ -10,8 +10,8 @@
       },
       {
         "type": "nyhet",
-        "sv": "OC-pass kan bytas mot alla pass, och ett byte kan göras även när det redan finns en manuell ändring på dagen. Avbryter ni bytet kommer den manuella ändringen tillbaka.",
-        "en": "On-call shifts can be swapped against any shift, and a swap can be made even when the day already has a manual change. If you cancel the swap, the manual change comes back."
+        "sv": "OC-pass kan bytas mot alla pass, och ett byte kan göras även när det redan finns en manuell ändring på dagen. Avbryter ni bytet kommer den manuella ändringen tillbaka. Ett pass med egna tider eller en delad beredskap byts med sina tider.",
+        "en": "On-call shifts can be swapped against any shift, and a swap can be made even when the day already has a manual change. If you cancel the swap, the manual change comes back. A shift with its own times or a shared on-call day is swapped with its times."
       },
       {
         "type": "nyhet",

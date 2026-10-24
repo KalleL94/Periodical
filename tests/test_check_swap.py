@@ -209,8 +209,8 @@ def test_effective_code_follows_overrides(db):
     assert swaps.effective_code(db, db.get(User, 7), D(2026, 10, 26), cache) == "N1"
     assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 27), cache) == "OC"
     assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 26), cache) == "OFF"
-    # One build_week_data per user and ISO week.
-    assert set(cache) == {(7, 2026, 44), (10, 2026, 44)}
+    # One build_week_data per user, position and ISO week.
+    assert {k for k in cache if k[0] != "position"} == {(7, 7, 2026, 44), (10, 10, 2026, 44)}
 
 
 @pytest.mark.parametrize(

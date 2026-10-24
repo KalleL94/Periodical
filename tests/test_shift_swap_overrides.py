@@ -136,8 +136,9 @@ async def test_accept_one_way_writes_two_rows(db):
 @pytest.mark.anyio
 async def test_accept_refuses_stale_codes(db):
     swap = await _propose(db, 7, 8, OCT25, NOV1)
-    # Simulate the rotation changing after the proposal: the stored code no longer matches.
-    swap.requester_shift_code = "N1"
+    # Simulate the rotation changing after the proposal: the stored day no longer matches.
+    given, taken = json.loads(swap.proposed_assignments)
+    swap.proposed_assignments = json.dumps([["N1", *given[1:]], taken])
     db.commit()
     with pytest.raises(HTTPException) as exc:
         await accept_swap(swap.id, current_user=db.get(User, 8), db=db)

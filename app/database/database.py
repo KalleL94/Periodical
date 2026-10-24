@@ -319,6 +319,8 @@ class OnCallOverride(Base):
     reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Set when an accepted shift swap wrote the row to carry an on-call window
+    swap_id = Column(Integer, ForeignKey("shift_swaps.id"), nullable=True)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
@@ -602,6 +604,9 @@ class ShiftSwap(Base):
     # JSON list of the manual ShiftOverride and OnCallOverride rows accepting replaced,
     # restored on cancel; None for swaps accepted before this existed
     replaced_rows = Column(Text, nullable=True)
+    # JSON [requester's day, target's day] as swaps.assignment saw them at propose,
+    # compared at accept; None for proposals made before this existed
+    proposed_assignments = Column(Text, nullable=True)
 
     # Relationships
     requester = relationship("User", foreign_keys=[requester_id])

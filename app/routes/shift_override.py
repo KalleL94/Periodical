@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
-from app.database.database import ShiftOverride, User, UserRole, get_db
+from app.database.database import OnCallOverride, ShiftOverride, User, UserRole, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 
@@ -23,21 +23,18 @@ def refuse_swap_rows(session, current_user: User, user_id: int, dates) -> None:
     """Raise 400 if a non-admin would change a slot that holds a row an accepted swap wrote.
 
     Covers ShiftOverride and OnCallOverride writes: an on-call change would run after
-    the swap's row and undo it.
+    the swap's row and undo it. A swap's own OnCallOverride (its on-call window) counts too.
 
     A participant undoes a swap by cancelling it, which removes every row at once.
     An admin may change one row; upsert_shift_override then makes it manual.
     """
     if current_user.role == UserRole.ADMIN or not dates:
         return
-    owned = (
-        session.query(ShiftOverride.id)
-        .filter(
-            ShiftOverride.user_id == user_id,
-            ShiftOverride.date.in_(list(dates)),
-            ShiftOverride.swap_id.isnot(None),
-        )
+    owned = any(
+        session.query(model.id)
+        .filter(model.user_id == user_id, model.date.in_(list(dates)), model.swap_id.isnot(None))
         .first()
+        for model in (ShiftOverride, OnCallOverride)
     )
     if owned:
         raise HTTPException(status_code=400, detail="Passet hör till ett byte, avbryt bytet i stället")

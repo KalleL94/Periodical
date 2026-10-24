@@ -129,7 +129,7 @@ async def test_accept_group_applies_all(db):
 @pytest.mark.anyio
 async def test_accept_group_all_or_nothing(db):
     rows = await _propose(db, [PAIR_A, PAIR_B])
-    rows[1].requester_shift_code = "N1"  # the rotation changed under pair 2
+    _stale(rows[1])  # the rotation changed under pair 2
     db.commit()
     with pytest.raises(HTTPException) as exc:
         await accept_swap(rows[0].id, current_user=db.get(User, 8), db=db)
@@ -137,6 +137,12 @@ async def test_accept_group_all_or_nothing(db):
     assert exc.value.detail == "Schemat har ändrats sedan förslaget"
     assert _statuses(db) == [SwapStatus.PENDING] * 2
     assert db.query(ShiftOverride).count() == 0
+
+
+def _stale(row):
+    """Make the stored proposal disagree with the schedule, as a rotation change would."""
+    given, taken = json.loads(row.proposed_assignments)
+    row.proposed_assignments = json.dumps([["N1", *given[1:]], taken])
 
 
 def _manual_n1_on_pair_b(db):
@@ -159,7 +165,7 @@ async def test_accept_group_over_manual_row(db):
 async def test_accept_group_over_manual_row_all_or_nothing(db):
     _manual_n1_on_pair_b(db)
     rows = await _propose(db, [PAIR_A, PAIR_B])
-    rows[0].requester_shift_code = "N1"  # the schedule changed under pair 1
+    _stale(rows[0])  # the schedule changed under pair 1
     db.commit()
     with pytest.raises(HTTPException):
         await accept_swap(rows[0].id, current_user=db.get(User, 8), db=db)

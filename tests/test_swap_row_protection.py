@@ -9,7 +9,7 @@ import datetime
 import pytest
 
 from app.auth.auth import create_access_token
-from app.database.database import OnCallOverride, ShiftOverride, ShiftSwap, SwapStatus
+from app.database.database import OnCallOverride, OnCallOverrideType, ShiftOverride, ShiftSwap, SwapStatus
 
 DAY = datetime.date(2026, 11, 2)
 REFUSAL = "Passet hör till ett byte, avbryt bytet i stället"
@@ -166,3 +166,37 @@ def test_admin_oncall_add_over_swap_row_allowed(as_admin, test_db, test_user, sw
     assert r.status_code == 303
     assert test_db.query(OnCallOverride).count() == 1
     _assert_untouched(test_db, swap_row)
+
+
+@pytest.fixture
+def swap_oncall_row(test_db, test_user, swap_row):
+    row = OnCallOverride(
+        user_id=test_user.id,
+        date=DAY,
+        override_type=OnCallOverrideType.ADD,
+        start_time="00:00",
+        end_time="12:00",
+        swap_id=swap_row.swap_id,
+        created_by=test_user.id,
+    )
+    test_db.add(row)
+    test_db.commit()
+    return row
+
+
+def test_participant_oncall_delete_of_swap_row_refused(as_user, test_db, swap_oncall_row):
+    r = as_user.post(f"/oncall/{swap_oncall_row.id}/delete", follow_redirects=False)
+    _assert_refused(r)
+    test_db.expire_all()
+    assert test_db.get(OnCallOverride, swap_oncall_row.id) is not None
+
+
+def test_admin_oncall_edit_detaches_swap_row(as_admin, test_db, test_user, swap_oncall_row):
+    r = as_admin.post(
+        "/oncall/add",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat()]},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    test_db.expire_all()
+    assert test_db.get(OnCallOverride, swap_oncall_row.id).swap_id is None

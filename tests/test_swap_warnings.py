@@ -91,7 +91,7 @@ def test_proposal_warnings_logs_and_returns_empty_on_error(db, monkeypatch, capl
     def boom(*args, **kwargs):
         raise RuntimeError("broken helper")
 
-    monkeypatch.setattr(swaps, "_week", boom)
+    monkeypatch.setattr(swaps, "_day", boom)
     with caplog.at_level("ERROR", logger="app.core.swaps"):
         assert _warn(db, 7, 8, [(D(2026, 10, 25), D(2026, 11, 1))] * 2) == [[], []]
     assert "broken helper" in caplog.text
