@@ -5,13 +5,14 @@ from datetime import date as date_cls
 from datetime import timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth.auth import get_current_user
-from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache
+from app.auth.auth import get_current_user, get_current_user_optional
+from app.core.helpers import contrast_color
+from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache, get_shift_types
 from app.core.swaps import MAX_PAIRS, check_swap, shift_code_on, swap_warnings, validate_proposal
 from app.core.utils import get_today
 from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, get_db, utcnow
@@ -73,6 +74,16 @@ class CheckPair(BaseModel):
 class CheckRequest(BaseModel):
     target_id: int
     pairs: list[CheckPair] = Field(min_length=1, max_length=MAX_PAIRS)
+
+
+def _colleagues(db: Session, user: User) -> list[User]:
+    """Active non-admin users other than user, the people a swap can be proposed to."""
+    return (
+        db.query(User)
+        .filter(User.is_active == 1, User.id != user.id, User.role != UserRole.ADMIN)
+        .order_by(User.name)
+        .all()
+    )
 
 
 @router.post("/api/check")
@@ -137,19 +148,39 @@ async def day_takers(
     db: Session = Depends(get_db),
 ):
     """Every colleague and what they could do with the viewer's shift on date."""
-    colleagues = (
-        db.query(User)
-        .filter(User.is_active == 1, User.id != current_user.id, User.role != UserRole.ADMIN)
-        .order_by(User.name)
-        .all()
-    )
     result = []
-    for colleague in colleagues:
+    for colleague in _colleagues(db, current_user):
         verdict = _assess(db, current_user, colleague, date, date)
         if verdict["kind"] not in ("mutual", "give_away"):
             verdict["kind"] = None
         result.append({"id": colleague.id, "name": colleague.name, **verdict})
     return {"colleagues": result}
+
+
+@router.get("/new", response_class=HTMLResponse)
+async def new_swap_page(
+    request: Request,
+    date: date_cls | None = None,
+    with_id: int | None = Query(None, alias="with"),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Compare screen: pick a colleague, tap your day then theirs, send the pairs as one proposal."""
+    if current_user is None:
+        return RedirectResponse(url="/login?next=/swaps/new", status_code=302)
+    colors = {s.code: [s.color, contrast_color(s.color)] for s in get_shift_types() if s.color and s.code != "OFF"}
+    return render(
+        "swap_new.html",
+        {
+            "request": request,
+            "user": current_user,
+            "colleagues": _colleagues(db, current_user),
+            "date": date,
+            "with_id": with_id,
+            "shift_colors": colors,
+            "max_pairs": MAX_PAIRS,
+        },
+    )
 
 
 @router.get("/", response_class=HTMLResponse)

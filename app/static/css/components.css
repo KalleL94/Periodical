@@ -1279,3 +1279,54 @@ td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 1
   .per-day-table tr.is-area-time .per-day-area--time,
   .per-day-table tr.is-area-shift .per-day-area--shift { display: block; }
 }
+
+/* Swap compare screen (swap_new.html, swap-compare.js). One small table per
+   week, stacked, so seven day columns fit at 360 px without sideways scroll.
+   The .swap-grid prefix outranks the keep-table padding in tables.css. */
+.swap-grid { margin: 1rem 0 0.5rem; }
+.swap-hint { color: var(--muted); margin: 0 0 0.5rem; }
+.swap-grid table.swap-week { table-layout: fixed; margin: 0 0 0.75rem; }
+.swap-grid table.swap-week th,
+.swap-grid table.swap-week td { padding: 2px; text-align: center; border: 1px solid var(--line); }
+.swap-grid table.swap-week thead th:first-child { width: 3.75rem; }
+.swap-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; font-weight: 600; }
+.swap-grid table.swap-week .swap-who { text-align: left; padding-left: 4px; }
+.swap-grid table.swap-week .swap-day { font-size: 0.7rem; font-weight: 400; line-height: 1.2; }
+.swap-day span { display: block; }
+.swap-day-num { font-family: var(--font-mono); color: var(--faint); }
+.swap-cell {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+.swap-cell:hover { background: var(--panel-2); border-color: var(--line-strong); }
+.swap-cell.is-off { color: var(--faint); }
+.swap-cell.is-selected { outline: 3px solid var(--text); outline-offset: 1px; }
+.swap-cell.is-suggested { border-color: var(--success); border-style: dashed; }
+.swap-cell.is-paired { opacity: 0.45; }
+.swap-status { color: var(--warning); min-height: 1.5em; margin: 0 0 1rem; }
+.swap-takers-list, .swap-pairs { list-style: none; padding: 0; margin: 0 0 1rem; }
+.swap-taker, .swap-pair {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.swap-taker-info, .swap-pair-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.swap-taker.is-blocked .swap-taker-info { color: var(--muted); }
+.swap-warning { color: var(--warning); font-size: 0.85rem; }
+.swap-taker button, .swap-pair button { flex: none; padding: 0.35rem 0.75rem; font-size: 0.85rem; white-space: nowrap; }
+.swap-propose textarea { width: 100%; }
+@media (min-width: 720px) {
+  .swap-grid table.swap-week thead th:first-child { width: 7rem; }
+  .swap-who { font-size: 0.85rem; }
+  .swap-cell { min-height: 2.75rem; font-size: 0.9rem; }
+}
