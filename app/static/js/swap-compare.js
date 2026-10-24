@@ -1,8 +1,9 @@
 // Compare screen for proposing shift swaps (/swaps/new).
 //
 // Pick a colleague, tap one of your days, then one of theirs. /swaps/api/check
-// decides whether the pair is allowed; allowed pairs collect in a list that a
-// plain form posts to /swaps/propose as repeated req_date and tgt_date fields.
+// decides whether the pair is allowed and gives rest warnings for the whole list.
+// Allowed pairs collect in a list that a plain form posts to /swaps/propose as
+// repeated req_date and tgt_date fields.
 // With ?date= and no colleague, the "who can take this shift" panel from
 // /swaps/api/day-takers comes first.
 (function () {
@@ -311,19 +312,46 @@
         renderPairs();
     }
 
+    function pairBody(p) {
+        return { req_date: p.req, tgt_date: p.tgt };
+    }
+    function sameList(list) {
+        return list.length === state.pairs.length && list.every((p, i) => p === state.pairs[i]);
+    }
+    function setWarnings(list, results) {
+        list.forEach((p, i) => { p.warnings = results[i].warnings; });
+    }
+
+    // Rest warnings depend on the whole list, so every change re-checks all pairs together.
+    function refreshWarnings() {
+        const list = state.pairs.slice();
+        if (!list.length) return;
+        check(list.map(pairBody)).then((results) => {
+            if (!sameList(list)) return; // a newer change runs its own check
+            setWarnings(list, results);
+            render();
+        }).catch(() => say(T.load_error));
+    }
+
     function addPair(req, tgt) {
         if (state.pairs.length >= MAX) return say(T.max.replace('{n}', MAX));
         const clash = () => slots(req, tgt).some((s) => usedSlots().has(s));
         if (clash()) return say(T.slot_used);
         const target = state.target; // navigating periods must not drop this answer
-        check([{ req_date: req, tgt_date: tgt }]).then(([r]) => {
+        const list = state.pairs.slice();
+        // The candidate goes last, after the pairs already chosen.
+        check(list.map(pairBody).concat([{ req_date: req, tgt_date: tgt }])).then((results) => {
             if (target !== state.target) return;
+            const r = results[results.length - 1];
             if (r.blocked) return say(r.blocked);
             if (clash() || state.pairs.length >= MAX) return; // a double tap already added it
+            const fresh = sameList(list);
+            if (fresh) setWarnings(list, results);
             state.pairs.push({ req: req, tgt: tgt, kind: r.kind, warnings: r.warnings });
             state.pendingOwn = null;
             say('');
             render();
+            if (!fresh) refreshWarnings(); // the list changed while the check ran
         }).catch(() => say(T.load_error));
     }
 
@@ -348,6 +376,7 @@
         state.pairs.splice(parseInt(btn.dataset.index, 10), 1);
         say('');
         render();
+        refreshWarnings();
     });
 
     form.addEventListener('submit', () => {

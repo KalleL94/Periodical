@@ -47,15 +47,21 @@ def _setup(test_db, monkeypatch):
     _user(test_db, 1, "Me Myself")
     _user(test_db, 2, "Anna Colleague")
     test_db.commit()
-    monkeypatch.setattr(shift_swap, "swap_warnings", lambda *a: ["Under 11 timmars dygnsvila (du)"])
+    calls = []
+
+    def fake_warnings(db, requester, target, pairs, cache=None):
+        calls.append(pairs)
+        return [["Under 11 timmars dygnsvila (du)"]] * len(pairs)
+
+    monkeypatch.setattr(shift_swap, "proposal_warnings", fake_warnings)
     first = _row(test_db, "g1", D(2026, 10, 27), D(2026, 10, 28), "D1", "N1")
     _row(test_db, "g1", D(2026, 10, 29), D(2026, 10, 29), "OFF", "D2")
     legacy = _row(test_db, None, D(2026, 11, 3), D(2026, 11, 3), "D1", "OFF", SwapStatus.ACCEPTED)
-    return first, legacy
+    return first, legacy, calls
 
 
 def test_inbox_groups_rows(test_client, test_db, monkeypatch):
-    first, legacy = _setup(test_db, monkeypatch)
+    first, legacy, calls = _setup(test_db, monkeypatch)
 
     test_client.cookies.set("access_token", create_access_token(data={"sub": "1"}))
     sent = test_client.get("/swaps/")
@@ -65,6 +71,8 @@ def test_inbox_groups_rows(test_client, test_db, monkeypatch):
     assert page.count('class="swap-card"') == 2
     assert page.count('class="swap-card-pair"') == 3
     assert "Hej Anna" in page
+    # The pending group's warnings come from one call over both pairs together.
+    assert calls == [[(D(2026, 10, 27), D(2026, 10, 28)), (D(2026, 10, 29), D(2026, 10, 29))]]
     assert "Under 11 timmars dygnsvila (du)" in page
     # Pending group: cancel posts to the first row. Accepted legacy: cancel too.
     assert f'action="/swaps/{first.id}/cancel"' in page

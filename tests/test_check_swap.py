@@ -16,7 +16,7 @@ import datetime
 import pytest
 
 from app.core import swaps
-from app.core.swaps import check_rest_ok, check_swap
+from app.core.swaps import check_swap
 from app.database.database import (
     Absence,
     AbsenceType,
@@ -223,21 +223,8 @@ def test_effective_code_follows_overrides(db):
     ],
 )
 def test_check_swap_ignores_rest(db, req_id, tgt_id, req_date, tgt_date):
-    # Rest breaches are warnings (swap_warnings), no longer hard stops.
+    # Rest breaches are warnings (proposal_warnings), no longer hard stops.
     assert check_swap(db, db.get(User, req_id), db.get(User, tgt_id), req_date, tgt_date) is None
-
-
-def test_rest_off_dates_dev_reproduction(db):
-    # Dev case: user 8 works N3 on 26-28 Oct, user 7 works N2 on 26-29 Oct.
-    # Giving away N3 on the 28th for N2 on the 29th passes 11 h rest on both sides
-    # once each given-away date counts as OFF. (The test rotation's OC on the
-    # 31st makes the full swap fail 36 h weekly rest here, so 11 h is checked directly.)
-    okan, marcus = db.get(User, 8).rotation_person_id, db.get(User, 7).rotation_person_id
-    oct28, oct29 = D(2026, 10, 28), D(2026, 10, 29)
-    assert not check_rest_ok(oct29, "N2", okan, session=db)
-    assert check_rest_ok(oct29, "N2", okan, session=db, off_dates=frozenset({oct28}))
-    assert not check_rest_ok(oct28, "N3", marcus, session=db)
-    assert check_rest_ok(oct28, "N3", marcus, session=db, off_dates=frozenset({oct29}))
 
 
 def test_exclude_swap_ids_ignores_own_swap(db):

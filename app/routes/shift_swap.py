@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, get_current_user_optional
 from app.core.helpers import contrast_color
 from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache, get_shift_types
-from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, effective_code, swap_warnings, validate_proposal
+from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, effective_code, proposal_warnings, validate_proposal
 from app.core.utils import get_today
 from app.database.database import (
     OnCallOverride,
@@ -124,16 +124,27 @@ def _kind(req_date: date_cls, tgt_date: date_cls, req_code: str, tgt_code: str) 
     return None
 
 
-def _assess(db: Session, requester: User, target: User, req_date: date_cls, tgt_date: date_cls, cache: dict) -> dict:
-    """check_swap verdict, rest warnings and kind for one pair, as the compare screen shows it."""
-    blocked = check_swap(db, requester, target, req_date, tgt_date, cache=cache)
-    req_code = effective_code(db, requester, req_date, cache)
-    tgt_code = effective_code(db, target, tgt_date, cache)
-    return {
-        "blocked": blocked,
-        "warnings": [] if blocked else swap_warnings(db, requester, target, req_date, tgt_date),
-        "kind": _kind(req_date, tgt_date, req_code, tgt_code),
-    }
+def _assess(db: Session, requester: User, target: User, pairs: list[tuple[date_cls, date_cls]], cache: dict) -> list:
+    """check_swap verdict, rest warnings and kind per pair, as the compare screen shows them.
+
+    Warnings are measured with every allowed pair applied together, blocked pairs get none.
+    """
+    results = []
+    for req_date, tgt_date in pairs:
+        req_code = effective_code(db, requester, req_date, cache)
+        tgt_code = effective_code(db, target, tgt_date, cache)
+        results.append(
+            {
+                "blocked": check_swap(db, requester, target, req_date, tgt_date, cache=cache),
+                "warnings": [],
+                "kind": _kind(req_date, tgt_date, req_code, tgt_code),
+            }
+        )
+    allowed = [i for i, r in enumerate(results) if not r["blocked"]]
+    warnings = proposal_warnings(db, requester, target, [pairs[i] for i in allowed], cache)
+    for i, w in zip(allowed, warnings, strict=True):
+        results[i]["warnings"] = w
+    return results
 
 
 class CheckPair(BaseModel):
@@ -166,12 +177,12 @@ async def check_pairs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Assess each pair on its own: blocked reason, rest warnings and kind."""
+    """Blocked reason and kind per pair, rest warnings over all allowed pairs together."""
     target = db.get(User, body.target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
-    cache: dict = {}
-    return {"results": [_assess(db, current_user, target, p.req_date, p.tgt_date, cache) for p in body.pairs]}
+    pairs = [(p.req_date, p.tgt_date) for p in body.pairs]
+    return {"results": _assess(db, current_user, target, pairs, {})}
 
 
 def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
@@ -234,7 +245,7 @@ async def day_takers(
     result = []
     cache: dict = {}
     for colleague in _colleagues(db, current_user):
-        verdict = _assess(db, current_user, colleague, date, date, cache)
+        [verdict] = _assess(db, current_user, colleague, [(date, date)], cache)
         if verdict["kind"] not in ("mutual", "give_away"):
             verdict["kind"] = None
         result.append({"id": colleague.id, "name": colleague.name, **verdict})
@@ -283,8 +294,14 @@ def _inbox_groups(db: Session, rows: list[ShiftSwap], viewer: User) -> list[dict
         first = members[0]
         pending = first.status == SwapStatus.PENDING
         mine_is_requester = first.requester_id == viewer.id
+        # Rest is measured with the whole proposal applied, as the compare screen did.
+        warnings = (
+            proposal_warnings(db, first.requester, first.target, [(r.requester_date, r.target_date) for r in members])
+            if pending
+            else [[] for _ in members]
+        )
         pairs = []
-        for r in members:
+        for r, pair_warnings in zip(members, warnings, strict=True):
             same_day = r.requester_date == r.target_date
             req_free = r.requester_shift_code == "OFF" and same_day
             tgt_free = r.target_shift_code == "OFF" and same_day
@@ -294,9 +311,7 @@ def _inbox_groups(db: Session, rows: list[ShiftSwap], viewer: User) -> list[dict
                 {
                     "give": req_side if mine_is_requester else tgt_side,
                     "take": tgt_side if mine_is_requester else req_side,
-                    "warnings": swap_warnings(db, r.requester, r.target, r.requester_date, r.target_date)
-                    if pending
-                    else [],
+                    "warnings": pair_warnings,
                 }
             )
         result.append(

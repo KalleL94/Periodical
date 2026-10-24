@@ -7,7 +7,6 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.schedule import build_week_data, calculate_shift_hours
-from app.core.schedule.core import determine_shift_for_date
 from app.core.schedule.vacation import get_vacation_dates_for_year
 from app.core.utils import get_today
 from app.database.database import Absence, ShiftOverride, ShiftSwap, SwapStatus, User, UserRole
@@ -20,133 +19,9 @@ MIN_WEEKLY_REST_HOURS = 36
 
 SWAPPABLE_CODES = frozenset({"N1", "N2", "N3", "OC", "OFF"})
 
+OFF_DAY = ("OFF", None, None)
+
 SLOT_TAKEN = "Ett byte finns redan för någon av personerna på dessa datum"
-
-
-def _get_shift_times_from_session(day, rotation_person_id, session):
-    """Return (start_dt, end_dt) for a person's effective shift on day, respecting accepted swaps."""
-    week_data = build_week_data(
-        day.isocalendar()[0], day.isocalendar()[1], person_id=rotation_person_id, session=session
-    )
-    info = next((d for d in week_data if d["date"] == day), None)
-    if not info:
-        return None, None
-    shift = info.get("shift")
-    if not shift or not shift.start_time or not shift.end_time:
-        return None, None
-    _, start_dt, end_dt = calculate_shift_hours(day, shift)
-    return start_dt, end_dt
-
-
-def _rotation_times(day, rotation_person_id):
-    """Return (start_dt, end_dt) for the raw rotation shift on day, or (None, None) for OFF/OC."""
-    result = determine_shift_for_date(day, rotation_person_id)
-    if result and result[0] and result[0].code not in ("OFF", "OC"):
-        _, start_dt, end_dt = calculate_shift_hours(day, result[0])
-        return start_dt, end_dt
-    return None, None
-
-
-def check_rest_ok(work_date, shift_code, rotation_person_id, session=None, off_dates: frozenset[date] = frozenset()):
-    """Return False if working shift_code on work_date violates 11h rest against adjacent days.
-
-    If session is provided, uses build_week_data (includes accepted swaps) for adjacent days.
-    Otherwise falls back to determine_shift_for_date (raw rotation only).
-    A neighbouring date in off_dates counts as OFF (the shift there is given away).
-    """
-    _, new_start, new_end = calculate_shift_hours(work_date, shift_code)
-    if not new_start or not new_end:
-        return True  # No time data for this shift, cannot validate, allow
-
-    def times(day):
-        if day in off_dates:
-            return None, None
-        if session:
-            return _get_shift_times_from_session(day, rotation_person_id, session)
-        return _rotation_times(day, rotation_person_id)
-
-    _, prev_end = times(work_date - timedelta(days=1))
-    next_start, _ = times(work_date + timedelta(days=1))
-
-    if prev_end and (new_start - prev_end).total_seconds() / 3600 < MIN_REST_HOURS:
-        return False
-    if next_start and (next_start - new_end).total_seconds() / 3600 < MIN_REST_HOURS:
-        return False
-    return True
-
-
-def check_weekly_rest_ok(
-    work_date,
-    new_shift_code,
-    rotation_person_id,
-    original_shift_code=None,
-    off_dates: frozenset[date] = frozenset(),
-):
-    """Return False if any rolling 7-day period containing work_date has < 36h consecutive rest
-    that wasn't already violated by the original shift.
-
-    ATL §14 uses rolling sjudagarsperioder (day 1-7, day 2-8, ...).
-    There are 7 possible windows containing work_date: [D-6..D], [D-5..D+1], ..., [D..D+6].
-    All must be checked. OC (beredskap) blocks weekly rest per ATL §14.
-
-    If original_shift_code is provided (same-day swap replacing an existing shift), a window
-    that already violated 36h with the original shift is not counted as a new violation.
-    The swap is blocked only if it makes weekly rest worse than the original schedule.
-    A date in off_dates counts as OFF (the shift there is given away).
-    """
-
-    def _max_gap_in_window(shift_code_on_work_date, w_start, w_end):
-        """Compute the longest consecutive rest gap (hours) within [w_start, w_end]."""
-        intervals = []
-        for day_offset in range(-6, 7):
-            d = work_date + timedelta(days=day_offset)
-            if d == work_date:
-                code = shift_code_on_work_date
-            elif d in off_dates:
-                code = "OFF"
-            else:
-                result = determine_shift_for_date(d, rotation_person_id)
-                code = result[0].code if result and result[0] else "OFF"
-
-            if code == "OFF":
-                continue
-
-            _, start_dt, end_dt = calculate_shift_hours(d, code)
-            if start_dt and end_dt:
-                clipped_s = max(start_dt, w_start)
-                clipped_e = min(end_dt, w_end)
-                if clipped_s < clipped_e:
-                    intervals.append((clipped_s, clipped_e))
-
-        if not intervals:
-            return 168.0  # No shifts, full week free
-
-        intervals.sort()
-        return max(
-            (intervals[0][0] - w_start).total_seconds() / 3600,
-            *((intervals[i + 1][0] - intervals[i][1]).total_seconds() / 3600 for i in range(len(intervals) - 1)),
-            (w_end - intervals[-1][1]).total_seconds() / 3600,
-        )
-
-    for window_start_offset in range(-6, 1):  # windows starting D-6 to D
-        w_start = datetime.combine(work_date + timedelta(days=window_start_offset), time(0, 0))
-        w_end = w_start + timedelta(hours=168)
-
-        new_gap = _max_gap_in_window(new_shift_code, w_start, w_end)
-        if new_gap >= MIN_WEEKLY_REST_HOURS:
-            continue  # This window is fine
-
-        if original_shift_code is not None:
-            # Same-day swap: only block if the new shift makes weekly rest worse
-            orig_gap = _max_gap_in_window(original_shift_code, w_start, w_end)
-            if new_gap >= orig_gap:
-                continue  # Not worse than before, allow
-            if orig_gap < MIN_WEEKLY_REST_HOURS:
-                continue  # Window already violated before swap, pre-existing issue
-
-        return False  # New violation introduced by this swap
-
-    return True
 
 
 def swap_participant_dates(requester_id: int, target_id: int, requester_date, target_date) -> set[tuple[int, object]]:
@@ -218,10 +93,24 @@ def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_dat
     return None
 
 
-def shift_code_on(day, rotation_person_id) -> str:
-    """The rotation shift code for a position on day, "OFF" when there is none. Rest warnings only."""
-    result = determine_shift_for_date(day, start_week=rotation_person_id)
-    return result[0].code if result and result[0] else "OFF"
+def _week(db: Session, user: User, day: date, cache: dict) -> dict:
+    """{date: (code, start, end)} for user's ISO week of day, from build_week_data.
+
+    start and end are the real datetimes of the day's work (custom and overtime clock
+    times included), None when the day has none. Cached per user and ISO week.
+    """
+    year, week, _ = day.isocalendar()
+    key = (user.id, year, week)
+    if key not in cache:
+        cache[key] = {}
+        for d in build_week_data(year, week, person_id=user.rotation_person_id, session=db):
+            code = d["shift"].code if d.get("shift") else "OFF"
+            start, end = d.get("start"), d.get("end")
+            if code == "OC" and not (start and end):
+                # An on-call day can come back without clock times; it still blocks weekly rest.
+                _, start, end = calculate_shift_hours(d["date"], code)
+            cache[key][d["date"]] = (code, start, end)
+    return cache[key]
 
 
 def effective_code(db: Session, user: User, day: date, cache: dict | None = None) -> str:
@@ -231,14 +120,7 @@ def effective_code(db: Session, user: User, day: date, cache: dict | None = None
     rotation and OnCallOverride all count. Pass the same cache dict across calls to
     build each user's ISO week once.
     """
-    if cache is None:
-        cache = {}
-    year, week, _ = day.isocalendar()
-    key = (user.id, year, week)
-    if key not in cache:
-        days = build_week_data(year, week, person_id=user.rotation_person_id, session=db)
-        cache[key] = {d["date"]: d["shift"].code if d.get("shift") else "OFF" for d in days}
-    return cache[key].get(day, "OFF")
+    return _week(db, user, day, {} if cache is None else cache).get(day, OFF_DAY)[0]
 
 
 def _can_swap(user: User) -> bool:
@@ -344,37 +226,95 @@ def validate_proposal(
     return None
 
 
-def swap_warnings(db: Session, requester: User, target: User, req_date: date, tgt_date: date) -> list[str]:
-    """Return Swedish rest warnings for a swap that check_swap allows. Never raises.
+def _days(db: Session, user: User, first: date, last: date, cache: dict) -> dict:
+    """{date: (code, start, end)} for every day from first to last."""
+    days = {}
+    for n in range((last - first).days + 1):
+        d = first + timedelta(days=n)
+        days[d] = _week(db, user, d, cache).get(d, OFF_DAY)
+    return days
 
-    Rest is measured on the schedule after the swap. Cross-day: each side's given-away
-    date counts as OFF. Same-day: each side takes the other's shift on that date, and
-    the weekly check ignores windows the original shift already violated.
+
+def _hours(delta: timedelta) -> float:
+    return delta.total_seconds() / 3600
+
+
+def _work(days: dict, with_oc: bool) -> list[tuple[datetime, datetime, date]]:
+    """Sorted (start, end, day) of the work in days. On call (OC) blocks weekly rest only."""
+    return sorted((s, e, d) for d, (code, s, e) in days.items() if s and e and (with_oc or code != "OC"))
+
+
+def _shortest_daily_rest(days: dict, dates: set[date]) -> float | None:
+    """Shortest rest between consecutive work blocks where either block is on one of dates."""
+    work = _work(days, with_oc=False)
+    gaps = [_hours(b[0] - a[1]) for a, b in zip(work, work[1:], strict=False) if a[2] in dates or b[2] in dates]
+    return min(gaps, default=None)
+
+
+def _longest_weekly_rest(days: dict, monday: date) -> float:
+    """Longest unbroken rest inside the ISO week from monday 00:00 to the next Monday 00:00."""
+    start = datetime.combine(monday, time())
+    end = start + timedelta(days=7)
+    longest, free_from = 0.0, start
+    for s, e, _ in _work(days, with_oc=True):
+        s, e = max(s, start), min(e, end)
+        if s >= e:
+            continue
+        longest = max(longest, _hours(s - free_from))
+        free_from = max(free_from, e)
+    return max(longest, _hours(end - free_from))
+
+
+def proposal_warnings(
+    db: Session, requester: User, target: User, pairs: list[tuple[date, date]], cache: dict | None = None
+) -> list[list[str]]:
+    """Swedish rest warnings for each (req_date, tgt_date) pair, in pair order. Never raises.
+
+    Rest is measured on both schedules with every pair applied: on each pair's dates the
+    two people exchange their effective days, clock times included. A warning is given
+    only where the proposal introduces or worsens a breach: 11 h between work blocks
+    next to a pair's dates, and 36 h unbroken rest inside each ISO week (Monday to
+    Monday) that holds one of the pair's dates.
     """
     try:
-        req_pid = requester.rotation_person_id
-        tgt_pid = target.rotation_person_id
-        req_code = shift_code_on(req_date, req_pid)
-        tgt_code = shift_code_on(tgt_date, tgt_pid)
-        if req_date == tgt_date:
-            req_off = tgt_off = frozenset()
-            req_orig, tgt_orig = req_code, tgt_code
-        else:
-            req_off, tgt_off = frozenset({req_date}), frozenset({tgt_date})
-            req_orig = tgt_orig = None
-        # (who, date, new code, position, original code, off dates)
-        sides = (
-            ("du", tgt_date, tgt_code, req_pid, req_orig, req_off),
-            ("kollegan", req_date, req_code, tgt_pid, tgt_orig, tgt_off),
-        )
-        warnings = []
-        for who, day, code, pid, _, off in sides:
-            if not check_rest_ok(day, code, pid, session=db, off_dates=off):
-                warnings.append(f"Under {MIN_REST_HOURS} timmars dygnsvila ({who})")
-        for who, day, code, pid, orig, off in sides:
-            if not check_weekly_rest_ok(day, code, pid, original_shift_code=orig, off_dates=off):
-                warnings.append(f"Under {MIN_WEEKLY_REST_HOURS} timmars veckovila ({who})")
-        return warnings
+        return _proposal_warnings(db, requester, target, pairs, {} if cache is None else cache)
     except Exception:
-        logger.exception("swap_warnings failed for %s -> %s, %s / %s", requester.id, target.id, req_date, tgt_date)
+        logger.exception("proposal_warnings failed for %s -> %s, %s", requester.id, target.id, pairs)
+        return [[] for _ in pairs]
+
+
+def _proposal_warnings(db, requester, target, pairs, cache) -> list[list[str]]:
+    if not pairs:
         return []
+    pair_dates = [{rd, td} for rd, td in pairs]
+    mondays = {d - timedelta(days=d.weekday()) for dates in pair_dates for d in dates}
+    # The Sunday before reaches a night shift into Monday; the Monday after is the last neighbour.
+    first, last = min(mondays) - timedelta(days=1), max(mondays) + timedelta(days=7)
+    people = {"du": requester, "kollegan": target}
+    before = {who: _days(db, user, first, last, cache) for who, user in people.items()}
+    after = {who: dict(days) for who, days in before.items()}
+    for dates in pair_dates:
+        for d in dates:
+            after["du"][d], after["kollegan"][d] = after["kollegan"][d], after["du"][d]
+
+    short_weeks = set()
+    for who in people:
+        for monday in mondays:
+            new = _longest_weekly_rest(after[who], monday)
+            if new < MIN_WEEKLY_REST_HOURS and new < _longest_weekly_rest(before[who], monday):
+                short_weeks.add((who, monday))
+
+    result = []
+    for dates in pair_dates:
+        warnings = []
+        for who in people:
+            new = _shortest_daily_rest(after[who], dates)
+            old = _shortest_daily_rest(before[who], dates)
+            if new is not None and new < MIN_REST_HOURS and (old is None or new < old):
+                warnings.append(f"Under {MIN_REST_HOURS} timmars dygnsvila ({who})")
+        weeks = {d - timedelta(days=d.weekday()) for d in dates}
+        for who in people:
+            if any((who, monday) in short_weeks for monday in weeks):
+                warnings.append(f"Under {MIN_WEEKLY_REST_HOURS} timmars veckovila ({who})")
+        result.append(warnings)
+    return result

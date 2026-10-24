@@ -18,6 +18,7 @@ import app.database.database as db_module
 from app.auth.auth import create_access_token
 from app.core import swaps
 from app.core.schedule import clear_schedule_cache
+from app.core.swaps import effective_code
 from app.database.database import (
     OnCallOverride,
     OnCallOverrideType,
@@ -251,3 +252,40 @@ def test_propose_rejects_ineligible_and_long_message(client):
     assert "Meddelandet är för långt (högst 255 tecken)" in resp.text
     resp = client.post("/swaps/propose", data={**form, "target_id": 8, "message": "x" * 255}, follow_redirects=False)
     assert "för långt" not in resp.text
+
+
+def _n2_then_n1(test_db):
+    # User 7: N2 on Mon 26 and, by override, N1 on Tue 27. User 10 is free both days.
+    test_db.add(ShiftOverride(user_id=7, date=D(2026, 10, 27), shift_code="N1", created_by=7))
+    test_db.commit()
+    clear_schedule_cache()
+    return [(D(2026, 10, 26),) * 2, (D(2026, 10, 27),) * 2]
+
+
+def test_check_warns_over_the_whole_list(client, test_db):
+    pairs = _n2_then_n1(test_db)
+    _login(client, 10)
+    daily = "Under 11 timmars dygnsvila (du)"
+    assert daily not in _check(client, 7, pairs[0])[0]["warnings"]
+    assert daily not in _check(client, 7, pairs[1])[0]["warnings"]
+    assert all(daily in r["warnings"] for r in _check(client, 7, *pairs))
+
+
+def test_inbox_card_shows_the_combined_warning(client, test_db):
+    pairs = _n2_then_n1(test_db)
+    for rd, td in pairs:
+        test_db.add(
+            ShiftSwap(
+                requester_id=10,
+                target_id=7,
+                requester_date=rd,
+                target_date=td,
+                requester_shift_code="OFF",
+                target_shift_code=effective_code(test_db, test_db.get(User, 7), td),
+                status=SwapStatus.PENDING,
+                group_id="g1",
+            )
+        )
+    test_db.commit()
+    _login(client, 7)
+    assert client.get("/swaps/").text.count("Under 11 timmars dygnsvila (du)") == 2
