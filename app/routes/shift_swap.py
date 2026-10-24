@@ -2,179 +2,27 @@
 """Shift swap management routes - propose, accept, reject, cancel swaps."""
 
 from datetime import date as date_cls
-from datetime import datetime, timedelta
-from datetime import time as dt_time
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache
+from app.core.schedule import build_week_data, clear_schedule_cache
 from app.core.schedule.core import determine_shift_for_date
+from app.core.swaps import (
+    SLOT_TAKEN,
+    check_rest_ok,
+    check_weekly_rest_ok,
+    find_active_swap_conflict,
+    swap_participant_dates,
+)
 from app.core.utils import get_today
 from app.database.database import ShiftSwap, SwapStatus, User, get_db, utcnow
 from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
-
-_MIN_REST_HOURS = 11
-
-
-def _get_shift_times_from_session(date, rotation_person_id, session):
-    """Return (start_dt, end_dt) for a person's effective shift on date, respecting accepted swaps."""
-    week_data = build_week_data(
-        date.isocalendar()[0], date.isocalendar()[1], person_id=rotation_person_id, session=session
-    )
-    day = next((d for d in week_data if d["date"] == date), None)
-    if not day:
-        return None, None
-    shift = day.get("shift")
-    if not shift or not shift.start_time or not shift.end_time:
-        return None, None
-    _, start_dt, end_dt = calculate_shift_hours(date, shift)
-    return start_dt, end_dt
-
-
-def _check_rest_ok(work_date, shift_code, rotation_person_id, session=None):
-    """Return False if working shift_code on work_date violates 11h rest against adjacent days.
-
-    If session is provided, uses build_week_data (includes accepted swaps) for adjacent days.
-    Otherwise falls back to determine_shift_for_date (raw rotation only).
-    """
-    _, new_start, new_end = calculate_shift_hours(work_date, shift_code)
-    if not new_start or not new_end:
-        return True  # No time data for this shift — cannot validate, allow
-
-    if session:
-        _, prev_end = _get_shift_times_from_session(work_date - timedelta(days=1), rotation_person_id, session)
-        next_start, _ = _get_shift_times_from_session(work_date + timedelta(days=1), rotation_person_id, session)
-    else:
-        prev_result = determine_shift_for_date(work_date - timedelta(days=1), rotation_person_id)
-        if prev_result and prev_result[0] and prev_result[0].code not in ("OFF", "OC"):
-            _, _, prev_end = calculate_shift_hours(work_date - timedelta(days=1), prev_result[0])
-        else:
-            prev_end = None
-        next_result = determine_shift_for_date(work_date + timedelta(days=1), rotation_person_id)
-        if next_result and next_result[0] and next_result[0].code not in ("OFF", "OC"):
-            _, next_start, _ = calculate_shift_hours(work_date + timedelta(days=1), next_result[0])
-        else:
-            next_start = None
-
-    if prev_end and (new_start - prev_end).total_seconds() / 3600 < _MIN_REST_HOURS:
-        return False
-    if next_start and (next_start - new_end).total_seconds() / 3600 < _MIN_REST_HOURS:
-        return False
-
-    return True
-
-
-_MIN_WEEKLY_REST_HOURS = 36
-
-
-def _check_weekly_rest_ok(work_date, new_shift_code, rotation_person_id, original_shift_code=None):
-    """Return False if any rolling 7-day period containing work_date has < 36h consecutive rest
-    that wasn't already violated by the original shift.
-
-    ATL §14 uses rolling sjudagarsperioder (day 1-7, day 2-8, ...).
-    There are 7 possible windows containing work_date: [D-6..D], [D-5..D+1], ..., [D..D+6].
-    All must be checked. OC (beredskap) blocks weekly rest per ATL §14.
-
-    If original_shift_code is provided (same-day swap replacing an existing shift), a window
-    that already violated 36h with the original shift is not counted as a new violation.
-    The swap is blocked only if it makes weekly rest worse than the original schedule.
-    """
-
-    def _max_gap_in_window(shift_code_on_work_date, w_start, w_end):
-        """Compute the longest consecutive rest gap (hours) within [w_start, w_end]."""
-        intervals = []
-        for day_offset in range(-6, 7):
-            d = work_date + timedelta(days=day_offset)
-            if d == work_date:
-                code = shift_code_on_work_date
-            else:
-                result = determine_shift_for_date(d, rotation_person_id)
-                code = result[0].code if result and result[0] else "OFF"
-
-            if code == "OFF":
-                continue
-
-            _, start_dt, end_dt = calculate_shift_hours(d, code)
-            if start_dt and end_dt:
-                clipped_s = max(start_dt, w_start)
-                clipped_e = min(end_dt, w_end)
-                if clipped_s < clipped_e:
-                    intervals.append((clipped_s, clipped_e))
-
-        if not intervals:
-            return 168.0  # No shifts — full week free
-
-        intervals.sort()
-        gap = max(
-            (intervals[0][0] - w_start).total_seconds() / 3600,
-            *((intervals[i + 1][0] - intervals[i][1]).total_seconds() / 3600 for i in range(len(intervals) - 1)),
-            (w_end - intervals[-1][1]).total_seconds() / 3600,
-        )
-        return gap
-
-    for window_start_offset in range(-6, 1):  # windows starting D-6 to D
-        w_start = datetime.combine(work_date + timedelta(days=window_start_offset), dt_time(0, 0))
-        w_end = w_start + timedelta(hours=168)
-
-        new_gap = _max_gap_in_window(new_shift_code, w_start, w_end)
-        if new_gap >= _MIN_WEEKLY_REST_HOURS:
-            continue  # This window is fine
-
-        if original_shift_code is not None:
-            # Same-day swap: only block if the new shift makes weekly rest worse
-            orig_gap = _max_gap_in_window(original_shift_code, w_start, w_end)
-            if new_gap >= orig_gap:
-                continue  # Not worse than before — allow
-            if orig_gap < _MIN_WEEKLY_REST_HOURS:
-                continue  # Window already violated before swap — pre-existing issue
-
-        return False  # New violation introduced by this swap
-
-    return True
-
-
-def _swap_participant_dates(requester_id: int, target_id: int, requester_date, target_date) -> set[tuple[int, object]]:
-    """Return every user/date slot affected by a swap."""
-    return {
-        (requester_id, requester_date),
-        (target_id, requester_date),
-        (requester_id, target_date),
-        (target_id, target_date),
-    }
-
-
-def _find_active_swap_conflict(
-    db: Session,
-    participant_dates: set[tuple[int, object]],
-    statuses: tuple[SwapStatus, ...],
-    exclude_swap_id: int | None = None,
-) -> ShiftSwap | None:
-    """Return an active swap that already uses any of the affected user/date slots."""
-    if not participant_dates:
-        return None
-
-    user_ids = {user_id for user_id, _ in participant_dates}
-    dates = {date for _, date in participant_dates}
-    query = db.query(ShiftSwap).filter(
-        ShiftSwap.status.in_(statuses),
-        (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
-        (ShiftSwap.requester_date.in_(dates) | ShiftSwap.target_date.in_(dates)),
-    )
-    if exclude_swap_id is not None:
-        query = query.filter(ShiftSwap.id != exclude_swap_id)
-
-    for swap in query.all():
-        existing_dates = _swap_participant_dates(
-            swap.requester_id, swap.target_id, swap.requester_date, swap.target_date
-        )
-        if participant_dates & existing_dates:
-            return swap
-    return None
 
 
 def _raise_if_swap_conflicts(
@@ -186,9 +34,9 @@ def _raise_if_swap_conflicts(
     statuses: tuple[SwapStatus, ...],
     exclude_swap_id: int | None = None,
 ) -> None:
-    participant_dates = _swap_participant_dates(requester_id, target_id, requester_date, target_date)
-    if _find_active_swap_conflict(db, participant_dates, statuses, exclude_swap_id):
-        raise HTTPException(status_code=400, detail="Ett byte finns redan för någon av personerna på dessa datum")
+    participant_dates = swap_participant_dates(requester_id, target_id, requester_date, target_date)
+    if find_active_swap_conflict(db, participant_dates, statuses, exclude_swap_id):
+        raise HTTPException(status_code=400, detail=SLOT_TAKEN)
 
 
 @router.get("/api/shifts/{user_id}")
@@ -332,7 +180,7 @@ async def get_user_shifts(
                     continue
 
             # 36h weekly rest rule: OC (beredskap) blocks weekly rest per ATL §14
-            if not _check_weekly_rest_ok(d, tgt_code, my_pid):
+            if not check_weekly_rest_ok(d, tgt_code, my_pid):
                 continue
 
         # Calculate OB hours for the target's shift
@@ -467,13 +315,13 @@ async def propose_swap(
 
     # Same-day operations (mutual or one-way) skip rest checks.
     if not is_same_day:
-        if not _check_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id, session=db):
+        if not check_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id, session=db):
             raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (du)")
-        if not _check_rest_ok(req_date, req_code, target_user.rotation_person_id, session=db):
+        if not check_rest_ok(req_date, req_code, target_user.rotation_person_id, session=db):
             raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (kollegan)")
-        if not _check_weekly_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id):
+        if not check_weekly_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id):
             raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (du)")
-        if not _check_weekly_rest_ok(req_date, req_code, target_user.rotation_person_id):
+        if not check_weekly_rest_ok(req_date, req_code, target_user.rotation_person_id):
             raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (kollegan)")
 
     swap = ShiftSwap(

@@ -1,0 +1,210 @@
+"""Table-driven tests for app.core.swaps.check_swap.
+
+Uses the rotation_session fixture (10-week test pattern, era from 2026-01-02).
+Positions used, week of Mon 26 Oct 2026 (Sun 25 to Sat 31):
+
+    pos 1: OC  OC  OFF N2  N2  N2  OFF
+    pos 3: OFF N3  N3  N3  OFF OFF OC    (user 8, like Okan on dev)
+    pos 5: N2  N2  N2  OFF OFF N1  N1
+    pos 7: N2  N2  N2  N2  N2  OFF OFF   (user 7, like Marcus on dev)
+    pos 9: N3  OFF OC  N3  N3  N3  N3    (user 12)
+    pos 10: OFF OFF OFF N1 N1  N1  N1
+"""
+
+import datetime
+
+import pytest
+
+from app.core import swaps
+from app.core.swaps import check_rest_ok, check_swap
+from app.database.database import (
+    Absence,
+    AbsenceType,
+    ShiftOverride,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+    WageType,
+)
+
+D = datetime.date
+SLOT_TAKEN = "Ett byte finns redan för någon av personerna på dessa datum"
+
+
+@pytest.fixture
+def db(rotation_session, monkeypatch):
+    monkeypatch.setattr(swaps, "get_today", lambda: D(2026, 10, 20))
+    for uid, pos in ((7, 7), (8, 3), (9, 1), (10, 10), (11, 5), (12, 9)):
+        rotation_session.add(
+            User(
+                id=uid,
+                username=f"u{uid}",
+                password_hash="x",
+                name=f"User {uid}",
+                role=UserRole.USER,
+                wage=30000,
+                wage_type=WageType.MONTHLY,
+                person_id=pos,
+                vacation={},
+                must_change_password=0,
+            )
+        )
+    rotation_session.commit()
+    return rotation_session
+
+
+def _swap(db, req, tgt, rd, td, status):
+    db.add(
+        ShiftSwap(
+            requester_id=req,
+            target_id=tgt,
+            requester_date=rd,
+            target_date=td,
+            requester_shift_code="N3",
+            target_shift_code="N2",
+            status=status,
+        )
+    )
+
+
+def _legacy_accepted(db):
+    # Mirrors prod swap 22: user 8 already swapped 29 Oct with someone else.
+    _swap(db, 8, 11, D(2026, 10, 29), D(2026, 10, 29), SwapStatus.ACCEPTED)
+
+
+def _new_accepted(db):
+    db.add(
+        ShiftSwap(
+            requester_id=9,
+            target_id=7,
+            requester_date=D(2026, 10, 29),
+            target_date=D(2026, 10, 29),
+            requester_shift_code="N2",
+            target_shift_code="N2",
+            status=SwapStatus.ACCEPTED,
+            applied_as_override=True,
+        )
+    )
+
+
+def _duplicate(db):
+    _swap(db, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SwapStatus.PENDING)
+
+
+def _manual_override(db):
+    db.add(ShiftOverride(user_id=7, date=D(2026, 10, 28), shift_code="N1"))
+
+
+def _absence(db):
+    db.add(Absence(user_id=8, date=D(2026, 10, 29), absence_type=AbsenceType.SICK))
+
+
+def _week_vacation(db):
+    user = db.get(User, 7)
+    user.vacation = {"2026": [44]}  # ISO week 44 = 26 Oct to 1 Nov
+
+
+def _none(db):
+    pass
+
+
+CASES = [
+    # id, setup, requester, target, req_date, tgt_date, expected
+    ("same_person", _none, 8, 8, D(2026, 10, 28), D(2026, 10, 29), "Kan inte byta pass med dig själv"),
+    ("past_date", _none, 8, 7, D(2026, 10, 20), D(2026, 10, 29), "Kan bara byta framtida pass"),
+    ("duplicate", _duplicate, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Byte redan föreslaget för dessa datum"),
+    ("legacy_swap_slot", _legacy_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SLOT_TAKEN),
+    ("new_swap_slot", _new_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SLOT_TAKEN),
+    (
+        "manual_override",
+        _manual_override,
+        8,
+        7,
+        D(2026, 10, 28),
+        D(2026, 10, 29),
+        "En manuell ändring finns redan för någon av personerna på dessa datum",
+    ),
+    (
+        "absence",
+        _absence,
+        8,
+        7,
+        D(2026, 10, 28),
+        D(2026, 10, 29),
+        "Någon av personerna är frånvarande ett av datumen",
+    ),
+    (
+        "week_vacation",
+        _week_vacation,
+        8,
+        7,
+        D(2026, 10, 28),
+        D(2026, 10, 29),
+        "Någon av personerna har semester ett av datumen",
+    ),
+    ("oc_involved", _none, 9, 7, D(2026, 10, 26), D(2026, 10, 27), "OC-pass byts av admin"),
+    ("requester_off", _none, 8, 7, D(2026, 10, 29), D(2026, 10, 26), "Du jobbar inte det datumet"),
+    ("target_off", _none, 8, 10, D(2026, 10, 28), D(2026, 10, 27), "Kollegan jobbar inte det datumet"),
+    ("both_off_same_day", _none, 8, 10, D(2026, 10, 25), D(2026, 10, 25), "Ingen av er jobbar den dagen"),
+    ("same_shift", _none, 7, 11, D(2026, 10, 26), D(2026, 10, 26), "Ni jobbar redan samma pass"),
+    ("rest_11h_requester", _none, 8, 7, D(2026, 10, 26), D(2026, 10, 28), "Bryter mot 11 timmars dygnsvila (du)"),
+    ("rest_11h_target", _none, 10, 8, D(2026, 10, 28), D(2026, 10, 26), "Bryter mot 11 timmars dygnsvila (kollegan)"),
+    ("rest_36h_requester", _none, 9, 7, D(2026, 10, 28), D(2026, 10, 29), "Bryter mot 36 timmars veckovila (du)"),
+    (
+        "rest_36h_target",
+        _none,
+        9,
+        11,
+        D(2026, 10, 29),
+        D(2026, 10, 30),
+        "Bryter mot 36 timmars veckovila (kollegan)",
+    ),
+    ("one_way_same_day", _none, 8, 10, D(2026, 10, 27), D(2026, 10, 27), None),
+    ("mutual_same_day", _none, 8, 7, D(2026, 10, 27), D(2026, 10, 27), None),
+]
+
+
+@pytest.mark.parametrize(
+    ("setup", "req_id", "tgt_id", "req_date", "tgt_date", "expected"),
+    [c[1:] for c in CASES],
+    ids=[c[0] for c in CASES],
+)
+def test_check_swap_reasons(db, setup, req_id, tgt_id, req_date, tgt_date, expected):
+    setup(db)
+    db.commit()
+    reason = check_swap(db, db.get(User, req_id), db.get(User, tgt_id), req_date, tgt_date)
+    assert reason == expected
+
+
+def test_rest_ignores_shift_given_away(db):
+    # User 12 gives away N3 on Wed 28 Oct (ends 06:30 on the 29th) and takes
+    # user 7's N2 on Thu 29 Oct (starts 14:00). User 7 takes the N3 and gives
+    # away the N2 on the 29th. Counting the given-away shifts refused this before.
+    requester, target = db.get(User, 12), db.get(User, 7)
+    assert not check_rest_ok(D(2026, 10, 29), "N2", requester.rotation_person_id, session=db)
+    assert not check_rest_ok(D(2026, 10, 28), "N3", target.rotation_person_id, session=db)
+    assert check_swap(db, requester, target, D(2026, 10, 28), D(2026, 10, 29)) is None
+
+
+def test_rest_off_dates_dev_reproduction(db):
+    # Dev case: user 8 works N3 on 26-28 Oct, user 7 works N2 on 26-29 Oct.
+    # Giving away N3 on the 28th for N2 on the 29th passes 11 h rest on both sides
+    # once each given-away date counts as OFF. (The test rotation's OC on the
+    # 31st makes the full swap fail 36 h weekly rest here, so 11 h is checked directly.)
+    okan, marcus = db.get(User, 8).rotation_person_id, db.get(User, 7).rotation_person_id
+    oct28, oct29 = D(2026, 10, 28), D(2026, 10, 29)
+    assert not check_rest_ok(oct29, "N2", okan, session=db)
+    assert check_rest_ok(oct29, "N2", okan, session=db, off_dates=frozenset({oct28}))
+    assert not check_rest_ok(oct28, "N3", marcus, session=db)
+    assert check_rest_ok(oct28, "N3", marcus, session=db, off_dates=frozenset({oct29}))
+
+
+def test_exclude_swap_id_ignores_own_swap(db):
+    # accept re-runs the rules on a PENDING swap; the swap must not block itself.
+    _swap(db, 12, 7, D(2026, 10, 28), D(2026, 10, 29), SwapStatus.PENDING)
+    db.commit()
+    own = db.query(ShiftSwap).one()
+    requester, target = db.get(User, 12), db.get(User, 7)
+    assert check_swap(db, requester, target, D(2026, 10, 28), D(2026, 10, 29)) is not None
+    assert check_swap(db, requester, target, D(2026, 10, 28), D(2026, 10, 29), exclude_swap_id=own.id) is None
