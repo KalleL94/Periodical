@@ -22,6 +22,24 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.14.0] - 2026-10-24
+
+### Changed
+- Accepting a shift swap now writes the result as `ShiftOverride` rows, the same rows an admin enters by hand, linked to the swap by the new `shift_overrides.swap_id`. Schedule, pay and reports read them like any manual change. New swaps carry `shift_swaps.applied_as_override = True` and `_batch_fetch_swap_map` skips them, so nothing is counted twice. Accepted swaps from before this release are not migrated and keep resolving through `swap_map`.
+- Propose and accept share one rules function, `app/core/swaps.py::check_swap`, and every refusal carries its Swedish reason. A swap is refused when any of the four person/date slots already has an active swap (legacy or new), a manual shift change, an absence or a week-based vacation. A cross-day swap also needs each person free on the other's date, because the shifts are exchanged on both dates.
+- The swap day picker (`/swaps/api/shifts/{id}`) runs `check_swap` for every candidate day and returns the reason as `blocked`. Blocked days stay in the list as disabled options with the reason shown, so the picker no longer offers days that propose refuses. Its own copy of the 11 h and 36 h rest checks is gone.
+- Swaps that involve an on-call shift are refused with "OC-pass byts av admin". `ShiftOverride` cannot hold on-call, so those changes stay manual. OC for OC swaps were allowed before.
+- Accept re-runs the rules and recomputes both shifts from the rotation. If either differs from what was proposed it refuses with "Schemat har ändrats sedan förslaget" and the swap stays pending.
+- Cancelling a swap deletes its rows. An admin who edits one of them through the day edit or `/shift-override/add` turns it into a manual row (`swap_id` cleared), and cancel then leaves it alone.
+- A participant can no longer edit or delete a swap's rows through `/shift-override/add`, `/shift-override/{id}/delete`, `/day-edit/clear` or `/day-edit/bulk`. Those requests get 400 "Passet hör till ett byte, avbryt bytet i stället" and nothing is written. Admins may still edit or delete them.
+
+### Fixed
+- The 11 hour rest check counted the shift being given away as still worked, so it refused swaps that leave enough rest. The date each person gives away now counts as free when rest is measured.
+- A refused swap proposal answered with a bare 400. The exception handler now logs method, path and detail, and shows the detail to the user on a 400.
+
+### Migration
+- `migrations/migrate_schema.py` adds `shift_swaps.applied_as_override` (default false) and `shift_overrides.swap_id`. Run it by hand on prod before deploying; `scripts/deploy.sh` does not run migrations
+
 ## [1.13.1] - 2026-10-24
 
 ### Fixed

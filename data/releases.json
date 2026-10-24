@@ -1,5 +1,31 @@
 [
   {
+    "version": "1.14.0",
+    "date": "2026-10-24",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Ett accepterat passbyte läggs nu in som vanliga manuella ändringar i schemat. Avbryter ni bytet tas ändringarna bort.",
+        "en": "An accepted shift swap is now entered as ordinary manual changes in the schedule. Cancelling the swap removes them."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Ett byte som inte går att göra visar nu varför, till exempel att ett annat byte, en manuell ändring, frånvaro eller semester redan finns på något av datumen. Dagar som inte går att byta visas gråade med skälet. Har schemat ändrats sedan förslaget går bytet inte att acceptera.",
+        "en": "A swap that cannot be made now says why, for example that another swap, a manual change, an absence or vacation already exists on one of the dates. Days that cannot be swapped are shown greyed out with the reason. If the schedule has changed since the proposal the swap cannot be accepted."
+      },
+      {
+        "type": "nyhet",
+        "sv": "OC-pass byts inte längre via bytesfunktionen. Kontakta admin för sådana ändringar.",
+        "en": "On-call shifts are no longer swapped through the swap feature. Ask an admin for those changes."
+      },
+      {
+        "type": "fix",
+        "sv": "Kontrollen av 11 timmars dygnsvila räknade passet du lämnar bort som om du fortfarande jobbade det, och nekade därför byten som var okej.",
+        "en": "The 11 hour rest check counted the shift you give away as if you still worked it, and so refused swaps that were fine."
+      }
+    ]
+  },
+  {
     "version": "1.13.1",
     "date": "2026-10-24",
     "entries": [
