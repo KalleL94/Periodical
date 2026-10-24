@@ -150,10 +150,6 @@ CASES = [
     ("same_shift", _none, 7, 11, D(2026, 10, 26), D(2026, 10, 26), "Ni jobbar redan samma pass"),
     ("req_works_tgt_date", _none, 7, 8, D(2026, 10, 26), D(2026, 10, 27), "Du jobbar redan det datumet"),
     ("tgt_works_req_date", _none, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Kollegan jobbar redan det datumet"),
-    ("rest_11h_requester", _none, 8, 10, D(2026, 10, 26), D(2026, 10, 29), "Bryter mot 11 timmars dygnsvila (du)"),
-    ("rest_11h_target", _none, 7, 8, D(2026, 10, 29), D(2026, 11, 1), "Bryter mot 11 timmars dygnsvila (kollegan)"),
-    ("rest_36h_requester", _none, 8, 10, D(2026, 10, 26), D(2026, 10, 24), "Bryter mot 36 timmars veckovila (du)"),
-    ("rest_36h_target", _none, 7, 9, D(2026, 10, 27), D(2026, 10, 30), "Bryter mot 36 timmars veckovila (kollegan)"),
     ("cross_day_ok", _none, 7, 8, D(2026, 10, 25), D(2026, 11, 1), None),
     ("one_way_same_day", _none, 8, 10, D(2026, 10, 27), D(2026, 10, 27), None),
     ("mutual_same_day", _none, 8, 7, D(2026, 10, 27), D(2026, 10, 27), None),
@@ -170,6 +166,20 @@ def test_check_swap_reasons(db, setup, req_id, tgt_id, req_date, tgt_date, expec
     db.commit()
     reason = check_swap(db, db.get(User, req_id), db.get(User, tgt_id), req_date, tgt_date)
     assert reason == expected
+
+
+@pytest.mark.parametrize(
+    ("req_id", "tgt_id", "req_date", "tgt_date"),
+    [
+        (8, 10, D(2026, 10, 26), D(2026, 10, 29)),
+        (7, 8, D(2026, 10, 29), D(2026, 11, 1)),
+        (8, 10, D(2026, 10, 26), D(2026, 10, 24)),
+        (7, 9, D(2026, 10, 27), D(2026, 10, 30)),
+    ],
+)
+def test_check_swap_ignores_rest(db, req_id, tgt_id, req_date, tgt_date):
+    # Rest breaches are warnings (swap_warnings), no longer hard stops.
+    assert check_swap(db, db.get(User, req_id), db.get(User, tgt_id), req_date, tgt_date) is None
 
 
 def test_rest_off_dates_dev_reproduction(db):

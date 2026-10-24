@@ -276,20 +276,39 @@ def check_swap(
     # Same-day mutual swap (both working) between identical shifts is pointless
     if is_same_day and req_code == tgt_code:
         return "Ni jobbar redan samma pass"
-
-    # Same-day operations (mutual or one-way) skip rest checks.
-    if is_same_day:
-        return None
-
-    # Rest is measured on the schedule after the swap: each side's given-away date is OFF.
-    req_off = frozenset({req_date})
-    tgt_off = frozenset({tgt_date})
-    if not check_rest_ok(tgt_date, tgt_code, req_pid, session=db, off_dates=req_off):
-        return "Bryter mot 11 timmars dygnsvila (du)"
-    if not check_rest_ok(req_date, req_code, tgt_pid, session=db, off_dates=tgt_off):
-        return "Bryter mot 11 timmars dygnsvila (kollegan)"
-    if not check_weekly_rest_ok(tgt_date, tgt_code, req_pid, off_dates=req_off):
-        return "Bryter mot 36 timmars veckovila (du)"
-    if not check_weekly_rest_ok(req_date, req_code, tgt_pid, off_dates=tgt_off):
-        return "Bryter mot 36 timmars veckovila (kollegan)"
     return None
+
+
+def swap_warnings(db: Session, requester: User, target: User, req_date: date, tgt_date: date) -> list[str]:
+    """Return Swedish rest warnings for a swap that check_swap allows. Never raises.
+
+    Rest is measured on the schedule after the swap. Cross-day: each side's given-away
+    date counts as OFF. Same-day: each side takes the other's shift on that date, and
+    the weekly check ignores windows the original shift already violated.
+    """
+    try:
+        req_pid = requester.rotation_person_id
+        tgt_pid = target.rotation_person_id
+        req_code = shift_code_on(req_date, req_pid)
+        tgt_code = shift_code_on(tgt_date, tgt_pid)
+        if req_date == tgt_date:
+            req_off = tgt_off = frozenset()
+            req_orig, tgt_orig = req_code, tgt_code
+        else:
+            req_off, tgt_off = frozenset({req_date}), frozenset({tgt_date})
+            req_orig = tgt_orig = None
+        # (who, date, new code, position, original code, off dates)
+        sides = (
+            ("du", tgt_date, tgt_code, req_pid, req_orig, req_off),
+            ("kollegan", req_date, req_code, tgt_pid, tgt_orig, tgt_off),
+        )
+        warnings = []
+        for who, day, code, pid, _, off in sides:
+            if not check_rest_ok(day, code, pid, session=db, off_dates=off):
+                warnings.append(f"Under {MIN_REST_HOURS} timmars dygnsvila ({who})")
+        for who, day, code, pid, orig, off in sides:
+            if not check_weekly_rest_ok(day, code, pid, original_shift_code=orig, off_dates=off):
+                warnings.append(f"Under {MIN_WEEKLY_REST_HOURS} timmars veckovila ({who})")
+        return warnings
+    except Exception:
+        return []
