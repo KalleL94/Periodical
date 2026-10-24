@@ -18,7 +18,17 @@ import app.database.database as db_module
 from app.auth.auth import create_access_token
 from app.core import swaps
 from app.core.schedule import clear_schedule_cache
-from app.database.database import RotationEra, ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, WageType
+from app.database.database import (
+    OnCallOverride,
+    OnCallOverrideType,
+    RotationEra,
+    ShiftOverride,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+    WageType,
+)
 from app.routes import schedule_personal, shift_swap
 from tests.conftest import _ROTATION_ERA_PATTERN
 
@@ -83,6 +93,19 @@ def test_check_classifies_kinds(client):
     _login(client, 10)
     [take] = _check(client, 7, (D(2026, 10, 26), D(2026, 10, 26)))
     assert (take["kind"], take["blocked"]) == ("take_over", None)
+
+
+def test_check_kinds_follow_effective_codes(client, test_db):
+    # User 8 has OC on Sat 31 Oct, user 7 is free: OC is given away like any shift.
+    _login(client, 8)
+    [give] = _check(client, 7, (D(2026, 10, 31), D(2026, 10, 31)))
+    assert (give["kind"], give["blocked"]) == ("give_away", None)
+    # An on-call ADD makes user 10's free 27 Oct an OC day, swapped against N2.
+    test_db.add(OnCallOverride(user_id=10, date=D(2026, 10, 27), override_type=OnCallOverrideType.ADD))
+    test_db.commit()
+    _login(client, 10)
+    [mutual] = _check(client, 7, (D(2026, 10, 27), D(2026, 10, 27)))
+    assert (mutual["kind"], mutual["blocked"]) == ("mutual", None)
 
 
 def test_check_returns_blocked_reason(client, test_db):

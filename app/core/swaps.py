@@ -198,8 +198,14 @@ def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_dat
     slots = swap_participant_dates(requester.id, target.id, req_date, tgt_date)
     if find_active_swap_conflict(db, slots, (SwapStatus.PENDING, SwapStatus.ACCEPTED), exclude_swap_ids):
         return SLOT_TAKEN
-    if _rows_on_slots(db, ShiftOverride, slots):
-        return "En manuell ändring finns redan för någon av personerna på dessa datum"
+    # An ETC row is a custom labelled block, not a shift the other person could take.
+    etc = db.query(ShiftOverride.id).filter(
+        ShiftOverride.shift_code == "ETC",
+        ((ShiftOverride.user_id == requester.id) & (ShiftOverride.date == req_date))
+        | ((ShiftOverride.user_id == target.id) & (ShiftOverride.date == tgt_date)),
+    )
+    if etc.first():
+        return "Passet är ett eget pass och kan inte bytas"
     if _rows_on_slots(db, Absence, slots):
         return "Någon av personerna är frånvarande ett av datumen"
     # Week-based vacation outranks overrides in the resolver, so a swap there would apply on one side only.
@@ -211,9 +217,26 @@ def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_dat
 
 
 def shift_code_on(day, rotation_person_id) -> str:
-    """The rotation shift code for a position on day, "OFF" when there is none."""
+    """The rotation shift code for a position on day, "OFF" when there is none. Rest warnings only."""
     result = determine_shift_for_date(day, start_week=rotation_person_id)
     return result[0].code if result and result[0] else "OFF"
+
+
+def effective_code(db: Session, user: User, day: date, cache: dict | None = None) -> str:
+    """The shift code the schedule shows for user on day, "OFF" when there is none.
+
+    Read from build_week_data, so absence, vacation, ShiftOverride, swap_map, the
+    rotation and OnCallOverride all count. Pass the same cache dict across calls to
+    build each user's ISO week once.
+    """
+    if cache is None:
+        cache = {}
+    year, week, _ = day.isocalendar()
+    key = (user.id, year, week)
+    if key not in cache:
+        days = build_week_data(year, week, person_id=user.rotation_person_id, session=db)
+        cache[key] = {d["date"]: d["shift"].code if d.get("shift") else "OFF" for d in days}
+    return cache[key].get(day, "OFF")
 
 
 def _can_swap(user: User) -> bool:
@@ -229,10 +252,12 @@ def check_swap(
     tgt_date: date,
     *,
     exclude_swap_ids: frozenset[int] = frozenset(),
+    cache: dict | None = None,
 ) -> str | None:
     """Return the first Swedish reason the swap is not allowed, or None if it is.
 
     The requester gives their shift on req_date and takes the target's shift on tgt_date.
+    Codes are the effective ones (see effective_code); cache is passed through to it.
     """
     if requester.id == target.id:
         return "Kan inte byta pass med dig själv"
@@ -261,14 +286,9 @@ def check_swap(
     if reason:
         return reason
 
-    req_pid = requester.rotation_person_id
-    tgt_pid = target.rotation_person_id
-    req_code = shift_code_on(req_date, req_pid)
-    tgt_code = shift_code_on(tgt_date, tgt_pid)
-
-    # ShiftOverride cannot hold on-call, so OC swaps stay manual.
-    if "OC" in (req_code, tgt_code):
-        return "OC-pass byts av admin"
+    cache = {} if cache is None else cache
+    req_code = effective_code(db, requester, req_date, cache)
+    tgt_code = effective_code(db, target, tgt_date, cache)
 
     is_same_day = req_date == tgt_date
     if not is_same_day:
@@ -279,9 +299,9 @@ def check_swap(
             return "Kollegan jobbar inte det datumet"
         # Shifts are exchanged on both dates, so each side must be free on the other's date.
         # This is also what lets the rest checks below treat the given-away date as OFF.
-        if shift_code_on(tgt_date, req_pid) != "OFF":
+        if effective_code(db, requester, tgt_date, cache) != "OFF":
             return "Du jobbar redan det datumet"
-        if shift_code_on(req_date, tgt_pid) != "OFF":
+        if effective_code(db, target, req_date, cache) != "OFF":
             return "Kollegan jobbar redan det datumet"
     elif req_code == "OFF" and tgt_code == "OFF":
         return "Ingen av er jobbar den dagen"
@@ -292,7 +312,9 @@ def check_swap(
     return None
 
 
-def validate_proposal(db: Session, requester: User, target: User, pairs: list[tuple[date, date]]) -> str | None:
+def validate_proposal(
+    db: Session, requester: User, target: User, pairs: list[tuple[date, date]], cache: dict | None = None
+) -> str | None:
     """Return the first Swedish reason a proposal of (req_date, tgt_date) pairs is refused, or None.
 
     Every pair must pass check_swap, and no two pairs may touch the same user/date slot,
@@ -302,8 +324,9 @@ def validate_proposal(db: Session, requester: User, target: User, pairs: list[tu
         return "Inga byten valda"
     if len(pairs) > MAX_PAIRS:
         return f"Högst {MAX_PAIRS} byten per förslag"
+    cache = {} if cache is None else cache
     for n, (req_date, tgt_date) in enumerate(pairs, start=1):
-        reason = check_swap(db, requester, target, req_date, tgt_date)
+        reason = check_swap(db, requester, target, req_date, tgt_date, cache=cache)
         if reason:
             return f"Byte {n}: {reason}"
     used: dict[tuple[int, date], int] = {}

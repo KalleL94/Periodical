@@ -20,6 +20,8 @@ from app.core.swaps import check_rest_ok, check_swap
 from app.database.database import (
     Absence,
     AbsenceType,
+    OnCallOverride,
+    OnCallOverrideType,
     ShiftOverride,
     ShiftSwap,
     SwapStatus,
@@ -96,6 +98,32 @@ def _manual_override(db):
     db.add(ShiftOverride(user_id=7, date=D(2026, 10, 28), shift_code="N1"))
 
 
+def _manual_n1(db):
+    # User 7 has N2 in the rotation on 26 Oct; an admin changed it to N1.
+    db.add(ShiftOverride(user_id=7, date=D(2026, 10, 26), shift_code="N1"))
+
+
+def _oncall_add(db):
+    # User 10 is OFF in the rotation on 27 Oct; an admin added on-call.
+    db.add(OnCallOverride(user_id=10, date=D(2026, 10, 27), override_type=OnCallOverrideType.ADD))
+
+
+def _etc(db):
+    db.add(
+        ShiftOverride(
+            user_id=7,
+            date=D(2026, 10, 27),
+            shift_code="ETC",
+            label="Kurs",
+            start_time=datetime.time(8, 0),
+            end_time=datetime.time(12, 0),
+        )
+    )
+
+
+ETC_REFUSED = "Passet är ett eget pass och kan inte bytas"
+
+
 def _absence(db):
     db.add(Absence(user_id=8, date=D(2026, 10, 29), absence_type=AbsenceType.SICK))
 
@@ -116,15 +144,12 @@ CASES = [
     ("duplicate", _duplicate, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Byte redan föreslaget för dessa datum"),
     ("legacy_swap_slot", _legacy_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SLOT_TAKEN),
     ("new_swap_slot", _new_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SLOT_TAKEN),
-    (
-        "manual_override",
-        _manual_override,
-        8,
-        7,
-        D(2026, 10, 28),
-        D(2026, 10, 29),
-        "En manuell ändring finns redan för någon av personerna på dessa datum",
-    ),
+    # A manual change is no longer a stop: the effective N1 on the 28th means user 7 works then.
+    ("manual_override", _manual_override, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Kollegan jobbar redan det datumet"),
+    ("manual_override_allowed", _manual_n1, 7, 8, D(2026, 10, 26), D(2026, 10, 26), None),
+    ("oncall_add_vs_n2", _oncall_add, 10, 7, D(2026, 10, 27), D(2026, 10, 27), None),
+    ("etc_target", _etc, 8, 7, D(2026, 10, 27), D(2026, 10, 27), ETC_REFUSED),
+    ("etc_requester", _etc, 7, 8, D(2026, 10, 27), D(2026, 10, 27), ETC_REFUSED),
     (
         "absence",
         _absence,
@@ -143,7 +168,14 @@ CASES = [
         D(2026, 10, 29),
         "Någon av personerna har semester ett av datumen",
     ),
-    ("oc_involved", _none, 9, 7, D(2026, 10, 26), D(2026, 10, 27), "OC-pass byts av admin"),
+    ("oc_vs_n2_same_day", _none, 9, 7, D(2026, 10, 26), D(2026, 10, 26), None),
+    ("oc_give_away", _none, 8, 7, D(2026, 10, 31), D(2026, 10, 31), None),
+    ("oc_take_over", _none, 7, 8, D(2026, 10, 31), D(2026, 10, 31), None),
+    ("oc_cross_for_n3", _none, 9, 8, D(2026, 10, 25), D(2026, 10, 27), None),
+    # User 8 has OC on the 31st, so that day is not free.
+    ("oc_not_free", _none, 8, 10, D(2026, 10, 26), D(2026, 10, 31), "Du jobbar redan det datumet"),
+    # Was "OC-pass byts av admin"; now the ordinary cross-day rule decides.
+    ("oc_cross_target_busy", _none, 9, 7, D(2026, 10, 26), D(2026, 10, 27), "Kollegan jobbar redan det datumet"),
     ("requester_off", _none, 8, 7, D(2026, 10, 29), D(2026, 10, 26), "Du jobbar inte det datumet"),
     ("target_off", _none, 8, 10, D(2026, 10, 28), D(2026, 10, 27), "Kollegan jobbar inte det datumet"),
     ("both_off_same_day", _none, 8, 10, D(2026, 10, 25), D(2026, 10, 25), "Ingen av er jobbar den dagen"),
@@ -166,6 +198,18 @@ def test_check_swap_reasons(db, setup, req_id, tgt_id, req_date, tgt_date, expec
     db.commit()
     reason = check_swap(db, db.get(User, req_id), db.get(User, tgt_id), req_date, tgt_date)
     assert reason == expected
+
+
+def test_effective_code_follows_overrides(db):
+    _manual_n1(db)
+    _oncall_add(db)
+    db.commit()
+    cache = {}
+    assert swaps.effective_code(db, db.get(User, 7), D(2026, 10, 26), cache) == "N1"
+    assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 27), cache) == "OC"
+    assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 26), cache) == "OFF"
+    # One build_week_data per user and ISO week.
+    assert set(cache) == {(7, 2026, 44), (10, 2026, 44)}
 
 
 @pytest.mark.parametrize(

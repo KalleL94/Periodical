@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, get_current_user_optional
 from app.core.helpers import contrast_color
 from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache, get_shift_types
-from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, shift_code_on, swap_warnings, validate_proposal
+from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, effective_code, swap_warnings, validate_proposal
 from app.core.utils import get_today
 from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, get_db, utcnow
 from app.routes.shared import render
@@ -23,18 +23,18 @@ router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
 MAX_WEEKS = 6
 
 
-def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_code: str) -> None:
+def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_code: str, cache: dict) -> None:
     """Write the swap as ShiftOverride rows, the same result the legacy swap_map gives.
 
-    On each date the two people exchange their rotation shifts. A same-day swap
-    collapses to two rows. "OFF" is written as a code so a shift given away stays free.
+    On each date the two people exchange their effective shifts (OC included). A same-day
+    swap collapses to two rows. "OFF" is written as a code so a shift given away stays free.
     """
     requester, target = swap.requester, swap.target
     rd, td = swap.requester_date, swap.target_date
     rows = {
-        (requester.id, rd): shift_code_on(rd, target.rotation_person_id),
+        (requester.id, rd): effective_code(db, target, rd, cache),
         (target.id, rd): req_code,
-        (target.id, td): shift_code_on(td, requester.rotation_person_id),
+        (target.id, td): effective_code(db, requester, td, cache),
         (requester.id, td): tgt_code,  # same day: overwrites the first key
     }
     for (user_id, day), code in rows.items():
@@ -54,11 +54,11 @@ def _kind(req_date: date_cls, tgt_date: date_cls, req_code: str, tgt_code: str) 
     return None
 
 
-def _assess(db: Session, requester: User, target: User, req_date: date_cls, tgt_date: date_cls) -> dict:
+def _assess(db: Session, requester: User, target: User, req_date: date_cls, tgt_date: date_cls, cache: dict) -> dict:
     """check_swap verdict, rest warnings and kind for one pair, as the compare screen shows it."""
-    blocked = check_swap(db, requester, target, req_date, tgt_date)
-    req_code = shift_code_on(req_date, requester.rotation_person_id)
-    tgt_code = shift_code_on(tgt_date, target.rotation_person_id)
+    blocked = check_swap(db, requester, target, req_date, tgt_date, cache=cache)
+    req_code = effective_code(db, requester, req_date, cache)
+    tgt_code = effective_code(db, target, tgt_date, cache)
     return {
         "blocked": blocked,
         "warnings": [] if blocked else swap_warnings(db, requester, target, req_date, tgt_date),
@@ -100,7 +100,8 @@ async def check_pairs(
     target = db.get(User, body.target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
-    return {"results": [_assess(db, current_user, target, p.req_date, p.tgt_date) for p in body.pairs]}
+    cache: dict = {}
+    return {"results": [_assess(db, current_user, target, p.req_date, p.tgt_date, cache) for p in body.pairs]}
 
 
 def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
@@ -159,8 +160,9 @@ async def day_takers(
 ):
     """Every colleague and what they could do with the viewer's shift on date."""
     result = []
+    cache: dict = {}
     for colleague in _colleagues(db, current_user):
-        verdict = _assess(db, current_user, colleague, date, date)
+        verdict = _assess(db, current_user, colleague, date, date, cache)
         if verdict["kind"] not in ("mutual", "give_away"):
             verdict["kind"] = None
         result.append({"id": colleague.id, "name": colleague.name, **verdict})
@@ -311,7 +313,8 @@ async def propose_swap(
         raise HTTPException(status_code=400, detail="Ogiltigt förslag")
 
     pairs = list(zip(req_date, tgt_date, strict=True))
-    reason = validate_proposal(db, current_user, target_user, pairs)
+    cache: dict = {}
+    reason = validate_proposal(db, current_user, target_user, pairs, cache)
     if reason:
         raise HTTPException(status_code=400, detail=reason)
 
@@ -323,8 +326,8 @@ async def propose_swap(
                 target_id=target_id,
                 requester_date=rd,
                 target_date=td,
-                requester_shift_code=shift_code_on(rd, current_user.rotation_person_id),
-                target_shift_code=shift_code_on(td, target_user.rotation_person_id),
+                requester_shift_code=effective_code(db, current_user, rd, cache),
+                target_shift_code=effective_code(db, target_user, td, cache),
                 message=message,
                 applied_as_override=True,
                 group_id=group_id,
@@ -347,21 +350,29 @@ async def accept_swap(
 
     # Check every pair before writing anything, so a failure leaves the group PENDING.
     codes = []
+    cache: dict = {}
     for swap in group:
         reason = check_swap(
-            db, swap.requester, swap.target, swap.requester_date, swap.target_date, exclude_swap_ids=group_ids
+            db,
+            swap.requester,
+            swap.target,
+            swap.requester_date,
+            swap.target_date,
+            exclude_swap_ids=group_ids,
+            cache=cache,
         )
         if reason:
             raise HTTPException(status_code=400, detail=reason)
-        req_code = shift_code_on(swap.requester_date, swap.requester.rotation_person_id)
-        tgt_code = shift_code_on(swap.target_date, swap.target.rotation_person_id)
+        req_code = effective_code(db, swap.requester, swap.requester_date, cache)
+        tgt_code = effective_code(db, swap.target, swap.target_date, cache)
         if (req_code, tgt_code) != (swap.requester_shift_code, swap.target_shift_code):
             raise HTTPException(status_code=400, detail="Schemat har ändrats sedan förslaget")
         codes.append((req_code, tgt_code))
 
     now = utcnow()
     for swap, (req_code, tgt_code) in zip(group, codes, strict=True):
-        _apply_swap_as_overrides(db, swap, req_code, tgt_code)
+        # Codes come from the cache filled before any write, so earlier pairs cannot leak in.
+        _apply_swap_as_overrides(db, swap, req_code, tgt_code, cache)
         # A swap proposed before overrides existed must leave swap_map too, or it counts twice.
         swap.applied_as_override = True
         swap.status = SwapStatus.ACCEPTED

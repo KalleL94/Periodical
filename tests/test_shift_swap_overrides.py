@@ -23,6 +23,7 @@ from app.routes.shift_swap import accept_swap, cancel_swap, propose_swap
 
 D = datetime.date
 OCT25, NOV1, OCT27 = D(2026, 10, 25), D(2026, 11, 1), D(2026, 10, 27)
+OCT26, OCT31 = D(2026, 10, 26), D(2026, 10, 31)
 
 
 @pytest.fixture
@@ -138,17 +139,51 @@ async def test_accept_refuses_stale_codes(db):
 
 
 @pytest.mark.anyio
-async def test_accept_refuses_over_manual_override(db):
+async def test_accept_refuses_when_free_day_gets_a_shift(db):
     swap = await _propose(db, 7, 8, OCT25, NOV1)
+    # A manual N1 on the day user 7 was free means user 7 now works then.
     db.add(ShiftOverride(user_id=7, date=NOV1, shift_code="N1", created_by=1))
     db.commit()
     with pytest.raises(HTTPException) as exc:
         await accept_swap(swap.id, current_user=db.get(User, 8), db=db)
     assert exc.value.status_code == 400
-    assert "manuell ändring" in exc.value.detail
+    assert exc.value.detail == "Du jobbar redan det datumet"
     db.refresh(swap)
     assert swap.status == SwapStatus.PENDING
     assert _rows(db) == {(7, NOV1): ("N1", None)}
+
+
+@pytest.mark.anyio
+async def test_accept_refuses_when_effective_code_changed(db):
+    swap = await _propose(db, 7, 8, OCT26, OCT26)
+    db.add(ShiftOverride(user_id=7, date=OCT26, shift_code="N1", created_by=1))
+    db.commit()
+    with pytest.raises(HTTPException) as exc:
+        await accept_swap(swap.id, current_user=db.get(User, 8), db=db)
+    assert exc.value.detail == "Schemat har ändrats sedan förslaget"
+
+
+def _swap_rows(db, swap):
+    return {(r.user_id, r.date): r.shift_code for r in db.query(ShiftOverride).filter_by(swap_id=swap.id)}
+
+
+@pytest.mark.anyio
+async def test_accept_oc_give_away(db):
+    swap = await _accepted(db, 8, 7, OCT31, OCT31)
+    assert (swap.requester_shift_code, swap.target_shift_code) == ("OC", "OFF")
+    assert _swap_rows(db, swap) == {(8, OCT31): "OFF", (7, OCT31): "OC"}
+    week = _week(db, [7, 8])
+    assert week[(7, OCT31)][0] == "OC"
+    assert week[(8, OCT31)][0] in ("OFF", None)
+
+
+@pytest.mark.anyio
+async def test_accept_gives_away_the_manual_code(db):
+    db.add(ShiftOverride(user_id=7, date=OCT26, shift_code="N1", created_by=1))
+    db.commit()
+    swap = await _accepted(db, 7, 8, OCT26, OCT26)
+    assert (swap.requester_shift_code, swap.target_shift_code) == ("N1", "N3")
+    assert _swap_rows(db, swap) == {(7, OCT26): "N3", (8, OCT26): "N1"}
 
 
 @pytest.mark.anyio
