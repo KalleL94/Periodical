@@ -56,15 +56,15 @@ async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user,
     with pytest.raises(HTTPException) as exc:
         await propose_swap(
             target_id=admin_user.id,
-            requester_date=day_a,
-            target_date=day_c,
+            req_date=[day_a],
+            tgt_date=[day_c],
             message=None,
             current_user=test_user,
             db=test_db,
         )
 
     assert exc.value.status_code == 400
-    assert "byte finns redan" in exc.value.detail
+    assert exc.value.detail == "Byte 1: Ett byte finns redan för någon av personerna på dessa datum"
     assert test_db.query(ShiftSwap).count() == 1
 
 

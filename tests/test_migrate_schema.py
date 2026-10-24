@@ -98,3 +98,14 @@ def test_not_null_column_without_a_default_is_refused(db_engine):
 
     with pytest.raises(migrate_schema.UnmigratableColumn):
         migrate_schema.add_column_sql("widgets", _Widget.__table__.c.label)
+
+
+def test_missing_swap_group_id_is_added(db_engine):
+    # SQLite cannot drop an indexed column, so the index goes first.
+    with db_engine.begin() as connection:
+        connection.exec_driver_sql("DROP INDEX ix_shift_swaps_group_id")
+    _drop_column(db_engine, "shift_swaps", "group_id")
+
+    assert migrate_schema.migrate() == 1
+
+    assert _columns(db_engine, "shift_swaps")["group_id"]["nullable"] is True

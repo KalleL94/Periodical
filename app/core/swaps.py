@@ -1,6 +1,7 @@
 # app/core/swaps.py
 """Rules for shift swaps, shared by the day picker, propose and accept."""
 
+import logging
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
@@ -11,7 +12,10 @@ from app.core.schedule.vacation import get_vacation_dates_for_year
 from app.core.utils import get_today
 from app.database.database import Absence, ShiftOverride, ShiftSwap, SwapStatus, User
 
+logger = logging.getLogger(__name__)
+
 MIN_REST_HOURS = 11
+MAX_PAIRS = 10
 MIN_WEEKLY_REST_HOURS = 36
 
 SLOT_TAKEN = "Ett byte finns redan för någon av personerna på dessa datum"
@@ -157,7 +161,7 @@ def find_active_swap_conflict(
     db: Session,
     participant_dates: set[tuple[int, object]],
     statuses: tuple[SwapStatus, ...],
-    exclude_swap_id: int | None = None,
+    exclude_swap_ids: frozenset[int] = frozenset(),
 ) -> ShiftSwap | None:
     """Return an active swap that already uses any of the affected user/date slots."""
     if not participant_dates:
@@ -170,8 +174,8 @@ def find_active_swap_conflict(
         (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
         (ShiftSwap.requester_date.in_(dates) | ShiftSwap.target_date.in_(dates)),
     )
-    if exclude_swap_id is not None:
-        query = query.filter(ShiftSwap.id != exclude_swap_id)
+    if exclude_swap_ids:
+        query = query.filter(ShiftSwap.id.notin_(exclude_swap_ids))
 
     for swap in query.all():
         existing_dates = swap_participant_dates(
@@ -190,9 +194,9 @@ def _rows_on_slots(db: Session, model, slots: set[tuple[int, date]]) -> bool:
     return any((u, d) in slots for u, d in rows)
 
 
-def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_date, exclude_swap_id) -> str | None:
+def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_date, exclude_swap_ids) -> str | None:
     slots = swap_participant_dates(requester.id, target.id, req_date, tgt_date)
-    if find_active_swap_conflict(db, slots, (SwapStatus.PENDING, SwapStatus.ACCEPTED), exclude_swap_id):
+    if find_active_swap_conflict(db, slots, (SwapStatus.PENDING, SwapStatus.ACCEPTED), exclude_swap_ids):
         return SLOT_TAKEN
     if _rows_on_slots(db, ShiftOverride, slots):
         return "En manuell ändring finns redan för någon av personerna på dessa datum"
@@ -219,7 +223,7 @@ def check_swap(
     req_date: date,
     tgt_date: date,
     *,
-    exclude_swap_id: int | None = None,
+    exclude_swap_ids: frozenset[int] = frozenset(),
 ) -> str | None:
     """Return the first Swedish reason the swap is not allowed, or None if it is.
 
@@ -239,12 +243,12 @@ def check_swap(
         ShiftSwap.target_date == tgt_date,
         ShiftSwap.status == SwapStatus.PENDING,
     )
-    if exclude_swap_id is not None:
-        duplicate = duplicate.filter(ShiftSwap.id != exclude_swap_id)
+    if exclude_swap_ids:
+        duplicate = duplicate.filter(ShiftSwap.id.notin_(exclude_swap_ids))
     if duplicate.first():
         return "Byte redan föreslaget för dessa datum"
 
-    reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_id)
+    reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_ids)
     if reason:
         return reason
 
@@ -276,6 +280,30 @@ def check_swap(
     # Same-day mutual swap (both working) between identical shifts is pointless
     if is_same_day and req_code == tgt_code:
         return "Ni jobbar redan samma pass"
+    return None
+
+
+def validate_proposal(db: Session, requester: User, target: User, pairs: list[tuple[date, date]]) -> str | None:
+    """Return the first Swedish reason a proposal of (req_date, tgt_date) pairs is refused, or None.
+
+    Every pair must pass check_swap, and no two pairs may touch the same user/date slot,
+    so accepting the group can never write two override rows on one slot.
+    """
+    if not pairs:
+        return "Inga byten valda"
+    if len(pairs) > MAX_PAIRS:
+        return f"Högst {MAX_PAIRS} byten per förslag"
+    for n, (req_date, tgt_date) in enumerate(pairs, start=1):
+        reason = check_swap(db, requester, target, req_date, tgt_date)
+        if reason:
+            return f"Byte {n}: {reason}"
+    used: dict[tuple[int, date], int] = {}
+    for n, (req_date, tgt_date) in enumerate(pairs, start=1):
+        slots = swap_participant_dates(requester.id, target.id, req_date, tgt_date)
+        clash = next((used[slot] for slot in slots if slot in used), None)
+        if clash:
+            return f"Byte {n}: samma person och datum som byte {clash}"
+        used.update(dict.fromkeys(slots, n))
     return None
 
 
@@ -311,4 +339,5 @@ def swap_warnings(db: Session, requester: User, target: User, req_date: date, tg
                 warnings.append(f"Under {MIN_WEEKLY_REST_HOURS} timmars veckovila ({who})")
         return warnings
     except Exception:
+        logger.exception("swap_warnings failed for %s -> %s, %s / %s", requester.id, target.id, req_date, tgt_date)
         return []

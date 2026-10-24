@@ -195,11 +195,13 @@ def test_rest_off_dates_dev_reproduction(db):
     assert check_rest_ok(oct28, "N3", marcus, session=db, off_dates=frozenset({oct29}))
 
 
-def test_exclude_swap_id_ignores_own_swap(db):
+def test_exclude_swap_ids_ignores_own_swap(db):
     # accept re-runs the rules on a PENDING swap; the swap must not block itself.
     _swap(db, 7, 8, D(2026, 10, 25), D(2026, 11, 1), SwapStatus.PENDING)
     db.commit()
     own = db.query(ShiftSwap).one()
     requester, target = db.get(User, 7), db.get(User, 8)
     assert check_swap(db, requester, target, D(2026, 10, 25), D(2026, 11, 1)) is not None
-    assert check_swap(db, requester, target, D(2026, 10, 25), D(2026, 11, 1), exclude_swap_id=own.id) is None
+    assert (
+        check_swap(db, requester, target, D(2026, 10, 25), D(2026, 11, 1), exclude_swap_ids=frozenset({own.id})) is None
+    )

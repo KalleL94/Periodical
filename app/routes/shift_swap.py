@@ -3,6 +3,7 @@
 
 from datetime import date as date_cls
 from datetime import timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.core.schedule import build_week_data, clear_schedule_cache
-from app.core.swaps import check_swap, shift_code_on
+from app.core.swaps import check_swap, shift_code_on, validate_proposal
 from app.core.utils import get_today
 from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, get_db, utcnow
 from app.routes.shared import render
@@ -202,39 +203,61 @@ async def list_swaps(
     )
 
 
+def _load_group(db: Session, swap_id: int) -> list[ShiftSwap]:
+    """All rows of the proposal swap_id belongs to, oldest first; a legacy row is a group of one."""
+    swap = db.get(ShiftSwap, swap_id)
+    if not swap:
+        raise HTTPException(status_code=404, detail="Bytet hittades inte")
+    if swap.group_id is None:
+        return [swap]
+    return db.query(ShiftSwap).filter(ShiftSwap.group_id == swap.group_id).order_by(ShiftSwap.id).all()
+
+
+def _load_pending_group_as_target(db: Session, swap_id: int, current_user: User) -> list[ShiftSwap]:
+    group = _load_group(db, swap_id)
+    if group[0].target_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Inte behörig")
+    if any(s.status != SwapStatus.PENDING for s in group):
+        raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
+    return group
+
+
 @router.post("/propose")
 async def propose_swap(
     target_id: int = Form(...),
-    requester_date: date_cls = Form(...),
-    target_date: date_cls = Form(...),
+    req_date: list[date_cls] = Form(...),
+    tgt_date: list[date_cls] = Form(...),
     message: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Propose a shift swap: give your shift on requester_date, take target's shift on target_date."""
-    target_user = db.query(User).get(target_id)
+    """Propose one or more swaps to one colleague: pair i gives req_date[i] and takes tgt_date[i]."""
+    target_user = db.get(User, target_id)
     if not target_user:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
+    if len(req_date) != len(tgt_date):
+        raise HTTPException(status_code=400, detail="Ogiltigt förslag")
 
-    reason = check_swap(db, current_user, target_user, requester_date, target_date)
+    pairs = list(zip(req_date, tgt_date, strict=True))
+    reason = validate_proposal(db, current_user, target_user, pairs)
     if reason:
         raise HTTPException(status_code=400, detail=reason)
 
-    req_date, tgt_date = requester_date, target_date
-    req_code = shift_code_on(req_date, current_user.rotation_person_id)
-    tgt_code = shift_code_on(tgt_date, target_user.rotation_person_id)
-
-    swap = ShiftSwap(
-        requester_id=current_user.id,
-        target_id=target_id,
-        requester_date=req_date,
-        target_date=tgt_date,
-        requester_shift_code=req_code,
-        target_shift_code=tgt_code,
-        message=message,
-        applied_as_override=True,
-    )
-    db.add(swap)
+    group_id = uuid4().hex
+    for rd, td in pairs:
+        db.add(
+            ShiftSwap(
+                requester_id=current_user.id,
+                target_id=target_id,
+                requester_date=rd,
+                target_date=td,
+                requester_shift_code=shift_code_on(rd, current_user.rotation_person_id),
+                target_shift_code=shift_code_on(td, target_user.rotation_person_id),
+                message=message,
+                applied_as_override=True,
+                group_id=group_id,
+            )
+        )
     db.commit()
 
     return RedirectResponse(url="/swaps", status_code=303)
@@ -246,29 +269,31 @@ async def accept_swap(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Accept a swap request (target user only)."""
-    swap = db.query(ShiftSwap).get(swap_id)
-    if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
-    if swap.target_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Inte behörig")
-    if swap.status != SwapStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
+    """Accept a whole proposal (target user only): every pair is applied, or none."""
+    group = _load_pending_group_as_target(db, swap_id, current_user)
+    group_ids = frozenset(s.id for s in group)
 
-    reason = check_swap(db, swap.requester, swap.target, swap.requester_date, swap.target_date, exclude_swap_id=swap.id)
-    if reason:
-        raise HTTPException(status_code=400, detail=reason)
+    # Check every pair before writing anything, so a failure leaves the group PENDING.
+    codes = []
+    for swap in group:
+        reason = check_swap(
+            db, swap.requester, swap.target, swap.requester_date, swap.target_date, exclude_swap_ids=group_ids
+        )
+        if reason:
+            raise HTTPException(status_code=400, detail=reason)
+        req_code = shift_code_on(swap.requester_date, swap.requester.rotation_person_id)
+        tgt_code = shift_code_on(swap.target_date, swap.target.rotation_person_id)
+        if (req_code, tgt_code) != (swap.requester_shift_code, swap.target_shift_code):
+            raise HTTPException(status_code=400, detail="Schemat har ändrats sedan förslaget")
+        codes.append((req_code, tgt_code))
 
-    req_code = shift_code_on(swap.requester_date, swap.requester.rotation_person_id)
-    tgt_code = shift_code_on(swap.target_date, swap.target.rotation_person_id)
-    if (req_code, tgt_code) != (swap.requester_shift_code, swap.target_shift_code):
-        raise HTTPException(status_code=400, detail="Schemat har ändrats sedan förslaget")
-
-    _apply_swap_as_overrides(db, swap, req_code, tgt_code)
-    # A swap proposed before overrides existed must leave swap_map too, or it counts twice.
-    swap.applied_as_override = True
-    swap.status = SwapStatus.ACCEPTED
-    swap.responded_at = utcnow()
+    now = utcnow()
+    for swap, (req_code, tgt_code) in zip(group, codes, strict=True):
+        _apply_swap_as_overrides(db, swap, req_code, tgt_code)
+        # A swap proposed before overrides existed must leave swap_map too, or it counts twice.
+        swap.applied_as_override = True
+        swap.status = SwapStatus.ACCEPTED
+        swap.responded_at = now
     db.commit()
     clear_schedule_cache()
 
@@ -281,17 +306,11 @@ async def reject_swap(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Reject a swap request (target user only)."""
-    swap = db.query(ShiftSwap).get(swap_id)
-    if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
-    if swap.target_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Inte behörig")
-    if swap.status != SwapStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
-
-    swap.status = SwapStatus.REJECTED
-    swap.responded_at = utcnow()
+    """Reject a whole proposal (target user only)."""
+    now = utcnow()
+    for swap in _load_pending_group_as_target(db, swap_id, current_user):
+        swap.status = SwapStatus.REJECTED
+        swap.responded_at = now
     db.commit()
 
     return RedirectResponse(url="/swaps", status_code=303)
@@ -303,23 +322,23 @@ async def cancel_swap(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Cancel a pending or accepted swap (requester, target, or admin)."""
-    swap = db.query(ShiftSwap).get(swap_id)
-    if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
-
-    is_participant = swap.requester_id == current_user.id or swap.target_id == current_user.id
+    """Cancel a whole pending or accepted proposal (requester, target, or admin)."""
+    group = _load_group(db, swap_id)
+    first = group[0]
+    is_participant = current_user.id in (first.requester_id, first.target_id)
     is_admin = current_user.role.value == "admin"
 
     if not is_participant and not is_admin:
         raise HTTPException(status_code=403, detail="Inte behörig")
-    if swap.status not in (SwapStatus.PENDING, SwapStatus.ACCEPTED):
+    if any(s.status not in (SwapStatus.PENDING, SwapStatus.ACCEPTED) for s in group):
         raise HTTPException(status_code=400, detail="Kan bara avbryta väntande eller accepterade byten")
 
     # Legacy swaps own no rows; rows an admin has since edited have swap_id cleared.
-    db.query(ShiftOverride).filter(ShiftOverride.swap_id == swap.id).delete()
-    swap.status = SwapStatus.CANCELLED
-    swap.responded_at = utcnow()
+    db.query(ShiftOverride).filter(ShiftOverride.swap_id.in_([s.id for s in group])).delete()
+    now = utcnow()
+    for swap in group:
+        swap.status = SwapStatus.CANCELLED
+        swap.responded_at = now
     db.commit()
     clear_schedule_cache()
 

@@ -160,7 +160,7 @@
         <h3 class="day-h-mt">{% if is_one_way %}{{ t.day_take_shift }}{% else %}{{ t.day_propose_swap }}{% endif %}</h3>
         <form method="POST" action="/swaps/propose" class="ot-form" id="swap-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="requester_date" value="{{ date }}">
+            <input type="hidden" name="req_date" value="{{ date }}">
             <div class="form-row">
                 <div class="form-group">
                     <label for="target_id">{% if is_one_way %}{{ t.day_take_shift_colleague }}{% else %}{{ t.day_swap_with }}{% endif %}</label>
@@ -173,7 +173,7 @@
                 </div>
                 <div class="form-group">
                     <label for="target_date">{{ t.day_swap_their_shift }}</label>
-                    <select id="target_date" name="target_date" required disabled>
+                    <select id="target_date" name="tgt_date" required disabled>
                         <option value="">{{ t.day_swap_choose_first }}</option>
                     </select>
                 </div>

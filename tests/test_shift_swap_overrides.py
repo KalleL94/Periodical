@@ -50,8 +50,8 @@ def db(rotation_session, monkeypatch):
 async def _propose(db, req_id, tgt_id, rd, td) -> ShiftSwap:
     await propose_swap(
         target_id=tgt_id,
-        requester_date=rd,
-        target_date=td,
+        req_date=[rd],
+        tgt_date=[td],
         message=None,
         current_user=db.get(User, req_id),
         db=db,
@@ -97,7 +97,7 @@ async def test_propose_refuses_with_check_swap_reason(db):
     with pytest.raises(HTTPException) as exc:
         await _propose(db, 8, 7, D(2026, 10, 29), D(2026, 10, 26))
     assert exc.value.status_code == 400
-    assert exc.value.detail == "Du jobbar inte det datumet"
+    assert exc.value.detail == "Byte 1: Du jobbar inte det datumet"
     assert db.query(ShiftSwap).count() == 0
 
 

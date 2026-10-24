@@ -597,6 +597,8 @@ class ShiftSwap(Base):
     created_at = Column(DateTime, default=utcnow)
     # True when accepting wrote ShiftOverride rows; False for legacy swaps read via swap_map
     applied_as_override = Column(Boolean, default=False, nullable=False)
+    # Shared by the pairs of one proposal; None for legacy rows (a group of one)
+    group_id = Column(String(32), nullable=True, index=True)
 
     # Relationships
     requester = relationship("User", foreign_keys=[requester_id])
