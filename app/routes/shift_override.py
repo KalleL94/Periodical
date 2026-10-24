@@ -11,12 +11,33 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
-from app.database.database import ShiftOverride, User, get_db
+from app.database.database import ShiftOverride, User, UserRole, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 
 # ETC is the custom labelled block; it carries its own times on the row.
 _ALLOWED_CODES = {"N1", "N2", "N3", "ETC"}
+
+
+def refuse_swap_rows(session, current_user: User, user_id: int, dates) -> None:
+    """Raise 400 if a non-admin would edit or delete a row an accepted swap wrote.
+
+    A participant undoes a swap by cancelling it, which removes every row at once.
+    An admin may change one row; upsert_shift_override then makes it manual.
+    """
+    if current_user.role == UserRole.ADMIN or not dates:
+        return
+    owned = (
+        session.query(ShiftOverride.id)
+        .filter(
+            ShiftOverride.user_id == user_id,
+            ShiftOverride.date.in_(list(dates)),
+            ShiftOverride.swap_id.isnot(None),
+        )
+        .first()
+    )
+    if owned:
+        raise HTTPException(status_code=400, detail="Passet hör till ett byte, avbryt bytet i stället")
 
 
 def upsert_shift_override(
@@ -65,6 +86,7 @@ async def add_shift_override(
 
     if shift_code not in _ALLOWED_CODES:
         raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3/ETC")
+    refuse_swap_rows(session, current_user, user_id, dates)
 
     # A custom block with no clock times has no hours and would render as a blank
     # row, so it is rejected rather than stored.
@@ -126,6 +148,7 @@ async def delete_shift_override(
         raise HTTPException(status_code=404, detail="Override hittades inte")
 
     require_own_or_admin(current_user, override.user_id, "Du kan bara ta bort dina egna manuella pass")
+    refuse_swap_rows(session, current_user, override.user_id, [override.date])
 
     redirect_date = override.date
     redirect_user = override.user_id

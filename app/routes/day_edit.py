@@ -25,6 +25,7 @@ from app.database.database import (
     User,
     get_db,
 )
+from app.routes.shift_override import refuse_swap_rows
 
 router = APIRouter(prefix="/day-edit", tags=["day_edit"])
 
@@ -88,6 +89,8 @@ async def clear_days(
 
     if what not in _TARGETS:
         raise HTTPException(status_code=400, detail=f"Invalid target, use one of {sorted(_TARGETS)}")
+    if what in ("shift", "all"):
+        refuse_swap_rows(session, current_user, user_id, dates)
 
     def conflicts(date):
         # "Nothing here" is not a failure, it is the report.
@@ -287,6 +290,8 @@ async def bulk_edit(
         raise HTTPException(status_code=400, detail=f"Invalid area {unknown[0]}, use one of {sorted(_AREAS)}")
     if len(areas) > MAX_EDIT_DATES:
         raise HTTPException(status_code=400, detail=f"Too many dates, the limit is {MAX_EDIT_DATES}")
+    # Checked before any write, so a refusal leaves the whole post unapplied.
+    refuse_swap_rows(session, current_user, user_id, [day for day, area in areas.items() if area == "shift"])
 
     written = []
     for day in sorted(areas):
