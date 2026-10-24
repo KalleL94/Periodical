@@ -33,6 +33,8 @@ def upsert_shift_override(
         existing.end_time = end_time
         existing.label = label or None
         existing.created_by = created_by
+        # An edited swap row becomes a manual row, so cancelling the swap leaves it.
+        existing.swap_id = None
         return
     session.add(
         ShiftOverride(

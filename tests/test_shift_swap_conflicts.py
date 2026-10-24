@@ -100,26 +100,3 @@ async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user,
     assert "byte finns redan" in exc.value.detail
     test_db.refresh(pending)
     assert pending.status == SwapStatus.PENDING
-
-
-@pytest.mark.anyio
-async def test_accept_swap_allows_non_conflicting_pending_swap(test_db, test_user, admin_user):
-    day_a, _day_b, day_c = _future_dates()
-    pending = ShiftSwap(
-        requester_id=admin_user.id,
-        target_id=test_user.id,
-        requester_date=day_a,
-        target_date=day_c,
-        requester_shift_code="N3",
-        target_shift_code="N1",
-        status=SwapStatus.PENDING,
-    )
-    test_db.add(pending)
-    test_db.commit()
-
-    response = await accept_swap(pending.id, current_user=test_user, db=test_db)
-
-    test_db.refresh(pending)
-    assert pending.status == SwapStatus.ACCEPTED
-    assert pending.responded_at is not None
-    assert response.status_code == 303

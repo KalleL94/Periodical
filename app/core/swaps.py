@@ -206,7 +206,8 @@ def _slot_conflict(db: Session, requester: User, target: User, req_date, tgt_dat
     return None
 
 
-def _code(day, rotation_person_id) -> str:
+def shift_code_on(day, rotation_person_id) -> str:
+    """The rotation shift code for a position on day, "OFF" when there is none."""
     result = determine_shift_for_date(day, start_week=rotation_person_id)
     return result[0].code if result and result[0] else "OFF"
 
@@ -249,8 +250,8 @@ def check_swap(
 
     req_pid = requester.rotation_person_id
     tgt_pid = target.rotation_person_id
-    req_code = _code(req_date, req_pid)
-    tgt_code = _code(tgt_date, tgt_pid)
+    req_code = shift_code_on(req_date, req_pid)
+    tgt_code = shift_code_on(tgt_date, tgt_pid)
 
     # ShiftOverride cannot hold on-call, so OC swaps stay manual.
     if "OC" in (req_code, tgt_code):

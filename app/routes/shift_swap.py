@@ -10,33 +10,30 @@ from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
 from app.core.schedule import build_week_data, clear_schedule_cache
-from app.core.schedule.core import determine_shift_for_date
-from app.core.swaps import (
-    SLOT_TAKEN,
-    check_rest_ok,
-    check_weekly_rest_ok,
-    find_active_swap_conflict,
-    swap_participant_dates,
-)
+from app.core.swaps import check_swap, check_weekly_rest_ok, shift_code_on
 from app.core.utils import get_today
-from app.database.database import ShiftSwap, SwapStatus, User, get_db, utcnow
+from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, get_db, utcnow
 from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
 
 
-def _raise_if_swap_conflicts(
-    db: Session,
-    requester_id: int,
-    target_id: int,
-    requester_date,
-    target_date,
-    statuses: tuple[SwapStatus, ...],
-    exclude_swap_id: int | None = None,
-) -> None:
-    participant_dates = swap_participant_dates(requester_id, target_id, requester_date, target_date)
-    if find_active_swap_conflict(db, participant_dates, statuses, exclude_swap_id):
-        raise HTTPException(status_code=400, detail=SLOT_TAKEN)
+def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_code: str) -> None:
+    """Write the swap as ShiftOverride rows, the same result the legacy swap_map gives.
+
+    On each date the two people exchange their rotation shifts. A same-day swap
+    collapses to two rows. "OFF" is written as a code so a shift given away stays free.
+    """
+    requester, target = swap.requester, swap.target
+    rd, td = swap.requester_date, swap.target_date
+    rows = {
+        (requester.id, rd): shift_code_on(rd, target.rotation_person_id),
+        (target.id, rd): req_code,
+        (target.id, td): shift_code_on(td, requester.rotation_person_id),
+        (requester.id, td): tgt_code,  # same day: overwrites the first key
+    }
+    for (user_id, day), code in rows.items():
+        db.add(ShiftOverride(user_id=user_id, date=day, shift_code=code, swap_id=swap.id, created_by=target.id))
 
 
 @router.get("/api/shifts/{user_id}")
@@ -246,83 +243,17 @@ async def propose_swap(
     db: Session = Depends(get_db),
 ):
     """Propose a shift swap: give your shift on requester_date, take target's shift on target_date."""
-    if target_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Kan inte byta pass med dig själv")
-
-    req_date = requester_date
-    tgt_date = target_date
-    today = get_today()
-
-    if req_date <= today or tgt_date <= today:
-        raise HTTPException(status_code=400, detail="Kan bara byta framtida pass")
-
     target_user = db.query(User).get(target_id)
     if not target_user:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
 
-    # Check no duplicate pending swap
-    existing = (
-        db.query(ShiftSwap)
-        .filter(
-            ShiftSwap.requester_id == current_user.id,
-            ShiftSwap.target_id == target_id,
-            ShiftSwap.requester_date == req_date,
-            ShiftSwap.target_date == tgt_date,
-            ShiftSwap.status == SwapStatus.PENDING,
-        )
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Byte redan föreslaget för dessa datum")
+    reason = check_swap(db, current_user, target_user, requester_date, target_date)
+    if reason:
+        raise HTTPException(status_code=400, detail=reason)
 
-    _raise_if_swap_conflicts(
-        db,
-        current_user.id,
-        target_id,
-        req_date,
-        tgt_date,
-        (SwapStatus.PENDING, SwapStatus.ACCEPTED),
-    )
-
-    # Get shift codes for both dates
-    req_result = determine_shift_for_date(req_date, start_week=current_user.rotation_person_id)
-    tgt_result = determine_shift_for_date(tgt_date, start_week=target_user.rotation_person_id)
-
-    req_shift = req_result[0] if req_result and req_result[0] else None
-    tgt_shift = tgt_result[0] if tgt_result and tgt_result[0] else None
-
-    req_code = req_shift.code if req_shift else "OFF"
-    tgt_code = tgt_shift.code if tgt_shift else "OFF"
-    is_same_day = req_date == tgt_date
-    # One-way transfer: same day, exactly one party is free (XOR)
-    is_one_way = is_same_day and (req_code == "OFF") != (tgt_code == "OFF")
-
-    if not is_same_day:
-        # Cross-day swaps require both to be working
-        if req_code == "OFF":
-            raise HTTPException(status_code=400, detail="Du jobbar inte det datumet")
-        if tgt_code == "OFF":
-            raise HTTPException(status_code=400, detail="Kollegan jobbar inte det datumet")
-    else:
-        # Same-day: both free = pointless; mutual swap has extra rules
-        if req_code == "OFF" and tgt_code == "OFF":
-            raise HTTPException(status_code=400, detail="Ingen av er jobbar den dagen")
-        if not is_one_way:
-            if req_code == tgt_code:
-                raise HTTPException(status_code=400, detail="Ni jobbar redan samma pass")
-            if (req_code == "OC") != (tgt_code == "OC"):
-                raise HTTPException(status_code=400, detail="Kan inte blanda OC och vanliga pass")
-
-    # Same-day operations (mutual or one-way) skip rest checks.
-    if not is_same_day:
-        if not check_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id, session=db):
-            raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (du)")
-        if not check_rest_ok(req_date, req_code, target_user.rotation_person_id, session=db):
-            raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (kollegan)")
-        if not check_weekly_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id):
-            raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (du)")
-        if not check_weekly_rest_ok(req_date, req_code, target_user.rotation_person_id):
-            raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (kollegan)")
+    req_date, tgt_date = requester_date, target_date
+    req_code = shift_code_on(req_date, current_user.rotation_person_id)
+    tgt_code = shift_code_on(tgt_date, target_user.rotation_person_id)
 
     swap = ShiftSwap(
         requester_id=current_user.id,
@@ -332,6 +263,7 @@ async def propose_swap(
         requester_shift_code=req_code,
         target_shift_code=tgt_code,
         message=message,
+        applied_as_override=True,
     )
     db.add(swap)
     db.commit()
@@ -354,16 +286,18 @@ async def accept_swap(
     if swap.status != SwapStatus.PENDING:
         raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
 
-    _raise_if_swap_conflicts(
-        db,
-        swap.requester_id,
-        swap.target_id,
-        swap.requester_date,
-        swap.target_date,
-        (SwapStatus.ACCEPTED,),
-        exclude_swap_id=swap.id,
-    )
+    reason = check_swap(db, swap.requester, swap.target, swap.requester_date, swap.target_date, exclude_swap_id=swap.id)
+    if reason:
+        raise HTTPException(status_code=400, detail=reason)
 
+    req_code = shift_code_on(swap.requester_date, swap.requester.rotation_person_id)
+    tgt_code = shift_code_on(swap.target_date, swap.target.rotation_person_id)
+    if (req_code, tgt_code) != (swap.requester_shift_code, swap.target_shift_code):
+        raise HTTPException(status_code=400, detail="Schemat har ändrats sedan förslaget")
+
+    _apply_swap_as_overrides(db, swap, req_code, tgt_code)
+    # A swap proposed before overrides existed must leave swap_map too, or it counts twice.
+    swap.applied_as_override = True
     swap.status = SwapStatus.ACCEPTED
     swap.responded_at = utcnow()
     db.commit()
@@ -413,6 +347,8 @@ async def cancel_swap(
     if swap.status not in (SwapStatus.PENDING, SwapStatus.ACCEPTED):
         raise HTTPException(status_code=400, detail="Kan bara avbryta väntande eller accepterade byten")
 
+    # Legacy swaps own no rows; rows an admin has since edited have swap_id cleared.
+    db.query(ShiftOverride).filter(ShiftOverride.swap_id == swap.id).delete()
     swap.status = SwapStatus.CANCELLED
     swap.responded_at = utcnow()
     db.commit()
