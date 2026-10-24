@@ -1,5 +1,5 @@
 # app/core/swaps.py
-"""Rules for shift swaps, shared by the day picker, propose and accept."""
+"""Rules for shift swaps, shared by the compare screen endpoints, propose and accept."""
 
 import logging
 from datetime import date, datetime, time, timedelta

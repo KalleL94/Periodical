@@ -485,9 +485,8 @@ async def show_day_for_person(
             ),
             "coworkers": coworkers if not before_employment else [],
             "all_working_persons": persons_today_with_shift if not before_employment else [],
-            "swap_users": db.query(User)
-            .filter(User.is_active == 1, User.id != current_user.id, User.role != UserRole.ADMIN)
-            .all(),
+            # Only future days can be swapped (check_swap refuses today and earlier).
+            "can_swap": date_obj > get_today(),
             "oncall_override": oncall_override,
             "has_rotation_oc": has_rotation_oc,
             "is_effective_oc": is_effective_oc,

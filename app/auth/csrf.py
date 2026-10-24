@@ -21,6 +21,8 @@ from app.auth.auth import SECRET_KEY
 
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_FIELD_NAME = "csrf_token"
+# fetch() calls with a JSON body send the token in this header instead of a field.
+CSRF_HEADER_NAME = "X-CSRF-Token"
 
 # 32 bytes of entropy, matching the strength of the auth tokens elsewhere.
 _NONCE_BYTES = 32

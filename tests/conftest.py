@@ -28,7 +28,7 @@ import datetime
 
 import app.database.database as db_module
 from app.auth.auth import create_access_token, get_password_hash
-from app.auth.csrf import CSRF_COOKIE_NAME, CSRF_FIELD_NAME, generate_csrf_token
+from app.auth.csrf import CSRF_COOKIE_NAME, CSRF_FIELD_NAME, CSRF_HEADER_NAME, generate_csrf_token
 from app.core.schedule import clear_schedule_cache
 from app.database.database import Base, RotationEra, User, UserRole, WageType, get_db
 from app.main import app
@@ -75,6 +75,10 @@ class CSRFTestClient(TestClient):
         if not token:
             token = generate_csrf_token()
             self.cookies.set(CSRF_COOKIE_NAME, token)
+
+        if kwargs.get("json") is not None:
+            kwargs["headers"] = {CSRF_HEADER_NAME: token, **headers}
+            return
 
         data = kwargs.get("data")
         if data is None and kwargs.get("json") is None and kwargs.get("content") is None:

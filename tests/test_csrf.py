@@ -11,6 +11,7 @@ from app.auth.auth import create_access_token
 from app.auth.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_FIELD_NAME,
+    CSRF_HEADER_NAME,
     generate_csrf_token,
     is_signed_token,
     tokens_match,
@@ -164,6 +165,26 @@ def test_post_with_matching_token_is_accepted(raw_client, test_user):
     )
 
     assert response.status_code == 302
+
+
+def test_json_post_with_header_token_is_accepted(raw_client, test_user):
+    """fetch() calls with a JSON body send the token in the X-CSRF-Token header."""
+    _set_auth_cookie(raw_client, test_user)
+    token = generate_csrf_token()
+    raw_client.cookies.set(CSRF_COOKIE_NAME, token)
+
+    response = raw_client.post("/swaps/api/check", json={}, headers={CSRF_HEADER_NAME: token})
+
+    assert response.status_code != 403
+
+
+def test_json_post_with_mismatched_header_is_rejected(raw_client, test_user):
+    _set_auth_cookie(raw_client, test_user)
+    raw_client.cookies.set(CSRF_COOKIE_NAME, generate_csrf_token())
+
+    response = raw_client.post("/swaps/api/check", json={}, headers={CSRF_HEADER_NAME: generate_csrf_token()})
+
+    assert response.status_code == 403
 
 
 def test_request_body_survives_middleware(raw_client, test_user):

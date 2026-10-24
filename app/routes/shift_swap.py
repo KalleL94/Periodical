@@ -6,17 +6,20 @@ from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.auth import get_current_user
-from app.core.schedule import build_week_data, clear_schedule_cache
-from app.core.swaps import check_swap, shift_code_on, validate_proposal
+from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache
+from app.core.swaps import MAX_PAIRS, check_swap, shift_code_on, swap_warnings, validate_proposal
 from app.core.utils import get_today
-from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, get_db, utcnow
+from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, get_db, utcnow
 from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
+
+MAX_WEEKS = 6
 
 
 def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_code: str) -> None:
@@ -37,139 +40,116 @@ def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, req_code: str, tgt_co
         db.add(ShiftOverride(user_id=user_id, date=day, shift_code=code, swap_id=swap.id, created_by=target.id))
 
 
-@router.get("/api/shifts/{user_id}")
-async def get_user_shifts(
-    user_id: int,
-    offering: str = None,
-    ref_date: date_cls | None = None,
+def _kind(req_date: date_cls, tgt_date: date_cls, req_code: str, tgt_code: str) -> str | None:
+    """What a pair does: cross-day, same-day mutual, or a one-way give away or take over."""
+    if req_date != tgt_date:
+        return "cross"
+    if req_code != "OFF" and tgt_code != "OFF":
+        return "mutual"
+    if req_code != "OFF":
+        return "give_away"
+    if tgt_code != "OFF":
+        return "take_over"
+    return None
+
+
+def _assess(db: Session, requester: User, target: User, req_date: date_cls, tgt_date: date_cls) -> dict:
+    """check_swap verdict, rest warnings and kind for one pair, as the compare screen shows it."""
+    blocked = check_swap(db, requester, target, req_date, tgt_date)
+    req_code = shift_code_on(req_date, requester.rotation_person_id)
+    tgt_code = shift_code_on(tgt_date, target.rotation_person_id)
+    return {
+        "blocked": blocked,
+        "warnings": [] if blocked else swap_warnings(db, requester, target, req_date, tgt_date),
+        "kind": _kind(req_date, tgt_date, req_code, tgt_code),
+    }
+
+
+class CheckPair(BaseModel):
+    req_date: date_cls
+    tgt_date: date_cls
+
+
+class CheckRequest(BaseModel):
+    target_id: int
+    pairs: list[CheckPair] = Field(min_length=1, max_length=MAX_PAIRS)
+
+
+@router.post("/api/check")
+async def check_pairs(
+    body: CheckRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return target's shifts within ±3 months of ref_date that make sense to swap for.
-
-    Each item carries "blocked": the check_swap reason the swap would be refused, or None.
-    The requester gives ref_date and takes the listed date, as the propose form sends them.
-    """
-    from app.core.schedule import calculate_ob_hours, calculate_shift_hours
-    from app.core.schedule.ob import get_combined_rules_for_year
-
-    target = db.query(User).get(user_id)
+    """Assess each pair on its own: blocked reason, rest warnings and kind."""
+    target = db.get(User, body.target_id)
     if not target:
-        return JSONResponse(content={"shifts": []})
+        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+    return {"results": [_assess(db, current_user, target, p.req_date, p.tgt_date) for p in body.pairs]}
 
-    today = get_today()
-    center = ref_date or today
-    target_pid = target.rotation_person_id
-    my_pid = current_user.rotation_person_id
 
-    # Build list of days: ±90 days from center, but not in the past
-    scan_start = max(center - timedelta(days=90), today + timedelta(days=1))
-    scan_end = center + timedelta(days=90)
-    total_days = (scan_end - scan_start).days + 1
-
-    # Fetch week data for both users once per ISO week (center included for the same-day check)
-    target_weeks = {}
-    my_weeks = {}
-    for d in [center] + [scan_start + timedelta(days=i) for i in range(total_days)]:
-        wk = d.isocalendar()[:2]
-        if wk not in my_weeks:
-            target_weeks[wk] = {day["date"]: day for day in build_week_data(*wk, person_id=target_pid, session=db)}
-            my_weeks[wk] = {day["date"]: day for day in build_week_data(*wk, person_id=my_pid, session=db)}
-
-    # Determine if requester is working on center (only same-day swap is offered then)
-    center_wk = center.isocalendar()[:2]
-    center_my_info = my_weeks.get(center_wk, {}).get(center, {})
-    center_my_shift = center_my_info.get("shift")
-    center_my_code = center_my_shift.code if center_my_shift else "OFF"
-    requester_working_on_center = center_my_code not in ("OFF", "OC")
-
-    shifts = []
-    ob_rules_cache = {}
-    for day_offset in range(total_days):
-        d = scan_start + timedelta(days=day_offset)
-        wk = d.isocalendar()[:2]
-
-        # Determine what I have on this day
-        my_info = my_weeks[wk].get(d, {})
-        my_shift = my_info.get("shift")
-        my_code = my_shift.code if my_shift else "OFF"
-
-        # Check target's shift
-        tgt_info = target_weeks[wk].get(d, {})
-        tgt_shift = tgt_info.get("shift")
-        tgt_code = tgt_shift.code if tgt_shift else "OFF"
-
-        is_same_day = d == center
-
-        # Skip days where target is free, unless it is a same-day give-away
-        if tgt_code == "OFF" and not (is_same_day and requester_working_on_center):
-            continue
-
-        if requester_working_on_center:
-            # Requester is working on center, so only same-day is relevant
-            if not is_same_day:
-                continue
-            if tgt_code == "OFF":
-                # Give-away: target is free, requester gives their shift away
-                shifts.append(
-                    {
-                        "date": d.isoformat(),
-                        "date_display": d.strftime("%a %d %b"),
-                        "code": "OFF",
-                        "label": "Ledig",
-                        "ob_hours": 0.0,
-                        "blocked": check_swap(db, current_user, target, center, d),
-                    }
-                )
-                continue
-            # Mutual same-day swap: different shifts, no OC mixing
-            if not my_shift:
-                continue
-            if tgt_code == my_code:
-                continue  # Same shift code, pointless swap
-            if (my_code == "OC") != (tgt_code == "OC"):
-                continue
-        else:
-            # Requester is free, can take target's shift on a different day
-
-            # OC-to-OC: when offering OC, only show target's OC shifts (requester must be OFF)
-            # Regular: when offering a regular shift, only show target's regular shifts
-            if offering == "OC":
-                if tgt_code != "OC":
-                    continue  # Offering OC, only interested in target's OC
-                if my_code != "OFF":
-                    continue  # Must be OFF to take their OC
-            else:
-                if tgt_code == "OC":
-                    continue  # Offering regular, can't take OC
-                if my_code != "OFF":
-                    continue  # Must be OFF to take their shift
-
-        # Calculate target shift times (the shift I would work)
-        _, tgt_start, tgt_end = calculate_shift_hours(d, tgt_shift) if tgt_shift else (None, None, None)
-
-        # Calculate OB hours for the target's shift
-        ob_total = 0.0
-        if tgt_start and tgt_end:
-            year = d.year
-            if year not in ob_rules_cache:
-                ob_rules_cache[year] = get_combined_rules_for_year(year)
-            ob_dict = calculate_ob_hours(tgt_start, tgt_end, ob_rules_cache[year])
-            ob_total = sum(ob_dict.values())
-
-        shifts.append(
-            {
-                "date": d.isoformat(),
-                "date_display": d.strftime("%a %d %b"),
-                "code": tgt_code,
-                "label": (tgt_shift.label or tgt_code) if tgt_shift else tgt_code,
-                "ob_hours": round(ob_total, 1),
-                # The rules (rest, slot conflicts, OC) live in check_swap; failing days stay listed, greyed.
-                "blocked": check_swap(db, current_user, target, center, d),
+def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
+    """{date: {"code", "start", "end"}} from build_week_data, so overrides and swaps count."""
+    days = {}
+    for monday in range(start.toordinal() - start.weekday(), end.toordinal() + 1, 7):
+        week = date_cls.fromordinal(monday).isocalendar()
+        for info in build_week_data(week[0], week[1], person_id=user.rotation_person_id, session=db):
+            shift = info.get("shift")
+            code = shift.code if shift else "OFF"
+            start_dt = end_dt = None
+            if code != "OFF":
+                _, start_dt, end_dt = calculate_shift_hours(info["date"], shift)
+            days[info["date"]] = {
+                "code": code,
+                "start": start_dt.strftime("%H:%M") if start_dt else None,
+                "end": end_dt.strftime("%H:%M") if end_dt else None,
             }
-        )
+    return days
 
-    return JSONResponse(content={"shifts": shifts})
+
+@router.get("/api/compare")
+async def compare_days(
+    target_id: int,
+    start: date_cls | None = None,
+    weeks: int = 4,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Both users' effective days side by side, from today at the earliest, 1 to 6 weeks."""
+    target = db.get(User, target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+    first = max(start or get_today(), get_today())
+    last = first + timedelta(days=7 * min(max(weeks, 1), MAX_WEEKS) - 1)
+    mine = _effective_days(db, current_user, first, last)
+    theirs = _effective_days(db, target, first, last)
+    days = []
+    for n in range((last - first).days + 1):
+        d = first + timedelta(days=n)
+        days.append({"date": d.isoformat(), "me": mine[d], "them": theirs[d]})
+    return {"days": days}
+
+
+@router.get("/api/day-takers")
+async def day_takers(
+    date: date_cls,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Every colleague and what they could do with the viewer's shift on date."""
+    colleagues = (
+        db.query(User)
+        .filter(User.is_active == 1, User.id != current_user.id, User.role != UserRole.ADMIN)
+        .order_by(User.name)
+        .all()
+    )
+    result = []
+    for colleague in colleagues:
+        verdict = _assess(db, current_user, colleague, date, date)
+        if verdict["kind"] not in ("mutual", "give_away"):
+            verdict["kind"] = None
+        result.append({"id": colleague.id, "name": colleague.name, **verdict})
+    return {"colleagues": result}
 
 
 @router.get("/", response_class=HTMLResponse)
