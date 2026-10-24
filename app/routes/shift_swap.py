@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, get_current_user_optional
 from app.core.helpers import contrast_color
 from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache, get_shift_types
-from app.core.swaps import MAX_PAIRS, check_swap, shift_code_on, swap_warnings, validate_proposal
+from app.core.swaps import MAX_PAIRS, _can_swap, check_swap, shift_code_on, swap_warnings, validate_proposal
 from app.core.utils import get_today
 from app.database.database import ShiftOverride, ShiftSwap, SwapStatus, User, UserRole, get_db, utcnow
 from app.routes.shared import render
@@ -86,6 +86,10 @@ def _colleagues(db: Session, user: User) -> list[User]:
     )
 
 
+MAX_START_DAYS = 400
+MAX_MESSAGE = 255  # matches ShiftSwap.message String(255)
+
+
 @router.post("/api/check")
 async def check_pairs(
     body: CheckRequest,
@@ -130,6 +134,12 @@ async def compare_days(
     target = db.get(User, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
+    if not _can_swap(target):
+        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+    if not _can_swap(current_user):
+        raise HTTPException(status_code=400, detail="Du kan inte byta pass")
+    if start and start > get_today() + timedelta(days=MAX_START_DAYS):
+        raise HTTPException(status_code=400, detail="Ogiltigt startdatum")
     first = max(start or get_today(), get_today())
     last = first + timedelta(days=7 * min(max(weeks, 1), MAX_WEEKS) - 1)
     mine = _effective_days(db, current_user, first, last)
@@ -295,6 +305,8 @@ async def propose_swap(
     target_user = db.get(User, target_id)
     if not target_user:
         raise HTTPException(status_code=404, detail="Användaren hittades inte")
+    if message and len(message) > MAX_MESSAGE:
+        raise HTTPException(status_code=400, detail=f"Meddelandet är för långt (högst {MAX_MESSAGE} tecken)")
     if len(req_date) != len(tgt_date):
         raise HTTPException(status_code=400, detail="Ogiltigt förslag")
 

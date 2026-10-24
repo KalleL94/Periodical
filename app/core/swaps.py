@@ -10,7 +10,7 @@ from app.core.schedule import build_week_data, calculate_shift_hours
 from app.core.schedule.core import determine_shift_for_date
 from app.core.schedule.vacation import get_vacation_dates_for_year
 from app.core.utils import get_today
-from app.database.database import Absence, ShiftOverride, ShiftSwap, SwapStatus, User
+from app.database.database import Absence, ShiftOverride, ShiftSwap, SwapStatus, User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +216,11 @@ def shift_code_on(day, rotation_person_id) -> str:
     return result[0].code if result and result[0] else "OFF"
 
 
+def _can_swap(user: User) -> bool:
+    """Same definition as the colleague list: active and not an admin."""
+    return user.is_active == 1 and user.role != UserRole.ADMIN
+
+
 def check_swap(
     db: Session,
     requester: User,
@@ -231,6 +236,10 @@ def check_swap(
     """
     if requester.id == target.id:
         return "Kan inte byta pass med dig själv"
+    if not _can_swap(requester):
+        return "Du kan inte byta pass"
+    if not _can_swap(target):
+        return "Användaren kan inte byta pass"
 
     today = get_today()
     if req_date <= today or tgt_date <= today:

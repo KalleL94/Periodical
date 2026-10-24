@@ -39,7 +39,8 @@ def _add_user(db, user_id: int, username: str, person_id: int) -> User:
 
 
 @pytest.mark.anyio
-async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user, admin_user):
+async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user):
+    admin_user = _add_user(test_db, 90, "colleague", 4)
     day_a, day_b, day_c = _future_dates()
     existing = ShiftSwap(
         requester_id=test_user.id,
@@ -69,7 +70,8 @@ async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user,
 
 
 @pytest.mark.anyio
-async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user, admin_user):
+async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user):
+    admin_user = _add_user(test_db, 90, "colleague", 4)
     day_a, day_b, day_c = _future_dates()
     other_user = _add_user(test_db, 3, "other", 3)
     accepted = ShiftSwap(

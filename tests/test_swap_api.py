@@ -179,3 +179,40 @@ def test_day_page_links_to_new(client):
 def test_old_picker_endpoint_is_gone(client):
     _login(client, 7)
     assert client.get("/swaps/api/shifts/8").status_code in (404, 405)
+
+
+def test_check_blocks_ineligible_participants(client):
+    pair = (D(2026, 10, 27), D(2026, 11, 3))
+    _login(client, 7)
+    for target in (20, 21):
+        assert _check(client, target, pair)[0]["blocked"] == "Användaren kan inte byta pass"
+    _login(client, 20)
+    assert _check(client, 7, pair)[0]["blocked"] == "Du kan inte byta pass"
+
+
+def test_compare_rejects_ineligible_target(client):
+    _login(client, 7)
+    for target in (20, 21):
+        assert client.get("/swaps/api/compare", params={"target_id": target}).status_code == 404
+
+
+def test_compare_rejects_far_start(client):
+    _login(client, 7)
+    for start in ("9999-12-31", "2028-01-01"):
+        resp = client.get("/swaps/api/compare", params={"target_id": 8, "start": start})
+        assert resp.status_code == 400
+        assert "Ogiltigt startdatum" in resp.text
+    assert client.get("/swaps/api/compare", params={"target_id": 8, "start": "2027-10-01"}).status_code == 200
+
+
+def test_propose_rejects_ineligible_and_long_message(client):
+    _login(client, 7)
+    form = {"req_date": "2026-10-27", "tgt_date": "2026-11-03"}
+    resp = client.post("/swaps/propose", data={**form, "target_id": 20}, follow_redirects=False)
+    assert resp.status_code == 400
+    assert "Användaren kan inte byta pass" in resp.text
+    resp = client.post("/swaps/propose", data={**form, "target_id": 8, "message": "x" * 256}, follow_redirects=False)
+    assert resp.status_code == 400
+    assert "Meddelandet är för långt (högst 255 tecken)" in resp.text
+    resp = client.post("/swaps/propose", data={**form, "target_id": 8, "message": "x" * 255}, follow_redirects=False)
+    assert "för långt" not in resp.text
