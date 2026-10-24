@@ -25,20 +25,24 @@ something to tell users about, whose pull request renames the heading.
 ## [1.14.0] - 2026-10-24
 
 ### Changed
-- Accepting a shift swap now writes the result as `ShiftOverride` rows, the same rows an admin enters by hand, linked to the swap by the new `shift_overrides.swap_id`. Schedule, pay and reports read them like any manual change. New swaps carry `shift_swaps.applied_as_override = True` and `_batch_fetch_swap_map` skips them, so nothing is counted twice. Accepted swaps from before this release are not migrated and keep resolving through `swap_map`.
-- Propose and accept share one rules function, `app/core/swaps.py::check_swap`, and every refusal carries its Swedish reason. A swap is refused when any of the four person/date slots already has an active swap (legacy or new), a manual shift change, an absence or a week-based vacation. A cross-day swap also needs each person free on the other's date, because the shifts are exchanged on both dates.
-- The swap day picker (`/swaps/api/shifts/{id}`) runs `check_swap` for every candidate day and returns the reason as `blocked`. Blocked days stay in the list as disabled options with the reason shown, so the picker no longer offers days that propose refuses. Its own copy of the 11 h and 36 h rest checks is gone.
-- Swaps that involve an on-call shift are refused with "OC-pass byts av admin". `ShiftOverride` cannot hold on-call, so those changes stay manual. OC for OC swaps were allowed before.
-- Accept re-runs the rules and recomputes both shifts from the rotation. If either differs from what was proposed it refuses with "Schemat har ändrats sedan förslaget" and the swap stays pending.
-- Cancelling a swap deletes its rows. An admin who edits one of them through the day edit or `/shift-override/add` turns it into a manual row (`swap_id` cleared), and cancel then leaves it alone.
-- A participant can no longer edit or delete a swap's rows through `/shift-override/add`, `/shift-override/{id}/delete`, `/day-edit/clear` or `/day-edit/bulk`. Those requests get 400 "Passet hör till ett byte, avbryt bytet i stället" and nothing is written. Admins may still edit or delete them.
+- Shift swaps are rebuilt around a compare screen, `/swaps/new`. Pick a colleague, see both schedules as five whole Monday to Sunday weeks (past days dimmed), tap your day and theirs, and collect several swaps in one proposal. A day-first entry lists who can take a day and suggests days they could give back. Previous, next and today buttons move between periods. The day page now links here instead of carrying its own form, and `/swaps/api/shifts/{id}` is gone.
+- A proposal holds up to 10 swaps that share `shift_swaps.group_id`. The target accepts or rejects the whole proposal, accept is all or nothing, and cancel removes every swap in it. `/swaps` shows one card per proposal.
+- Accepting a swap writes `ShiftOverride` rows, the same rows an admin enters by hand, linked by `shift_overrides.swap_id`. New swaps carry `shift_swaps.applied_as_override = True` and `_batch_fetch_swap_map` skips them, so nothing is counted twice. Accepted swaps from before this release keep resolving through `swap_map`.
+- Swaps work on the shift the schedule shows (`effective_code`, through `build_week_data`), not the rotation. On-call (OC) can be swapped against any shift, including a free day. Called-in overtime and custom (ETC) shifts cannot be swapped.
+- A swap may land on a day with a manual shift or on-call change. Accept saves those rows in `shift_swaps.replaced_rows` and removes them, and cancel puts them back unless an admin has added a newer row on the slot.
+- Propose, accept and the compare screen share one rules function, `app/core/swaps.py::check_swap`, and every refusal carries its Swedish reason. Hard stops: same person, ineligible participant (inactive or admin), past date, an active swap on a slot, absence, parental leave, week vacation, someone not working the date they give, the same shift on the same day, and a cross-day swap where either person already works the other date.
+- Daily rest (11 h) and weekly rest (36 h) are warnings, not stops. `proposal_warnings` evaluates the whole proposal together, with real clock times from the schedule, and weekly rest is counted per ISO week. It warns only when the proposal introduces or worsens a breach.
+- Accept re-runs the rules and recomputes both shifts. If either differs from what was proposed it refuses with "Schemat har ändrats sedan förslaget" and the proposal stays pending.
+- A participant can no longer edit or delete a swap's rows, or add or remove an on-call change on a swapped slot (400 "Passet hör till ett byte, avbryt bytet i stället"). An admin edit turns a row into a manual one (`swap_id` cleared).
+- CSRF: the middleware also accepts the signed token in an `X-CSRF-Token` header, which the JSON check endpoint needs. The cookie and signature check are unchanged.
 
 ### Fixed
-- The 11 hour rest check counted the shift being given away as still worked, so it refused swaps that leave enough rest. The date each person gives away now counts as free when rest is measured.
 - A refused swap proposal answered with a bare 400. The exception handler now logs method, path and detail, and shows the detail to the user on a 400.
+- The 11 hour rest check counted the shift being given away as still worked.
+- A proposal message over 255 characters is refused instead of failing at commit, and `/swaps/api/compare` refuses an unreasonable start date instead of returning 500.
 
 ### Migration
-- `migrations/migrate_schema.py` adds `shift_swaps.applied_as_override` (default false) and `shift_overrides.swap_id`. Run it by hand on prod before deploying; `scripts/deploy.sh` does not run migrations
+Run `python migrations/migrate_schema.py` on prod by hand before tagging. It adds `shift_swaps.applied_as_override`, `shift_swaps.group_id`, `shift_swaps.replaced_rows` and `shift_overrides.swap_id`. Deploy does not run it.
 
 ## [1.13.1] - 2026-10-24
 

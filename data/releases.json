@@ -5,23 +5,28 @@
     "entries": [
       {
         "type": "nyhet",
-        "sv": "Ett accepterat passbyte läggs nu in som vanliga manuella ändringar i schemat. Avbryter ni bytet tas ändringarna bort.",
-        "en": "An accepted shift swap is now entered as ordinary manual changes in the schedule. Cancelling the swap removes them."
+        "sv": "Ny bytesskärm: välj kollega, se era scheman sida vid sida i fem veckor och tryck på dagarna ni vill byta. Du kan lägga flera byten i samma förslag, och kollegan godkänner eller nekar hela förslaget. Du kan också börja från en dag och se vem som kan ta den.",
+        "en": "New swap screen: pick a colleague, see both schedules side by side for five weeks and tap the days you want to swap. You can put several swaps in one proposal, and the colleague accepts or rejects the whole proposal. You can also start from a day and see who can take it."
       },
       {
         "type": "nyhet",
-        "sv": "Ett byte som inte går att göra visar nu varför, till exempel att ett annat byte, en manuell ändring, frånvaro eller semester redan finns på något av datumen. Dagar som inte går att byta visas gråade med skälet. Har schemat ändrats sedan förslaget går bytet inte att acceptera.",
-        "en": "A swap that cannot be made now says why, for example that another swap, a manual change, an absence or vacation already exists on one of the dates. Days that cannot be swapped are shown greyed out with the reason. If the schedule has changed since the proposal the swap cannot be accepted."
+        "sv": "OC-pass kan bytas mot alla pass, och ett byte kan göras även när det redan finns en manuell ändring på dagen. Avbryter ni bytet kommer den manuella ändringen tillbaka.",
+        "en": "On-call shifts can be swapped against any shift, and a swap can be made even when the day already has a manual change. If you cancel the swap, the manual change comes back."
       },
       {
         "type": "nyhet",
-        "sv": "OC-pass byts inte längre via bytesfunktionen. Kontakta admin för sådana ändringar.",
-        "en": "On-call shifts are no longer swapped through the swap feature. Ask an admin for those changes."
+        "sv": "Dygns- och veckovila är nu varningar och stoppar inte längre ett byte. Varningarna räknas på hela förslaget tillsammans, och veckovilan räknas per ISO-vecka.",
+        "en": "Daily and weekly rest are now warnings and no longer stop a swap. Warnings are calculated for the whole proposal together, and weekly rest is counted per ISO week."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Ett byte som inte går att göra visar varför, till exempel att ett annat byte, frånvaro eller semester redan finns på datumet. Har schemat ändrats sedan förslaget går bytet inte att godkänna.",
+        "en": "A swap that cannot be made says why, for example that another swap, an absence or vacation already exists on the date. If the schedule has changed since the proposal, the swap cannot be accepted."
       },
       {
         "type": "fix",
-        "sv": "Kontrollen av 11 timmars dygnsvila räknade passet du lämnar bort som om du fortfarande jobbade det, och nekade därför byten som var okej.",
-        "en": "The 11 hour rest check counted the shift you give away as if you still worked it, and so refused swaps that were fine."
+        "sv": "Kontrollen av 11 timmars dygnsvila räknade passet du lämnar bort som om du fortfarande jobbade det.",
+        "en": "The 11 hour rest check counted the shift you give away as if you still worked it."
       }
     ]
   },
