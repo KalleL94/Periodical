@@ -239,6 +239,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard_vacation_week": "Vecka {week}, {year}",
         # ── Shift swaps ────────────────────────────────────────────
         "swaps_title": "Skiftbyten",
+        "swaps_new_button": "Nytt byte",
         "swaps_pending": "{n} väntande förfrågan{suffix}",
         "swaps_received": "Mottagna förfrågningar",
         "swaps_from": "Från",
@@ -1430,6 +1431,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard_vacation_week": "Week {week}, {year}",
         # ── Shift swaps ────────────────────────────────────────────
         "swaps_title": "Shift swaps",
+        "swaps_new_button": "New swap",
         "swaps_pending": "{n} pending request{suffix}",
         "swaps_received": "Received requests",
         "swaps_from": "From",

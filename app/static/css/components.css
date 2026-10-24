@@ -1330,3 +1330,12 @@ td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 1
   .swap-who { font-size: 0.85rem; }
   .swap-cell { min-height: 2.75rem; font-size: 0.9rem; }
 }
+
+/* Swap inbox (shift_swaps.html): one card per proposal. */
+.swap-new-btn { display: inline-block; padding: 0.6rem 1.25rem; font-size: 1rem; }
+.swap-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem; margin: 0 0 0.75rem; }
+.swap-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.swap-card-pairs { list-style: none; padding: 0; margin: 0 0 0.5rem; }
+.swap-card-pair { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.35rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.swap-card-message { color: var(--muted); margin: 0 0 0.5rem; overflow-wrap: anywhere; }
+.swap-card-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }

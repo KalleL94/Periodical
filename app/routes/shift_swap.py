@@ -183,32 +183,81 @@ async def new_swap_page(
     )
 
 
+def _side(code: str | None, day: date_cls, free: bool) -> dict | None:
+    """One side of a pair for the inbox; None when that side is a free day (one-way swap)."""
+    return None if free else {"code": code or "?", "date": day}
+
+
+def _inbox_groups(db: Session, rows: list[ShiftSwap], viewer: User) -> list[dict]:
+    """One entry per proposal (a legacy row is a group of one), newest first, pairs from the viewer's side."""
+    groups: dict[str, list[ShiftSwap]] = {}
+    for row in rows:
+        groups.setdefault(row.group_id or f"row-{row.id}", []).append(row)
+    result = []
+    for members in groups.values():
+        members.sort(key=lambda r: r.id)
+        first = members[0]
+        pending = first.status == SwapStatus.PENDING
+        mine_is_requester = first.requester_id == viewer.id
+        pairs = []
+        for r in members:
+            same_day = r.requester_date == r.target_date
+            req_free = r.requester_shift_code == "OFF" and same_day
+            tgt_free = r.target_shift_code == "OFF" and same_day
+            req_side = _side(r.requester_shift_code, r.requester_date, req_free)
+            tgt_side = _side(r.target_shift_code, r.target_date, tgt_free)
+            pairs.append(
+                {
+                    "give": req_side if mine_is_requester else tgt_side,
+                    "take": tgt_side if mine_is_requester else req_side,
+                    "warnings": swap_warnings(db, r.requester, r.target, r.requester_date, r.target_date)
+                    if pending
+                    else [],
+                }
+            )
+        result.append(
+            {
+                "id": first.id,
+                "status": first.status,
+                "message": first.message,
+                "requester": first.requester,
+                "target": first.target,
+                "other": first.target if mine_is_requester else first.requester,
+                "pairs": pairs,
+            }
+        )
+    return result
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_swaps(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all swaps for the current user (both sent and received)."""
+    """List all swaps for the current user (both sent and received), one card per proposal."""
     sent = (
         db.query(ShiftSwap)
         .filter(ShiftSwap.requester_id == current_user.id)
-        .order_by(ShiftSwap.created_at.desc())
+        .order_by(ShiftSwap.created_at.desc(), ShiftSwap.id.desc())
         .all()
     )
     received = (
-        db.query(ShiftSwap).filter(ShiftSwap.target_id == current_user.id).order_by(ShiftSwap.created_at.desc()).all()
+        db.query(ShiftSwap)
+        .filter(ShiftSwap.target_id == current_user.id)
+        .order_by(ShiftSwap.created_at.desc(), ShiftSwap.id.desc())
+        .all()
     )
-
-    pending_count = sum(1 for s in received if s.status == SwapStatus.PENDING)
+    received_groups = _inbox_groups(db, received, current_user)
+    pending_count = sum(1 for g in received_groups if g["status"] == SwapStatus.PENDING)
 
     return render(
         "shift_swaps.html",
         {
             "request": request,
             "user": current_user,
-            "sent_swaps": sent,
-            "received_swaps": received,
+            "sent_groups": _inbox_groups(db, sent, current_user),
+            "received_groups": received_groups,
             "pending_count": pending_count,
         },
     )
