@@ -1227,6 +1227,7 @@ def _batch_fetch_swap_map(
         session.query(ShiftSwap)
         .filter(
             ShiftSwap.status == SwapStatus.ACCEPTED,
+            ShiftSwap.applied_as_override.is_(False),
             (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
             (
                 ShiftSwap.requester_date.between(start_date, end_date)

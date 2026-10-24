@@ -345,6 +345,8 @@ class ShiftOverride(Base):
     label = Column(String(40), nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Set when the row was written by an accepted shift swap
+    swap_id = Column(Integer, ForeignKey("shift_swaps.id"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id])
     creator = relationship("User", foreign_keys=[created_by])
@@ -593,6 +595,8 @@ class ShiftSwap(Base):
     message = Column(String(255), nullable=True)
     responded_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    # True when accepting wrote ShiftOverride rows; False for legacy swaps read via swap_map
+    applied_as_override = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     requester = relationship("User", foreign_keys=[requester_id])
