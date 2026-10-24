@@ -2,7 +2,9 @@
 """Rules for shift swaps, shared by the compare screen endpoints, propose and accept."""
 
 import logging
+import math
 from datetime import date, datetime, time, timedelta
+from itertools import pairwise
 
 from sqlalchemy.orm import Session
 
@@ -301,11 +303,10 @@ def _work(days: dict, with_oc: bool) -> list[tuple[datetime, datetime, date]]:
     return sorted((s, e, d) for d, (code, s, e, _) in days.items() if s and e and (with_oc or code != "OC"))
 
 
-def _shortest_daily_rest(days: dict, dates: set[date]) -> float | None:
-    """Shortest rest between consecutive work blocks where either block is on one of dates."""
+def _daily_rests(days: dict, dates: set[date]) -> dict[tuple[date, date], float]:
+    """{(day, next work day): rest hours} between consecutive work blocks touching one of dates."""
     work = _work(days, with_oc=False)
-    gaps = [_hours(b[0] - a[1]) for a, b in zip(work, work[1:], strict=False) if a[2] in dates or b[2] in dates]
-    return min(gaps, default=None)
+    return {(a[2], b[2]): _hours(b[0] - a[1]) for a, b in pairwise(work) if a[2] in dates or b[2] in dates}
 
 
 def _longest_weekly_rest(days: dict, monday: date) -> float:
@@ -365,9 +366,11 @@ def _proposal_warnings(db, requester, target, pairs, cache) -> list[list[str]]:
     for dates in pair_dates:
         warnings = []
         for who in people:
-            new = _shortest_daily_rest(after[who], dates)
-            old = _shortest_daily_rest(before[who], dates)
-            if new is not None and new < MIN_REST_HOURS and (old is None or new < old):
+            # Each gap against the same two days before the swap, so a short gap that was
+            # already there cannot hide a new one elsewhere.
+            old = _daily_rests(before[who], dates)
+            new = _daily_rests(after[who], dates)
+            if any(h < MIN_REST_HOURS and h < old.get(k, math.inf) for k, h in new.items()):
                 warnings.append(f"Under {MIN_REST_HOURS} timmars dygnsvila ({who})")
         weeks = {d - timedelta(days=d.weekday()) for d in dates}
         for who in people:

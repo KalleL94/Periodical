@@ -165,3 +165,12 @@ def test_on_call_without_clock_times_still_blocks_weekly_rest(db, monkeypatch):
 
     monkeypatch.setattr(swaps, "build_week_data", oc_without_times)
     assert _warn(db, 11, 12, [(D(2026, 11, 6), D(2026, 11, 6))]) == [[WEEKLY_DU]]
+
+
+def test_existing_short_gap_does_not_hide_a_new_one_on_the_other_date(db):
+    # User 7 already has 6.5 h rest from Mon 26 N2 (22:30) to an early N1 on Tue 27 (05:00).
+    # Giving Tue 27 away and taking user 10's N1 on Fri 30 adds 7.5 h after Thu 29 N2.
+    # The new gap is longer than the old one, but it is still a new breach on Fri 30.
+    _override(db, 7, D(2026, 10, 27), "N1", datetime.time(5, 0), datetime.time(14, 30))
+    [warnings] = _warn(db, 7, 10, [(D(2026, 10, 27), D(2026, 10, 30))])
+    assert DAILY_DU in warnings
