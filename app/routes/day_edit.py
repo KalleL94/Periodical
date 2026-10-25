@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import MAX_EDIT_DATES, apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
+from app.core.translations import tr
 from app.database.database import (
     Absence,
     AbsenceType,
@@ -85,17 +86,18 @@ async def clear_days(
     A date with nothing to remove is reported rather than treated as an error, so
     clearing a whole week says how much it actually found.
     """
-    require_own_or_admin(current_user, user_id, "Not authorized to clear days for other users")
+    lang = current_user.language
+    require_own_or_admin(current_user, user_id, tr("edit_clear_forbidden", lang))
 
     if what not in _TARGETS:
-        raise HTTPException(status_code=400, detail=f"Invalid target, use one of {sorted(_TARGETS)}")
+        raise HTTPException(status_code=400, detail=tr("edit_invalid_target", lang).format(options=sorted(_TARGETS)))
     if what in ("shift", "oncall", "all"):
         refuse_swap_rows(session, current_user, user_id, dates)
 
     def conflicts(date):
         # "Nothing here" is not a failure, it is the report.
         found = any(query.first() for query in _queries_for(session, user_id, what, date))
-        return None if found else "hade inget att rensa"
+        return None if found else tr("edit_skip_nothing", lang)
 
     def write(date):
         for query in _queries_for(session, user_id, what, date):
@@ -106,15 +108,15 @@ async def clear_days(
     # apply_to_dates skips the conflict check for a single date, which would delete
     # nothing and report nothing. Asking directly keeps one date honest.
     if len(dates) == 1 and conflicts(dates[0]):
-        written, skipped = [], [(dates[0], "hade inget att rensa")]
+        written, skipped = [], [(dates[0], tr("edit_skip_nothing", lang))]
     else:
-        written, skipped = apply_to_dates(dates, write, conflicts)
+        written, skipped = apply_to_dates(dates, write, conflicts, lang)
 
     session.commit()
     clear_schedule_cache()
 
     return RedirectResponse(
-        url=edit_redirect_url(user_id, dates, return_to, written, skipped, verb="rensade"),
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped, verb="edit_verb_cleared", lang=lang),
         status_code=303,
     )
 
@@ -176,7 +178,9 @@ def _write_absence(session, user_id, day, fields, current_user):
     try:
         absence_type = AbsenceType(raw)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid absence type: {raw}") from None
+        raise HTTPException(
+            status_code=400, detail=tr("edit_invalid_absence_type", current_user.language).format(value=raw)
+        ) from None
     upsert_absence(
         session,
         user_id=user_id,
@@ -198,12 +202,12 @@ def _write_time(session, user_id, day, fields, current_user):
         return False
     side = fields.get("time_side") or "full"
     if kind not in _KINDS or side not in _SIDES:
-        raise HTTPException(status_code=400, detail="Invalid kind or side")
+        raise HTTPException(status_code=400, detail=tr("edit_invalid_kind_side", current_user.language))
 
     start = _parse_time(fields.get("time_start", ""))
     end = _parse_time(fields.get("time_end", ""))
     if start is None or end is None:
-        raise HTTPException(status_code=400, detail="A time row needs both a start and an end")
+        raise HTTPException(status_code=400, detail=tr("edit_time_needs_times", current_user.language))
     hours = float(fields.get("time_hours") or 0)
 
     # Priced exactly as /overtime/add does: the user's OT rate first, else the
@@ -242,12 +246,14 @@ def _write_shift(session, user_id, day, fields, current_user):
     if not code:
         return False
     if code not in _ALLOWED_CODES:
-        raise HTTPException(status_code=400, detail=f"Invalid shift code: {code}")
+        raise HTTPException(
+            status_code=400, detail=tr("edit_invalid_shift_code", current_user.language).format(code=code)
+        )
 
     start = _parse_time(fields.get("shift_start", ""))
     end = _parse_time(fields.get("shift_end", ""))
     if code == "ETC" and not (start and end):
-        raise HTTPException(status_code=400, detail="A custom block needs both a start and an end")
+        raise HTTPException(status_code=400, detail=tr("edit_custom_block_needs_times", current_user.language))
     # Any code may carry its own window ("N1 but until 16:30"), so the times are
     # kept. Only one of the two is useless, since a window needs both ends.
     if not (start and end):
@@ -283,14 +289,17 @@ async def bulk_edit(
     form = await request.form()
 
     user_id = int(form.get("user_id") or 0)
-    require_own_or_admin(current_user, user_id, "Not authorized to edit days for other users")
+    lang = current_user.language
+    require_own_or_admin(current_user, user_id, tr("edit_days_forbidden", lang))
 
     areas = _areas_by_date(form)
     unknown = sorted(set(areas.values()) - set(_AREAS))
     if unknown:
-        raise HTTPException(status_code=400, detail=f"Invalid area {unknown[0]}, use one of {sorted(_AREAS)}")
+        raise HTTPException(
+            status_code=400, detail=tr("edit_invalid_area", lang).format(area=unknown[0], options=sorted(_AREAS))
+        )
     if len(areas) > MAX_EDIT_DATES:
-        raise HTTPException(status_code=400, detail=f"Too many dates, the limit is {MAX_EDIT_DATES}")
+        raise HTTPException(status_code=400, detail=tr("edit_too_many_dates", lang).format(n=MAX_EDIT_DATES))
     # Checked before any write, so a refusal leaves the whole post unapplied.
     refuse_swap_rows(session, current_user, user_id, [day for day, area in areas.items() if area == "shift"])
 
@@ -308,6 +317,6 @@ async def bulk_edit(
 
     dates = sorted(areas) or [date_cls.today()]
     return RedirectResponse(
-        url=edit_redirect_url(user_id, dates, form.get("return_to") or "", written, []),
+        url=edit_redirect_url(user_id, dates, form.get("return_to") or "", written, [], lang=lang),
         status_code=303,
     )

@@ -101,16 +101,17 @@ async def add_shift_override(
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_own_or_admin(current_user, user_id, "Du kan bara lägga till manuella pass för dig själv")
+    lang = current_user.language
+    require_own_or_admin(current_user, user_id, tr("edit_add_own_only", lang))
 
     if shift_code not in _ALLOWED_CODES:
-        raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3/ETC")
+        raise HTTPException(status_code=400, detail=tr("edit_bad_shift_code", lang))
     refuse_swap_rows(session, current_user, user_id, dates)
 
     # A custom block with no clock times has no hours and would render as a blank
     # row, so it is rejected rather than stored.
     if shift_code == "ETC" and not (start_time and end_time):
-        raise HTTPException(status_code=400, detail="Ett övrigt-pass kräver både starttid och sluttid")
+        raise HTTPException(status_code=400, detail=tr("edit_custom_needs_times", lang))
 
     # The label belongs to ETC alone, so a row switched back to N2 keeps no stale
     # text. The times do not: an ordinary shift may carry its own window, which is
@@ -131,7 +132,7 @@ async def add_shift_override(
         from app.database.database import Absence
 
         has_absence = session.query(Absence).filter(Absence.user_id == user_id, Absence.date == override_date).first()
-        return "hade frånvaro" if has_absence else None
+        return tr("edit_skip_absence", lang) if has_absence else None
 
     def write(override_date):
         upsert_shift_override(
@@ -145,13 +146,13 @@ async def add_shift_override(
             created_by=current_user.id,
         )
 
-    written, skipped = apply_to_dates(dates, write, conflicts)
+    written, skipped = apply_to_dates(dates, write, conflicts, lang)
 
     session.commit()
     clear_schedule_cache()
 
     return RedirectResponse(
-        url=edit_redirect_url(user_id, dates, return_to, written, skipped),
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped, lang=lang),
         status_code=303,
     )
 
@@ -164,9 +165,9 @@ async def delete_shift_override(
 ):
     override = session.query(ShiftOverride).filter(ShiftOverride.id == override_id).first()
     if not override:
-        raise HTTPException(status_code=404, detail="Override hittades inte")
+        raise HTTPException(status_code=404, detail=tr("edit_override_not_found", current_user.language))
 
-    require_own_or_admin(current_user, override.user_id, "Du kan bara ta bort dina egna manuella pass")
+    require_own_or_admin(current_user, override.user_id, tr("edit_delete_own_only", current_user.language))
     refuse_swap_rows(session, current_user, override.user_id, [override.date])
 
     redirect_date = override.date
