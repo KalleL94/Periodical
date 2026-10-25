@@ -17,7 +17,7 @@ import pytest
 import app.database.database as db_module
 from app.auth.auth import create_access_token
 from app.core import swaps
-from app.core.schedule import clear_schedule_cache
+from app.core.schedule import calculate_shift_hours, clear_schedule_cache
 from app.core.swaps import effective_code
 from app.database.database import (
     OnCallOverride,
@@ -308,3 +308,25 @@ def test_inbox_card_shows_the_combined_warning(client, test_db):
     test_db.commit()
     _login(client, 7)
     assert client.get("/swaps/").text.count("Under 11 timmars dygnsvila (du)") == 2
+
+
+def test_compare_shows_the_on_call_window(client, test_db):
+    # User 10 is free on 27 and 28 Oct: a windowed ADD on 27th, a whole-day ADD on 28th.
+    test_db.add(
+        OnCallOverride(
+            user_id=10,
+            date=D(2026, 10, 27),
+            override_type=OnCallOverrideType.ADD,
+            start_time="00:00",
+            end_time="12:00",
+        )
+    )
+    test_db.add(OnCallOverride(user_id=10, date=D(2026, 10, 28), override_type=OnCallOverrideType.ADD))
+    test_db.commit()
+    _login(client, 7)
+    days = client.get("/swaps/api/compare", params={"target_id": 10}).json()["days"]
+    by_date = {d["date"]: d["them"] for d in days}
+    assert by_date["2026-10-27"] == {"code": "OC", "start": "00:00", "end": "12:00"}
+    _, start_dt, end_dt = calculate_shift_hours(D(2026, 10, 28), "OC")
+    plain = by_date["2026-10-28"]
+    assert plain == {"code": "OC", "start": start_dt.strftime("%H:%M"), "end": end_dt.strftime("%H:%M")}

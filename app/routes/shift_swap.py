@@ -238,16 +238,20 @@ async def check_pairs(
 
 
 def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
-    """{date: {"code", "start", "end"}} as a swap would hand the day over, see assignment."""
+    """{date: {"code", "start", "end"}} as a swap would hand the day over, see assignment.
+
+    An on-call window from OnCallOverride wins over the shift times, so a partial OC
+    shows the hours accept transfers.
+    """
     days, cache = {}, {}
     for n in range((end - start).days + 1):
         d = start + timedelta(days=n)
-        code, custom_start, custom_end, _, _ = assignment(db, user, d, cache)
+        code, custom_start, custom_end, oc_start, oc_end = assignment(db, user, d, cache)
         _, start_dt, end_dt = calculate_shift_hours(d, code)
         days[d] = {
             "code": code,
-            "start": custom_start or (start_dt.strftime("%H:%M") if start_dt else None),
-            "end": custom_end or (end_dt.strftime("%H:%M") if end_dt else None),
+            "start": oc_start or custom_start or (start_dt.strftime("%H:%M") if start_dt else None),
+            "end": oc_end or custom_end or (end_dt.strftime("%H:%M") if end_dt else None),
         }
     return days
 
