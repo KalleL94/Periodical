@@ -351,3 +351,28 @@ def test_far_future_dates_are_refused(client, test_db, lang, message, far):
     assert resp.status_code == 400
     assert message in resp.text
     assert not test_db.query(ShiftSwap).count()
+
+
+@pytest.mark.parametrize(
+    ("lang", "message"), [("sv", "Kan bara byta framtida pass"), ("en", "Only future shifts can be swapped")]
+)
+@pytest.mark.parametrize("past", ["0001-01-01", "2026-10-19"])
+def test_past_dates_are_refused_before_reading_schedules(client, test_db, monkeypatch, lang, message, past):
+    def boom(*args, **kwargs):
+        raise AssertionError("schedule read for a past date")
+
+    monkeypatch.setattr(swaps, "build_week_data", boom)
+    test_db.get(User, 7).language = lang
+    test_db.commit()
+    _login(client, 7)
+    for pair in ({"req_date": past, "tgt_date": "2026-10-27"}, {"req_date": "2026-10-27", "tgt_date": past}):
+        resp = client.post("/swaps/api/check", json={"target_id": 8, "pairs": [pair]})
+        assert resp.status_code == 400
+        assert message in resp.text
+        resp = client.post("/swaps/propose", data={"target_id": 8, **pair}, follow_redirects=False)
+        assert resp.status_code == 400
+        assert message in resp.text
+    resp = client.get("/swaps/api/day-takers", params={"date": past})
+    assert resp.status_code == 400
+    assert message in resp.text
+    assert not test_db.query(ShiftSwap).count()

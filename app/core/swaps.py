@@ -198,6 +198,11 @@ def too_far(*dates: date) -> bool:
     return max(dates) > get_today() + timedelta(days=MAX_SWAP_DAYS)
 
 
+def in_past(*dates: date) -> bool:
+    """True when any of dates is before today, too old to swap or read."""
+    return min(dates) < get_today()
+
+
 def check_swap(
     db: Session,
     requester: User,

@@ -23,6 +23,7 @@ from app.core.swaps import (
     assignment,
     check_swap,
     effective_code,
+    in_past,
     proposal_warnings,
     too_far,
     validate_proposal,
@@ -181,9 +182,12 @@ def _assess(
     """check_swap verdict, rest warnings and kind per pair, as the compare screen shows them.
 
     Warnings are measured with every allowed pair applied together, blocked pairs get none.
-    Dates beyond the swap horizon are refused outright, before any schedule is read.
+    Past dates and dates beyond the swap horizon are refused outright, before any schedule is read.
     """
-    if too_far(*(d for pair in pairs for d in pair)):
+    dates = [d for pair in pairs for d in pair]
+    if in_past(*dates):
+        raise HTTPException(status_code=400, detail=tr("swap_future_only", lang))
+    if too_far(*dates):
         raise HTTPException(status_code=400, detail=tr("swap_too_far", lang))
     results = []
     for req_date, tgt_date in pairs:
