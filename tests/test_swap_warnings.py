@@ -87,14 +87,17 @@ def test_single_pair_warnings(db, req_id, tgt_id, req_date, tgt_date, expected):
     assert _warn(db, req_id, tgt_id, [(req_date, tgt_date)]) == [expected]
 
 
-def test_proposal_warnings_logs_and_returns_empty_on_error(db, monkeypatch, caplog):
+def test_proposal_warnings_logs_and_warns_on_error(db, monkeypatch, caplog):
     def boom(*args, **kwargs):
         raise RuntimeError("broken helper")
 
     monkeypatch.setattr(swaps, "_day", boom)
+    pairs = [(D(2026, 10, 25), D(2026, 11, 1))] * 2
     with caplog.at_level("ERROR", logger="app.core.swaps"):
-        assert _warn(db, 7, 8, [(D(2026, 10, 25), D(2026, 11, 1))] * 2) == [[], []]
+        assert _warn(db, 7, 8, pairs) == [["Vilokontrollen kunde inte utföras"]] * 2
     assert "broken helper" in caplog.text
+    en = proposal_warnings(db, db.get(User, 7), db.get(User, 8), pairs, lang="en")
+    assert en == [["The rest check could not be completed"]] * 2
 
 
 DAILY_DU = "Under 11 timmars dygnsvila (du)"

@@ -442,3 +442,34 @@ def test_dates_outside_employment_are_refused_everywhere(client, test_db):
     assert refused in resp.text
     test_db.refresh(swap)
     assert swap.status == SwapStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    ("lang", "message"),
+    [("sv", "Vilokontrollen kunde inte utföras"), ("en", "The rest check could not be completed")],
+)
+def test_failed_rest_check_warns_but_does_not_block(client, test_db, monkeypatch, lang, message):
+    for uid in (7, 8):
+        test_db.get(User, uid).language = lang
+    test_db.commit()
+    real = swaps.build_week_data
+
+    def week_45_breaks(year, week, **kwargs):
+        # The pair lies in week 44; only the rest check reads the week after.
+        if week == 45:
+            raise RuntimeError("schedule read failed")
+        return real(year, week, **kwargs)
+
+    monkeypatch.setattr(swaps, "build_week_data", week_45_breaks)
+    _login(client, 8)
+    [pair] = _check(client, 7, (D(2026, 10, 27), D(2026, 10, 27)))
+    assert (pair["blocked"], pair["warnings"]) == (None, [message])
+    resp = client.post(
+        "/swaps/propose",
+        data={"target_id": 7, "req_date": "2026-10-27", "tgt_date": "2026-10-27"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+    assert test_db.query(ShiftSwap).one().status == SwapStatus.PENDING
+    _login(client, 7)
+    assert message in client.get("/swaps/").text

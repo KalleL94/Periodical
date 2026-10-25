@@ -365,6 +365,9 @@ def proposal_warnings(
 ) -> list[list[str]]:
     """Rest warnings in lang for each (req_date, tgt_date) pair, in pair order. Never raises.
 
+    If the rest cannot be measured, every pair gets a warning saying so: warnings never
+    block, but the user must not read a failed check as a clean one.
+
     Rest is measured on both schedules with every pair applied: on each pair's dates the
     two people exchange their effective days, clock times included. A warning is given
     only where the proposal introduces or worsens a breach: 11 h between work blocks
@@ -376,7 +379,7 @@ def proposal_warnings(
         return _proposal_warnings(db, requester, target, pairs, {} if cache is None else cache, lang)
     except Exception:
         logger.exception("proposal_warnings failed for %s -> %s, %s", requester.id, target.id, pairs)
-        return [[] for _ in pairs]
+        return [[tr("swap_rest_check_failed", lang)] for _ in pairs]
 
 
 def _date_groups(pairs) -> list[list[date]]:
