@@ -22,6 +22,7 @@ from app.core.swaps import effective_code
 from app.database.database import (
     OnCallOverride,
     OnCallOverrideType,
+    PersonHistory,
     RotationEra,
     ShiftOverride,
     ShiftSwap,
@@ -376,3 +377,68 @@ def test_past_dates_are_refused_before_reading_schedules(client, test_db, monkey
     assert resp.status_code == 400
     assert message in resp.text
     assert not test_db.query(ShiftSwap).count()
+
+
+def test_dates_outside_employment_are_refused_everywhere(client, test_db):
+    # User 30 succeeds user 31 at pos 6 on Mon 2 Nov; before that pos 6 holds 31's shifts.
+    for uid, active, start, end in ((31, 0, D(2026, 1, 2), D(2026, 11, 1)), (30, 1, D(2026, 11, 2), None)):
+        test_db.add(
+            User(
+                id=uid,
+                username=f"u{uid}",
+                password_hash="x",
+                name=f"User {uid}",
+                role=UserRole.USER,
+                wage=30000,
+                wage_type=WageType.MONTHLY,
+                person_id=6,
+                vacation={},
+                must_change_password=0,
+                is_active=active,
+            )
+        )
+        test_db.add(
+            PersonHistory(
+                user_id=uid,
+                person_id=6,
+                name=f"User {uid}",
+                username=f"u{uid}",
+                is_active=1,
+                effective_from=start,
+                effective_to=end,
+            )
+        )
+    # A proposal written before the hire date was known, now awaiting 30.
+    test_db.add(
+        ShiftSwap(
+            requester_id=7,
+            target_id=30,
+            requester_date=D(2026, 10, 28),
+            target_date=D(2026, 10, 28),
+            requester_shift_code="N2",
+            target_shift_code="OFF",
+            status=SwapStatus.PENDING,
+        )
+    )
+    test_db.commit()
+    refused = "Någon av personerna är inte anställd ett av datumen"
+    _login(client, 7)
+    [pair] = _check(client, 30, (D(2026, 10, 26), D(2026, 10, 26)))
+    assert pair["blocked"] == refused
+    resp = client.post(
+        "/swaps/propose",
+        data={"target_id": 30, "req_date": "2026-10-27", "tgt_date": "2026-10-27"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+    assert refused in resp.text
+    # The compare screen shows 30 free before the start, not 31's shifts.
+    days = client.get("/swaps/api/compare", params={"target_id": 30, "start": "2026-10-26", "weeks": 1}).json()
+    assert {d["them"]["code"] for d in days["days"]} == {"OFF"}
+    _login(client, 30)
+    swap = test_db.query(ShiftSwap).one()
+    resp = client.post(f"/swaps/{swap.id}/accept", follow_redirects=False)
+    assert resp.status_code == 400
+    assert refused in resp.text
+    test_db.refresh(swap)
+    assert swap.status == SwapStatus.PENDING

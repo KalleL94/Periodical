@@ -23,6 +23,7 @@ from app.database.database import (
     OnCallOverride,
     OnCallOverrideType,
     OvertimeShift,
+    PersonHistory,
     ShiftOverride,
     ShiftSwap,
     SwapStatus,
@@ -210,7 +211,7 @@ def test_effective_code_follows_overrides(db):
     assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 27), cache) == "OC"
     assert swaps.effective_code(db, db.get(User, 10), D(2026, 10, 26), cache) == "OFF"
     # One build_week_data per user, position and ISO week.
-    assert {k for k in cache if k[0] != "position"} == {(7, 7, 2026, 44), (10, 10, 2026, 44)}
+    assert {k for k in cache if isinstance(k[0], int)} == {(7, 7, 2026, 44), (10, 10, 2026, 44)}
 
 
 @pytest.mark.parametrize(
@@ -258,3 +259,85 @@ def test_called_in_overtime_cannot_be_swapped(db):
     refused = "Passet kan inte bytas"
     assert check_swap(db, db.get(User, 10), db.get(User, 8), D(2026, 10, 27), D(2026, 10, 27)) == refused
     assert check_swap(db, db.get(User, 8), db.get(User, 10), D(2026, 10, 27), D(2026, 10, 27)) == refused
+
+
+NOT_EMPLOYED = "Någon av personerna är inte anställd ett av datumen"
+
+
+@pytest.fixture
+def hires(db):
+    """Users whose PersonHistory does not cover the end of October 2026.
+
+    13 succeeds 14 at pos 6 on 2 Nov, so the resolver would hand 13 the predecessor's
+    shifts before then. 15 starts on the unused pos 2 on 2 Nov. 16 holds pos 4 with a
+    gap from 28 Oct to 4 Nov.
+    """
+    for uid, pos, active in ((13, 6, 1), (14, 6, 0), (15, 2, 1), (16, 4, 1)):
+        db.add(
+            User(
+                id=uid,
+                username=f"u{uid}",
+                password_hash="x",
+                name=f"User {uid}",
+                role=UserRole.USER,
+                wage=30000,
+                wage_type=WageType.MONTHLY,
+                person_id=pos,
+                vacation={},
+                must_change_password=0,
+                is_active=active,
+            )
+        )
+    for uid, pos, start, end in (
+        (14, 6, D(2026, 1, 2), D(2026, 11, 1)),
+        (13, 6, D(2026, 11, 2), None),
+        (15, 2, D(2026, 11, 2), None),
+        (16, 4, D(2026, 1, 2), D(2026, 10, 27)),
+        (16, 4, D(2026, 11, 5), None),
+    ):
+        db.add(
+            PersonHistory(
+                user_id=uid,
+                person_id=pos,
+                name=f"User {uid}",
+                username=f"u{uid}",
+                is_active=1,
+                effective_from=start,
+                effective_to=end,
+            )
+        )
+    db.commit()
+    return db
+
+
+@pytest.mark.parametrize(
+    ("req_id", "tgt_id", "req_date", "tgt_date"),
+    [
+        # 13 would show the predecessor's N1 on 26 Oct, 7 has N2.
+        (13, 7, D(2026, 10, 26), D(2026, 10, 26)),
+        (7, 13, D(2026, 10, 27), D(2026, 10, 27)),
+        # 15 is free before starting, so 7 could hand over 29 Oct for 15's N3 on 3 Nov.
+        (7, 15, D(2026, 10, 29), D(2026, 11, 3)),
+        (7, 15, D(2026, 10, 26), D(2026, 10, 26)),
+        (15, 7, D(2026, 11, 3), D(2026, 10, 29)),
+        # 16 is between tenures on 29 Oct.
+        (7, 16, D(2026, 10, 29), D(2026, 10, 29)),
+    ],
+)
+def test_check_swap_refuses_dates_outside_employment(hires, req_id, tgt_id, req_date, tgt_date):
+    reason = check_swap(hires, hires.get(User, req_id), hires.get(User, tgt_id), req_date, tgt_date)
+    assert reason == NOT_EMPLOYED
+    en = check_swap(hires, hires.get(User, req_id), hires.get(User, tgt_id), req_date, tgt_date, lang="en")
+    assert en == "One of you is not employed on one of the dates"
+
+
+def test_check_swap_allows_dates_inside_employment(hires):
+    # 13 has N2 on 3 Nov, 7 is free.
+    assert check_swap(hires, hires.get(User, 13), hires.get(User, 7), D(2026, 11, 3), D(2026, 11, 3)) is None
+
+
+def test_effective_code_is_off_outside_employment(hires):
+    cache = {}
+    # Not the predecessor's N1 on 26 Oct.
+    assert swaps.effective_code(hires, hires.get(User, 13), D(2026, 10, 26), cache) == "OFF"
+    assert swaps.effective_code(hires, hires.get(User, 14), D(2026, 10, 26), cache) == "N1"

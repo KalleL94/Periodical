@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.schedule import build_week_data, calculate_shift_hours, get_shift_types
 from app.core.schedule.period import _build_user_position_resolver, oncall_window
+from app.core.schedule.person_history import position_segments_for_window
 from app.core.schedule.vacation import get_vacation_dates_for_year
 from app.core.translations import tr
 from app.core.utils import get_today
@@ -121,6 +122,14 @@ def _position(db: Session, user: User, day: date, cache: dict) -> int:
     return cache[key](user.id, day)
 
 
+def _employed(db: Session, user: User, day: date, cache: dict) -> bool:
+    """True when user holds a position on day. Users without any PersonHistory always do (legacy)."""
+    key = ("employed", user.id, day)
+    if key not in cache:
+        cache[key] = bool(position_segments_for_window(db, user, day, day))
+    return cache[key]
+
+
 def _custom_times(shift) -> tuple[str | None, str | None]:
     """The shift's own "HH:MM" window when it differs from its shift type's, else (None, None)."""
     default = next((s for s in get_shift_types() if s.code == shift.code), None)
@@ -135,8 +144,11 @@ def _day(db: Session, user: User, day: date, cache: dict) -> tuple:
     times included), None when the day has none. times is (start, end, oc_start, oc_end):
     the custom shift window and the OnCallOverride window as "HH:MM", None for the
     shift type's own times and for whole-day on-call. The week is read from the position
-    user holds on day and cached per user, position and ISO week.
+    user holds on day and cached per user, position and ISO week. A day outside user's
+    employment is OFF, not the shift of whoever holds the position then.
     """
+    if not _employed(db, user, day, cache):
+        return OFF_DAY
     pos = _position(db, user, day, cache)
     year, week, _ = day.isocalendar()
     key = (user.id, pos, year, week)
@@ -232,6 +244,12 @@ def check_swap(
     if too_far(req_date, tgt_date):
         return tr("swap_too_far", lang)
 
+    cache = {} if cache is None else cache
+    # Outside a tenure the position resolver falls back to another holder's schedule,
+    # and a free day there would let someone take a shift before they are hired.
+    if not all(_employed(db, u, d, cache) for u in (requester, target) for d in (req_date, tgt_date)):
+        return tr("swap_not_employed", lang)
+
     duplicate = db.query(ShiftSwap).filter(
         ShiftSwap.requester_id == requester.id,
         ShiftSwap.target_id == target.id,
@@ -244,7 +262,6 @@ def check_swap(
     if duplicate.first():
         return tr("swap_duplicate", lang)
 
-    cache = {} if cache is None else cache
     reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_ids, cache, lang)
     if reason:
         return reason
