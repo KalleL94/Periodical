@@ -5,6 +5,7 @@ would dismantle half a swap. An admin may: an edit turns the row manual.
 """
 
 import datetime
+import json
 
 import pytest
 
@@ -200,3 +201,109 @@ def test_admin_oncall_edit_detaches_swap_row(as_admin, test_db, test_user, swap_
     assert r.status_code == 303
     test_db.expire_all()
     assert test_db.get(OnCallOverride, swap_oncall_row.id).swap_id is None
+
+
+# The slot held manual rows before the swap; cancel would put them back.
+_SNAPSHOT = [
+    {
+        "kind": "shift",
+        "date": DAY.isoformat(),
+        "shift_code": "N1",
+        "start_time": None,
+        "end_time": None,
+        "label": None,
+        "created_by": None,
+    },
+    {
+        "kind": "oncall",
+        "date": DAY.isoformat(),
+        "override_type": "REMOVE",
+        "start_time": None,
+        "end_time": None,
+        "reason": "Manual",
+        "created_by": None,
+    },
+]
+
+
+@pytest.fixture
+def snapshotted(test_db, test_user, swap_oncall_row):
+    swap = test_db.get(ShiftSwap, swap_oncall_row.swap_id)
+    swap.replaced_rows = json.dumps([{**fields, "user_id": test_user.id} for fields in _SNAPSHOT])
+    test_db.commit()
+    return swap.id
+
+
+def _cancel(client, swap_id):
+    r = client.post(f"/swaps/{swap_id}/cancel", follow_redirects=False)
+    assert r.status_code == 303
+    return r
+
+
+def test_cancel_restores_snapshot_when_admin_left_slot_alone(as_admin, test_db, snapshotted):
+    _cancel(as_admin, snapshotted)
+    test_db.expire_all()
+    assert test_db.query(ShiftOverride).one().shift_code == "N1"
+    assert test_db.query(OnCallOverride).one().override_type == OnCallOverrideType.REMOVE
+
+
+def test_admin_shift_delete_survives_cancel(as_admin, test_db, swap_row, snapshotted):
+    r = as_admin.post(f"/shift-override/{swap_row.id}/delete", follow_redirects=False)
+    assert r.status_code == 303
+    _cancel(as_admin, snapshotted)
+    test_db.expire_all()
+    assert test_db.query(ShiftOverride).count() == 0
+    # The on-call snapshot was not touched by the shift delete.
+    assert test_db.query(OnCallOverride).one().override_type == OnCallOverrideType.REMOVE
+
+
+def test_admin_oncall_delete_survives_cancel(as_admin, test_db, swap_oncall_row, snapshotted):
+    r = as_admin.post(f"/oncall/{swap_oncall_row.id}/delete", follow_redirects=False)
+    assert r.status_code == 303
+    _cancel(as_admin, snapshotted)
+    test_db.expire_all()
+    assert test_db.query(OnCallOverride).count() == 0
+    assert test_db.query(ShiftOverride).one().shift_code == "N1"
+
+
+@pytest.mark.parametrize("what", ["shift", "oncall", "all"])
+def test_admin_clear_survives_cancel(as_admin, test_db, test_user, snapshotted, what):
+    r = as_admin.post(
+        "/day-edit/clear",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat()], "what": what},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    _cancel(as_admin, snapshotted)
+    test_db.expire_all()
+    shift_left = test_db.query(ShiftOverride).count()
+    oncall_left = test_db.query(OnCallOverride).count()
+    assert (shift_left, oncall_left) == {"shift": (0, 1), "oncall": (1, 0), "all": (0, 0)}[what]
+
+
+def test_admin_edit_then_delete_survives_cancel(as_admin, test_db, test_user, swap_row, snapshotted):
+    r = as_admin.post(
+        "/shift-override/add",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat()], "shift_code": "N2"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    r = as_admin.post(f"/shift-override/{swap_row.id}/delete", follow_redirects=False)
+    assert r.status_code == 303
+    _cancel(as_admin, snapshotted)
+    test_db.expire_all()
+    assert test_db.query(ShiftOverride).count() == 0
+
+
+def test_admin_oncall_remove_then_delete_survives_cancel(as_admin, test_db, test_user, swap_oncall_row, snapshotted):
+    r = as_admin.post(
+        "/oncall/remove",
+        data={"user_id": test_user.id, "date": DAY.isoformat(), "reason": "Admin"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    r = as_admin.post(f"/oncall/{swap_oncall_row.id}/delete", follow_redirects=False)
+    assert r.status_code == 303
+    _cancel(as_admin, snapshotted)
+    test_db.expire_all()
+    assert test_db.query(OnCallOverride).count() == 0

@@ -1,6 +1,7 @@
 # app/routes/shift_override.py
 """Routes for manual shift overrides (adding/removing a regular shift for a day)."""
 
+import json
 from datetime import date as date_cls
 from datetime import time as time_cls
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
-from app.database.database import OnCallOverride, ShiftOverride, User, UserRole, get_db
+from app.database.database import OnCallOverride, ShiftOverride, ShiftSwap, User, UserRole, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 
@@ -40,6 +41,23 @@ def refuse_swap_rows(session, current_user: User, user_id: int, dates) -> None:
         raise HTTPException(status_code=400, detail="Passet hör till ett byte, avbryt bytet i stället")
 
 
+def release_swap_row(session, row) -> None:
+    """Make a swap's ShiftOverride or OnCallOverride row manual before an admin edits or deletes it.
+
+    The owning swap also forgets the manual row of the same kind it replaced on that
+    slot, so cancelling the swap later cannot bring the pre-swap row back over the
+    admin's change. Each swap row of a group keeps its own snapshot, found by swap_id.
+    """
+    if getattr(row, "swap_id", None) is None:  # also a model with no swap_id, e.g. Absence
+        return
+    swap = session.get(ShiftSwap, row.swap_id)
+    if swap is not None and swap.replaced_rows:
+        slot = ("shift" if isinstance(row, ShiftOverride) else "oncall", row.user_id, row.date.isoformat())
+        kept = [f for f in json.loads(swap.replaced_rows) if (f["kind"], f["user_id"], f["date"]) != slot]
+        swap.replaced_rows = json.dumps(kept)
+    row.swap_id = None
+
+
 def upsert_shift_override(
     session, *, user_id: int, date, shift_code: str, start_time, end_time, label, created_by: int
 ) -> None:
@@ -55,7 +73,7 @@ def upsert_shift_override(
         existing.label = label or None
         existing.created_by = created_by
         # An edited swap row becomes a manual row, so cancelling the swap leaves it.
-        existing.swap_id = None
+        release_swap_row(session, existing)
         return
     session.add(
         ShiftOverride(
@@ -153,6 +171,7 @@ async def delete_shift_override(
     redirect_date = override.date
     redirect_user = override.user_id
 
+    release_swap_row(session, override)
     session.delete(override)
     session.commit()
     clear_schedule_cache()

@@ -14,7 +14,7 @@ from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
 from app.database.database import OnCallOverride, OnCallOverrideType, User, get_db
-from app.routes.shift_override import refuse_swap_rows
+from app.routes.shift_override import refuse_swap_rows, release_swap_row
 
 router = APIRouter(prefix="/oncall", tags=["oncall"])
 
@@ -88,7 +88,7 @@ async def add_oncall_override(
             existing.reason = reason
             existing.created_by = current_user.id
             # An edited swap row becomes a manual row, so cancelling the swap leaves it.
-            existing.swap_id = None
+            release_swap_row(session, existing)
             return
         session.add(
             OnCallOverride(
@@ -148,7 +148,7 @@ async def remove_oncall_override(
         existing.end_time = None
         existing.reason = reason
         existing.created_by = current_user.id
-        existing.swap_id = None
+        release_swap_row(session, existing)
     else:
         # Create new override
         override = OnCallOverride(
@@ -195,6 +195,7 @@ async def delete_oncall_override(
     date = override.date
 
     # Delete
+    release_swap_row(session, override)
     session.delete(override)
     session.commit()
 

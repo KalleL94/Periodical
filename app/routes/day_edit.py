@@ -25,7 +25,7 @@ from app.database.database import (
     User,
     get_db,
 )
-from app.routes.shift_override import refuse_swap_rows
+from app.routes.shift_override import refuse_swap_rows, release_swap_row
 
 router = APIRouter(prefix="/day-edit", tags=["day_edit"])
 
@@ -100,6 +100,7 @@ async def clear_days(
     def write(date):
         for query in _queries_for(session, user_id, what, date):
             for row in query.all():
+                release_swap_row(session, row)
                 session.delete(row)
 
     # apply_to_dates skips the conflict check for a single date, which would delete
