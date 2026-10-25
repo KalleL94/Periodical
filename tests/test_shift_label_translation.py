@@ -42,6 +42,10 @@ def test_the_two_languages_cover_the_same_codes():
     assert set(TRANSLATIONS["sv"]["shift_labels"]) == set(TRANSLATIONS["en"]["shift_labels"])
 
 
+def test_the_two_languages_have_the_same_keys():
+    assert set(TRANSLATIONS["sv"]) ^ set(TRANSLATIONS["en"]) == set()
+
+
 def test_etc_is_not_in_the_lookup():
     """A custom block's label is the user's own text, never a translated string."""
     for lang in ("sv", "en"):

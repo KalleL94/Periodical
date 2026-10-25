@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.schedule import build_week_data, calculate_shift_hours, get_shift_types
 from app.core.schedule.period import _build_user_position_resolver, oncall_window
 from app.core.schedule.vacation import get_vacation_dates_for_year
+from app.core.translations import tr
 from app.core.utils import get_today
 from app.database.database import (
     Absence,
@@ -32,8 +33,6 @@ MIN_WEEKLY_REST_HOURS = 36
 SWAPPABLE_CODES = frozenset({"N1", "N2", "N3", "OC", "OFF"})
 
 OFF_DAY = ("OFF", None, None, (None, None, None, None))
-
-SLOT_TAKEN = "Ett byte finns redan för någon av personerna på dessa datum"
 
 
 def swap_participant_dates(requester_id: int, target_id: int, requester_date, target_date) -> set[tuple[int, object]]:
@@ -84,11 +83,11 @@ def _rows_on_slots(db: Session, model, slots: set[tuple[int, date]]) -> bool:
 
 
 def _slot_conflict(
-    db: Session, requester: User, target: User, req_date, tgt_date, exclude_swap_ids, cache: dict
+    db: Session, requester: User, target: User, req_date, tgt_date, exclude_swap_ids, cache: dict, lang: str
 ) -> str | None:
     slots = swap_participant_dates(requester.id, target.id, req_date, tgt_date)
     if find_active_swap_conflict(db, slots, (SwapStatus.PENDING, SwapStatus.ACCEPTED), exclude_swap_ids):
-        return SLOT_TAKEN
+        return tr("swap_slot_taken", lang)
     # An ETC row is a custom labelled block, not a shift the other person could take.
     etc = db.query(ShiftOverride.id).filter(
         ShiftOverride.shift_code == "ETC",
@@ -96,14 +95,14 @@ def _slot_conflict(
         | ((ShiftOverride.user_id == target.id) & (ShiftOverride.date == tgt_date)),
     )
     if etc.first():
-        return "Passet är ett eget pass och kan inte bytas"
+        return tr("swap_custom_shift", lang)
     if _rows_on_slots(db, Absence, slots):
-        return "Någon av personerna är frånvarande ett av datumen"
+        return tr("swap_absent", lang)
     # Week-based vacation outranks overrides in the resolver, so a swap there would apply on one side only.
     users = {requester.id: requester, target.id: target}
     vacation = {year: get_vacation_dates_for_year(year, session=db) for year in {req_date.year, tgt_date.year}}
     if any(d in vacation[d.year].get(_position(db, users[u], d, cache), set()) for u, d in slots):
-        return "Någon av personerna har semester ett av datumen"
+        return tr("swap_vacation", lang)
     return None
 
 
@@ -196,22 +195,23 @@ def check_swap(
     *,
     exclude_swap_ids: frozenset[int] = frozenset(),
     cache: dict | None = None,
+    lang: str = "sv",
 ) -> str | None:
-    """Return the first Swedish reason the swap is not allowed, or None if it is.
+    """Return the first reason, in lang, the swap is not allowed, or None if it is.
 
     The requester gives their shift on req_date and takes the target's shift on tgt_date.
     Codes are the effective ones (see effective_code); cache is passed through to it.
     """
     if requester.id == target.id:
-        return "Kan inte byta pass med dig själv"
+        return tr("swap_self", lang)
     if not _can_swap(requester):
-        return "Du kan inte byta pass"
+        return tr("swap_you_cannot", lang)
     if not _can_swap(target):
-        return "Användaren kan inte byta pass"
+        return tr("swap_user_cannot", lang)
 
     today = get_today()
     if req_date <= today or tgt_date <= today:
-        return "Kan bara byta framtida pass"
+        return tr("swap_future_only", lang)
 
     duplicate = db.query(ShiftSwap).filter(
         ShiftSwap.requester_id == requester.id,
@@ -223,10 +223,10 @@ def check_swap(
     if exclude_swap_ids:
         duplicate = duplicate.filter(ShiftSwap.id.notin_(exclude_swap_ids))
     if duplicate.first():
-        return "Byte redan föreslaget för dessa datum"
+        return tr("swap_duplicate", lang)
 
     cache = {} if cache is None else cache
-    reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_ids, cache)
+    reason = _slot_conflict(db, requester, target, req_date, tgt_date, exclude_swap_ids, cache, lang)
     if reason:
         return reason
 
@@ -234,53 +234,58 @@ def check_swap(
     tgt_code = effective_code(db, target, tgt_date, cache)
     # Called-in overtime ("OT") and other synthetic codes would be written as a ShiftOverride.
     if req_code not in SWAPPABLE_CODES or tgt_code not in SWAPPABLE_CODES:
-        return "Passet kan inte bytas"
+        return tr("swap_not_swappable", lang)
 
     is_same_day = req_date == tgt_date
     if not is_same_day:
         # Cross-day swaps require both to be working
         if req_code == "OFF":
-            return "Du jobbar inte det datumet"
+            return tr("swap_you_not_working", lang)
         if tgt_code == "OFF":
-            return "Kollegan jobbar inte det datumet"
+            return tr("swap_colleague_not_working", lang)
         # Shifts are exchanged on both dates, so each side must be free on the other's date.
         # This is also what lets the rest checks below treat the given-away date as OFF.
         if effective_code(db, requester, tgt_date, cache) != "OFF":
-            return "Du jobbar redan det datumet"
+            return tr("swap_you_already_working", lang)
         if effective_code(db, target, req_date, cache) != "OFF":
-            return "Kollegan jobbar redan det datumet"
+            return tr("swap_colleague_already_working", lang)
     elif req_code == "OFF" and tgt_code == "OFF":
-        return "Ingen av er jobbar den dagen"
+        return tr("swap_neither_working", lang)
 
     # Same-day mutual swap (both working) between identical shifts is pointless
     if is_same_day and req_code == tgt_code:
-        return "Ni jobbar redan samma pass"
+        return tr("swap_same_shift", lang)
     return None
 
 
 def validate_proposal(
-    db: Session, requester: User, target: User, pairs: list[tuple[date, date]], cache: dict | None = None
+    db: Session,
+    requester: User,
+    target: User,
+    pairs: list[tuple[date, date]],
+    cache: dict | None = None,
+    lang: str = "sv",
 ) -> str | None:
-    """Return the first Swedish reason a proposal of (req_date, tgt_date) pairs is refused, or None.
+    """Return the first reason, in lang, a proposal of (req_date, tgt_date) pairs is refused, or None.
 
     Every pair must pass check_swap, and no two pairs may touch the same user/date slot,
     so accepting the group can never write two override rows on one slot.
     """
     if not pairs:
-        return "Inga byten valda"
+        return tr("swap_none_selected", lang)
     if len(pairs) > MAX_PAIRS:
-        return f"Högst {MAX_PAIRS} byten per förslag"
+        return tr("swap_new_max", lang).format(n=MAX_PAIRS)
     cache = {} if cache is None else cache
     for n, (req_date, tgt_date) in enumerate(pairs, start=1):
-        reason = check_swap(db, requester, target, req_date, tgt_date, cache=cache)
+        reason = check_swap(db, requester, target, req_date, tgt_date, cache=cache, lang=lang)
         if reason:
-            return f"Byte {n}: {reason}"
+            return tr("swap_pair_reason", lang).format(n=n, reason=reason)
     used: dict[tuple[int, date], int] = {}
     for n, (req_date, tgt_date) in enumerate(pairs, start=1):
         slots = swap_participant_dates(requester.id, target.id, req_date, tgt_date)
         clash = next((used[slot] for slot in slots if slot in used), None)
         if clash:
-            return f"Byte {n}: samma person och datum som byte {clash}"
+            return tr("swap_pair_clash", lang).format(n=n, clash=clash)
         used.update(dict.fromkeys(slots, n))
     return None
 
@@ -324,9 +329,14 @@ def _longest_weekly_rest(days: dict, monday: date) -> float:
 
 
 def proposal_warnings(
-    db: Session, requester: User, target: User, pairs: list[tuple[date, date]], cache: dict | None = None
+    db: Session,
+    requester: User,
+    target: User,
+    pairs: list[tuple[date, date]],
+    cache: dict | None = None,
+    lang: str = "sv",
 ) -> list[list[str]]:
-    """Swedish rest warnings for each (req_date, tgt_date) pair, in pair order. Never raises.
+    """Rest warnings in lang for each (req_date, tgt_date) pair, in pair order. Never raises.
 
     Rest is measured on both schedules with every pair applied: on each pair's dates the
     two people exchange their effective days, clock times included. A warning is given
@@ -335,13 +345,13 @@ def proposal_warnings(
     Monday) that holds one of the pair's dates.
     """
     try:
-        return _proposal_warnings(db, requester, target, pairs, {} if cache is None else cache)
+        return _proposal_warnings(db, requester, target, pairs, {} if cache is None else cache, lang)
     except Exception:
         logger.exception("proposal_warnings failed for %s -> %s, %s", requester.id, target.id, pairs)
         return [[] for _ in pairs]
 
 
-def _proposal_warnings(db, requester, target, pairs, cache) -> list[list[str]]:
+def _proposal_warnings(db, requester, target, pairs, cache, lang) -> list[list[str]]:
     if not pairs:
         return []
     pair_dates = [{rd, td} for rd, td in pairs]
@@ -349,6 +359,7 @@ def _proposal_warnings(db, requester, target, pairs, cache) -> list[list[str]]:
     # The Sunday before reaches a night shift into Monday; the Monday after is the last neighbour.
     first, last = min(mondays) - timedelta(days=1), max(mondays) + timedelta(days=7)
     people = {"du": requester, "kollegan": target}
+    label = {"du": tr("swap_who_you", lang), "kollegan": tr("swap_who_colleague", lang)}
     before = {who: _days(db, user, first, last, cache) for who, user in people.items()}
     after = {who: dict(days) for who, days in before.items()}
     for dates in pair_dates:
@@ -371,10 +382,10 @@ def _proposal_warnings(db, requester, target, pairs, cache) -> list[list[str]]:
             old = _daily_rests(before[who], dates)
             new = _daily_rests(after[who], dates)
             if any(h < MIN_REST_HOURS and h < old.get(k, math.inf) for k, h in new.items()):
-                warnings.append(f"Under {MIN_REST_HOURS} timmars dygnsvila ({who})")
+                warnings.append(tr("swap_daily_rest", lang).format(hours=MIN_REST_HOURS, who=label[who]))
         weeks = {d - timedelta(days=d.weekday()) for d in dates}
         for who in people:
             if any((who, monday) in short_weeks for monday in weeks):
-                warnings.append(f"Under {MIN_WEEKLY_REST_HOURS} timmars veckovila ({who})")
+                warnings.append(tr("swap_weekly_rest", lang).format(hours=MIN_WEEKLY_REST_HOURS, who=label[who]))
         result.append(warnings)
     return result

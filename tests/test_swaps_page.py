@@ -47,21 +47,22 @@ def _setup(test_db, monkeypatch):
     _user(test_db, 1, "Me Myself")
     _user(test_db, 2, "Anna Colleague")
     test_db.commit()
-    calls = []
+    calls, langs = [], []
 
-    def fake_warnings(db, requester, target, pairs, cache=None):
+    def fake_warnings(db, requester, target, pairs, cache=None, lang="sv"):
         calls.append(pairs)
+        langs.append(lang)
         return [["Under 11 timmars dygnsvila (du)"]] * len(pairs)
 
     monkeypatch.setattr(shift_swap, "proposal_warnings", fake_warnings)
     first = _row(test_db, "g1", D(2026, 10, 27), D(2026, 10, 28), "D1", "N1")
     _row(test_db, "g1", D(2026, 10, 29), D(2026, 10, 29), "OFF", "D2")
     legacy = _row(test_db, None, D(2026, 11, 3), D(2026, 11, 3), "D1", "OFF", SwapStatus.ACCEPTED)
-    return first, legacy, calls
+    return first, legacy, calls, langs
 
 
 def test_inbox_groups_rows(test_client, test_db, monkeypatch):
-    first, legacy, calls = _setup(test_db, monkeypatch)
+    first, legacy, calls, _ = _setup(test_db, monkeypatch)
 
     test_client.cookies.set("access_token", create_access_token(data={"sub": "1"}))
     sent = test_client.get("/swaps/")
@@ -88,3 +89,15 @@ def test_inbox_groups_rows(test_client, test_db, monkeypatch):
     assert f'action="/swaps/{first.id}/reject"' in page
     # Warnings only for pending groups: the accepted legacy card adds none.
     assert page.count("Under 11 timmars dygnsvila (du)") == 2
+
+
+def test_inbox_warnings_use_the_viewers_language(test_client, test_db, monkeypatch):
+    _, _, _, langs = _setup(test_db, monkeypatch)
+    # The target reads the requester's proposal in their own language.
+    test_db.get(User, 2).language = "en"
+    test_db.commit()
+    test_client.cookies.set("access_token", create_access_token(data={"sub": "2"}))
+    assert test_client.get("/swaps/").status_code == 200
+    test_client.cookies.set("access_token", create_access_token(data={"sub": "1"}))
+    assert test_client.get("/swaps/").status_code == 200
+    assert langs == ["en", "sv"]

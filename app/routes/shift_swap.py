@@ -24,6 +24,7 @@ from app.core.swaps import (
     proposal_warnings,
     validate_proposal,
 )
+from app.core.translations import tr
 from app.core.utils import get_today
 from app.database.database import (
     OnCallOverride,
@@ -173,7 +174,9 @@ def _kind(req_date: date_cls, tgt_date: date_cls, req_code: str, tgt_code: str) 
     return None
 
 
-def _assess(db: Session, requester: User, target: User, pairs: list[tuple[date_cls, date_cls]], cache: dict) -> list:
+def _assess(
+    db: Session, requester: User, target: User, pairs: list[tuple[date_cls, date_cls]], cache: dict, lang: str
+) -> list:
     """check_swap verdict, rest warnings and kind per pair, as the compare screen shows them.
 
     Warnings are measured with every allowed pair applied together, blocked pairs get none.
@@ -184,13 +187,13 @@ def _assess(db: Session, requester: User, target: User, pairs: list[tuple[date_c
         tgt_code = effective_code(db, target, tgt_date, cache)
         results.append(
             {
-                "blocked": check_swap(db, requester, target, req_date, tgt_date, cache=cache),
+                "blocked": check_swap(db, requester, target, req_date, tgt_date, cache=cache, lang=lang),
                 "warnings": [],
                 "kind": _kind(req_date, tgt_date, req_code, tgt_code),
             }
         )
     allowed = [i for i, r in enumerate(results) if not r["blocked"]]
-    warnings = proposal_warnings(db, requester, target, [pairs[i] for i in allowed], cache)
+    warnings = proposal_warnings(db, requester, target, [pairs[i] for i in allowed], cache, lang)
     for i, w in zip(allowed, warnings, strict=True):
         results[i]["warnings"] = w
     return results
@@ -229,9 +232,9 @@ async def check_pairs(
     """Blocked reason and kind per pair, rest warnings over all allowed pairs together."""
     target = db.get(User, body.target_id)
     if not target:
-        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
     pairs = [(p.req_date, p.tgt_date) for p in body.pairs]
-    return {"results": _assess(db, current_user, target, pairs, {})}
+    return {"results": _assess(db, current_user, target, pairs, {}, current_user.language)}
 
 
 def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
@@ -260,13 +263,13 @@ async def compare_days(
     """Both users' effective days side by side in 1 to 6 whole Mon to Sun weeks, from this week at the earliest."""
     target = db.get(User, target_id)
     if not target:
-        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
     if not _can_swap(target):
-        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
     if not _can_swap(current_user):
-        raise HTTPException(status_code=400, detail="Du kan inte byta pass")
+        raise HTTPException(status_code=400, detail=tr("swap_you_cannot", current_user.language))
     if start and start > get_today() + timedelta(days=MAX_START_DAYS):
-        raise HTTPException(status_code=400, detail="Ogiltigt startdatum")
+        raise HTTPException(status_code=400, detail=tr("swap_bad_start", current_user.language))
     today = get_today()
     first = max(start or today, today)
     first -= timedelta(days=first.weekday())
@@ -290,7 +293,7 @@ async def day_takers(
     result = []
     cache: dict = {}
     for colleague in _colleagues(db, current_user):
-        [verdict] = _assess(db, current_user, colleague, [(date, date)], cache)
+        [verdict] = _assess(db, current_user, colleague, [(date, date)], cache, current_user.language)
         if verdict["kind"] not in ("mutual", "give_away"):
             verdict["kind"] = None
         result.append({"id": colleague.id, "name": colleague.name, **verdict})
@@ -341,7 +344,13 @@ def _inbox_groups(db: Session, rows: list[ShiftSwap], viewer: User) -> list[dict
         mine_is_requester = first.requester_id == viewer.id
         # Rest is measured with the whole proposal applied, as the compare screen did.
         warnings = (
-            proposal_warnings(db, first.requester, first.target, [(r.requester_date, r.target_date) for r in members])
+            proposal_warnings(
+                db,
+                first.requester,
+                first.target,
+                [(r.requester_date, r.target_date) for r in members],
+                lang=viewer.language,
+            )
             if pending
             else [[] for _ in members]
         )
@@ -407,22 +416,23 @@ async def list_swaps(
     )
 
 
-def _load_group(db: Session, swap_id: int) -> list[ShiftSwap]:
+def _load_group(db: Session, swap_id: int, lang: str) -> list[ShiftSwap]:
     """All rows of the proposal swap_id belongs to, oldest first; a legacy row is a group of one."""
     swap = db.get(ShiftSwap, swap_id)
     if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
+        raise HTTPException(status_code=404, detail=tr("swap_not_found", lang))
     if swap.group_id is None:
         return [swap]
     return db.query(ShiftSwap).filter(ShiftSwap.group_id == swap.group_id).order_by(ShiftSwap.id).all()
 
 
 def _load_pending_group_as_target(db: Session, swap_id: int, current_user: User) -> list[ShiftSwap]:
-    group = _load_group(db, swap_id)
+    lang = current_user.language
+    group = _load_group(db, swap_id, lang)
     if group[0].target_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Inte behörig")
+        raise HTTPException(status_code=403, detail=tr("swap_forbidden", lang))
     if any(s.status != SwapStatus.PENDING for s in group):
-        raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
+        raise HTTPException(status_code=400, detail=tr("swap_not_pending", lang))
     return group
 
 
@@ -438,15 +448,17 @@ async def propose_swap(
     """Propose one or more swaps to one colleague: pair i gives req_date[i] and takes tgt_date[i]."""
     target_user = db.get(User, target_id)
     if not target_user:
-        raise HTTPException(status_code=404, detail="Användaren hittades inte")
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
     if message and len(message) > MAX_MESSAGE:
-        raise HTTPException(status_code=400, detail=f"Meddelandet är för långt (högst {MAX_MESSAGE} tecken)")
+        raise HTTPException(
+            status_code=400, detail=tr("swap_message_too_long", current_user.language).format(n=MAX_MESSAGE)
+        )
     if len(req_date) != len(tgt_date):
-        raise HTTPException(status_code=400, detail="Ogiltigt förslag")
+        raise HTTPException(status_code=400, detail=tr("swap_invalid_proposal", current_user.language))
 
     pairs = list(zip(req_date, tgt_date, strict=True))
     cache: dict = {}
-    reason = validate_proposal(db, current_user, target_user, pairs, cache)
+    reason = validate_proposal(db, current_user, target_user, pairs, cache, current_user.language)
     if reason:
         raise HTTPException(status_code=400, detail=reason)
 
@@ -495,6 +507,7 @@ async def accept_swap(
             swap.target_date,
             exclude_swap_ids=group_ids,
             cache=cache,
+            lang=current_user.language,
         )
         if reason:
             raise HTTPException(status_code=400, detail=reason)
@@ -503,7 +516,7 @@ async def accept_swap(
         given = rows[(swap.target_id, swap.requester_date)]
         taken = rows[(swap.requester_id, swap.target_date)]
         if _proposed(swap) != [list(given), list(taken)]:
-            raise HTTPException(status_code=400, detail="Schemat har ändrats sedan förslaget")
+            raise HTTPException(status_code=400, detail=tr("swap_schedule_changed", current_user.language))
         planned.append(rows)
 
     now = utcnow()
@@ -543,15 +556,16 @@ async def cancel_swap(
     db: Session = Depends(get_db),
 ):
     """Cancel a whole pending or accepted proposal (requester, target, or admin)."""
-    group = _load_group(db, swap_id)
+    lang = current_user.language
+    group = _load_group(db, swap_id, lang)
     first = group[0]
     is_participant = current_user.id in (first.requester_id, first.target_id)
     is_admin = current_user.role.value == "admin"
 
     if not is_participant and not is_admin:
-        raise HTTPException(status_code=403, detail="Inte behörig")
+        raise HTTPException(status_code=403, detail=tr("swap_forbidden", lang))
     if any(s.status not in (SwapStatus.PENDING, SwapStatus.ACCEPTED) for s in group):
-        raise HTTPException(status_code=400, detail="Kan bara avbryta väntande eller accepterade byten")
+        raise HTTPException(status_code=400, detail=tr("swap_cancel_only_active", lang))
 
     # Legacy swaps own no rows; rows an admin has since edited have swap_id cleared.
     swap_ids = [s.id for s in group]

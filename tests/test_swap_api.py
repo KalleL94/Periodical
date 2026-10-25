@@ -143,6 +143,25 @@ def test_check_returns_warnings(client):
     assert pair["warnings"] == ["Under 11 timmars dygnsvila (du)", "Under 11 timmars dygnsvila (kollegan)"]
 
 
+def test_check_speaks_the_users_language(client, test_db):
+    for uid in (7, 8):
+        test_db.get(User, uid).language = "en"
+    test_db.commit()
+    _login(client, 8)
+    [pair] = _check(client, 7, (D(2026, 10, 27), D(2026, 10, 27)))
+    assert pair["warnings"] == [
+        "Less than 11 hours of daily rest (you)",
+        "Less than 11 hours of daily rest (colleague)",
+    ]
+    _login(client, 7)
+    [same] = _check(client, 11, (D(2026, 10, 27), D(2026, 10, 27)))
+    assert same["blocked"] == "You already work the same shift"
+    # The Swedish colleague asking the reverse question still reads Swedish.
+    _login(client, 11)
+    [same] = _check(client, 7, (D(2026, 10, 27), D(2026, 10, 27)))
+    assert same["blocked"] == "Ni jobbar redan samma pass"
+
+
 def test_check_rejects_bad_requests(client):
     _login(client, 7)
     pair = {"req_date": "2026-10-25", "tgt_date": "2026-11-01"}

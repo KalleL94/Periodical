@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
+from app.core.translations import tr
 from app.database.database import OnCallOverride, ShiftOverride, ShiftSwap, User, UserRole, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
@@ -38,7 +39,7 @@ def refuse_swap_rows(session, current_user: User, user_id: int, dates) -> None:
         for model in (ShiftOverride, OnCallOverride)
     )
     if owned:
-        raise HTTPException(status_code=400, detail="Passet hör till ett byte, avbryt bytet i stället")
+        raise HTTPException(status_code=400, detail=tr("swap_row_protected", current_user.language))
 
 
 def release_swap_row(session, row) -> None:
