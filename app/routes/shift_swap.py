@@ -17,11 +17,14 @@ from app.core.helpers import contrast_color
 from app.core.schedule import calculate_shift_hours, clear_schedule_cache, get_shift_types
 from app.core.swaps import (
     MAX_PAIRS,
+    MAX_START_DAYS,
+    MAX_WEEKS,
     _can_swap,
     assignment,
     check_swap,
     effective_code,
     proposal_warnings,
+    too_far,
     validate_proposal,
 )
 from app.core.translations import tr
@@ -40,8 +43,6 @@ from app.database.database import (
 from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
-
-MAX_WEEKS = 6
 
 
 def _swap_rows(db: Session, swap: ShiftSwap, cache: dict) -> dict:
@@ -180,7 +181,10 @@ def _assess(
     """check_swap verdict, rest warnings and kind per pair, as the compare screen shows them.
 
     Warnings are measured with every allowed pair applied together, blocked pairs get none.
+    Dates beyond the swap horizon are refused outright, before any schedule is read.
     """
+    if too_far(*(d for pair in pairs for d in pair)):
+        raise HTTPException(status_code=400, detail=tr("swap_too_far", lang))
     results = []
     for req_date, tgt_date in pairs:
         req_code = effective_code(db, requester, req_date, cache)
@@ -219,7 +223,6 @@ def _colleagues(db: Session, user: User) -> list[User]:
     )
 
 
-MAX_START_DAYS = 400
 MAX_MESSAGE = 255  # matches ShiftSwap.message String(255)
 
 

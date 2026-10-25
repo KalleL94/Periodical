@@ -174,3 +174,68 @@ def test_existing_short_gap_does_not_hide_a_new_one_on_the_other_date(db):
     _override(db, 7, D(2026, 10, 27), "N1", datetime.time(5, 0), datetime.time(14, 30))
     [warnings] = _warn(db, 7, 10, [(D(2026, 10, 27), D(2026, 10, 30))])
     assert DAILY_DU in warnings
+
+
+def test_pairs_years_apart_are_checked_separately_and_quickly(db, monkeypatch):
+    # Only the weeks around each pair are read, never the years in between.
+    near, far = (D(2026, 10, 27),) * 2, (D(2029, 10, 23),) * 2
+    alone = [_warn(db, 7, 10, [pair])[0] for pair in (near, far)]
+    calls = []
+    real = swaps.build_week_data
+
+    def counting(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(swaps, "build_week_data", counting)
+    assert alone[0] == ["Under 11 timmars dygnsvila (kollegan)"]
+    assert _warn(db, 7, 10, [near, far]) == alone
+    # Three ISO weeks (the pair's own and both neighbours) per person and pair.
+    assert len(calls) <= 12
+
+
+def _synthetic(monkeypatch, schedule):
+    """Replace the schedule reader with {(user_id, date): (code, start, end)}, OFF elsewhere."""
+
+    def fake_day(db, user, day, cache):
+        code, start, end = schedule.get((user.id, day), swaps.OFF_DAY[:3])
+        return (code, start, end, (None, None, None, None))
+
+    monkeypatch.setattr(swaps, "_day", fake_day)
+
+
+def _at(day, hour):
+    return datetime.datetime(day.year, day.month, day.day, hour)
+
+
+def test_pairs_seven_days_apart_are_checked_together(db, monkeypatch):
+    # ISO week Mon 2 to Sun 8 Nov. User 7 works Tue 3 20:00 to Sat 7 00:00: 44 h rest
+    # before, 48 h after. Taking user 8's Sun 1 night (to Mon 10:00) cuts the first to
+    # 34 h, taking Sun 8 06:00 to 14:00 cuts the second to 30 h. Only both together break 36 h.
+    sun1, sun8 = D(2026, 11, 1), D(2026, 11, 8)
+    _synthetic(
+        monkeypatch,
+        {
+            (7, D(2026, 11, 3)): ("N1", _at(D(2026, 11, 3), 20), _at(D(2026, 11, 7), 0)),
+            (8, sun1): ("N3", _at(sun1, 22), _at(D(2026, 11, 2), 10)),
+            (8, sun8): ("N1", _at(sun8, 6), _at(sun8, 14)),
+        },
+    )
+    assert _warn(db, 7, 8, [(sun1, sun1)]) == [[]]
+    assert _warn(db, 7, 8, [(sun8, sun8)]) == [[]]
+    assert _warn(db, 7, 8, [(sun1, sun1), (sun8, sun8)]) == [[], [WEEKLY_DU]]
+
+
+def test_pairs_eight_days_apart_are_checked_separately(db, monkeypatch):
+    # Same week as above, but the shift reaching Mon 2 10:00 now starts Sat 31 Oct,
+    # eight days before Sun 8, so the two pairs are never overlaid.
+    sat31, sun8 = D(2026, 10, 31), D(2026, 11, 8)
+    _synthetic(
+        monkeypatch,
+        {
+            (7, D(2026, 11, 3)): ("N1", _at(D(2026, 11, 3), 20), _at(D(2026, 11, 7), 0)),
+            (8, sat31): ("N3", _at(sat31, 22), _at(D(2026, 11, 2), 10)),
+            (8, sun8): ("N1", _at(sun8, 6), _at(sun8, 14)),
+        },
+    )
+    assert _warn(db, 7, 8, [(sat31, sat31), (sun8, sun8)]) == [[], []]

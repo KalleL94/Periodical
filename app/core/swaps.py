@@ -29,6 +29,13 @@ logger = logging.getLogger(__name__)
 MIN_REST_HOURS = 11
 MAX_PAIRS = 10
 MIN_WEEKLY_REST_HOURS = 36
+# The compare screen starts at most MAX_START_DAYS ahead and shows up to MAX_WEEKS weeks,
+# so no pair it offers lies beyond MAX_SWAP_DAYS from today.
+MAX_START_DAYS = 400
+MAX_WEEKS = 6
+MAX_SWAP_DAYS = MAX_START_DAYS + 7 * MAX_WEEKS
+# Pairs whose dates lie further apart than this are checked for rest separately.
+CLUSTER_GAP_DAYS = 7
 
 SWAPPABLE_CODES = frozenset({"N1", "N2", "N3", "OC", "OFF"})
 
@@ -186,6 +193,11 @@ def _can_swap(user: User) -> bool:
     return user.is_active == 1 and user.role != UserRole.ADMIN
 
 
+def too_far(*dates: date) -> bool:
+    """True when any of dates lies more than MAX_SWAP_DAYS ahead, too far to swap or read."""
+    return max(dates) > get_today() + timedelta(days=MAX_SWAP_DAYS)
+
+
 def check_swap(
     db: Session,
     requester: User,
@@ -212,6 +224,8 @@ def check_swap(
     today = get_today()
     if req_date <= today or tgt_date <= today:
         return tr("swap_future_only", lang)
+    if too_far(req_date, tgt_date):
+        return tr("swap_too_far", lang)
 
     duplicate = db.query(ShiftSwap).filter(
         ShiftSwap.requester_id == requester.id,
@@ -290,15 +304,6 @@ def validate_proposal(
     return None
 
 
-def _days(db: Session, user: User, first: date, last: date, cache: dict) -> dict:
-    """{date: (code, start, end)} for every day from first to last."""
-    days = {}
-    for n in range((last - first).days + 1):
-        d = first + timedelta(days=n)
-        days[d] = _day(db, user, d, cache)
-    return days
-
-
 def _hours(delta: timedelta) -> float:
     return delta.total_seconds() / 3600
 
@@ -342,7 +347,8 @@ def proposal_warnings(
     two people exchange their effective days, clock times included. A warning is given
     only where the proposal introduces or worsens a breach: 11 h between work blocks
     next to a pair's dates, and 36 h unbroken rest inside each ISO week (Monday to
-    Monday) that holds one of the pair's dates.
+    Monday) that holds one of the pair's dates. Pairs more than CLUSTER_GAP_DAYS apart
+    are measured separately, and only the weeks around their dates are read.
     """
     try:
         return _proposal_warnings(db, requester, target, pairs, {} if cache is None else cache, lang)
@@ -351,41 +357,59 @@ def proposal_warnings(
         return [[] for _ in pairs]
 
 
+def _date_groups(pairs) -> list[list[date]]:
+    """The pairs' dates, sorted and split wherever two neighbours are over CLUSTER_GAP_DAYS apart."""
+    groups: list[list[date]] = []
+    for d in sorted({d for pair in pairs for d in pair}):
+        if groups and (d - groups[-1][-1]).days <= CLUSTER_GAP_DAYS:
+            groups[-1].append(d)
+        else:
+            groups.append([d])
+    return groups
+
+
 def _proposal_warnings(db, requester, target, pairs, cache, lang) -> list[list[str]]:
-    if not pairs:
-        return []
-    pair_dates = [{rd, td} for rd, td in pairs]
-    mondays = {d - timedelta(days=d.weekday()) for dates in pair_dates for d in dates}
-    # The Sunday before reaches a night shift into Monday; the Monday after is the last neighbour.
-    first, last = min(mondays) - timedelta(days=1), max(mondays) + timedelta(days=7)
     people = {"du": requester, "kollegan": target}
-    label = {"du": tr("swap_who_you", lang), "kollegan": tr("swap_who_colleague", lang)}
-    before = {who: _days(db, user, first, last, cache) for who, user in people.items()}
-    after = {who: dict(days) for who, days in before.items()}
-    for dates in pair_dates:
-        for d in dates:
+    daily = [set() for _ in pairs]
+    weekly = [set() for _ in pairs]
+    # Each group is overlaid and measured on its own; a pair spanning two groups collects from both.
+    for group in _date_groups(pairs):
+        touched = set(group)
+        mondays = {d - timedelta(days=d.weekday()) for d in touched}
+        # The Sunday before reaches a night shift into Monday; the Monday after is the last neighbour.
+        # Within a group consecutive dates are at most one ISO week apart, so this range has no gaps.
+        window = {m + timedelta(days=n) for m in mondays for n in range(-1, 8)}
+        before = {who: {d: _day(db, user, d, cache) for d in sorted(window)} for who, user in people.items()}
+        after = {who: dict(days) for who, days in before.items()}
+        for d in touched:
             after["du"][d], after["kollegan"][d] = after["kollegan"][d], after["du"][d]
 
-    short_weeks = set()
-    for who in people:
-        for monday in mondays:
-            new = _longest_weekly_rest(after[who], monday)
-            if new < MIN_WEEKLY_REST_HOURS and new < _longest_weekly_rest(before[who], monday):
-                short_weeks.add((who, monday))
+        short_weeks = set()
+        for who in people:
+            for monday in mondays:
+                new = _longest_weekly_rest(after[who], monday)
+                if new < MIN_WEEKLY_REST_HOURS and new < _longest_weekly_rest(before[who], monday):
+                    short_weeks.add((who, monday))
 
-    result = []
-    for dates in pair_dates:
-        warnings = []
-        for who in people:
-            # Each gap against the same two days before the swap, so a short gap that was
-            # already there cannot hide a new one elsewhere.
-            old = _daily_rests(before[who], dates)
-            new = _daily_rests(after[who], dates)
-            if any(h < MIN_REST_HOURS and h < old.get(k, math.inf) for k, h in new.items()):
-                warnings.append(tr("swap_daily_rest", lang).format(hours=MIN_REST_HOURS, who=label[who]))
-        weeks = {d - timedelta(days=d.weekday()) for d in dates}
-        for who in people:
-            if any((who, monday) in short_weeks for monday in weeks):
-                warnings.append(tr("swap_weekly_rest", lang).format(hours=MIN_WEEKLY_REST_HOURS, who=label[who]))
-        result.append(warnings)
-    return result
+        for n, pair in enumerate(pairs):
+            dates = set(pair) & touched
+            if not dates:
+                continue
+            for who in people:
+                # Each gap against the same two days before the swap, so a short gap that was
+                # already there cannot hide a new one elsewhere.
+                old = _daily_rests(before[who], dates)
+                new = _daily_rests(after[who], dates)
+                if any(h < MIN_REST_HOURS and h < old.get(k, math.inf) for k, h in new.items()):
+                    daily[n].add(who)
+                if any((who, d - timedelta(days=d.weekday())) in short_weeks for d in dates):
+                    weekly[n].add(who)
+
+    label = {"du": tr("swap_who_you", lang), "kollegan": tr("swap_who_colleague", lang)}
+    daily_text = tr("swap_daily_rest", lang)
+    weekly_text = tr("swap_weekly_rest", lang)
+    return [
+        [daily_text.format(hours=MIN_REST_HOURS, who=label[who]) for who in people if who in d]
+        + [weekly_text.format(hours=MIN_WEEKLY_REST_HOURS, who=label[who]) for who in people if who in w]
+        for d, w in zip(daily, weekly, strict=True)
+    ]

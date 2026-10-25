@@ -330,3 +330,24 @@ def test_compare_shows_the_on_call_window(client, test_db):
     _, start_dt, end_dt = calculate_shift_hours(D(2026, 10, 28), "OC")
     plain = by_date["2026-10-28"]
     assert plain == {"code": "OC", "start": start_dt.strftime("%H:%M"), "end": end_dt.strftime("%H:%M")}
+
+
+@pytest.mark.parametrize(
+    ("lang", "message"), [("sv", "Datumet ligger för långt fram"), ("en", "The date is too far ahead")]
+)
+@pytest.mark.parametrize("far", ["9999-12-31", "2029-10-23"])
+def test_far_future_dates_are_refused(client, test_db, lang, message, far):
+    test_db.get(User, 7).language = lang
+    test_db.commit()
+    _login(client, 7)
+    for pair in ({"req_date": far, "tgt_date": "2026-10-27"}, {"req_date": "2026-10-27", "tgt_date": far}):
+        resp = client.post("/swaps/api/check", json={"target_id": 8, "pairs": [pair]})
+        assert resp.status_code == 400
+        assert message in resp.text
+        resp = client.post("/swaps/propose", data={"target_id": 8, **pair}, follow_redirects=False)
+        assert resp.status_code == 400
+        assert message in resp.text
+    resp = client.get("/swaps/api/day-takers", params={"date": far})
+    assert resp.status_code == 400
+    assert message in resp.text
+    assert not test_db.query(ShiftSwap).count()
