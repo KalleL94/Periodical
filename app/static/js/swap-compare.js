@@ -13,7 +13,8 @@
     const data = JSON.parse(document.getElementById('swap-data').textContent);
     const T = data.t;
     const MAX = parseInt(root.dataset.max, 10);
-    const WEEKS = 5; // whole Mon to Sun weeks per window and per step
+    const WEEKS = 5; // whole Mon to Sun weeks per window and per period step
+    const HORIZON = parseInt(root.dataset.horizon, 10); // MAX_START_DAYS: /api/compare refuses a later start
     const preDate = root.dataset.date || null;
     const csrf = root.querySelector("input[name='csrf_token']").value;
     const $ = (id) => document.getElementById(id);
@@ -166,15 +167,21 @@
 
     function renderNav() {
         const bar = el('div', 'swap-nav');
-        const atStart = windowStart <= monday(toIso(new Date()));
-        [['prev', T.prev, () => addDays(windowStart, -7 * WEEKS), atStart],
-         ['today', T.today, () => null, atStart],
-         ['next', T.next, () => addDays(windowStart, 7 * WEEKS), false]].forEach(([name, label, startFn, off]) => {
+        const today = toIso(new Date());
+        const atStart = windowStart <= monday(today);
+        // A step forward is offered only when the server would accept its start.
+        const beyond = (days) => addDays(windowStart, days) > addDays(today, HORIZON);
+        // Steps keep the start on a Monday; the server clamps an earlier start to this week.
+        [['prev', T.prev, -7 * WEEKS, atStart],
+         ['prev-week', T.prev_week, -7, atStart],
+         ['today', T.today, null, atStart],
+         ['next-week', T.next_week, 7, beyond(7)],
+         ['next', T.next, 7 * WEEKS, beyond(7 * WEEKS)]].forEach(([name, label, step, off]) => {
             const btn = el('button', 'btn-compact secondary', label);
             btn.type = 'button';
             btn.dataset.nav = name;
             btn.disabled = off;
-            btn.addEventListener('click', () => goTo(startFn()));
+            btn.addEventListener('click', () => goTo(step === null ? null : addDays(windowStart, step)));
             bar.appendChild(btn);
         });
         const last = state.days[state.days.length - 1].date;
