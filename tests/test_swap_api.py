@@ -167,7 +167,20 @@ def test_check_rejects_bad_requests(client):
     _login(client, 7)
     pair = {"req_date": "2026-10-25", "tgt_date": "2026-11-01"}
     assert client.post("/swaps/api/check", json={"target_id": 999, "pairs": [pair]}).status_code == 404
-    assert client.post("/swaps/api/check", json={"target_id": 8, "pairs": [pair] * 11}).status_code == 422
+    assert client.post("/swaps/api/check", json={"target_id": 8, "pairs": [pair] * 41}).status_code == 422
+
+
+def test_pair_cap_is_forty(client, test_db):
+    _login(client, 7)
+    pair = {"req_date": "2026-10-27", "tgt_date": "2026-10-27"}
+    ok = client.post("/swaps/api/check", json={"target_id": 8, "pairs": [pair] * 40})
+    assert ok.status_code == 200 and len(ok.json()["results"]) == 40
+    assert client.post("/swaps/api/check", json={"target_id": 8, "pairs": [pair] * 41}).status_code == 422
+    # The proposal itself is refused on the count before any pair is looked at.
+    many = [(D(2026, 10, 27), D(2026, 10, 27))] * 41
+    me, them = test_db.get(User, 7), test_db.get(User, 8)
+    assert swaps.validate_proposal(test_db, me, them, many) == "Högst 40 byten per förslag"
+    assert swaps.validate_proposal(test_db, me, them, many[:40]) != "Högst 40 byten per förslag"
 
 
 def test_compare_clamps_window(client, test_db):

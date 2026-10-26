@@ -187,7 +187,7 @@
     // nearest first, kept when check passes.
     function findSuggestions(seq) {
         const limit = addDays(preDate, 28);
-        // ponytail: only the 10 nearest candidates (the /api/check cap), page through them if that hides good days
+        // At most 28 days qualify, well inside the /api/check cap; slice keeps that true if the cap drops.
         const cands = state.days
             .filter((d) => d.date > preDate && d.date <= limit && d.them.code !== 'OFF' && d.me.code === 'OFF')
             .slice(0, MAX);
