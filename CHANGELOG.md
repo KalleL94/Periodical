@@ -26,7 +26,7 @@ something to tell users about, whose pull request renames the heading.
 
 ### Changed
 - Shift swaps are rebuilt around a compare screen, `/swaps/new`. Pick a colleague, see both schedules as five whole Monday to Sunday weeks (past days dimmed), tap your day and theirs, and collect several swaps in one proposal. A day-first entry lists who can take a day and suggests days they could give back. Previous, next and today buttons move between periods. The day page now links here instead of carrying its own form, and `/swaps/api/shifts/{id}` is gone.
-- A proposal holds up to 10 swaps that share `shift_swaps.group_id`. The target accepts or rejects the whole proposal, accept is all or nothing, and cancel removes every swap in it. `/swaps` shows one card per proposal.
+- A proposal holds up to 40 swaps that share `shift_swaps.group_id`. The target accepts or rejects the whole proposal, accept is all or nothing, and cancel removes every swap in it. `/swaps` shows one card per proposal.
 - Accepting a swap writes `ShiftOverride` rows, the same rows an admin enters by hand, linked by `shift_overrides.swap_id`. New swaps carry `shift_swaps.applied_as_override = True` and `_batch_fetch_swap_map` skips them, so nothing is counted twice. Accepted swaps from before this release keep resolving through `swap_map`.
 - Swaps work on the shift the schedule shows (`effective_code`, through `build_week_data`), not the rotation. On-call (OC) can be swapped against any shift, including a free day. Called-in overtime and custom (ETC) shifts cannot be swapped.
 - A swap may land on a day with a manual shift or on-call change. Accept saves those rows in `shift_swaps.replaced_rows` and removes them, and cancel puts them back unless an admin has added a newer row on the slot.
@@ -37,6 +37,7 @@ something to tell users about, whose pull request renames the heading.
 - Accept re-runs the rules and recomputes both days, clock times and on-call window included, against `shift_swaps.proposed_assignments` saved at propose. If anything differs from what was proposed it refuses with "Schemat har ändrats sedan förslaget" and the proposal stays pending.
 - A participant can no longer edit or delete a swap's rows, or add, remove or delete an on-call change on a swapped slot (400 "Passet hör till ett byte, avbryt bytet i stället"). An admin edit turns a row into a manual one (`swap_id` cleared).
 - CSRF: the middleware also accepts the signed token in an `X-CSRF-Token` header, which the JSON check endpoint needs. The cookie and signature check are unchanged.
+- The compare screen gets Previous week and Next week buttons beside the five-week period buttons. The window still starts on a Monday, never before the current week, and the forward buttons turn off once the next start would pass the `MAX_START_DAYS` horizon that `/swaps/api/compare` refuses beyond. The page passes that horizon to the script as `data-horizon`.
 
 ### Fixed
 - A refused swap proposal answered with a bare 400. The exception handler now logs method, path and detail, and shows the detail to the user on a 400.
