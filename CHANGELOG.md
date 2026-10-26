@@ -22,6 +22,30 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.14.0] - 2026-10-24
+
+### Changed
+- Shift swaps are rebuilt around a compare screen, `/swaps/new`. Pick a colleague, see both schedules as five whole Monday to Sunday weeks (past days dimmed), tap your day and theirs, and collect several swaps in one proposal. A day-first entry lists who can take a day and suggests days they could give back. Previous, next and today buttons move between periods. The day page now links here instead of carrying its own form, and `/swaps/api/shifts/{id}` is gone.
+- A proposal holds up to 10 swaps that share `shift_swaps.group_id`. The target accepts or rejects the whole proposal, accept is all or nothing, and cancel removes every swap in it. `/swaps` shows one card per proposal.
+- Accepting a swap writes `ShiftOverride` rows, the same rows an admin enters by hand, linked by `shift_overrides.swap_id`. New swaps carry `shift_swaps.applied_as_override = True` and `_batch_fetch_swap_map` skips them, so nothing is counted twice. Accepted swaps from before this release keep resolving through `swap_map`.
+- Swaps work on the shift the schedule shows (`effective_code`, through `build_week_data`), not the rotation. On-call (OC) can be swapped against any shift, including a free day. Called-in overtime and custom (ETC) shifts cannot be swapped.
+- A swap may land on a day with a manual shift or on-call change. Accept saves those rows in `shift_swaps.replaced_rows` and removes them, and cancel puts them back unless an admin has added a newer row on the slot.
+- Propose, accept and the compare screen share one rules function, `app/core/swaps.py::check_swap`, and every refusal carries its Swedish reason. Hard stops: same person, ineligible participant (inactive or admin), past date, an active swap on a slot, absence, parental leave, week vacation, someone not working the date they give, the same shift on the same day, and a cross-day swap where either person already works the other date.
+- Daily rest (11 h) and weekly rest (36 h) are warnings, not stops. `proposal_warnings` evaluates the whole proposal together, with real clock times from the schedule, and weekly rest is counted per ISO week. It warns only when the proposal introduces or worsens a breach, and each rest gap is compared with the same gap before the swap, so an existing short gap cannot hide a new one.
+- A swap hands over the whole day: the shift code, custom clock times on an ordinary shift (written to the swap's `ShiftOverride`), and a partial on-call window (written as an `OnCallOverride` ADD linked by `oncall_overrides.swap_id`, removed on cancel). Hours and on-call pay follow the day to the person who takes it.
+- Swaps read each person's position per date from the person history, so a week holding a position change reads each day from the position held that day.
+- Accept re-runs the rules and recomputes both days, clock times and on-call window included, against `shift_swaps.proposed_assignments` saved at propose. If anything differs from what was proposed it refuses with "Schemat har ändrats sedan förslaget" and the proposal stays pending.
+- A participant can no longer edit or delete a swap's rows, or add, remove or delete an on-call change on a swapped slot (400 "Passet hör till ett byte, avbryt bytet i stället"). An admin edit turns a row into a manual one (`swap_id` cleared).
+- CSRF: the middleware also accepts the signed token in an `X-CSRF-Token` header, which the JSON check endpoint needs. The cookie and signature check are unchanged.
+
+### Fixed
+- A refused swap proposal answered with a bare 400. The exception handler now logs method, path and detail, and shows the detail to the user on a 400.
+- The 11 hour rest check counted the shift being given away as still worked.
+- A proposal message over 255 characters is refused instead of failing at commit, and `/swaps/api/compare` refuses an unreasonable start date instead of returning 500.
+
+### Migration
+Run `python migrations/migrate_schema.py` on prod by hand before tagging. It adds `shift_swaps.applied_as_override`, `shift_swaps.group_id`, `shift_swaps.replaced_rows`, `shift_swaps.proposed_assignments`, `shift_overrides.swap_id` and `oncall_overrides.swap_id`. Deploy does not run it.
+
 ## [1.13.1] - 2026-10-24
 
 ### Fixed

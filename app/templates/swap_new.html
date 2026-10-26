@@ -1,0 +1,74 @@
+{# app/templates/swap_new.html #}
+{% extends "base.html" %}
+
+{% block title %}Periodical – {{ t.swap_new_title }}{% endblock %}
+
+{% block page_content %}
+<section id="swap-compare" class="swap-compare"
+         data-date="{{ date | date_format }}" data-with="{{ with_id or '' }}" data-max="{{ max_pairs }}">
+    <h2>{{ t.swap_new_title }}</h2>
+    <p class="text-muted">{{ t.swap_new_intro }}</p>
+
+    <div class="form-group">
+        <label class="form-label" for="swap-target">{{ t.swap_new_colleague }}</label>
+        <select id="swap-target">
+            <option value="">{{ t.swap_new_choose }}</option>
+            {% for c in colleagues %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div id="swap-takers" class="swap-takers" hidden>
+        <h3>{{ t.swap_new_takers_title }} <span id="swap-takers-date" class="text-muted"></span></h3>
+        <ul id="swap-takers-list" class="swap-takers-list"></ul>
+    </div>
+
+    <div id="swap-grid" class="swap-grid" hidden></div>
+    <p id="swap-status" class="swap-status" role="status" aria-live="polite"></p>
+
+    <form method="POST" action="/swaps/propose" id="swap-propose-form" class="swap-propose" hidden>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="target_id" id="swap-target-id">
+        <h3>{{ t.swap_new_pairs }}</h3>
+        <p id="swap-no-pairs" class="text-muted">{{ t.swap_new_no_pairs }}</p>
+        <ol id="swap-pairs" class="swap-pairs"></ol>
+        <div id="swap-pair-fields"></div>
+        <div class="form-group">
+            <label class="form-label" for="swap-message">{{ t.swaps_message }}</label>
+            <textarea id="swap-message" name="message" rows="2" maxlength="255"></textarea>
+        </div>
+        <button type="submit" class="btn-primary" id="swap-send" disabled>{{ t.swap_new_send }}</button>
+    </form>
+</section>
+
+{# Strings and shift colours for swap-compare.js. A JSON data block never executes. #}
+<script type="application/json" id="swap-data">{{ {
+    "lang": t.html_lang,
+    "colors": shift_colors,
+    "t": {
+        "you": t.swap_new_you,
+        "tap_mine": t.swap_new_tap_mine,
+        "tap_theirs": t.swap_new_tap_theirs,
+        "suggested": t.swap_new_suggested,
+        "kind_cross": t.swap_new_kind_cross,
+        "kind_mutual": t.swap_new_kind_mutual,
+        "kind_give_away": t.swap_new_kind_give_away,
+        "kind_take_over": t.swap_new_kind_take_over,
+        "takers_mutual": t.swap_new_takers_mutual,
+        "takers_give_away": t.swap_new_takers_give_away,
+        "takers_none": t.swap_new_takers_none,
+        "pick": t.swap_new_pick,
+        "prev": t.swap_new_prev,
+        "next": t.swap_new_next,
+        "today": t.swap_new_today,
+        "remove": t.swap_new_remove,
+        "slot_used": t.swap_new_slot_used,
+        "max": t.swap_new_max,
+        "load_error": t.swap_new_load_error,
+        "you_give": t.swaps_you_give,
+        "you_get": t.swaps_you_get
+    }
+} | tojson }}</script>
+<script src="/static/js/swap-compare.js?v={{ static_version }}" defer></script>
+{% endblock %}

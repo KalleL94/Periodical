@@ -9,6 +9,7 @@ from urllib.parse import quote, urlparse
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.translations import tr
 from app.database.database import User, UserRole
 
 
@@ -214,7 +215,7 @@ def is_safe_redirect(url: str) -> bool:
 MAX_EDIT_DATES = 62
 
 
-def apply_to_dates(dates, write, conflicts):
+def apply_to_dates(dates, write, conflicts, lang: str = "en"):
     """Run write(date) for each date, skipping conflicts when more than one is given.
 
     A single-date post is a deliberate edit of one day: the caller can see what it
@@ -225,7 +226,7 @@ def apply_to_dates(dates, write, conflicts):
     Returns (written dates, [(skipped date, reason)]).
     """
     if len(dates) > MAX_EDIT_DATES:
-        raise HTTPException(status_code=400, detail=f"Too many dates, the limit is {MAX_EDIT_DATES}")
+        raise HTTPException(status_code=400, detail=tr("edit_too_many_dates", lang).format(n=MAX_EDIT_DATES))
 
     written, skipped = [], []
     for day in dates:
@@ -238,7 +239,7 @@ def apply_to_dates(dates, write, conflicts):
     return written, skipped
 
 
-def result_param(written: list, skipped: list, verb: str = "satta") -> str:
+def result_param(written: list, skipped: list, verb: str = "edit_verb_set", lang: str = "sv") -> str:
     """The ?success= fragment describing a multi-date write. Empty for a single date.
 
     It reuses the success query parameter the admin pages already render with
@@ -246,15 +247,21 @@ def result_param(written: list, skipped: list, verb: str = "satta") -> str:
     """
     if not skipped and len(written) <= 1:
         return ""
-    parts = [f"{len(written)} dagar {verb}"]
+    parts = [tr("edit_result_written", lang).format(n=len(written), verb=tr(verb, lang))]
     if skipped:
         detail = ", ".join(f"{d.strftime('%d %b')} {reason}" for d, reason in skipped)
-        parts.append(f"{len(skipped)} hoppades över: {detail}")
+        parts.append(tr("edit_result_skipped", lang).format(n=len(skipped), detail=detail))
     return "?success=" + quote(". ".join(parts))
 
 
 def edit_redirect_url(
-    user_id: int, dates: list, return_to: str, written: list, skipped: list, verb: str = "satta"
+    user_id: int,
+    dates: list,
+    return_to: str,
+    written: list,
+    skipped: list,
+    verb: str = "edit_verb_set",
+    lang: str = "sv",
 ) -> str:
     """Where an edit route sends the browser after writing.
 
@@ -262,7 +269,7 @@ def edit_redirect_url(
     A multi-date write appends the result fragment so the landing page can report
     what was skipped.
     """
-    fragment = result_param(written, skipped, verb)
+    fragment = result_param(written, skipped, verb, lang)
     if not is_safe_redirect(return_to):
         first = dates[0]
         return f"/day/{user_id}/{first.year}/{first.month}/{first.day}" + fragment

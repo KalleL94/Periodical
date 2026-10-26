@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.14.0",
+    "date": "2026-10-24",
+    "entries": [
+      {
+        "type": "nyhet",
+        "sv": "Ny bytesskärm: välj kollega, se era scheman sida vid sida i fem veckor och tryck på dagarna ni vill byta. Du kan lägga flera byten i samma förslag, och kollegan godkänner eller nekar hela förslaget. Du kan också börja från en dag och se vem som kan ta den.",
+        "en": "New swap screen: pick a colleague, see both schedules side by side for five weeks and tap the days you want to swap. You can put several swaps in one proposal, and the colleague accepts or rejects the whole proposal. You can also start from a day and see who can take it."
+      },
+      {
+        "type": "nyhet",
+        "sv": "OC-pass kan bytas mot alla pass, och ett byte kan göras även när det redan finns en manuell ändring på dagen. Avbryter ni bytet kommer den manuella ändringen tillbaka. Ett pass med egna tider eller en delad beredskap byts med sina tider.",
+        "en": "On-call shifts can be swapped against any shift, and a swap can be made even when the day already has a manual change. If you cancel the swap, the manual change comes back. A shift with its own times or a shared on-call day is swapped with its times."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Dygns- och veckovila är nu varningar och stoppar inte längre ett byte. Varningarna räknas på hela förslaget tillsammans, och veckovilan räknas per ISO-vecka.",
+        "en": "Daily and weekly rest are now warnings and no longer stop a swap. Warnings are calculated for the whole proposal together, and weekly rest is counted per ISO week."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Ett byte som inte går att göra visar varför, till exempel att ett annat byte, frånvaro eller semester redan finns på datumet. Har schemat ändrats sedan förslaget går bytet inte att godkänna.",
+        "en": "A swap that cannot be made says why, for example that another swap, an absence or vacation already exists on the date. If the schedule has changed since the proposal, the swap cannot be accepted."
+      },
+      {
+        "type": "fix",
+        "sv": "Kontrollen av 11 timmars dygnsvila räknade passet du lämnar bort som om du fortfarande jobbade det.",
+        "en": "The 11 hour rest check counted the shift you give away as if you still worked it."
+      }
+    ]
+  },
+  {
     "version": "1.13.1",
     "date": "2026-10-24",
     "entries": [

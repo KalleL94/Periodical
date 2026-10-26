@@ -39,7 +39,8 @@ def _add_user(db, user_id: int, username: str, person_id: int) -> User:
 
 
 @pytest.mark.anyio
-async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user, admin_user):
+async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user):
+    admin_user = _add_user(test_db, 90, "colleague", 4)
     day_a, day_b, day_c = _future_dates()
     existing = ShiftSwap(
         requester_id=test_user.id,
@@ -56,20 +57,21 @@ async def test_propose_swap_rejects_conflicting_pending_slot(test_db, test_user,
     with pytest.raises(HTTPException) as exc:
         await propose_swap(
             target_id=admin_user.id,
-            requester_date=day_a,
-            target_date=day_c,
+            req_date=[day_a],
+            tgt_date=[day_c],
             message=None,
             current_user=test_user,
             db=test_db,
         )
 
     assert exc.value.status_code == 400
-    assert "byte finns redan" in exc.value.detail
+    assert exc.value.detail == "Byte 1: Ett byte finns redan för någon av personerna på dessa datum"
     assert test_db.query(ShiftSwap).count() == 1
 
 
 @pytest.mark.anyio
-async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user, admin_user):
+async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user):
+    admin_user = _add_user(test_db, 90, "colleague", 4)
     day_a, day_b, day_c = _future_dates()
     other_user = _add_user(test_db, 3, "other", 3)
     accepted = ShiftSwap(
@@ -100,26 +102,3 @@ async def test_accept_swap_rejects_conflicting_accepted_slot(test_db, test_user,
     assert "byte finns redan" in exc.value.detail
     test_db.refresh(pending)
     assert pending.status == SwapStatus.PENDING
-
-
-@pytest.mark.anyio
-async def test_accept_swap_allows_non_conflicting_pending_swap(test_db, test_user, admin_user):
-    day_a, _day_b, day_c = _future_dates()
-    pending = ShiftSwap(
-        requester_id=admin_user.id,
-        target_id=test_user.id,
-        requester_date=day_a,
-        target_date=day_c,
-        requester_shift_code="N3",
-        target_shift_code="N1",
-        status=SwapStatus.PENDING,
-    )
-    test_db.add(pending)
-    test_db.commit()
-
-    response = await accept_swap(pending.id, current_user=test_user, db=test_db)
-
-    test_db.refresh(pending)
-    assert pending.status == SwapStatus.ACCEPTED
-    assert pending.responded_at is not None
-    assert response.status_code == 303

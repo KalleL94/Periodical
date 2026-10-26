@@ -1,6 +1,7 @@
 # app/routes/shift_override.py
 """Routes for manual shift overrides (adding/removing a regular shift for a day)."""
 
+import json
 from datetime import date as date_cls
 from datetime import time as time_cls
 
@@ -11,12 +12,51 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
-from app.database.database import ShiftOverride, User, get_db
+from app.core.translations import tr
+from app.database.database import OnCallOverride, ShiftOverride, ShiftSwap, User, UserRole, get_db
 
 router = APIRouter(prefix="/shift-override", tags=["shift_override"])
 
 # ETC is the custom labelled block; it carries its own times on the row.
 _ALLOWED_CODES = {"N1", "N2", "N3", "ETC"}
+
+
+def refuse_swap_rows(session, current_user: User, user_id: int, dates) -> None:
+    """Raise 400 if a non-admin would change a slot that holds a row an accepted swap wrote.
+
+    Covers ShiftOverride and OnCallOverride writes: an on-call change would run after
+    the swap's row and undo it. A swap's own OnCallOverride (its on-call window) counts too.
+
+    A participant undoes a swap by cancelling it, which removes every row at once.
+    An admin may change one row; upsert_shift_override then makes it manual.
+    """
+    if current_user.role == UserRole.ADMIN or not dates:
+        return
+    owned = any(
+        session.query(model.id)
+        .filter(model.user_id == user_id, model.date.in_(list(dates)), model.swap_id.isnot(None))
+        .first()
+        for model in (ShiftOverride, OnCallOverride)
+    )
+    if owned:
+        raise HTTPException(status_code=400, detail=tr("swap_row_protected", current_user.language))
+
+
+def release_swap_row(session, row) -> None:
+    """Make a swap's ShiftOverride or OnCallOverride row manual before an admin edits or deletes it.
+
+    The owning swap also forgets the manual row of the same kind it replaced on that
+    slot, so cancelling the swap later cannot bring the pre-swap row back over the
+    admin's change. Each swap row of a group keeps its own snapshot, found by swap_id.
+    """
+    if getattr(row, "swap_id", None) is None:  # also a model with no swap_id, e.g. Absence
+        return
+    swap = session.get(ShiftSwap, row.swap_id)
+    if swap is not None and swap.replaced_rows:
+        slot = ("shift" if isinstance(row, ShiftOverride) else "oncall", row.user_id, row.date.isoformat())
+        kept = [f for f in json.loads(swap.replaced_rows) if (f["kind"], f["user_id"], f["date"]) != slot]
+        swap.replaced_rows = json.dumps(kept)
+    row.swap_id = None
 
 
 def upsert_shift_override(
@@ -33,6 +73,8 @@ def upsert_shift_override(
         existing.end_time = end_time
         existing.label = label or None
         existing.created_by = created_by
+        # An edited swap row becomes a manual row, so cancelling the swap leaves it.
+        release_swap_row(session, existing)
         return
     session.add(
         ShiftOverride(
@@ -59,15 +101,17 @@ async def add_shift_override(
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_own_or_admin(current_user, user_id, "Du kan bara lägga till manuella pass för dig själv")
+    lang = current_user.language
+    require_own_or_admin(current_user, user_id, tr("edit_add_own_only", lang))
 
     if shift_code not in _ALLOWED_CODES:
-        raise HTTPException(status_code=400, detail="Ogiltigt skiftkod, använd N1/N2/N3/ETC")
+        raise HTTPException(status_code=400, detail=tr("edit_bad_shift_code", lang))
+    refuse_swap_rows(session, current_user, user_id, dates)
 
     # A custom block with no clock times has no hours and would render as a blank
     # row, so it is rejected rather than stored.
     if shift_code == "ETC" and not (start_time and end_time):
-        raise HTTPException(status_code=400, detail="Ett övrigt-pass kräver både starttid och sluttid")
+        raise HTTPException(status_code=400, detail=tr("edit_custom_needs_times", lang))
 
     # The label belongs to ETC alone, so a row switched back to N2 keeps no stale
     # text. The times do not: an ordinary shift may carry its own window, which is
@@ -88,7 +132,7 @@ async def add_shift_override(
         from app.database.database import Absence
 
         has_absence = session.query(Absence).filter(Absence.user_id == user_id, Absence.date == override_date).first()
-        return "hade frånvaro" if has_absence else None
+        return tr("edit_skip_absence", lang) if has_absence else None
 
     def write(override_date):
         upsert_shift_override(
@@ -102,13 +146,13 @@ async def add_shift_override(
             created_by=current_user.id,
         )
 
-    written, skipped = apply_to_dates(dates, write, conflicts)
+    written, skipped = apply_to_dates(dates, write, conflicts, lang)
 
     session.commit()
     clear_schedule_cache()
 
     return RedirectResponse(
-        url=edit_redirect_url(user_id, dates, return_to, written, skipped),
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped, lang=lang),
         status_code=303,
     )
 
@@ -121,13 +165,15 @@ async def delete_shift_override(
 ):
     override = session.query(ShiftOverride).filter(ShiftOverride.id == override_id).first()
     if not override:
-        raise HTTPException(status_code=404, detail="Override hittades inte")
+        raise HTTPException(status_code=404, detail=tr("edit_override_not_found", current_user.language))
 
-    require_own_or_admin(current_user, override.user_id, "Du kan bara ta bort dina egna manuella pass")
+    require_own_or_admin(current_user, override.user_id, tr("edit_delete_own_only", current_user.language))
+    refuse_swap_rows(session, current_user, override.user_id, [override.date])
 
     redirect_date = override.date
     redirect_user = override.user_id
 
+    release_swap_row(session, override)
     session.delete(override)
     session.commit()
     clear_schedule_cache()

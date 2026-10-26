@@ -1,360 +1,396 @@
 # app/routes/shift_swap.py
 """Shift swap management routes - propose, accept, reject, cancel swaps."""
 
+import json
 from datetime import date as date_cls
-from datetime import datetime, timedelta
-from datetime import time as dt_time
+from datetime import time as time_cls
+from datetime import timedelta
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth.auth import get_current_user
-from app.core.schedule import build_week_data, calculate_shift_hours, clear_schedule_cache
-from app.core.schedule.core import determine_shift_for_date
+from app.auth.auth import get_current_user, get_current_user_optional
+from app.core.helpers import contrast_color
+from app.core.schedule import calculate_shift_hours, clear_schedule_cache, get_shift_types
+from app.core.swaps import (
+    MAX_PAIRS,
+    MAX_START_DAYS,
+    MAX_WEEKS,
+    _can_swap,
+    assignment,
+    check_swap,
+    effective_code,
+    in_past,
+    proposal_warnings,
+    too_far,
+    validate_proposal,
+)
+from app.core.translations import tr
 from app.core.utils import get_today
-from app.database.database import ShiftSwap, SwapStatus, User, get_db, utcnow
+from app.database.database import (
+    OnCallOverride,
+    OnCallOverrideType,
+    ShiftOverride,
+    ShiftSwap,
+    SwapStatus,
+    User,
+    UserRole,
+    get_db,
+    utcnow,
+)
 from app.routes.shared import render
 
 router = APIRouter(prefix="/swaps", tags=["shift_swaps"])
 
-_MIN_REST_HOURS = 11
 
+def _swap_rows(db: Session, swap: ShiftSwap, cache: dict) -> dict:
+    """{(user_id, date): assignment} each slot gets, read before anything is written.
 
-def _get_shift_times_from_session(date, rotation_person_id, session):
-    """Return (start_dt, end_dt) for a person's effective shift on date, respecting accepted swaps."""
-    week_data = build_week_data(
-        date.isocalendar()[0], date.isocalendar()[1], person_id=rotation_person_id, session=session
-    )
-    day = next((d for d in week_data if d["date"] == date), None)
-    if not day:
-        return None, None
-    shift = day.get("shift")
-    if not shift or not shift.start_time or not shift.end_time:
-        return None, None
-    _, start_dt, end_dt = calculate_shift_hours(date, shift)
-    return start_dt, end_dt
-
-
-def _check_rest_ok(work_date, shift_code, rotation_person_id, session=None):
-    """Return False if working shift_code on work_date violates 11h rest against adjacent days.
-
-    If session is provided, uses build_week_data (includes accepted swaps) for adjacent days.
-    Otherwise falls back to determine_shift_for_date (raw rotation only).
+    On each date the two people exchange their effective days (OC included). A same-day
+    swap collapses to two slots.
     """
-    _, new_start, new_end = calculate_shift_hours(work_date, shift_code)
-    if not new_start or not new_end:
-        return True  # No time data for this shift — cannot validate, allow
-
-    if session:
-        _, prev_end = _get_shift_times_from_session(work_date - timedelta(days=1), rotation_person_id, session)
-        next_start, _ = _get_shift_times_from_session(work_date + timedelta(days=1), rotation_person_id, session)
-    else:
-        prev_result = determine_shift_for_date(work_date - timedelta(days=1), rotation_person_id)
-        if prev_result and prev_result[0] and prev_result[0].code not in ("OFF", "OC"):
-            _, _, prev_end = calculate_shift_hours(work_date - timedelta(days=1), prev_result[0])
-        else:
-            prev_end = None
-        next_result = determine_shift_for_date(work_date + timedelta(days=1), rotation_person_id)
-        if next_result and next_result[0] and next_result[0].code not in ("OFF", "OC"):
-            _, next_start, _ = calculate_shift_hours(work_date + timedelta(days=1), next_result[0])
-        else:
-            next_start = None
-
-    if prev_end and (new_start - prev_end).total_seconds() / 3600 < _MIN_REST_HOURS:
-        return False
-    if next_start and (next_start - new_end).total_seconds() / 3600 < _MIN_REST_HOURS:
-        return False
-
-    return True
-
-
-_MIN_WEEKLY_REST_HOURS = 36
-
-
-def _check_weekly_rest_ok(work_date, new_shift_code, rotation_person_id, original_shift_code=None):
-    """Return False if any rolling 7-day period containing work_date has < 36h consecutive rest
-    that wasn't already violated by the original shift.
-
-    ATL §14 uses rolling sjudagarsperioder (day 1-7, day 2-8, ...).
-    There are 7 possible windows containing work_date: [D-6..D], [D-5..D+1], ..., [D..D+6].
-    All must be checked. OC (beredskap) blocks weekly rest per ATL §14.
-
-    If original_shift_code is provided (same-day swap replacing an existing shift), a window
-    that already violated 36h with the original shift is not counted as a new violation.
-    The swap is blocked only if it makes weekly rest worse than the original schedule.
-    """
-
-    def _max_gap_in_window(shift_code_on_work_date, w_start, w_end):
-        """Compute the longest consecutive rest gap (hours) within [w_start, w_end]."""
-        intervals = []
-        for day_offset in range(-6, 7):
-            d = work_date + timedelta(days=day_offset)
-            if d == work_date:
-                code = shift_code_on_work_date
-            else:
-                result = determine_shift_for_date(d, rotation_person_id)
-                code = result[0].code if result and result[0] else "OFF"
-
-            if code == "OFF":
-                continue
-
-            _, start_dt, end_dt = calculate_shift_hours(d, code)
-            if start_dt and end_dt:
-                clipped_s = max(start_dt, w_start)
-                clipped_e = min(end_dt, w_end)
-                if clipped_s < clipped_e:
-                    intervals.append((clipped_s, clipped_e))
-
-        if not intervals:
-            return 168.0  # No shifts — full week free
-
-        intervals.sort()
-        gap = max(
-            (intervals[0][0] - w_start).total_seconds() / 3600,
-            *((intervals[i + 1][0] - intervals[i][1]).total_seconds() / 3600 for i in range(len(intervals) - 1)),
-            (w_end - intervals[-1][1]).total_seconds() / 3600,
-        )
-        return gap
-
-    for window_start_offset in range(-6, 1):  # windows starting D-6 to D
-        w_start = datetime.combine(work_date + timedelta(days=window_start_offset), dt_time(0, 0))
-        w_end = w_start + timedelta(hours=168)
-
-        new_gap = _max_gap_in_window(new_shift_code, w_start, w_end)
-        if new_gap >= _MIN_WEEKLY_REST_HOURS:
-            continue  # This window is fine
-
-        if original_shift_code is not None:
-            # Same-day swap: only block if the new shift makes weekly rest worse
-            orig_gap = _max_gap_in_window(original_shift_code, w_start, w_end)
-            if new_gap >= orig_gap:
-                continue  # Not worse than before — allow
-            if orig_gap < _MIN_WEEKLY_REST_HOURS:
-                continue  # Window already violated before swap — pre-existing issue
-
-        return False  # New violation introduced by this swap
-
-    return True
-
-
-def _swap_participant_dates(requester_id: int, target_id: int, requester_date, target_date) -> set[tuple[int, object]]:
-    """Return every user/date slot affected by a swap."""
+    requester, target = swap.requester, swap.target
+    rd, td = swap.requester_date, swap.target_date
     return {
-        (requester_id, requester_date),
-        (target_id, requester_date),
-        (requester_id, target_date),
-        (target_id, target_date),
+        (requester.id, rd): assignment(db, target, rd, cache),
+        (target.id, rd): assignment(db, requester, rd, cache),
+        (target.id, td): assignment(db, requester, td, cache),
+        (requester.id, td): assignment(db, target, td, cache),  # same day: overwrites the first key
     }
 
 
-def _find_active_swap_conflict(
-    db: Session,
-    participant_dates: set[tuple[int, object]],
-    statuses: tuple[SwapStatus, ...],
-    exclude_swap_id: int | None = None,
-) -> ShiftSwap | None:
-    """Return an active swap that already uses any of the affected user/date slots."""
-    if not participant_dates:
-        return None
+def _apply_swap_as_overrides(db: Session, swap: ShiftSwap, rows: dict) -> None:
+    """Write the swap's rows from _swap_rows: a ShiftOverride per slot, plus an on-call window.
 
-    user_ids = {user_id for user_id, _ in participant_dates}
-    dates = {date for _, date in participant_dates}
-    query = db.query(ShiftSwap).filter(
-        ShiftSwap.status.in_(statuses),
-        (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
-        (ShiftSwap.requester_date.in_(dates) | ShiftSwap.target_date.in_(dates)),
-    )
-    if exclude_swap_id is not None:
-        query = query.filter(ShiftSwap.id != exclude_swap_id)
-
-    for swap in query.all():
-        existing_dates = _swap_participant_dates(
-            swap.requester_id, swap.target_id, swap.requester_date, swap.target_date
+    "OFF" is written as a code so a shift given away stays free. A custom shift window
+    goes on the ShiftOverride, an on-call window on an OnCallOverride ADD owned by the swap.
+    """
+    swap.replaced_rows = json.dumps(_take_manual_rows(db, rows))
+    for (user_id, day), (code, start, end, oc_start, oc_end) in rows.items():
+        db.add(
+            ShiftOverride(
+                user_id=user_id,
+                date=day,
+                shift_code=code,
+                start_time=time_cls.fromisoformat(start) if start else None,
+                end_time=time_cls.fromisoformat(end) if end else None,
+                swap_id=swap.id,
+                created_by=swap.target_id,
+            )
         )
-        if participant_dates & existing_dates:
-            return swap
+        if oc_start or oc_end:
+            db.add(
+                OnCallOverride(
+                    user_id=user_id,
+                    date=day,
+                    override_type=OnCallOverrideType.ADD,
+                    start_time=oc_start,
+                    end_time=oc_end,
+                    swap_id=swap.id,
+                    created_by=swap.target_id,
+                )
+            )
+
+
+def _proposed(swap: ShiftSwap) -> list:
+    """[requester's day, target's day] as captured at propose, see assignment.
+
+    A proposal from before the capture existed only knows the codes, so default times
+    are assumed and a day with its own times reads as changed.
+    """
+    if swap.proposed_assignments:
+        return json.loads(swap.proposed_assignments)
+    return [[swap.requester_shift_code, None, None, None, None], [swap.target_shift_code, None, None, None, None]]
+
+
+def _iso(value) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _take_manual_rows(db: Session, slots) -> list[dict]:
+    """Snapshot and delete the ShiftOverride and OnCallOverride rows on slots, so cancel can restore them.
+
+    An OnCallOverride left in place would run after the swap's row and undo it.
+    """
+    snapshot = []
+    for user_id, day in slots:
+        base = {"user_id": user_id, "date": day.isoformat()}
+        for row in db.query(ShiftOverride).filter(ShiftOverride.user_id == user_id, ShiftOverride.date == day):
+            snapshot.append(
+                {
+                    "kind": "shift",
+                    **base,
+                    "shift_code": row.shift_code,
+                    "start_time": _iso(row.start_time),
+                    "end_time": _iso(row.end_time),
+                    "label": row.label,
+                    "created_by": row.created_by,
+                }
+            )
+            db.delete(row)
+        for row in db.query(OnCallOverride).filter(OnCallOverride.user_id == user_id, OnCallOverride.date == day):
+            snapshot.append(
+                {
+                    "kind": "oncall",
+                    **base,
+                    "override_type": row.override_type.value,
+                    "start_time": row.start_time,
+                    "end_time": row.end_time,
+                    "reason": row.reason,
+                    "created_by": row.created_by,
+                }
+            )
+            db.delete(row)
+    return snapshot
+
+
+def _restore_manual_rows(db: Session, swap: ShiftSwap) -> None:
+    """Re-insert the rows accepting replaced, except on a slot that has a row of that kind again."""
+    for fields in json.loads(swap.replaced_rows or "[]"):
+        model = ShiftOverride if fields.pop("kind") == "shift" else OnCallOverride
+        fields["date"] = date_cls.fromisoformat(fields["date"])
+        taken = db.query(model.id).filter(model.user_id == fields["user_id"], model.date == fields["date"]).first()
+        if taken:
+            continue  # an admin changed the slot after the swap, the newer row wins
+        if model is ShiftOverride:
+            for key in ("start_time", "end_time"):
+                fields[key] = time_cls.fromisoformat(fields[key]) if fields[key] else None
+        else:
+            fields["override_type"] = OnCallOverrideType(fields["override_type"])
+        db.add(model(**fields))
+
+
+def _kind(req_date: date_cls, tgt_date: date_cls, req_code: str, tgt_code: str) -> str | None:
+    """What a pair does: cross-day, same-day mutual, or a one-way give away or take over."""
+    if req_date != tgt_date:
+        return "cross"
+    if req_code != "OFF" and tgt_code != "OFF":
+        return "mutual"
+    if req_code != "OFF":
+        return "give_away"
+    if tgt_code != "OFF":
+        return "take_over"
     return None
 
 
-def _raise_if_swap_conflicts(
-    db: Session,
-    requester_id: int,
-    target_id: int,
-    requester_date,
-    target_date,
-    statuses: tuple[SwapStatus, ...],
-    exclude_swap_id: int | None = None,
-) -> None:
-    participant_dates = _swap_participant_dates(requester_id, target_id, requester_date, target_date)
-    if _find_active_swap_conflict(db, participant_dates, statuses, exclude_swap_id):
-        raise HTTPException(status_code=400, detail="Ett byte finns redan för någon av personerna på dessa datum")
+def _assess(
+    db: Session, requester: User, target: User, pairs: list[tuple[date_cls, date_cls]], cache: dict, lang: str
+) -> list:
+    """check_swap verdict, rest warnings and kind per pair, as the compare screen shows them.
+
+    Warnings are measured with every allowed pair applied together, blocked pairs get none.
+    Past dates and dates beyond the swap horizon are refused outright, before any schedule is read.
+    """
+    dates = [d for pair in pairs for d in pair]
+    if in_past(*dates):
+        raise HTTPException(status_code=400, detail=tr("swap_future_only", lang))
+    if too_far(*dates):
+        raise HTTPException(status_code=400, detail=tr("swap_too_far", lang))
+    results = []
+    for req_date, tgt_date in pairs:
+        req_code = effective_code(db, requester, req_date, cache)
+        tgt_code = effective_code(db, target, tgt_date, cache)
+        results.append(
+            {
+                "blocked": check_swap(db, requester, target, req_date, tgt_date, cache=cache, lang=lang),
+                "warnings": [],
+                "kind": _kind(req_date, tgt_date, req_code, tgt_code),
+            }
+        )
+    allowed = [i for i, r in enumerate(results) if not r["blocked"]]
+    warnings = proposal_warnings(db, requester, target, [pairs[i] for i in allowed], cache, lang)
+    for i, w in zip(allowed, warnings, strict=True):
+        results[i]["warnings"] = w
+    return results
 
 
-@router.get("/api/shifts/{user_id}")
-async def get_user_shifts(
-    user_id: int,
-    offering: str = None,
-    ref_date: date_cls | None = None,
+class CheckPair(BaseModel):
+    req_date: date_cls
+    tgt_date: date_cls
+
+
+class CheckRequest(BaseModel):
+    target_id: int
+    pairs: list[CheckPair] = Field(min_length=1, max_length=MAX_PAIRS)
+
+
+def _colleagues(db: Session, user: User) -> list[User]:
+    """Active non-admin users other than user, the people a swap can be proposed to."""
+    return (
+        db.query(User)
+        .filter(User.is_active == 1, User.id != user.id, User.role != UserRole.ADMIN)
+        .order_by(User.name)
+        .all()
+    )
+
+
+MAX_MESSAGE = 255  # matches ShiftSwap.message String(255)
+
+
+@router.post("/api/check")
+async def check_pairs(
+    body: CheckRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return target's shifts within ±3 months of ref_date, only on days the requester is free."""
-    from app.core.schedule import calculate_ob_hours, calculate_shift_hours
-    from app.core.schedule.ob import get_combined_rules_for_year
-
-    target = db.query(User).get(user_id)
+    """Blocked reason and kind per pair, rest warnings over all allowed pairs together."""
+    target = db.get(User, body.target_id)
     if not target:
-        return JSONResponse(content={"shifts": []})
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
+    pairs = [(p.req_date, p.tgt_date) for p in body.pairs]
+    return {"results": _assess(db, current_user, target, pairs, {}, current_user.language)}
 
+
+def _effective_days(db: Session, user: User, start: date_cls, end: date_cls) -> dict:
+    """{date: {"code", "start", "end"}} as a swap would hand the day over, see assignment.
+
+    An on-call window from OnCallOverride wins over the shift times, so a partial OC
+    shows the hours accept transfers.
+    """
+    days, cache = {}, {}
+    for n in range((end - start).days + 1):
+        d = start + timedelta(days=n)
+        code, custom_start, custom_end, oc_start, oc_end = assignment(db, user, d, cache)
+        _, start_dt, end_dt = calculate_shift_hours(d, code)
+        days[d] = {
+            "code": code,
+            "start": oc_start or custom_start or (start_dt.strftime("%H:%M") if start_dt else None),
+            "end": oc_end or custom_end or (end_dt.strftime("%H:%M") if end_dt else None),
+        }
+    return days
+
+
+@router.get("/api/compare")
+async def compare_days(
+    target_id: int,
+    start: date_cls | None = None,
+    weeks: int = 5,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Both users' effective days side by side in 1 to 6 whole Mon to Sun weeks, from this week at the earliest."""
+    target = db.get(User, target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
+    if not _can_swap(target):
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
+    if not _can_swap(current_user):
+        raise HTTPException(status_code=400, detail=tr("swap_you_cannot", current_user.language))
+    if start and start > get_today() + timedelta(days=MAX_START_DAYS):
+        raise HTTPException(status_code=400, detail=tr("swap_bad_start", current_user.language))
     today = get_today()
-    center = ref_date or today
-    target_pid = target.rotation_person_id
-    my_pid = current_user.rotation_person_id
+    first = max(start or today, today)
+    first -= timedelta(days=first.weekday())
+    last = first + timedelta(days=7 * min(max(weeks, 1), MAX_WEEKS) - 1)
+    mine = _effective_days(db, current_user, first, last)
+    theirs = _effective_days(db, target, first, last)
+    days = []
+    for n in range((last - first).days + 1):
+        d = first + timedelta(days=n)
+        days.append({"date": d.isoformat(), "me": mine[d], "them": theirs[d], "past": d <= today})
+    return {"days": days}
 
-    # Build list of days: ±90 days from center, but not in the past
-    scan_start = max(center - timedelta(days=90), today + timedelta(days=1))
-    scan_end = center + timedelta(days=90)
-    total_days = (scan_end - scan_start).days + 1
 
-    # Fetch week data for both users, grouped by ISO week
-    # Include adjacent days for 11h rest rule checks
-    target_weeks = {}
-    my_weeks = {}
-    for day_offset in range(total_days):
-        d = scan_start + timedelta(days=day_offset)
-        for adj in (d - timedelta(days=1), d, d + timedelta(days=1)):
-            iso = adj.isocalendar()
-            wk = (iso[0], iso[1])
-            if wk not in my_weeks:
-                target_weeks[wk] = {
-                    day["date"]: day for day in build_week_data(wk[0], wk[1], person_id=target_pid, session=db)
+@router.get("/api/day-takers")
+async def day_takers(
+    date: date_cls,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Every colleague and what they could do with the viewer's shift on date."""
+    result = []
+    cache: dict = {}
+    for colleague in _colleagues(db, current_user):
+        [verdict] = _assess(db, current_user, colleague, [(date, date)], cache, current_user.language)
+        if verdict["kind"] not in ("mutual", "give_away"):
+            verdict["kind"] = None
+        result.append({"id": colleague.id, "name": colleague.name, **verdict})
+    return {"colleagues": result}
+
+
+@router.get("/new", response_class=HTMLResponse)
+async def new_swap_page(
+    request: Request,
+    date: date_cls | None = None,
+    with_id: int | None = Query(None, alias="with"),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """Compare screen: pick a colleague, tap your day then theirs, send the pairs as one proposal."""
+    if current_user is None:
+        return RedirectResponse(url="/login?next=/swaps/new", status_code=302)
+    colors = {s.code: [s.color, contrast_color(s.color)] for s in get_shift_types() if s.color and s.code != "OFF"}
+    return render(
+        "swap_new.html",
+        {
+            "request": request,
+            "user": current_user,
+            "colleagues": _colleagues(db, current_user),
+            "date": date,
+            "with_id": with_id,
+            "shift_colors": colors,
+            "max_pairs": MAX_PAIRS,
+        },
+    )
+
+
+def _side(code: str | None, day: date_cls, free: bool) -> dict | None:
+    """One side of a pair for the inbox; None when that side is a free day (one-way swap)."""
+    return None if free else {"code": code or "?", "date": day}
+
+
+def _inbox_groups(db: Session, rows: list[ShiftSwap], viewer: User) -> list[dict]:
+    """One entry per proposal (a legacy row is a group of one), newest first, pairs from the viewer's side."""
+    groups: dict[str, list[ShiftSwap]] = {}
+    for row in rows:
+        groups.setdefault(row.group_id or f"row-{row.id}", []).append(row)
+    result = []
+    for members in groups.values():
+        members.sort(key=lambda r: r.id)
+        first = members[0]
+        pending = first.status == SwapStatus.PENDING
+        mine_is_requester = first.requester_id == viewer.id
+        # Rest is measured with the whole proposal applied, as the compare screen did.
+        warnings = (
+            proposal_warnings(
+                db,
+                first.requester,
+                first.target,
+                [(r.requester_date, r.target_date) for r in members],
+                lang=viewer.language,
+            )
+            if pending
+            else [[] for _ in members]
+        )
+        pairs = []
+        for r, pair_warnings in zip(members, warnings, strict=True):
+            same_day = r.requester_date == r.target_date
+            req_free = r.requester_shift_code == "OFF" and same_day
+            tgt_free = r.target_shift_code == "OFF" and same_day
+            req_side = _side(r.requester_shift_code, r.requester_date, req_free)
+            tgt_side = _side(r.target_shift_code, r.target_date, tgt_free)
+            pairs.append(
+                {
+                    "give": req_side if mine_is_requester else tgt_side,
+                    "take": tgt_side if mine_is_requester else req_side,
+                    "warnings": pair_warnings,
                 }
-                my_weeks[wk] = {day["date"]: day for day in build_week_data(wk[0], wk[1], person_id=my_pid, session=db)}
-
-    MIN_REST_HOURS = 11
-
-    # Determine if requester is working on center (only same-day swap is offered then)
-    center_wk = center.isocalendar()[:2]
-    center_my_info = my_weeks.get(center_wk, {}).get(center, {})
-    center_my_shift = center_my_info.get("shift")
-    center_my_code = center_my_shift.code if center_my_shift else "OFF"
-    requester_working_on_center = center_my_code not in ("OFF", "OC")
-
-    def get_my_shift_times(d):
-        """Get start/end datetimes for my shift on date d."""
-        iso = d.isocalendar()
-        wk = (iso[0], iso[1])
-        info = my_weeks.get(wk, {}).get(d, {})
-        s = info.get("shift")
-        if not s or not s.start_time or not s.end_time:
-            return None, None
-        _, start_dt, end_dt = calculate_shift_hours(d, s)
-        return start_dt, end_dt
-
-    shifts = []
-    ob_rules_cache = {}
-    for day_offset in range(total_days):
-        d = scan_start + timedelta(days=day_offset)
-        iso = d.isocalendar()
-        wk = (iso[0], iso[1])
-
-        # Determine what I have on this day
-        my_info = my_weeks[wk].get(d, {})
-        my_shift = my_info.get("shift")
-        my_code = my_shift.code if my_shift else "OFF"
-
-        # Check target's shift
-        tgt_info = target_weeks[wk].get(d, {})
-        tgt_shift = tgt_info.get("shift")
-        tgt_code = tgt_shift.code if tgt_shift else "OFF"
-
-        is_same_day = d == center
-
-        # Skip days where target is free — unless it's a same-day give-away
-        if tgt_code == "OFF" and not (is_same_day and requester_working_on_center):
-            continue
-
-        if requester_working_on_center:
-            # Requester is working on center — only same-day is relevant
-            if not is_same_day:
-                continue
-            if tgt_code == "OFF":
-                # Give-away: target is free, requester gives their shift away
-                shifts.append(
-                    {
-                        "date": d.isoformat(),
-                        "date_display": d.strftime("%a %d %b"),
-                        "code": "OFF",
-                        "label": "Ledig",
-                        "ob_hours": 0.0,
-                    }
-                )
-                continue
-            # Mutual same-day swap: different shifts, no OC mixing
-            if not my_shift:
-                continue
-            if tgt_code == my_code:
-                continue  # Same shift code — pointless swap
-            if (my_code == "OC") != (tgt_code == "OC"):
-                continue
-        else:
-            # Requester is free — can take target's shift on a different day
-
-            # OC-to-OC: when offering OC, only show target's OC shifts (requester must be OFF)
-            # Regular: when offering a regular shift, only show target's regular shifts
-            if offering == "OC":
-                if tgt_code != "OC":
-                    continue  # Offering OC — only interested in target's OC
-                if my_code != "OFF":
-                    continue  # Must be OFF to take their OC
-            else:
-                if tgt_code == "OC":
-                    continue  # Offering regular — can't take OC
-                if my_code != "OFF":
-                    continue  # Must be OFF to take their shift
-
-        # Calculate target shift times (the shift I would work)
-        _, tgt_start, tgt_end = calculate_shift_hours(d, tgt_shift) if tgt_shift else (None, None, None)
-
-        # Same-day operations skip rest checks.
-        if not is_same_day:
-            # 11h rest rule: check against my shifts on adjacent days
-            if tgt_start and tgt_end:
-                rest_ok = True
-                prev_start, prev_end = get_my_shift_times(d - timedelta(days=1))
-                if prev_end and (tgt_start - prev_end).total_seconds() / 3600 < MIN_REST_HOURS:
-                    rest_ok = False
-                next_start, next_end = get_my_shift_times(d + timedelta(days=1))
-                if rest_ok and next_start and (next_start - tgt_end).total_seconds() / 3600 < MIN_REST_HOURS:
-                    rest_ok = False
-                if not rest_ok:
-                    continue
-
-            # 36h weekly rest rule: OC (beredskap) blocks weekly rest per ATL §14
-            if not _check_weekly_rest_ok(d, tgt_code, my_pid):
-                continue
-
-        # Calculate OB hours for the target's shift
-        ob_total = 0.0
-        if tgt_start and tgt_end:
-            year = d.year
-            if year not in ob_rules_cache:
-                ob_rules_cache[year] = get_combined_rules_for_year(year)
-            ob_dict = calculate_ob_hours(tgt_start, tgt_end, ob_rules_cache[year])
-            ob_total = sum(ob_dict.values())
-
-        shifts.append(
+            )
+        result.append(
             {
-                "date": d.isoformat(),
-                "date_display": d.strftime("%a %d %b"),
-                "code": tgt_code,
-                "label": (tgt_shift.label or tgt_code) if tgt_shift else tgt_code,
-                "ob_hours": round(ob_total, 1),
+                "id": first.id,
+                "status": first.status,
+                "message": first.message,
+                "requester": first.requester,
+                "target": first.target,
+                "other": first.target if mine_is_requester else first.requester,
+                "pairs": pairs,
             }
         )
-
-    return JSONResponse(content={"shifts": shifts})
+    return result
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -363,129 +399,98 @@ async def list_swaps(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all swaps for the current user (both sent and received)."""
+    """List all swaps for the current user (both sent and received), one card per proposal."""
     sent = (
         db.query(ShiftSwap)
         .filter(ShiftSwap.requester_id == current_user.id)
-        .order_by(ShiftSwap.created_at.desc())
+        .order_by(ShiftSwap.created_at.desc(), ShiftSwap.id.desc())
         .all()
     )
     received = (
-        db.query(ShiftSwap).filter(ShiftSwap.target_id == current_user.id).order_by(ShiftSwap.created_at.desc()).all()
+        db.query(ShiftSwap)
+        .filter(ShiftSwap.target_id == current_user.id)
+        .order_by(ShiftSwap.created_at.desc(), ShiftSwap.id.desc())
+        .all()
     )
-
-    pending_count = sum(1 for s in received if s.status == SwapStatus.PENDING)
+    received_groups = _inbox_groups(db, received, current_user)
+    pending_count = sum(1 for g in received_groups if g["status"] == SwapStatus.PENDING)
 
     return render(
         "shift_swaps.html",
         {
             "request": request,
             "user": current_user,
-            "sent_swaps": sent,
-            "received_swaps": received,
+            "sent_groups": _inbox_groups(db, sent, current_user),
+            "received_groups": received_groups,
             "pending_count": pending_count,
         },
     )
 
 
+def _load_group(db: Session, swap_id: int, lang: str) -> list[ShiftSwap]:
+    """All rows of the proposal swap_id belongs to, oldest first; a legacy row is a group of one."""
+    swap = db.get(ShiftSwap, swap_id)
+    if not swap:
+        raise HTTPException(status_code=404, detail=tr("swap_not_found", lang))
+    if swap.group_id is None:
+        return [swap]
+    return db.query(ShiftSwap).filter(ShiftSwap.group_id == swap.group_id).order_by(ShiftSwap.id).all()
+
+
+def _load_pending_group_as_target(db: Session, swap_id: int, current_user: User) -> list[ShiftSwap]:
+    lang = current_user.language
+    group = _load_group(db, swap_id, lang)
+    if group[0].target_id != current_user.id:
+        raise HTTPException(status_code=403, detail=tr("swap_forbidden", lang))
+    if any(s.status != SwapStatus.PENDING for s in group):
+        raise HTTPException(status_code=400, detail=tr("swap_not_pending", lang))
+    return group
+
+
 @router.post("/propose")
 async def propose_swap(
     target_id: int = Form(...),
-    requester_date: date_cls = Form(...),
-    target_date: date_cls = Form(...),
+    req_date: list[date_cls] = Form(...),
+    tgt_date: list[date_cls] = Form(...),
     message: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Propose a shift swap: give your shift on requester_date, take target's shift on target_date."""
-    if target_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Kan inte byta pass med dig själv")
-
-    req_date = requester_date
-    tgt_date = target_date
-    today = get_today()
-
-    if req_date <= today or tgt_date <= today:
-        raise HTTPException(status_code=400, detail="Kan bara byta framtida pass")
-
-    target_user = db.query(User).get(target_id)
+    """Propose one or more swaps to one colleague: pair i gives req_date[i] and takes tgt_date[i]."""
+    target_user = db.get(User, target_id)
     if not target_user:
-        raise HTTPException(status_code=404, detail="Användaren hittades inte")
-
-    # Check no duplicate pending swap
-    existing = (
-        db.query(ShiftSwap)
-        .filter(
-            ShiftSwap.requester_id == current_user.id,
-            ShiftSwap.target_id == target_id,
-            ShiftSwap.requester_date == req_date,
-            ShiftSwap.target_date == tgt_date,
-            ShiftSwap.status == SwapStatus.PENDING,
+        raise HTTPException(status_code=404, detail=tr("swap_user_not_found", current_user.language))
+    if message and len(message) > MAX_MESSAGE:
+        raise HTTPException(
+            status_code=400, detail=tr("swap_message_too_long", current_user.language).format(n=MAX_MESSAGE)
         )
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Byte redan föreslaget för dessa datum")
+    if len(req_date) != len(tgt_date):
+        raise HTTPException(status_code=400, detail=tr("swap_invalid_proposal", current_user.language))
 
-    _raise_if_swap_conflicts(
-        db,
-        current_user.id,
-        target_id,
-        req_date,
-        tgt_date,
-        (SwapStatus.PENDING, SwapStatus.ACCEPTED),
-    )
+    pairs = list(zip(req_date, tgt_date, strict=True))
+    cache: dict = {}
+    reason = validate_proposal(db, current_user, target_user, pairs, cache, current_user.language)
+    if reason:
+        raise HTTPException(status_code=400, detail=reason)
 
-    # Get shift codes for both dates
-    req_result = determine_shift_for_date(req_date, start_week=current_user.rotation_person_id)
-    tgt_result = determine_shift_for_date(tgt_date, start_week=target_user.rotation_person_id)
-
-    req_shift = req_result[0] if req_result and req_result[0] else None
-    tgt_shift = tgt_result[0] if tgt_result and tgt_result[0] else None
-
-    req_code = req_shift.code if req_shift else "OFF"
-    tgt_code = tgt_shift.code if tgt_shift else "OFF"
-    is_same_day = req_date == tgt_date
-    # One-way transfer: same day, exactly one party is free (XOR)
-    is_one_way = is_same_day and (req_code == "OFF") != (tgt_code == "OFF")
-
-    if not is_same_day:
-        # Cross-day swaps require both to be working
-        if req_code == "OFF":
-            raise HTTPException(status_code=400, detail="Du jobbar inte det datumet")
-        if tgt_code == "OFF":
-            raise HTTPException(status_code=400, detail="Kollegan jobbar inte det datumet")
-    else:
-        # Same-day: both free = pointless; mutual swap has extra rules
-        if req_code == "OFF" and tgt_code == "OFF":
-            raise HTTPException(status_code=400, detail="Ingen av er jobbar den dagen")
-        if not is_one_way:
-            if req_code == tgt_code:
-                raise HTTPException(status_code=400, detail="Ni jobbar redan samma pass")
-            if (req_code == "OC") != (tgt_code == "OC"):
-                raise HTTPException(status_code=400, detail="Kan inte blanda OC och vanliga pass")
-
-    # Same-day operations (mutual or one-way) skip rest checks.
-    if not is_same_day:
-        if not _check_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id, session=db):
-            raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (du)")
-        if not _check_rest_ok(req_date, req_code, target_user.rotation_person_id, session=db):
-            raise HTTPException(status_code=400, detail="Bryter mot 11 timmars dygnsvila (kollegan)")
-        if not _check_weekly_rest_ok(tgt_date, tgt_code, current_user.rotation_person_id):
-            raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (du)")
-        if not _check_weekly_rest_ok(req_date, req_code, target_user.rotation_person_id):
-            raise HTTPException(status_code=400, detail="Bryter mot 36 timmars veckovila (kollegan)")
-
-    swap = ShiftSwap(
-        requester_id=current_user.id,
-        target_id=target_id,
-        requester_date=req_date,
-        target_date=tgt_date,
-        requester_shift_code=req_code,
-        target_shift_code=tgt_code,
-        message=message,
-    )
-    db.add(swap)
+    group_id = uuid4().hex
+    for rd, td in pairs:
+        given = assignment(db, current_user, rd, cache)
+        taken = assignment(db, target_user, td, cache)
+        db.add(
+            ShiftSwap(
+                requester_id=current_user.id,
+                target_id=target_id,
+                requester_date=rd,
+                target_date=td,
+                requester_shift_code=given[0],
+                target_shift_code=taken[0],
+                proposed_assignments=json.dumps([given, taken]),
+                message=message,
+                applied_as_override=True,
+                group_id=group_id,
+            )
+        )
     db.commit()
 
     return RedirectResponse(url="/swaps", status_code=303)
@@ -497,27 +502,42 @@ async def accept_swap(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Accept a swap request (target user only)."""
-    swap = db.query(ShiftSwap).get(swap_id)
-    if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
-    if swap.target_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Inte behörig")
-    if swap.status != SwapStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
+    """Accept a whole proposal (target user only): every pair is applied, or none."""
+    group = _load_pending_group_as_target(db, swap_id, current_user)
+    group_ids = frozenset(s.id for s in group)
 
-    _raise_if_swap_conflicts(
-        db,
-        swap.requester_id,
-        swap.target_id,
-        swap.requester_date,
-        swap.target_date,
-        (SwapStatus.ACCEPTED,),
-        exclude_swap_id=swap.id,
-    )
+    # Check every pair before writing anything, so a failure leaves the group PENDING.
+    planned = []
+    cache: dict = {}
+    for swap in group:
+        reason = check_swap(
+            db,
+            swap.requester,
+            swap.target,
+            swap.requester_date,
+            swap.target_date,
+            exclude_swap_ids=group_ids,
+            cache=cache,
+            lang=current_user.language,
+        )
+        if reason:
+            raise HTTPException(status_code=400, detail=reason)
+        rows = _swap_rows(db, swap, cache)
+        # The whole day is compared, custom times and the on-call window included.
+        given = rows[(swap.target_id, swap.requester_date)]
+        taken = rows[(swap.requester_id, swap.target_date)]
+        if _proposed(swap) != [list(given), list(taken)]:
+            raise HTTPException(status_code=400, detail=tr("swap_schedule_changed", current_user.language))
+        planned.append(rows)
 
-    swap.status = SwapStatus.ACCEPTED
-    swap.responded_at = utcnow()
+    now = utcnow()
+    for swap, rows in zip(group, planned, strict=True):
+        # Rows were read before any write, so earlier pairs cannot leak in.
+        _apply_swap_as_overrides(db, swap, rows)
+        # A swap proposed before overrides existed must leave swap_map too, or it counts twice.
+        swap.applied_as_override = True
+        swap.status = SwapStatus.ACCEPTED
+        swap.responded_at = now
     db.commit()
     clear_schedule_cache()
 
@@ -530,17 +550,11 @@ async def reject_swap(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Reject a swap request (target user only)."""
-    swap = db.query(ShiftSwap).get(swap_id)
-    if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
-    if swap.target_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Inte behörig")
-    if swap.status != SwapStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Bytet är inte längre väntande")
-
-    swap.status = SwapStatus.REJECTED
-    swap.responded_at = utcnow()
+    """Reject a whole proposal (target user only)."""
+    now = utcnow()
+    for swap in _load_pending_group_as_target(db, swap_id, current_user):
+        swap.status = SwapStatus.REJECTED
+        swap.responded_at = now
     db.commit()
 
     return RedirectResponse(url="/swaps", status_code=303)
@@ -552,21 +566,27 @@ async def cancel_swap(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Cancel a pending or accepted swap (requester, target, or admin)."""
-    swap = db.query(ShiftSwap).get(swap_id)
-    if not swap:
-        raise HTTPException(status_code=404, detail="Bytet hittades inte")
-
-    is_participant = swap.requester_id == current_user.id or swap.target_id == current_user.id
+    """Cancel a whole pending or accepted proposal (requester, target, or admin)."""
+    lang = current_user.language
+    group = _load_group(db, swap_id, lang)
+    first = group[0]
+    is_participant = current_user.id in (first.requester_id, first.target_id)
     is_admin = current_user.role.value == "admin"
 
     if not is_participant and not is_admin:
-        raise HTTPException(status_code=403, detail="Inte behörig")
-    if swap.status not in (SwapStatus.PENDING, SwapStatus.ACCEPTED):
-        raise HTTPException(status_code=400, detail="Kan bara avbryta väntande eller accepterade byten")
+        raise HTTPException(status_code=403, detail=tr("swap_forbidden", lang))
+    if any(s.status not in (SwapStatus.PENDING, SwapStatus.ACCEPTED) for s in group):
+        raise HTTPException(status_code=400, detail=tr("swap_cancel_only_active", lang))
 
-    swap.status = SwapStatus.CANCELLED
-    swap.responded_at = utcnow()
+    # Legacy swaps own no rows; rows an admin has since edited have swap_id cleared.
+    swap_ids = [s.id for s in group]
+    db.query(ShiftOverride).filter(ShiftOverride.swap_id.in_(swap_ids)).delete()
+    db.query(OnCallOverride).filter(OnCallOverride.swap_id.in_(swap_ids)).delete()
+    now = utcnow()
+    for swap in group:
+        _restore_manual_rows(db, swap)
+        swap.status = SwapStatus.CANCELLED
+        swap.responded_at = now
     db.commit()
     clear_schedule_cache()
 

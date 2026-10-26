@@ -21,6 +21,7 @@ from app.auth.auth import ACCESS_TOKEN_EXPIRE_MINUTES
 from app.auth.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_FIELD_NAME,
+    CSRF_HEADER_NAME,
     generate_csrf_token,
     is_signed_token,
     tokens_match,
@@ -64,7 +65,10 @@ class CSRFMiddleware:
         if body is None:  # client disconnected mid-request
             return
 
-        if not tokens_match(cookie_token, _form_token(headers, body)):
+        # JSON fetch() calls carry the token in a header; the check is the same,
+        # an attacker still has to know the token to put it anywhere.
+        submitted = headers.get(CSRF_HEADER_NAME) or _form_token(headers, body)
+        if not tokens_match(cookie_token, submitted):
             response = PlainTextResponse(
                 "CSRF verification failed. Reload the page and try again.",
                 status_code=403,

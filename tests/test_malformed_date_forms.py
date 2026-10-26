@@ -26,7 +26,7 @@ def _login(client, username, password):
             {"user_id": "1", "date": "2026-01-15", "start_time": "25:99", "end_time": "14:00"},
         ),
         ("/day-pay-override/set", {"user_id": "1", "date": "nope", "ob_hours_OB1": "2"}),
-        ("/swaps/propose", {"target_id": "2", "requester_date": "nope", "target_date": "2026-01-16"}),
+        ("/swaps/propose", {"target_id": "2", "req_date": "nope", "tgt_date": "2026-01-16"}),
     ],
 )
 def test_malformed_date_returns_4xx_not_500(test_client, test_user, path, data):

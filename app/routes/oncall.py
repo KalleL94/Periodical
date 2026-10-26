@@ -13,12 +13,14 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
+from app.core.translations import tr
 from app.database.database import OnCallOverride, OnCallOverrideType, User, get_db
+from app.routes.shift_override import refuse_swap_rows, release_swap_row
 
 router = APIRouter(prefix="/oncall", tags=["oncall"])
 
 
-def _parse_window(start_time: str | None, end_time: str | None) -> tuple[str | None, str | None]:
+def _parse_window(start_time: str | None, end_time: str | None, lang: str) -> tuple[str | None, str | None]:
     """Validate an optional "HH:MM" on-call window and normalise blanks to None.
 
     An end of "00:00" means midnight at the end of the day, so it is not compared
@@ -33,10 +35,10 @@ def _parse_window(start_time: str | None, end_time: str | None) -> tuple[str | N
         try:
             time_cls.fromisoformat(value)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid time: {value}") from None
+            raise HTTPException(status_code=400, detail=tr("edit_invalid_time", lang).format(value=value)) from None
 
     if start and end and end != "00:00" and end <= start:
-        raise HTTPException(status_code=400, detail="On-call end time must be after the start time")
+        raise HTTPException(status_code=400, detail=tr("edit_oncall_end_before_start", lang))
 
     return start, end
 
@@ -63,9 +65,11 @@ async def add_oncall_override(
     - Admin: can add for any user
     - User: can only add for themselves
     """
-    require_own_or_admin(current_user, user_id, "Not authorized to add on-call for other users")
+    lang = current_user.language
+    require_own_or_admin(current_user, user_id, tr("edit_oncall_add_forbidden", lang))
+    refuse_swap_rows(session, current_user, user_id, dates)
 
-    window_start, window_end = _parse_window(start_time, end_time)
+    window_start, window_end = _parse_window(start_time, end_time, lang)
 
     def _row_for(oc_date):
         return (
@@ -75,7 +79,7 @@ async def add_oncall_override(
         )
 
     def conflicts(oc_date):
-        return "hade redan en beredskapsändring" if _row_for(oc_date) else None
+        return tr("edit_skip_oncall", lang) if _row_for(oc_date) else None
 
     def write(oc_date):
         existing = _row_for(oc_date)
@@ -85,6 +89,8 @@ async def add_oncall_override(
             existing.end_time = window_end
             existing.reason = reason
             existing.created_by = current_user.id
+            # An edited swap row becomes a manual row, so cancelling the swap leaves it.
+            release_swap_row(session, existing)
             return
         session.add(
             OnCallOverride(
@@ -98,7 +104,7 @@ async def add_oncall_override(
             )
         )
 
-    written, skipped = apply_to_dates(dates, write, conflicts)
+    written, skipped = apply_to_dates(dates, write, conflicts, lang)
 
     session.commit()
 
@@ -106,7 +112,7 @@ async def add_oncall_override(
     clear_schedule_cache()
 
     return RedirectResponse(
-        url=edit_redirect_url(user_id, dates, return_to, written, skipped),
+        url=edit_redirect_url(user_id, dates, return_to, written, skipped, lang=lang),
         status_code=303,
     )
 
@@ -127,7 +133,8 @@ async def remove_oncall_override(
     - User: can only remove for themselves
     """
     # Permission check
-    require_own_or_admin(current_user, user_id, "Not authorized to remove on-call for other users")
+    require_own_or_admin(current_user, user_id, tr("edit_oncall_remove_forbidden", current_user.language))
+    refuse_swap_rows(session, current_user, user_id, [date])
 
     oc_date = date
 
@@ -143,6 +150,7 @@ async def remove_oncall_override(
         existing.end_time = None
         existing.reason = reason
         existing.created_by = current_user.id
+        release_swap_row(session, existing)
     else:
         # Create new override
         override = OnCallOverride(
@@ -178,16 +186,18 @@ async def delete_oncall_override(
     override = session.query(OnCallOverride).get(override_id)
 
     if not override:
-        raise HTTPException(status_code=404, detail="On-call override not found")
+        raise HTTPException(status_code=404, detail=tr("edit_oncall_not_found", current_user.language))
 
     # Permission check
-    require_own_or_admin(current_user, override.user_id, "Not authorized to delete this on-call override")
+    require_own_or_admin(current_user, override.user_id, tr("edit_oncall_delete_forbidden", current_user.language))
+    refuse_swap_rows(session, current_user, override.user_id, [override.date])
 
     # Save info for redirect
     user_id = override.user_id
     date = override.date
 
     # Delete
+    release_swap_row(session, override)
     session.delete(override)
     session.commit()
 
