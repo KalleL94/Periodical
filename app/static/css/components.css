@@ -1285,7 +1285,7 @@ td.calendar-day.is-selected .calendar-day-content { background: rgba(123, 211, 1
    The .swap-grid prefix outranks the keep-table padding in tables.css. */
 .swap-grid { margin: 1rem 0 0.5rem; }
 .swap-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; }
-/* Muted text and no hover, so a disabled Previous or Today reads as off next to Next. */
+/* Muted text and no hover, so a disabled step reads as off next to the live ones. */
 .swap-nav button:disabled,
 .swap-nav button:disabled:hover { color: var(--muted); background: transparent; border-color: var(--table-border); opacity: 0.45; cursor: not-allowed; }
 .swap-range { color: var(--muted); font-family: var(--font-mono); font-size: 0.85rem; }

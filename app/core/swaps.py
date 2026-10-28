@@ -28,7 +28,7 @@ from app.database.database import (
 logger = logging.getLogger(__name__)
 
 MIN_REST_HOURS = 11
-MAX_PAIRS = 10
+MAX_PAIRS = 40
 MIN_WEEKLY_REST_HOURS = 36
 # The compare screen starts at most MAX_START_DAYS ahead and shows up to MAX_WEEKS weeks,
 # so no pair it offers lies beyond MAX_SWAP_DAYS from today.

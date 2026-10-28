@@ -333,6 +333,7 @@ async def new_swap_page(
             "with_id": with_id,
             "shift_colors": colors,
             "max_pairs": MAX_PAIRS,
+            "max_start_days": MAX_START_DAYS,
         },
     )
 

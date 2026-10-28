@@ -37,6 +37,9 @@ def test_new_page_renders(test_client, test_db):
     assert "Anna Colleague" in page
     assert 'data-date="2026-10-27"' in page
     assert 'data-with="2"' in page
+    # The window steps need the pair cap and the server's start horizon.
+    assert 'data-max="40"' in page
+    assert 'data-horizon="400"' in page
     assert 'name="csrf_token"' in page
     assert "/static/js/swap-compare.js" in page
     # Neither the viewer, admins nor inactive users are colleagues.

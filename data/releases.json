@@ -27,6 +27,11 @@
         "type": "fix",
         "sv": "Kontrollen av 11 timmars dygnsvila räknade passet du lämnar bort som om du fortfarande jobbade det.",
         "en": "The 11 hour rest check counted the shift you give away as if you still worked it."
+      },
+      {
+        "type": "nyhet",
+        "sv": "På bytesskärmen kan du nu flytta en vecka i taget med Föregående vecka och Nästa vecka, utöver knapparna som hoppar fem veckor.",
+        "en": "On the swap screen you can now move one week at a time with Previous week and Next week, next to the buttons that jump five weeks."
       }
     ]
   },

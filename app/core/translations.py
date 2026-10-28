@@ -289,6 +289,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "swap_new_load_error": "Kunde inte hämta schemat. Försök igen.",
         "swap_new_prev": "Föregående period",
         "swap_new_next": "Nästa period",
+        "swap_new_prev_week": "Föregående vecka",
+        "swap_new_next_week": "Nästa vecka",
         "swap_new_today": "Idag",
         # Swap rules and errors
         "swap_self": "Kan inte byta pass med dig själv",
@@ -1550,6 +1552,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "swap_new_load_error": "Could not load the schedule. Try again.",
         "swap_new_prev": "Previous period",
         "swap_new_next": "Next period",
+        "swap_new_prev_week": "Previous week",
+        "swap_new_next_week": "Next week",
         "swap_new_today": "Today",
         # Swap rules and errors
         "swap_self": "You cannot swap shifts with yourself",

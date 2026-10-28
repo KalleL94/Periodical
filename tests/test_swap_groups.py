@@ -93,11 +93,11 @@ async def test_propose_prefixes_check_swap_reason(db):
 
 
 @pytest.mark.anyio
-async def test_propose_refuses_over_ten(db):
+async def test_propose_refuses_over_forty(db):
     with pytest.raises(HTTPException) as exc:
-        await _propose(db, [PAIR_A] * 11)
+        await _propose(db, [PAIR_A] * 41)
     assert exc.value.status_code == 400
-    assert "10" in exc.value.detail
+    assert "40" in exc.value.detail
     assert db.query(ShiftSwap).count() == 0
 
 
