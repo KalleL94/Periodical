@@ -29,12 +29,13 @@ _ICA_ONCALL = [
     (datetime.date(2000, 1, 1), {"oc_vardag": 75, "oc_helg": 97, "oc_helgdag": 112, "oc_storhelg": 192}),
     (datetime.date(2026, 5, 1), {"oc_vardag": 78, "oc_helg": 100, "oc_helgdag": 116, "oc_storhelg": 198}),
 ]
+_FLAT_ONCALL = [
+    (datetime.date(2000, 1, 1), {"oc_vardag": 75, "oc_helg": 97, "oc_helgdag": 112, "oc_storhelg": 192}),
+]
 ONCALL_RATES_BY_PROFILE: dict[str, list[tuple[datetime.date, dict[str, int]]]] = {
     "ica": _ICA_ONCALL,
-    "agiremus": [
-        (datetime.date(2000, 1, 1), {"oc_vardag": 75, "oc_helg": 97, "oc_helgdag": 112, "oc_storhelg": 192}),
-    ],
-    "experis": _ICA_ONCALL,
+    "agiremus": _FLAT_ONCALL,
+    "experis": _FLAT_ONCALL,
     "nexer": [],
 }
 

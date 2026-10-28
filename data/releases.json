@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.14.1",
+    "date": "2026-10-28",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Experis-profilen följer nu sitt eget avtal. Beredskap är 75/97/112/192 kr/h året ut, övertid prissätts på månadslön delat med 92 vardagar 06:00 till 20:00 och delat med 72 övrig tid, och OB på fredagskvällar räknas på månadslön delat med 500.",
+        "en": "The Experis profile now follows its own agreement. On-call is 75/97/112/192 SEK/h all year, overtime is priced at monthly salary divided by 92 on weekdays 06:00 to 20:00 and divided by 72 at other times, and Friday evening OB is calculated on monthly salary divided by 500."
+      }
+    ]
+  },
+  {
     "version": "1.14.0",
     "date": "2026-10-24",
     "entries": [

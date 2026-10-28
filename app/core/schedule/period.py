@@ -1756,7 +1756,7 @@ def _compute_overtime_pay(
     """
     from app.database.database import WageType
 
-    from .overtime import nexer_overtime_pay
+    from .overtime import OT_DAY_DIVISOR_BY_PROFILE, nexer_overtime_pay
     from .wages import _get_wage_type, get_ot_hourly_rate_from_stored_wage, get_user_wage
 
     wage_for_date = get_user_wage(session, wage_user_id, settings.monthly_salary, effective_date=current_day)
@@ -1771,12 +1771,18 @@ def _compute_overtime_pay(
     ot_hours = sum(r.hours for r in ot_rows if r.kind == "ot")
     ot_pay = hourly_rate * ot_hours
     is_nexer = rule_set_for(profile) == "nexer"
-    nexer_priced = (
-        ot_rate_override is None and ot_hours and is_nexer and _get_wage_type(session, wage_user_id) != WageType.HOURLY
+    day_divisor = OT_DAY_DIVISOR_BY_PROFILE.get(profile)
+    clock_priced = (
+        ot_rate_override is None
+        and ot_hours
+        and day_divisor
+        and _get_wage_type(session, wage_user_id) != WageType.HOURLY
     )
-    if nexer_priced:
+    if clock_priced:
         ot_pay = sum(
-            nexer_overtime_pay(wage_for_date, *parse_ot_times(r, current_day)) for r in ot_rows if r.kind == "ot"
+            nexer_overtime_pay(wage_for_date, *parse_ot_times(r, current_day), day_divisor)
+            for r in ot_rows
+            if r.kind == "ot"
         )
         hourly_rate = ot_pay / ot_hours
     by_day: dict = {}
@@ -1791,7 +1797,9 @@ def _compute_overtime_pay(
             while start < end:
                 stop = min(end, datetime.datetime.combine(start.date() + datetime.timedelta(days=1), datetime.time()))
                 part = (stop - start).total_seconds() / 3600 * (r.hours / span if span else 0.0)
-                pay = nexer_overtime_pay(wage_for_date, start, stop) if nexer_priced else hourly_rate * part
+                pay = (
+                    nexer_overtime_pay(wage_for_date, start, stop, day_divisor) if clock_priced else hourly_rate * part
+                )
                 bucket = by_day.setdefault(start.date(), {"hours": 0.0, "pay": 0.0})
                 bucket["hours"] += part
                 bucket["pay"] += pay

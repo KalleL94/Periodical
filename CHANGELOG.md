@@ -22,6 +22,11 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.14.1] - 2026-10-28
+
+### Changed
+- The Experis employer profile no longer prices as ICA. On-call uses a flat table, 75/97/112/192 kr/h with no 2026-05-01 step (`_FLAT_ONCALL`, shared with Agiremus). Overtime is priced by the clock like Nexer, but on salary / 92 for 06:00-20:00 Mon-Fri on a non-red day and salary / 72 otherwise: `OT_DAY_DIVISOR_BY_PROFILE` maps profile to day divisor, `nexer_overtime_pay` takes it as `day_divisor`, and the per-day midnight clipping stays Nexer only. OB1 hours on a Friday are priced on salary / 500 instead of 600 (`FRIDAY_OB1_DIVISOR_BY_PROFILE`, applied in `compute_day_ob_pay`). The hours stay in OB1, so columns and totals keep their shape, and a fixed OB1 rate override still wins. Sick-pay OB (`calculate_absence_deductions`) does not apply the Friday divisor.
+
 ## [1.14.0] - 2026-10-24
 
 ### Changed
