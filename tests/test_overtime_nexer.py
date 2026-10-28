@@ -124,3 +124,17 @@ def test_nexer_ot_rate_override_wins(ot_env):
         date(2026, 11, 18), date(2026, 11, 18), person_id=1, session=session, user_rates_map={1: rates}
     )
     assert days[0]["ot_pay"] == 4 * 300
+
+
+def test_experis_ot_divisor_92_by_day_72_otherwise():
+    pay = nexer_overtime_pay(SALARY, dt(2026, 11, 18, 18), dt(2026, 11, 18, 22), 92)
+    assert round(pay, 2) == round(2 * SALARY / 92 + 2 * SALARY / 72, 2)
+
+
+def test_experis_ot_through_period(ot_env):
+    session, user = ot_env
+    user.employer_profile = "experis"
+    session.commit()
+    day = _ot_day(session)
+    expected = 2 * SALARY / 92 + 2 * SALARY / 72
+    assert round(day["ot_pay"], 2) == round(expected, 2)

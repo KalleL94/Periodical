@@ -108,3 +108,54 @@ def test_off_oc_ot_and_missing_times_yield_zero_ob():
         assert all(v == 0.0 for v in ob_pay.values())
         assert ob_by_day == {}
         assert set(ob_hours) == {r.code for r in rules}
+
+
+def _friday_evening(profile, **extra):
+    d = datetime.date(2026, 3, 6)  # Friday
+    start = datetime.datetime.combine(d, datetime.time(14, 0))
+    end = datetime.datetime.combine(d, datetime.time(22, 30))
+    day = {**_day("N2", start, end), "date": d, "employer_profile": profile, **extra}
+    return compute_day_ob_pay(day, _rules(), 27000, extra.get("rates"))
+
+
+def test_experis_friday_evening_uses_divisor_500():
+    ob_hours, ob_pay, _ = _friday_evening("experis")
+    assert ob_hours["OB1"] == 4.5
+    assert round(ob_pay["OB1"], 2) == round(4.5 * 27000 / 500, 2)
+
+
+def test_ica_friday_evening_keeps_divisor_600():
+    _, ob_pay, _ = _friday_evening("ica")
+    assert round(ob_pay["OB1"], 2) == round(4.5 * 27000 / 600, 2)
+
+
+def test_experis_thursday_evening_keeps_divisor_600():
+    d = datetime.date(2026, 3, 5)
+    start = datetime.datetime.combine(d, datetime.time(14, 0))
+    end = datetime.datetime.combine(d, datetime.time(22, 30))
+    day = {**_day("N2", start, end), "date": d, "employer_profile": "experis"}
+    _, ob_pay, _ = compute_day_ob_pay(day, _rules(), 27000)
+    assert round(ob_pay["OB1"], 2) == round(4.5 * 27000 / 600, 2)
+
+
+def test_experis_friday_night_shift_prices_only_friday_hours():
+    d = datetime.date(2026, 3, 6)
+    start = datetime.datetime.combine(d, datetime.time(22, 0))
+    end = datetime.datetime.combine(d + datetime.timedelta(days=1), datetime.time(6, 0))
+    day = {**_day("N3", start, end), "date": d, "employer_profile": "experis"}
+    ob_hours, ob_pay, _ = compute_day_ob_pay(day, _rules(), 27000)
+    assert ob_hours["OB1"] == 2
+    assert round(ob_pay["OB1"], 2) == round(2 * 27000 / 500, 2)
+    assert round(ob_pay["OB2"], 2) == round(6 * 27000 / 400, 2)
+
+
+def test_experis_friday_rate_override_wins():
+    _, ob_pay, _ = _friday_evening("experis", rates={"OB1": 60})
+    assert round(ob_pay["OB1"], 2) == round(4.5 * 60, 2)
+
+
+def test_experis_friday_hours_override_uses_divisor_500():
+    d = datetime.date(2026, 3, 6)
+    day = {"shift": None, "date": d, "employer_profile": "experis", "ob_hours_override": {"OB1": 3.0}}
+    ob_hours, ob_pay, _ = compute_day_ob_pay(day, _rules(), 27000)
+    assert round(ob_pay["OB1"], 2) == round(3 * 27000 / 500, 2)

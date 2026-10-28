@@ -353,10 +353,9 @@ def test_agiremus_keeps_old_rates():
     assert profile_oncall_rates("agiremus", datetime.date(2026, 6, 1))["OC_WEEKDAY"] == 75
 
 
-def test_experis_follows_ica_table():
-    assert profile_oncall_rates("experis", datetime.date(2026, 6, 1)) == profile_oncall_rates(
-        "ica", datetime.date(2026, 6, 1)
-    )
+def test_experis_keeps_old_rates():
+    assert profile_oncall_rates("experis", datetime.date(2026, 6, 1))["OC_WEEKDAY"] == 75
+    assert profile_oncall_rates("experis", datetime.date(2026, 6, 1))["OC_SPECIAL"] == 192
 
 
 def test_nexer_has_no_fixed_rates():
