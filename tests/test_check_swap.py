@@ -145,7 +145,8 @@ CASES = [
     ("past_date", _none, 8, 7, D(2026, 10, 20), D(2026, 10, 29), "Kan bara byta framtida pass"),
     ("duplicate", _duplicate, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Byte redan föreslaget för dessa datum"),
     ("legacy_swap_slot", _legacy_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SLOT_TAKEN),
-    ("new_swap_slot", _new_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), SLOT_TAKEN),
+    # An accepted swap applied as overrides is already in the schedule, so it no longer holds its slot.
+    ("new_swap_slot_free", _new_accepted, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Kollegan jobbar redan det datumet"),
     # A manual change is no longer a stop: the effective N1 on the 28th means user 7 works then.
     ("manual_override", _manual_override, 8, 7, D(2026, 10, 28), D(2026, 10, 29), "Kollegan jobbar redan det datumet"),
     ("manual_override_allowed", _manual_n1, 7, 8, D(2026, 10, 26), D(2026, 10, 26), None),

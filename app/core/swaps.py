@@ -59,7 +59,11 @@ def find_active_swap_conflict(
     statuses: tuple[SwapStatus, ...],
     exclude_swap_ids: frozenset[int] = frozenset(),
 ) -> ShiftSwap | None:
-    """Return an active swap that already uses any of the affected user/date slots."""
+    """Return an active swap that already uses any of the affected user/date slots.
+
+    An accepted swap applied as overrides does not block: the schedule already shows its result.
+    A legacy accepted swap still resolves through swap_map, so it keeps blocking.
+    """
     if not participant_dates:
         return None
 
@@ -69,6 +73,7 @@ def find_active_swap_conflict(
         ShiftSwap.status.in_(statuses),
         (ShiftSwap.requester_id.in_(user_ids) | ShiftSwap.target_id.in_(user_ids)),
         (ShiftSwap.requester_date.in_(dates) | ShiftSwap.target_date.in_(dates)),
+        ~((ShiftSwap.status == SwapStatus.ACCEPTED) & ShiftSwap.applied_as_override.is_(True)),
     )
     if exclude_swap_ids:
         query = query.filter(ShiftSwap.id.notin_(exclude_swap_ids))
