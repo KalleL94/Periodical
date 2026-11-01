@@ -203,13 +203,14 @@ class PasswordChange(BaseModel):
 
 def _parse_rates_form(form) -> dict:
     """Parse rate form fields into custom_rates dict."""
-    from app.core.rates import DEFAULT_OB_DIVISORS, DEFAULT_VACATION_RATES
+    from app.core.constants import OB_CODES
+    from app.core.rates import DEFAULT_VACATION_RATES
 
     custom = {}
 
     # OB rates (kr/tim, fixed)
     ob = {}
-    for code in DEFAULT_OB_DIVISORS:
+    for code in OB_CODES:
         val = form.get(f"rate_ob_{code}", "").strip()
         if val:
             ob[code] = float(val)

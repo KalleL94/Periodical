@@ -285,10 +285,16 @@ def delete_rate_history(session, rate_id: int, user_id: int):
     session.commit()
 
 
-def get_all_defaults() -> dict:
-    """Return all default rates for display in UI. On-call shows today's ICA amounts."""
+def get_all_defaults(profile: str | None = None) -> dict:
+    """Return all default rates for display in UI. On-call shows today's ICA amounts.
+
+    Friday evening OB (OB1F) only exists for Experis, so only that profile gets its field.
+    """
+    ob_divisors = dict(DEFAULT_OB_DIVISORS)
+    if profile == "experis":
+        ob_divisors = {"OB1": ob_divisors["OB1"], "OB1F": 500, **{k: v for k, v in ob_divisors.items() if k != "OB1"}}
     return {
-        "ob_divisors": dict(DEFAULT_OB_DIVISORS),
+        "ob_divisors": ob_divisors,
         "ot_divisor": DEFAULT_OT_DIVISOR,
         "oncall": profile_oncall_rates("ica", get_today()),
         "vacation": dict(DEFAULT_VACATION_RATES),

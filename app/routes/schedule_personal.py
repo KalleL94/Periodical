@@ -385,7 +385,11 @@ async def show_day_for_person(
                 from app.core.schedule.ob import calculate_ob_pay as _calc_ob_pay_sick
 
                 full_shift_ob = _calc_ob_pay_sick(
-                    _sick_ob_start, shift_end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
+                    _sick_ob_start,
+                    shift_end_dt,
+                    rules_for_profile(combined_rules, canonical.get("employer_profile")),
+                    monthly_salary,
+                    rate_overrides=_user_rates["ob"],
                 )
                 sick_ob_pay_today = sum(full_shift_ob.values()) * (sjuklon_hours_today / full_shift_hours) * 0.8
         else:

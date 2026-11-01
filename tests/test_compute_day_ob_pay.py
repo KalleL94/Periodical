@@ -155,3 +155,21 @@ def test_experis_weekend_runs_saturday_00_to_sunday_24():
 def test_ica_saturday_night_stays_night_ob():
     ob_hours, _, _ = _pay("ica", datetime.date(2026, 3, 6), (22, 0), (6, 0), True, "N3")
     assert ob_hours["OB2"] == 6
+
+
+def test_ob1f_fixed_rate_and_manual_hours_override_reach_friday_evening():
+    start = datetime.datetime.combine(FRIDAY, datetime.time(14, 0))
+    end = datetime.datetime.combine(FRIDAY, datetime.time(22, 30))
+    day = {**_day("N2", start, end), "date": FRIDAY, "employer_profile": "experis"}
+    _, pay, _ = compute_day_ob_pay(day, _rules(), 27000, {"OB1F": 70.0})
+    assert pay["OB1F"] == 4.5 * 70.0
+    day["ob_hours_override"] = {"OB1F": 2.0}
+    hours, pay, _ = compute_day_ob_pay(day, _rules(), 27000)
+    assert hours["OB1F"] == 2.0 and pay["OB1F"] == 2.0 * 27000 / 500
+
+
+def test_ob1f_rate_field_is_experis_only():
+    from app.core.rates import get_all_defaults
+
+    assert "OB1F" not in get_all_defaults("ica")["ob_divisors"]
+    assert get_all_defaults("experis")["ob_divisors"]["OB1F"] == 500
