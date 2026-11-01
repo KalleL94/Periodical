@@ -226,7 +226,7 @@
                             {% for code in ob_codes %}
                                 {% set h = ob_hours.get(code, 0.0) %}
                                 <tr{% if h == 0 %} class="pay-zero-row"{% endif %}>
-                                    <td class="num">{{ ob_labels.get(code, code) }}</td>
+                                    <td class="num">{{ ob_label(ob_labels.get(code, code), employer_profile) }}</td>
                                     <td class="td_right num">
                                         <span class="pay-view">{{ "%.2f"|format(h) }}</span>
                                         <input class="pay-edit pay-edit-num" form="pay-override-form"
@@ -267,7 +267,7 @@
                     <tbody>
                         {% for code in ob_codes %}
                             <tr>
-                                <td class="num">{{ ob_labels.get(code, code) }}</td>
+                                <td class="num">{{ ob_label(ob_labels.get(code, code), employer_profile) }}</td>
                                 <td class="td_right num">{{ "%.2f"|format(ob_pay.get(code, 0.0)) }}</td>
                             </tr>
                         {% endfor %}

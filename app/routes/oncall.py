@@ -14,7 +14,7 @@ from app.auth.auth import get_current_user
 from app.core.helpers import apply_to_dates, edit_redirect_url, require_own_or_admin
 from app.core.schedule import clear_schedule_cache
 from app.core.translations import tr
-from app.database.database import OnCallOverride, OnCallOverrideType, User, get_db
+from app.database.database import Absence, AbsenceType, OnCallOverride, OnCallOverrideType, User, get_db
 from app.routes.shift_override import refuse_swap_rows, release_swap_row
 
 router = APIRouter(prefix="/oncall", tags=["oncall"])
@@ -82,6 +82,10 @@ async def add_oncall_override(
         return tr("edit_skip_oncall", lang) if _row_for(oc_date) else None
 
     def write(oc_date):
+        # A newer manual change replaces an OFF absence, which would otherwise outrank the on-call.
+        session.query(Absence).filter(
+            Absence.user_id == user_id, Absence.date == oc_date, Absence.absence_type == AbsenceType.OFF
+        ).delete()
         existing = _row_for(oc_date)
         if existing:
             existing.override_type = OnCallOverrideType.ADD

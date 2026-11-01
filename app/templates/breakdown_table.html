@@ -2,6 +2,8 @@
    Expects: bd_days (list of day dicts), optional bd_csv_filename for the CSV button,
    optional employer_profile (on-call column labels; ica when absent). #}
 {% set oc_labels = oncall_column_labels.get(employer_profile|default('ica'), oncall_column_labels.ica) %}
+{# Experis splits Friday evening (OB1F) from Monday to Thursday evening into a column of its own. #}
+{% set has_ob1f = employer_profile|default('ica') == 'experis' %}
 {# Nexer counts every hour on the calendar day it is worked, so its table opens in that mode. #}
 {% set by_day_default = employer_profile|default('ica') == 'nexer' %}
 <div id="breakdown-section" class="{{ 'ob-by-day' if by_day_default else 'ob-by-shift' }}" hidden>
@@ -21,7 +23,8 @@
                 <button class="btn secondary btn-sm" id="breakdown-csv"
                     onclick="exportBreakdownCsv()"
                     data-filename="{{ bd_csv_filename }}"
-                    data-headers='{{ breakdown_csv_headers(employer_profile|default("ica"))|tojson }}'>
+                    data-headers='{{ breakdown_csv_headers(employer_profile|default("ica"))|tojson }}'
+                    data-ob1f="{{ 1 if has_ob1f else 0 }}">
                     {{ t.month_export_csv }}
                 </button>{% endif %}
             </div>
@@ -36,34 +39,38 @@
                         <th class="th_right">{{ t.month_col_start }}</th>
                         <th class="th_right">{{ t.month_col_end }}</th>
                         <th class="th_right">{{ t.month_col_norm }}</th>
-                        <th class="th_right">OB1(x1,12)</th>
-                        <th class="th_right">OB2(x1,18)</th>
-                        <th class="th_right">OB3(x1,24)</th>
-                        <th class="th_right">OB4(x1,24)</th>
-                        <th class="th_right">OB5(x1,47)</th>
+                        {# The x factors are Agiremus's own notation. #}
+                        {% set xf = employer_profile|default('ica') == 'agiremus' %}
+                        <th class="th_right">OB1{{ '(x1,12)' if xf }}</th>
+                        {% if has_ob1f %}<th class="th_right">OB1F</th>{% endif %}
+                        <th class="th_right">OB2{{ '(x1,18)' if xf }}</th>
+                        <th class="th_right">OB3{{ '(x1,24)' if xf }}</th>
+                        <th class="th_right">OB4{{ '(x1,24)' if xf }}</th>
+                        <th class="th_right">OB5{{ '(x1,47)' if xf }}</th>
                         <th class="th_right">{{ oc_labels.oc_vardag }}</th>
                         <th class="th_right">{{ oc_labels.oc_helg }}</th>
                         <th class="th_right">{{ oc_labels.oc_helgdag }}</th>
                         <th class="th_right">{{ oc_labels.oc_storhelg }}</th>
-                        <th class="th_right">{{ t.month_col_ot }}</th>
+                        <th class="th_right">{{ t.month_col_ot if xf else t.month_col_ot.split('(')[0] }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% set ns = namespace(
-                        tot_norm=0, tot_ob1=0, tot_ob2=0, tot_ob3=0, tot_ob4=0, tot_ob5=0,
+                        tot_norm=0, tot_ob1=0, tot_ob1f=0, tot_ob2=0, tot_ob3=0, tot_ob4=0, tot_ob5=0,
                         tot_vardag=0, tot_helg=0, tot_helgdag=0, tot_storhelg=0, tot_ot=0,
-                        pay_ob1=0, pay_ob2=0, pay_ob3=0, pay_ob4=0, pay_ob5=0,
+                        pay_ob1=0, pay_ob1f=0, pay_ob2=0, pay_ob3=0, pay_ob4=0, pay_ob5=0,
                         pay_vardag=0, pay_helg=0, pay_helgdag=0, pay_storhelg=0, pay_ot=0,
                         has_rows=false
                     ) %}
 
                     {% for d in bd_days %}
                         {% set ob1 = d.ob_hours.get('OB1', 0) or 0 %}
+                        {% set ob1f = d.ob_hours.get('OB1F', 0) or 0 %}
                         {% set ob2 = d.ob_hours.get('OB2', 0) or 0 %}
                         {% set ob3 = d.ob_hours.get('OB3', 0) or 0 %}
                         {% set ob4 = d.ob_hours.get('OB4', 0) or 0 %}
                         {% set ob5 = d.ob_hours.get('OB5', 0) or 0 %}
-                        {% set ob_sum = ob1 + ob2 + ob3 + ob4 + ob5 %}
+                        {% set ob_sum = ob1 + ob1f + ob2 + ob3 + ob4 + ob5 %}
 
                         {# Non-OB hours: shift hours minus OB hours (only for regular work shifts) #}
                         {% set is_work_shift = d.shift and d.shift.code not in ('OFF', 'OC', 'OT') %}
@@ -84,11 +91,12 @@
                         {# Per-calendar-day OB and OT: aggregated across all shifts touching this day #}
                         {% set cd_ob = d.ob_hours_calendar_day if d.ob_hours_calendar_day is defined else {} %}
                         {% set cd_ob1 = cd_ob.get('OB1', 0) or 0 %}
+                        {% set cd_ob1f = cd_ob.get('OB1F', 0) or 0 %}
                         {% set cd_ob2 = cd_ob.get('OB2', 0) or 0 %}
                         {% set cd_ob3 = cd_ob.get('OB3', 0) or 0 %}
                         {% set cd_ob4 = cd_ob.get('OB4', 0) or 0 %}
                         {% set cd_ob5 = cd_ob.get('OB5', 0) or 0 %}
-                        {% set cd_ob_sum = cd_ob1 + cd_ob2 + cd_ob3 + cd_ob4 + cd_ob5 %}
+                        {% set cd_ob_sum = cd_ob1 + cd_ob1f + cd_ob2 + cd_ob3 + cd_ob4 + cd_ob5 %}
                         {% set cd_ot = d.ot_hours_calendar_day if d.ot_hours_calendar_day is defined else 0 %}
                         {% set cd_row_total = cd_ob_sum + oc_vardag + oc_helg + oc_helgdag + oc_storhelg + cd_ot %}
 
@@ -103,12 +111,14 @@
                             {% set cdp = d.calendar_day_pay if d.calendar_day_pay is defined else none %}
                             {% if cdp %}
                                 {% set ns.tot_ob1 = ns.tot_ob1 + (cdp.ob_hours.get('OB1', 0) or 0) %}
+                                {% set ns.tot_ob1f = ns.tot_ob1f + (cdp.ob_hours.get('OB1F', 0) or 0) %}
                                 {% set ns.tot_ob2 = ns.tot_ob2 + (cdp.ob_hours.get('OB2', 0) or 0) %}
                                 {% set ns.tot_ob3 = ns.tot_ob3 + (cdp.ob_hours.get('OB3', 0) or 0) %}
                                 {% set ns.tot_ob4 = ns.tot_ob4 + (cdp.ob_hours.get('OB4', 0) or 0) %}
                                 {% set ns.tot_ob5 = ns.tot_ob5 + (cdp.ob_hours.get('OB5', 0) or 0) %}
                                 {% set ns.tot_ot = ns.tot_ot + cdp.ot_hours %}
                                 {% set ns.pay_ob1 = ns.pay_ob1 + (cdp.ob_pay.get('OB1', 0) or 0) %}
+                                {% set ns.pay_ob1f = ns.pay_ob1f + (cdp.ob_pay.get('OB1F', 0) or 0) %}
                                 {% set ns.pay_ob2 = ns.pay_ob2 + (cdp.ob_pay.get('OB2', 0) or 0) %}
                                 {% set ns.pay_ob3 = ns.pay_ob3 + (cdp.ob_pay.get('OB3', 0) or 0) %}
                                 {% set ns.pay_ob4 = ns.pay_ob4 + (cdp.ob_pay.get('OB4', 0) or 0) %}
@@ -120,6 +130,7 @@
                                 {% set ns.tot_norm = ns.tot_norm + norm %}
                                 {% if not cdp %}
                                 {% set ns.tot_ob1 = ns.tot_ob1 + ob1 %}
+                                {% set ns.tot_ob1f = ns.tot_ob1f + ob1f %}
                                 {% set ns.tot_ob2 = ns.tot_ob2 + ob2 %}
                                 {% set ns.tot_ob3 = ns.tot_ob3 + ob3 %}
                                 {% set ns.tot_ob4 = ns.tot_ob4 + ob4 %}
@@ -135,6 +146,7 @@
                                    mid-period is priced with the rate in force on each day. #}
                                 {% if not cdp %}
                                 {% set ns.pay_ob1 = ns.pay_ob1 + (d.ob_pay.get('OB1', 0) or 0) %}
+                                {% set ns.pay_ob1f = ns.pay_ob1f + (d.ob_pay.get('OB1F', 0) or 0) %}
                                 {% set ns.pay_ob2 = ns.pay_ob2 + (d.ob_pay.get('OB2', 0) or 0) %}
                                 {% set ns.pay_ob3 = ns.pay_ob3 + (d.ob_pay.get('OB3', 0) or 0) %}
                                 {% set ns.pay_ob4 = ns.pay_ob4 + (d.ob_pay.get('OB4', 0) or 0) %}
@@ -183,6 +195,7 @@
                                         <td class="td_right num"></td>
                                         <td class="td_right num"></td>
                                         <td class="td_right num"></td>
+                                        {% if has_ob1f %}<td class="td_right num"></td>{% endif %}
                                         <td class="td_right num">{% if oc_vardag %}{{ "%.1f"|format(oc_vardag) }}{% endif %}</td>
                                         <td class="td_right num">{% if oc_helg %}{{ "%.1f"|format(oc_helg) }}{% endif %}</td>
                                         <td class="td_right num">{% if oc_helgdag %}{{ "%.1f"|format(oc_helgdag) }}{% endif %}</td>
@@ -197,6 +210,7 @@
                                         <td class="td_right num">{{ t_end }}</td>
                                         <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
                                         <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                        {% if has_ob1f %}<td class="td_right num">{% if ob1f %}{{ "%.1f"|format(ob1f) }}{% endif %}</td>{% endif %}
                                         <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
                                         <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
                                         <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
@@ -216,6 +230,7 @@
                                         <td class="td_right num">{{ t_end }}</td>
                                         <td class="td_right num">{% if norm %}{{ "%.1f"|format(norm) }}{% endif %}</td>
                                         <td class="td_right num">{% if ob1 %}{{ "%.1f"|format(ob1) }}{% endif %}</td>
+                                        {% if has_ob1f %}<td class="td_right num">{% if ob1f %}{{ "%.1f"|format(ob1f) }}{% endif %}</td>{% endif %}
                                         <td class="td_right num">{% if ob2 %}{{ "%.1f"|format(ob2) }}{% endif %}</td>
                                         <td class="td_right num">{% if ob3 %}{{ "%.1f"|format(ob3) }}{% endif %}</td>
                                         <td class="td_right num">{% if ob4 %}{{ "%.1f"|format(ob4) }}{% endif %}</td>
@@ -242,6 +257,7 @@
                                 <td class="td_right num"></td>
                                 <td class="td_right num"></td>
                                 <td class="td_right num">{% if cd_ob1 %}{{ "%.1f"|format(cd_ob1) }}{% endif %}</td>
+                                {% if has_ob1f %}<td class="td_right num">{% if cd_ob1f %}{{ "%.1f"|format(cd_ob1f) }}{% endif %}</td>{% endif %}
                                 <td class="td_right num">{% if cd_ob2 %}{{ "%.1f"|format(cd_ob2) }}{% endif %}</td>
                                 <td class="td_right num">{% if cd_ob3 %}{{ "%.1f"|format(cd_ob3) }}{% endif %}</td>
                                 <td class="td_right num">{% if cd_ob4 %}{{ "%.1f"|format(cd_ob4) }}{% endif %}</td>
@@ -258,7 +274,7 @@
 
                     {% if not ns.has_rows %}
                         <tr>
-                            <td colspan="16" class="table-empty">
+                            <td colspan="{{ 17 if has_ob1f else 16 }}" class="table-empty">
                                 {{ t.month_no_ob }}
                             </td>
                         </tr>
@@ -274,6 +290,7 @@
                         <td> </td>
                         <td class="td_right num"><strong>{% if ns.tot_norm %}{{ "%.1f"|format(ns.tot_norm) }}{% endif %}</strong></td>
                         <td class="td_right num"><strong>{% if ns.tot_ob1 %}{{ "%.1f"|format(ns.tot_ob1) }}{% endif %}</strong></td>
+                        {% if has_ob1f %}<td class="td_right num"><strong>{% if ns.tot_ob1f %}{{ "%.1f"|format(ns.tot_ob1f) }}{% endif %}</strong></td>{% endif %}
                         <td class="td_right num"><strong>{% if ns.tot_ob2 %}{{ "%.1f"|format(ns.tot_ob2) }}{% endif %}</strong></td>
                         <td class="td_right num"><strong>{% if ns.tot_ob3 %}{{ "%.1f"|format(ns.tot_ob3) }}{% endif %}</strong></td>
                         <td class="td_right num"><strong>{% if ns.tot_ob4 %}{{ "%.1f"|format(ns.tot_ob4) }}{% endif %}</strong></td>
@@ -295,6 +312,7 @@
                         <td> </td>
                         <td> </td>
                         <td class="td_right num"><strong>{{ kr(ns.pay_ob1) }}</strong></td>
+                        {% if has_ob1f %}<td class="td_right num"><strong>{{ kr(ns.pay_ob1f) }}</strong></td>{% endif %}
                         <td class="td_right num"><strong>{{ kr(ns.pay_ob2) }}</strong></td>
                         <td class="td_right num"><strong>{{ kr(ns.pay_ob3) }}</strong></td>
                         <td class="td_right num"><strong>{{ kr(ns.pay_ob4) }}</strong></td>
@@ -353,11 +371,14 @@
     // Pure CSV builder. headers come from the server (one per output column), rows are
     // arrays of the breakdown table's cell texts (0 Datum, 1 Dag, 2 Typ, 3 Start, 4 Slut,
     // 5 Norm, 6-10 OB1-OB5, 11-14 on-call, 15 OT). Four OB headers mean OB3 and OB4 are
-    // summed into one column (wage code 152), five mean one column per OB level.
-    function buildBreakdownCsv(headers, rows, byDay, sv) {
+    // summed into one column (wage code 152), five mean one column per OB level. With ob1f
+    // (Experis) the table has an extra OB1F cell after OB1, so every later index moves up one.
+    function buildBreakdownCsv(headers, rows, byDay, sv, ob1f) {
         var sep = sv ? ';' : ',';
-        var obCells = headers.length === 15 ? [[6], [7], [8, 9], [10]] : [[6], [7], [8], [9], [10]];
-        var cells = [[0], [1], [2], [3], [4], [5]].concat(obCells, [[11], [12], [13], [14], [15]]);
+        var obCells = ob1f ? [[6], [7], [8], [9, 10], [11]]
+            : headers.length === 15 ? [[6], [7], [8, 9], [10]] : [[6], [7], [8], [9], [10]];
+        var first = ob1f ? 12 : 11;
+        var cells = [[0], [1], [2], [3], [4], [5]].concat(obCells, [[first], [first + 1], [first + 2], [first + 3], [first + 4]]);
         // Start, end and normal hours belong to the shift, so calendar-day rows leave
         // them empty. Drop those columns rather than export three blank ones.
         var keep = cells.map(function (c, i) { return !byDay || c[0] < 3 || c[0] > 5; });
@@ -404,11 +425,11 @@
         var mode = byDay ? 'kalenderdag' : 'pass';
         var rows = [];
         section.querySelectorAll('table.breakdown-table tbody tr').forEach(function (tr) {
-            if (tr.offsetParent === null || tr.cells.length < 16) return;  // hidden or empty-state row
+            if (tr.offsetParent === null || tr.cells.length < (btn.dataset.ob1f === '1' ? 17 : 16)) return;  // hidden or empty-state row
             rows.push(Array.prototype.map.call(tr.cells, function (c) { return c.textContent.trim(); }));
         });
         var sv = document.getElementById('breakdown-csv-format').value === 'sv';
-        var csv = buildBreakdownCsv(JSON.parse(btn.dataset.headers), rows, byDay, sv);
+        var csv = buildBreakdownCsv(JSON.parse(btn.dataset.headers), rows, byDay, sv, btn.dataset.ob1f === '1');
         // BOM so Excel picks up UTF-8
         var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
         var a = document.createElement('a');

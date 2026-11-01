@@ -22,6 +22,16 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.14.2] - 2026-11-01
+
+### Changed
+- The Experis OB rules are their own set, `_EXPERIS_BASE_RULES` in `app/core/schedule/ob.py`, chosen per day by `rules_for_profile` from the day's employer profile (`_populate_single_person_day` and `compute_day_ob_pay`). The weekend runs Saturday 00:00 to Sunday 24:00 (OB3), so Saturday night is no longer OB2. Friday evening is its own code, `OB1F` (divisor 500), and `OB1` is Monday to Thursday evening (600). `FRIDAY_OB1_DIVISOR_BY_PROFILE` and the repricing in `compute_day_ob_pay` are gone. `OB_CODES` in `constants.py` lists every code, and the summary, payslip rows and year totals read it. The month and breakdown views add `OB1F` into the evening column, and the Experis Excel export and payslip show it as its own column and row. Other profiles never produce `OB1F`. `OB1F` has its own kr/h field on the rates form (`get_all_defaults(profile)`, Experis only), the payslip add-row select only offers it to Experis, and sick-pay OB prices through the profile rules. The ICA wage codes 150–153 are hidden from the OB labels of every other profile (`ob_label` in `routes/shared.py`), and the Agiremus x-factor notation (`OB1(x1,12)`, `ÖT(x2)`) only shows in Agiremus headers.
+- The overtime segment in the day editor defaults to Called in, and the start time is no longer prefilled with the shift end.
+
+### Fixed
+- An accepted swap that was applied as overrides no longer holds its slot: `find_active_swap_conflict` skips `ACCEPTED` swaps with `applied_as_override`, so the same dates can be swapped again. Pending swaps and legacy accepted swaps still block.
+- Adding a manual on-call on a day with an `OFF` absence replaces the absence instead of leaving both. Other absence types are untouched.
+
 ## [1.14.1] - 2026-10-28
 
 ### Changed

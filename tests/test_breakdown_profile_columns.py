@@ -104,3 +104,44 @@ def test_range_view_uses_the_profile_labels(test_client, test_db, oc_user, admin
     r = test_client.get("/range/1?weeks=3&from=2026-07-01")
     assert r.status_code == 200
     assert "B.Natt" in r.text
+
+
+def test_experis_month_has_its_own_friday_evening_column(test_client, test_db, oc_user):
+    assert ">OB1F</th>" in _month(test_client, test_db, "experis")
+    assert ">OB1F</th>" not in _month(test_client, test_db, "ica")
+
+
+def test_experis_month_summary_has_a_friday_evening_cell(test_client, test_db, oc_user):
+    assert "Fredag kväll (OB1F)" in _month(test_client, test_db, "experis")
+    assert "Fredag kväll (OB1F)" not in _month(test_client, test_db, "ica")
+
+
+def test_wage_codes_in_the_month_summary_are_ica_only(test_client, test_db, oc_user):
+    assert "(OB1/150?)" in _month(test_client, test_db, "ica")
+    html = _month(test_client, test_db, "experis")
+    assert "(OB1/150?)" not in html
+    assert "(OB1)" in html
+
+
+@pytest.mark.parametrize("path", ["/day/1/2026/5/8", "/year/1?year=2026", "/month/1/payslip?year=2026&month=5"])
+def test_wage_codes_are_ica_only_on_every_page(test_client, test_db, oc_user, path):
+    import re
+
+    def codes(profile):
+        test_db.query(User).filter_by(id=1).update({"employer_profile": profile})
+        test_db.commit()
+        clear_schedule_cache()
+        _login(test_client, "testuser", "testpass123")
+        r = test_client.get(path)
+        assert r.status_code == 200
+        return re.findall(r"\(15[0-3]\)|/15[0-3]", r.text)
+
+    assert codes("experis") == []
+
+
+def test_x_factors_are_agiremus_only(test_client, test_db, oc_user):
+    assert "OB1(x1,12)" in _month(test_client, test_db, "agiremus")
+    for profile in ("ica", "experis", "nexer"):
+        html = _month(test_client, test_db, profile)
+        assert "(x1," not in html
+        assert "(x2)" not in html

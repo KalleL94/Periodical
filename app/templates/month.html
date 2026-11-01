@@ -56,10 +56,11 @@
                 <th>{{ t.month_sum_shifts }}</th>
                 <th>{{ t.month_sum_hours }}</th>
                 <th>{{ t.month_sum_total_ob }}</th>
-                <th>{{ t.month_sum_evening }}</th>
-                <th>{{ t.month_sum_night }}</th>
-                <th>{{ t.month_sum_weekend }}</th>
-                <th>{{ t.month_sum_holiday }}</th>
+                <th>{{ ob_label(t.month_sum_evening, employer_profile|default('ica')) }}</th>
+                {% if employer_profile|default('ica') == 'experis' %}<th>{{ t.month_sum_evening_friday }}</th>{% endif %}
+                <th>{{ ob_label(t.month_sum_night, employer_profile|default('ica')) }}</th>
+                <th>{{ ob_label(t.month_sum_weekend, employer_profile|default('ica')) }}</th>
+                <th>{{ ob_label(t.month_sum_holiday, employer_profile|default('ica')) }}</th>
                 <th>{{ t.month_sum_oncall_hours }}</th>
                 <th>{{ t.month_sum_oncall_pay }}</th>
                 <th>{{ t.month_sum_ot_pay }}</th>
@@ -67,7 +68,7 @@
         </thead>
         {% endif %}
         <tbody>
-            {% set total_ob = (days.ob_pay.get('OB1',0) or 0) + (days.ob_pay.get('OB2',0) or 0)
+            {% set total_ob = (days.ob_pay.get('OB1',0) or 0) + (days.ob_pay.get('OB1F',0) or 0) + (days.ob_pay.get('OB2',0) or 0)
                               + (days.ob_pay.get('OB3',0) or 0) + (days.ob_pay.get('OB4',0) or 0)
                               + (days.ob_pay.get('OB5',0) or 0) %}
             <tr>
@@ -79,10 +80,11 @@
                 {% endif %}
                 {% if show_salary %}
                 <td data-label="{{ t.month_sum_total_ob }}">{{ "%.2f"|format(total_ob) }}</td>
-                <td data-label="{{ t.month_sum_evening }}">{{ "%.2f"|format(days.ob_hours.get('OB1',0) or 0) }}</td>
-                <td data-label="{{ t.month_sum_night }}">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
-                <td data-label="{{ t.month_sum_weekend }}">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
-                <td data-label="{{ t.month_sum_holiday }}">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
+                <td data-label="{{ ob_label(t.month_sum_evening, employer_profile|default('ica')) }}">{{ "%.2f"|format(days.ob_hours.get('OB1',0) or 0) }}</td>
+                {% if employer_profile|default('ica') == 'experis' %}<td data-label="{{ t.month_sum_evening_friday }}">{{ "%.2f"|format(days.ob_hours.get('OB1F',0) or 0) }}</td>{% endif %}
+                <td data-label="{{ ob_label(t.month_sum_night, employer_profile|default('ica')) }}">{{ "%.2f"|format(days.ob_hours.get('OB2',0) or 0) }}</td>
+                <td data-label="{{ ob_label(t.month_sum_weekend, employer_profile|default('ica')) }}">{{ "%.2f"|format((days.ob_hours.get('OB3',0) or 0) + (days.ob_hours.get('OB4',0) or 0)) }}</td>
+                <td data-label="{{ ob_label(t.month_sum_holiday, employer_profile|default('ica')) }}">{{ "%.2f"|format(days.ob_hours.get('OB5',0) or 0) }}</td>
                 <td data-label="{{ t.month_sum_oncall_hours }}">{{ "%.2f"|format(days.oncall_hours or 0) }}</td>
                 <td data-label="{{ t.month_sum_oncall_pay }}">{{ "%.2f"|format(days.oncall_pay or 0) }} kr</td>
                 <td data-label="{{ t.month_sum_ot_pay }}">{{ "%.2f"|format(days.ot_pay or 0) }} kr</td>

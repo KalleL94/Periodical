@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.14.2",
+    "date": "2026-11-01",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Experis-profilen räknar helgen från lördag 00:00 till söndag 24:00, och OB för fredagskväll är nu en egen OB-typ skild från måndag till torsdag kväll. Den syns som egen rad på lönespecen och egen kolumn i Excel.",
+        "en": "The Experis profile counts the weekend from Saturday 00:00 to Sunday 24:00, and Friday evening OB is now its own OB type, separate from Monday to Thursday evening. It shows as its own row on the payslip and its own column in Excel."
+      },
+      {
+        "type": "fix",
+        "sv": "Ett godkänt byte som redan är genomfört blockerar inte längre datumen, så samma dagar kan bytas igen.",
+        "en": "An accepted swap that has already been applied no longer blocks its dates, so the same days can be swapped again."
+      },
+      {
+        "type": "fix",
+        "sv": "Att lägga till beredskap på en dag med ledighet (OFF) ersätter nu ledigheten.",
+        "en": "Adding on-call on a day with time off (OFF) now replaces the time off."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Övertid i dagredigeringen är förvald som Inkallad.",
+        "en": "Overtime in the day editor defaults to Called in."
+      },
+      {
+        "type": "nyhet",
+        "sv": "Löneartskoderna 150–153 visas bara för ICA, och x-faktorerna i OB-rubrikerna bara för Agiremus.",
+        "en": "Wage codes 150–153 only show for ICA, and the x-factors in the OB headers only for Agiremus."
+      }
+    ]
+  },
+  {
     "version": "1.14.1",
     "date": "2026-10-28",
     "entries": [

@@ -144,7 +144,12 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
     # month did not produce. The select is built here rather than in the
     # template so the ordering stays with ROW_ORDER, its single source.
     present = {row.key for row in slip.rows}
-    addable_keys = [key for key in ROW_ORDER if key not in present and key not in NON_OVERRIDABLE_KEYS]
+    employer_profile = (target_user.employer_profile if target_user is not None else None) or "ica"
+    addable_keys = [
+        key
+        for key in ROW_ORDER
+        if key not in present and key not in NON_OVERRIDABLE_KEYS and (key != "OB1F" or employer_profile == "experis")
+    ]
 
     return {
         "request": request,
@@ -168,6 +173,7 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
         "addable_keys": addable_keys,
         "custom_row_sentinel": CUSTOM_ROW_SENTINEL,
         "wage_user": target_user,
+        "employer_profile": employer_profile,
         "outside_employment": outside_employment,
     }
 

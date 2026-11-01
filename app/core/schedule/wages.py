@@ -459,6 +459,10 @@ def get_absence_deductions_for_month(
         from app.database.database import User as _User
 
         _sick_ob_user = session.query(_User).filter(_User.id == user_id).first()
+        if _sick_ob_user is not None:
+            from app.core.schedule.ob import rules_for_profile
+
+            ob_rules = rules_for_profile(ob_rules, _sick_ob_user.employer_profile)
 
     # Track waiting-day budget and sick period continuity
     last_sick_date: date | None = None

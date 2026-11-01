@@ -4,6 +4,7 @@ Shared utilities and templates for route modules.
 """
 
 import json as _json
+import re
 
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -37,6 +38,16 @@ templates.env.globals["oncall_hours_by_group"] = oncall_hours_by_group
 templates.env.globals["oncall_pay_by_group"] = oncall_pay_by_group
 templates.env.globals["oncall_column_labels"] = ONCALL_COLUMN_LABELS
 templates.env.globals["breakdown_csv_headers"] = breakdown_csv_headers
+
+
+def ob_label(label: str, profile: str | None = None) -> str:
+    """An OB label as the profile shows it: the ICA wage codes (150-153) belong to ICA alone."""
+    if (profile or "ica") == "ica":
+        return label
+    return re.sub(r"/15[0-3]\??|\s*\(15[0-3]\)", "", label)
+
+
+templates.env.globals["ob_label"] = ob_label
 
 
 def render(template_name: str, context: dict, status_code: int = 200, headers: dict | None = None):
@@ -192,13 +203,14 @@ class PasswordChange(BaseModel):
 
 def _parse_rates_form(form) -> dict:
     """Parse rate form fields into custom_rates dict."""
-    from app.core.rates import DEFAULT_OB_DIVISORS, DEFAULT_VACATION_RATES
+    from app.core.constants import OB_CODES
+    from app.core.rates import DEFAULT_VACATION_RATES
 
     custom = {}
 
     # OB rates (kr/tim, fixed)
     ob = {}
-    for code in DEFAULT_OB_DIVISORS:
+    for code in OB_CODES:
         val = form.get(f"rate_ob_{code}", "").strip()
         if val:
             ob[code] = float(val)

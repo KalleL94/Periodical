@@ -33,7 +33,7 @@
                 {% for row in slip.rows %}
                 <tr>
                     <td class="td_left">
-                        {{ t.payslip_row_labels.get(row.key, row.key) }}
+                        {{ ob_label(t.payslip_row_labels.get(row.key, row.key), employer_profile) }}
                         {% if row.overridden %}
                             <span class="badge badge-warning" title="{{ row.reason or '' }}">{{ t.payslip_overridden }}</span>
                         {% endif %}
@@ -157,7 +157,7 @@
                     aria-label="{{ t.payslip_add_row_type }}" data-add-row-select>
                 <option value="">{{ t.payslip_add_row_choose }}</option>
                 {% for key in addable_keys %}
-                <option value="{{ key }}">{{ t.payslip_row_labels.get(key, key) }}</option>
+                <option value="{{ key }}">{{ ob_label(t.payslip_row_labels.get(key, key), employer_profile) }}</option>
                 {% endfor %}
                 <option value="{{ custom_row_sentinel }}">{{ t.payslip_add_row_custom }}</option>
             </select>
@@ -220,7 +220,7 @@
                         {# Matching rows are the boring case: they recede, the diffs carry the colour. #}
                         {% for line in comparison.lines %}
                         <tr class="{% if line.matched %}text-muted{% endif %}">
-                            <td class="td_left">{{ t.payslip_row_labels.get(line.bucket, line.bucket) }}</td>
+                            <td class="td_left">{{ ob_label(t.payslip_row_labels.get(line.bucket, line.bucket), employer_profile) }}</td>
                             <td class="td_right num">{% if line.computed_qty is not none %}{{ "%.1f"|format(line.computed_qty) }} {{ line.unit }}{% endif %}</td>
                             <td class="td_right num">{% if line.uploaded_qty is not none %}{% if line.qty_mismatch %}<span class="text-danger">{{ "%.1f"|format(line.uploaded_qty) }} {{ line.unit }}</span>{% else %}{{ "%.1f"|format(line.uploaded_qty) }} {{ line.unit }}{% endif %}{% endif %}</td>
                             <td class="td_right num">{% if line.computed_price is not none %}{{ "%.2f"|format(line.computed_price) }}{% endif %}</td>

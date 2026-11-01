@@ -22,6 +22,28 @@ def get_special_rules_for_year(year: int) -> list[ObRule]:
     return build_special_ob_rules_for_year(year)
 
 
+# Experis counts the weekend from Saturday 00:00 to Sunday 24:00, so Saturday night is weekend
+# rather than night, and splits Friday evening (divisor 500) from Monday to Thursday (600).
+_EXPERIS_BASE_RULES = [
+    ObRule(
+        code="OB1", label="OB kväll måndag–torsdag", days=[0, 1, 2, 3], start_time="18:00", end_time="24:00", rate=600
+    ),
+    ObRule(code="OB1F", label="OB kväll fredag", days=[4], start_time="18:00", end_time="24:00", rate=500),
+    ObRule(
+        code="OB2", label="OB natt måndag–fredag", days=[0, 1, 2, 3, 4], start_time="00:00", end_time="07:00", rate=400
+    ),
+    ObRule(code="OB3", label="OB helg", days=[5, 6], start_time="00:00", end_time="24:00", rate=300),
+]
+_EXPERIS_REPLACED_CODES = frozenset({"OB1", "OB2", "OB3"})
+
+
+def rules_for_profile(rules: list[ObRule], profile: str | None) -> list[ObRule]:
+    """The rules a user on this employer profile is paid by: base OB1-OB3 swapped for Experis's own."""
+    if profile != "experis" or any(r.code == "OB1F" for r in rules):
+        return rules
+    return _EXPERIS_BASE_RULES + [r for r in rules if r.code not in _EXPERIS_REPLACED_CODES]
+
+
 def get_combined_rules_for_year(year: int) -> list[ObRule]:
     """Returns all OB rules (base + special) for a year."""
     return list(get_ob_rules()) + get_special_rules_for_year(year)
@@ -274,41 +296,6 @@ def apply_ob_hours_override(
     return ob_hours, ob_pay
 
 
-# Profiles that price Friday evening (OB1 on a Friday) on a divisor of its own.
-FRIDAY_OB1_DIVISOR_BY_PROFILE = {"experis": 500}
-
-
-def _apply_friday_evening_rate(
-    day: dict,
-    combined_rules: list[ObRule],
-    base_salary: int,
-    ob_rate_overrides: dict[str, float] | None,
-    ob_hours: dict[str, float],
-    ob_pay: dict[str, float],
-    ob_hours_by_day: dict,
-) -> None:
-    """Reprice the Friday share of OB1 for profiles with a Friday evening divisor.
-
-    The hours stay in OB1, so every column and total keeps its shape. A fixed
-    OB1 rate override wins, as it does for the weekday divisor.
-    """
-    friday_divisor = FRIDAY_OB1_DIVISOR_BY_PROFILE.get(day.get("employer_profile"))
-    if not friday_divisor or day.get("is_substitute") or (ob_rate_overrides or {}).get("OB1") is not None:
-        return
-    rule = next((r for r in combined_rules if r.code == "OB1"), None)
-    weekday_divisor = getattr(rule, "rate", None)
-    if not weekday_divisor:
-        return
-    if ob_hours_by_day:
-        friday_hours = sum(h.get("OB1", 0.0) for d, h in ob_hours_by_day.items() if d.weekday() == 4)
-    else:
-        # Manual hours override: the hours belong to the day itself.
-        date = day.get("date")
-        friday_hours = ob_hours.get("OB1", 0.0) if date and date.weekday() == 4 else 0.0
-    if friday_hours > 0:
-        ob_pay["OB1"] += friday_hours * base_salary * (1 / friday_divisor - 1 / float(weekday_divisor))
-
-
 def compute_day_ob_pay(
     day: dict,
     combined_rules: list[ObRule],
@@ -331,18 +318,15 @@ def compute_day_ob_pay(
     start = day.get("start")
     end = day.get("end")
 
+    combined_rules = rules_for_profile(combined_rules, day.get("employer_profile"))
     ob_hours_override = day.get("ob_hours_override")
     if ob_hours_override:
         ob_hours, ob_pay = apply_ob_hours_override(ob_hours_override, base_salary, combined_rules, ob_rate_overrides)
-        _apply_friday_evening_rate(day, combined_rules, base_salary, ob_rate_overrides, ob_hours, ob_pay, {})
         return ob_hours, ob_pay, {}
     if shift and shift.code not in ("OFF", "OC", "OT") and start and end:
         ob_hours = calculate_ob_hours(start, end, combined_rules)
         ob_pay = calculate_ob_pay(start, end, combined_rules, base_salary, rate_overrides=ob_rate_overrides)
         ob_hours_by_day = calculate_ob_hours_by_day(start, end, combined_rules)
-        _apply_friday_evening_rate(
-            day, combined_rules, base_salary, ob_rate_overrides, ob_hours, ob_pay, ob_hours_by_day
-        )
         return ob_hours, ob_pay, ob_hours_by_day
     return (
         {r.code: 0.0 for r in combined_rules},

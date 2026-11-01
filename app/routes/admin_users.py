@@ -140,7 +140,7 @@ def _build_user_edit_context(request, current_user, edit_user, db):
         "wage_history": wage_history,
         "person_history": person_history,
         "vacation_balance": vacation_balance,
-        "rate_defaults": get_all_defaults(),
+        "rate_defaults": get_all_defaults(getattr(edit_user, "employer_profile", None)),
         "custom_rates": edit_user.custom_rates or {},
         "rate_history": get_rate_history(db, edit_user.id),
         "edit_transition": edit_transition,

@@ -41,6 +41,7 @@ from app.core.schedule import (
     summarize_year_for_person,
     weekday_names,
 )
+from app.core.schedule.ob import rules_for_profile
 from app.core.schedule.person_history import get_employment_period
 from app.core.schedule.summary import apply_year_pay_adjustments
 from app.core.schedule.vacation import (
@@ -384,7 +385,11 @@ async def show_day_for_person(
                 from app.core.schedule.ob import calculate_ob_pay as _calc_ob_pay_sick
 
                 full_shift_ob = _calc_ob_pay_sick(
-                    _sick_ob_start, shift_end_dt, combined_rules, monthly_salary, rate_overrides=_user_rates["ob"]
+                    _sick_ob_start,
+                    shift_end_dt,
+                    rules_for_profile(combined_rules, canonical.get("employer_profile")),
+                    monthly_salary,
+                    rate_overrides=_user_rates["ob"],
                 )
                 sick_ob_pay_today = sum(full_shift_ob.values()) * (sjuklon_hours_today / full_shift_hours) * 0.8
         else:
@@ -436,6 +441,7 @@ async def show_day_for_person(
     if not is_vacation_day:
         is_vacation_day = absence is not None and absence.absence_type == AbsenceType.VACATION
 
+    _profile = (target_user.employer_profile if target_user is not None else None) or "ica"
     return render(
         "day.html",
         {
@@ -453,7 +459,8 @@ async def show_day_for_person(
             "ob_hours": ob_hours if show_salary else {},
             "ob_pay": ob_pay if show_salary else {},
             "ob_codes": ob_codes if show_salary else [],
-            "ob_rules": combined_rules,  # All OB rules for label lookup
+            "ob_rules": rules_for_profile(combined_rules, _profile),  # All OB rules for label lookup
+            "employer_profile": _profile,
             "active_special_rules": active_special_rules,
             "oncall_pay": oncall_pay if show_salary else 0.0,
             "oncall_details": oncall_details if show_salary else {},
@@ -1057,6 +1064,7 @@ async def export_month_excel(
         month,
         headers=EXCEL_HEADERS_BY_PROFILE[profile],
         split_ob4=profile == "nexer",
+        split_ob1f=profile == "experis",
     )
 
     # ── Stream response ──────────────────────────────────────────────────
@@ -1184,6 +1192,7 @@ async def year_view(
         if vac_user:
             vacation_pay = apply_year_pay_adjustments(months, year_summary, vac_user, year, db)
 
+    _profile = (target_user.employer_profile if target_user is not None else None) or "ica"
     return render(
         "year.html",
         {
@@ -1199,7 +1208,8 @@ async def year_view(
             "selected_other_id": selected_other_id,
             "selected_other_name": selected_other_name,
             "show_salary": show_salary,
-            "ob_rules": combined_rules,  # All OB rules for label lookup
+            "ob_rules": rules_for_profile(combined_rules, _profile),  # All OB rules for label lookup
+            "employer_profile": _profile,
             "vacation_pay": vacation_pay,
         },
     )
