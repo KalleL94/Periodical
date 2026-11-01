@@ -307,3 +307,20 @@ def test_admin_oncall_remove_then_delete_survives_cancel(as_admin, test_db, test
     _cancel(as_admin, snapshotted)
     test_db.expire_all()
     assert test_db.query(OnCallOverride).count() == 0
+
+
+def test_oncall_add_replaces_off_absence(as_user, test_db, test_user):
+    from app.database.database import Absence, AbsenceType
+
+    test_db.add(Absence(user_id=test_user.id, date=DAY, absence_type=AbsenceType.OFF))
+    test_db.add(Absence(user_id=test_user.id, date=DAY + datetime.timedelta(days=1), absence_type=AbsenceType.SICK))
+    test_db.commit()
+    r = as_user.post(
+        "/oncall/add",
+        data={"user_id": test_user.id, "dates": [DAY.isoformat(), (DAY + datetime.timedelta(days=1)).isoformat()]},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    test_db.expire_all()
+    assert [a.absence_type for a in test_db.query(Absence)] == [AbsenceType.SICK]
+    assert test_db.query(OnCallOverride).count() == 2
