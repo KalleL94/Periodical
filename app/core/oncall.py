@@ -123,7 +123,7 @@ _CSV_PROFILE_COLUMNS: dict[str, tuple[list[str], list[str]]] = {
         ["OB Kväll", "OB Natt", "OB Helg", "OB Helgdag", "OB Storhelg"],
         ["Beredskap Vardag", "Beredskap Natt", "Beredskap Helg", "Beredskap Storhelg"],
     ),
-    "experis": (["OB Kväll", "OB Natt", "OB Helg", "OB Storhelg"], _CSV_PLAIN_OC),
+    "experis": (["OB Kväll mån–tors", "OB Kväll fre", "OB Natt", "OB Helg", "OB Storhelg"], _CSV_PLAIN_OC),
 }
 
 

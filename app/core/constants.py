@@ -46,6 +46,9 @@ OB_PRIORITY_BY_CODE: Final[dict[str, int]] = {
     # OB1–OB3 får defaultprioritet (se OB_PRIORITY_DEFAULT).
 }
 
+#: Alla OB-koder i visningsordning. OB1F (fredag kväll) finns bara för Experis.
+OB_CODES: Final[tuple[str, ...]] = ("OB1", "OB1F", "OB2", "OB3", "OB4", "OB5")
+
 #: Standardprioritet för OB-koder som inte är listade explicit i OB_PRIORITY_BY_CODE.
 OB_PRIORITY_DEFAULT: Final[int] = 1
 

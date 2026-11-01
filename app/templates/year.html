@@ -91,7 +91,7 @@
                         {% if show_salary and m.override_deltas %}
                             {%- set _adj = [] -%}
                             {%- for key, delta in m.override_deltas.items() -%}
-                                {%- set _ = _adj.append(t.payslip_row_labels.get(key, key) ~ " " ~ "%+.0f"|format(delta) ~ " kr") -%}
+                                {%- set _ = _adj.append(ob_label(t.payslip_row_labels.get(key, key), employer_profile) ~ " " ~ "%+.0f"|format(delta) ~ " kr") -%}
                             {%- endfor -%}
                             <span class="badge badge-warning" title="{{ _adj|join(', ') }}">{{ t.payslip_manual_adjustment }}</span>
                         {% endif %}
@@ -224,7 +224,7 @@
             {% endif %}
         {% endfor %}
         {# Use translated labels when available, fall back to rule.label #}
-        {% set ob_code_labels = t.ob_code_labels %}
+        {% set ob_code_labels = t.ob_code_labels_experis if employer_profile == 'experis' else t.ob_code_labels %}
         <table class="summary">
             <thead>
                 <tr>
@@ -234,9 +234,9 @@
                 </tr>
             </thead>
             <tbody>
-                {% for code, hours in year_summary.ob_hours_by_code.items() %}
+                {% for code, hours in year_summary.ob_hours_by_code.items() if code != 'OB1F' or hours %}
                 <tr class="shift-row">
-                    <td data-label="{{ t.year_ob_type_col }}">{{ ob_code_labels.get(code, ob_labels.get(code, code)) }}</td>
+                    <td data-label="{{ t.year_ob_type_col }}">{{ ob_label(ob_code_labels.get(code, ob_labels.get(code, code)), employer_profile) }}</td>
                     <td class="td_right num" data-label="{{ t.year_ob_hours_col }}">{{ "%.2f"|format(hours or 0) }}</td>
                     <td class="td_right num" data-label="{{ t.year_ob_pay_col }}">{{ "%.0f"|format(year_summary.ob_pay_by_code.get(code, 0) or 0) }}</td>
                 </tr>

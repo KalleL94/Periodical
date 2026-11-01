@@ -168,6 +168,7 @@ def _build_context(request: Request, person_id: int, year: int, month: int, curr
         "addable_keys": addable_keys,
         "custom_row_sentinel": CUSTOM_ROW_SENTINEL,
         "wage_user": target_user,
+        "employer_profile": (target_user.employer_profile if target_user is not None else None) or "ica",
         "outside_employment": outside_employment,
     }
 

@@ -65,7 +65,7 @@ _PLAIN_OC = ["Beredskap Vardag", "Beredskap Helg", "Beredskap Helgdag", "Beredsk
 EXCEL_HEADERS_BY_PROFILE: dict[str, list[str]] = {
     "agiremus": COL_HEADERS,
     "ica": REPORT_COL_HEADERS,
-    "experis": [*_FIXED, "OB Kväll", "OB Natt", "OB Helg", "OB Storhelg", *_PLAIN_OC, *_TAIL],
+    "experis": [*_FIXED, "OB Kväll mån–tors", "OB Kväll fre", "OB Natt", "OB Helg", "OB Storhelg", *_PLAIN_OC, *_TAIL],
     "nexer": [
         *_FIXED,
         "OB Kväll",
@@ -112,6 +112,7 @@ def _build_month_rows(
     headers: list[str] = COL_HEADERS,
     split_oncall_overtime: bool = True,
     split_ob4: bool = False,
+    split_ob1f: bool = False,
 ):
     """Build (final_headers, final_rows, final_totals) for one agent's month.
 
@@ -120,6 +121,7 @@ def _build_month_rows(
     structure as COL_HEADERS). With split_oncall_overtime=True a day with both on-call and
     overtime is shown as two rows; with False they share one "Beredskap/Övertid" row.
     With split_ob4=True OB4 gets its own column after OB3 instead of being merged into it.
+    With split_ob1f=True Friday evening OB gets its own column after OB1.
     """
     num_days_in_month = _cal.monthrange(year, month)[1]
     all_dates = [_date(year, month, d) for d in range(1, num_days_in_month + 1)]
@@ -166,6 +168,11 @@ def _build_month_rows(
             ob4 = d["ob_hours"].get("OB4", 0) or 0
             ob5 = d["ob_hours"].get("OB5", 0) or 0
             ob_vals = [ob1, ob2, ob3, ob4, ob5] if split_ob4 else [ob1, ob2, ob3 + ob4, ob5]
+            ob1f = d["ob_hours"].get("OB1F", 0) or 0
+            if split_ob1f:
+                ob_vals.insert(1, ob1f)
+            else:
+                ob_vals[0] += ob1f
 
             ob_sum = sum(ob_vals)
             is_work = shift.code not in ("OC", "OT")
@@ -224,6 +231,7 @@ def populate_month_sheet(
     headers: list[str] = COL_HEADERS,
     split_oncall_overtime: bool = True,
     split_ob4: bool = False,
+    split_ob1f: bool = False,
 ) -> None:
     """Fill a worksheet with one agent's month, matching the per-person Excel export.
 
@@ -232,7 +240,7 @@ def populate_month_sheet(
     split_oncall_overtime=False, on-call and overtime share one row instead of two.
     """
     final_headers, final_rows, final_totals = _build_month_rows(
-        summary, year, month, headers, split_oncall_overtime, split_ob4
+        summary, year, month, headers, split_oncall_overtime, split_ob4, split_ob1f
     )
 
     header_fill = PatternFill("solid", fgColor="2D3748")

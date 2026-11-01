@@ -3,7 +3,7 @@
 import logging
 from typing import NamedTuple
 
-from app.core.constants import placeholder_person_name
+from app.core.constants import OB_CODES, placeholder_person_name
 from app.core.oncall import rule_set_for
 from app.core.storage import load_tax_brackets
 
@@ -1475,7 +1475,7 @@ def summarize_year_for_person(
 
         # Compute total OB pay
         ob_pay = m.get("ob_pay", {}) or {}
-        total_ob = sum(float(ob_pay.get(code, 0.0) or 0.0) for code in ("OB1", "OB2", "OB3", "OB4", "OB5"))
+        total_ob = sum(float(ob_pay.get(code, 0.0) or 0.0) for code in OB_CODES)
         m["total_ob"] = total_ob
 
         months.append(m)
@@ -1705,7 +1705,7 @@ def _report_row_from_summary(summary: dict, is_substitute: bool) -> dict:
         "ot_hours": round(ot_hours, 1),
         "oncall_hours": round(summary.get("oncall_hours", 0.0) or 0.0, 1),
         # OB split into pay-code groups: evening, night, weekend, major holiday
-        "ob_kvall": _ob_sum("OB1"),
+        "ob_kvall": _ob_sum("OB1", "OB1F"),
         "ob_natt": _ob_sum("OB2"),
         "ob_helg": _ob_sum("OB3", "OB4"),
         "ob_storhelg": _ob_sum("OB5"),
@@ -1857,7 +1857,7 @@ _YEAR_AVERAGED = (
     "total_sick_ob_pay",
 )
 
-_OB_CODES = ("OB1", "OB2", "OB3", "OB4", "OB5")
+_OB_CODES = OB_CODES
 
 # Absence deduction key per absence type, for the four types the year view breaks out.
 _DEDUCTION_KEY = {"SICK": "sick_deduction", "VAB": "vab_deduction", "LEAVE": "leave_deduction", "OFF": "off_deduction"}

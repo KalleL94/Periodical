@@ -11,6 +11,7 @@ be compared category by category.
 
 from dataclasses import dataclass, field
 
+from app.core.constants import OB_CODES
 from app.core.oncall import ONCALL_GROUP_BY_CODE
 from app.core.schedule.wages import _MONTHLY_HOURS
 
@@ -21,6 +22,7 @@ ROW_ORDER = (
     "norm",
     "absence_pay",
     "OB1",
+    "OB1F",
     "OB2",
     "OB3",
     "OB4",
@@ -129,10 +131,7 @@ def _aggregate_days(days: list[dict]) -> dict[str, dict]:
     This mirrors what the breakdown table renders, so the payslip's OB and
     on-call rows always agree with the per-day table above them.
     """
-    agg = {
-        k: {"hours": 0.0, "pay": 0.0}
-        for k in ("norm", "OB1", "OB2", "OB3", "OB4", "OB5", *set(ONCALL_GROUP_BY_CODE.values()), "ot")
-    }
+    agg = {k: {"hours": 0.0, "pay": 0.0} for k in ("norm", *OB_CODES, *set(ONCALL_GROUP_BY_CODE.values()), "ot")}
     for d in days:
         shift = d.get("shift")
         hours = d.get("hours", 0.0) or 0.0
@@ -148,12 +147,12 @@ def _aggregate_days(days: list[dict]) -> dict[str, dict]:
             norm = max(hours - sum(ob_h.values()), 0.0)
             agg["norm"]["hours"] += norm
             if cal is None:
-                for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
+                for code in OB_CODES:
                     agg[code]["hours"] += ob_h.get(code, 0.0) or 0.0
                     # OB pay is the supplement only, never the base hourly pay.
                     agg[code]["pay"] += ob_p.get(code, 0.0) or 0.0
         if cal is not None:
-            for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
+            for code in OB_CODES:
                 agg[code]["hours"] += cal["ob_hours"].get(code, 0.0)
                 agg[code]["pay"] += cal["ob_pay"].get(code, 0.0)
 
@@ -216,7 +215,7 @@ def build_payslip_rows(
     else:
         add("base", base_salary, 1, UNIT_MONTH)
 
-    for code in ("OB1", "OB2", "OB3", "OB4", "OB5"):
+    for code in OB_CODES:
         add(code, agg[code]["pay"], agg[code]["hours"], UNIT_HOURS)
     for group in ("oc_vardag", "oc_helg", "oc_helgdag", "oc_storhelg"):
         add(group, agg[group]["pay"], agg[group]["hours"], UNIT_HOURS)
@@ -353,7 +352,7 @@ _OVERRIDE_TO_TOTAL = {
 
 # OB pay is itemised per OB code rather than as a single figure, so an OB
 # override has to land inside totals["ob_pay"] under its own code.
-_OB_KEYS = frozenset({"OB1", "OB2", "OB3", "OB4", "OB5"})
+_OB_KEYS = frozenset(OB_CODES)
 
 
 def route_override_deltas(totals: dict, deltas: dict[str, float]) -> None:

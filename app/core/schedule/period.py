@@ -36,7 +36,7 @@ from .core import (
     get_vacation_shift,
     weekday_names,
 )
-from .ob import calculate_ob_hours, get_combined_rules_for_year
+from .ob import calculate_ob_hours, get_combined_rules_for_year, rules_for_profile
 from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .segments import DaySegment, extra_segments, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
@@ -1875,6 +1875,7 @@ def _populate_single_person_day(
     # position that day: the holder's user id need not equal the position.
     _wage_uid, _holder_profile = ctx.holder(person_id, current_day) if ctx.holder else (person_id, "ica")
     _profile = _person_rates.get("profile") or _holder_profile
+    combined_ob_rules = rules_for_profile(combined_ob_rules, _profile)
     # Set before any early return: the month summary reads both to decide which
     # calendar day a Nexer hour counts on, and whether a previous day is this user's.
     day_info["employer_profile"] = _profile

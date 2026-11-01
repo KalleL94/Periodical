@@ -57,7 +57,8 @@ def test_header_tables():
     assert EXCEL_HEADERS_BY_PROFILE["ica"] == REPORT_COL_HEADERS
     assert "Beredskap Natt" in EXCEL_HEADERS_BY_PROFILE["nexer"]
     assert "Kväll 150" not in EXCEL_HEADERS_BY_PROFILE["experis"]
-    assert "OB Kväll" in EXCEL_HEADERS_BY_PROFILE["experis"]
+    assert "OB Kväll mån–tors" in EXCEL_HEADERS_BY_PROFILE["experis"]
+    assert "OB Kväll fre" in EXCEL_HEADERS_BY_PROFILE["experis"]
 
 
 @pytest.mark.parametrize(
