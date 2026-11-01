@@ -79,12 +79,12 @@
                         <select id="seg_side" name="side">
                             <option value="after">{{ t.day_seg_side_after }}</option>
                             <option value="before">{{ t.day_seg_side_before }}</option>
-                            <option value="full">{{ t.day_seg_side_full }}</option>
+                            <option value="full" selected>{{ t.day_seg_side_full }}</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="seg_start">{{ t.day_start_time }}</label>
-                        <input type="time" id="seg_start" name="start_time" value="{{ shift.end_time if shift and shift.end_time else '' }}" required>
+                        <input type="time" id="seg_start" name="start_time" required>
                     </div>
                     <div class="form-group">
                         <label for="seg_end">{{ t.day_end_time }}</label>
@@ -602,7 +602,7 @@
                 <select data-field="time_side">
                     <option value="after">{{ t.day_seg_side_after }}</option>
                     <option value="before">{{ t.day_seg_side_before }}</option>
-                    <option value="full">{{ t.day_seg_side_full }}</option>
+                    <option value="full" selected>{{ t.day_seg_side_full }}</option>
                 </select>
             </td>
             <td class="per-day-area per-day-area--time" data-label="{{ t.day_start_time }}">
