@@ -202,6 +202,7 @@ def _day_ob_pay(canonical: dict, date: datetime.date, user: User, db: Session) -
     if not has_ob:
         return None, 0.0
 
+    from app.core.rates import get_user_rates
     from app.core.schedule.wages import get_effective_monthly_wage
 
     monthly_wage = get_effective_monthly_wage(db, user.id, user.wage, effective_date=date)
@@ -209,7 +210,8 @@ def _day_ob_pay(canonical: dict, date: datetime.date, user: User, db: Session) -
         canonical,
         get_combined_rules_for_year(date.year),
         monthly_wage,
-        (user.custom_rates or {}).get("ob"),
+        # Rates in effect on the day, as the month and payslip views price it.
+        get_user_rates(user, session=db, effective_date=date)["ob"],
     )
     return {k: round(v, 2) for k, v in ob_pay.items() if v > 0}, round(sum(ob_pay.values()), 2)
 

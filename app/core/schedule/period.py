@@ -16,7 +16,7 @@ from app.core.oncall import (
     get_oncall_rules,
     rule_set_for,
 )
-from app.core.rates import day_oncall_rates
+from app.core.rates import _resolve_rates, day_oncall_rates
 from app.core.time_utils import parse_ot_times
 from app.database.database import (
     Absence,
@@ -40,7 +40,7 @@ from .ob import calculate_ob_hours, get_combined_rules_for_year, rules_for_profi
 from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
 from .segments import DaySegment, extra_segments, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
-from .wages import get_all_user_wages
+from .wages import _MONTHLY_HOURS, clock_in_shift, get_all_user_wages
 
 
 @dataclass
@@ -71,6 +71,11 @@ class DayLookupContext:
     # that day. The id keys the wage lookups; the profile prices on-call for views
     # that pass no user_rates_map.
     holder: Callable[[int, datetime.date], tuple[int, str]] | None = None
+    # (user id, date) -> the WageHistory monthly wage / RateHistory rates in effect
+    # that day, or None. user_wages is a snapshot of today's wages and the rates map
+    # is resolved once per call, so neither can price a day before a change.
+    wage_on: Callable[[int, datetime.date], int | None] | None = None
+    rates_on: Callable[[int, datetime.date], dict | None] | None = None
 
 
 def build_week_data(
@@ -313,6 +318,8 @@ def generate_period_data(
         linked_sub_ot_map=linked_sub_ot_map,
         holder=_build_holder_resolver(session, person_ids) if with_pay else None,
     )
+    if with_pay:
+        ctx.wage_on, ctx.rates_on = _build_pay_history_resolver(session, effective_start, end_date)
 
     days_out = []
 
@@ -490,6 +497,51 @@ def _build_holder_resolver(session, positions: list[int]) -> Callable[[int, date
         return holder, profiles.get(holder) or "ica"
 
     return resolve
+
+
+def _build_pay_history_resolver(session, start: datetime.date, end: datetime.date):
+    """Return (wage_on, rates_on) resolvers over the wage and rate history of the period.
+
+    Each picks the row get_user_wage / get_user_rates would pick for the date (the
+    latest effective_from covering it), and returns None when no row covers it so
+    the caller keeps its own fallback. Two queries per generate call, none per day.
+    """
+    if not session:
+        return (lambda uid, on_date: None), (lambda uid, on_date: None)
+    from app.database.database import RateHistory, User, WageHistory, WageType
+
+    def overlapping(model):
+        return (
+            model.effective_from <= end,
+            model.effective_to.is_(None) | (model.effective_to >= start),
+        )
+
+    def covers(rec, on_date):
+        return rec.effective_from <= on_date and (rec.effective_to is None or rec.effective_to >= on_date)
+
+    # Newest first, so the first covering row is the one the single-date lookups pick.
+    wage_rows: dict[int, list] = defaultdict(list)
+    for rec, wage_type in (
+        session.query(WageHistory, User.wage_type)
+        .outerjoin(User, User.id == WageHistory.user_id)
+        .filter(*overlapping(WageHistory))
+        .order_by(WageHistory.effective_from.desc())
+    ):
+        # Monthly equivalent, the same conversion get_effective_monthly_wage applies.
+        monthly = int(rec.wage * _MONTHLY_HOURS) if wage_type == WageType.HOURLY else rec.wage
+        wage_rows[rec.user_id].append((rec, monthly))
+    rate_rows: dict[int, list] = defaultdict(list)
+    for rec in session.query(RateHistory).filter(*overlapping(RateHistory)).order_by(RateHistory.effective_from.desc()):
+        rate_rows[rec.user_id].append(rec)
+
+    def wage_on(uid: int, on_date: datetime.date) -> int | None:
+        return next((monthly for rec, monthly in wage_rows.get(uid, ()) if covers(rec, on_date)), None)
+
+    def rates_on(uid: int, on_date: datetime.date) -> dict | None:
+        rec = next((r for r in rate_rows.get(uid, ()) if covers(r, on_date)), None)
+        return None if rec is None else (rec.rates or {})
+
+    return wage_on, rates_on
 
 
 def _build_user_position_resolver(session, user_ids, current_map: dict[int, int]):
@@ -1424,15 +1476,9 @@ def _populate_absence_day(
             hours, start, end = calculate_shift_hours(current_day, original_shift.code)
             if start is not None:
                 if absence.left_at:
-                    left_time = datetime.datetime.strptime(absence.left_at, "%H:%M").time()
-                    end = datetime.datetime.combine(current_day, left_time)
-                    if end <= start:
-                        end = start
+                    end = clock_in_shift(absence.left_at, start, end)
                 if absence.arrived_at:
-                    arrived_time = datetime.datetime.strptime(absence.arrived_at, "%H:%M").time()
-                    start = datetime.datetime.combine(current_day, arrived_time)
-                    if start >= end:
-                        start = end
+                    start = clock_in_shift(absence.arrived_at, start, end)
                 hours = (end - start).total_seconds() / 3600.0
                 ob = calculate_ob_hours(start, end, combined_ob_rules) if original_shift.code != "OC" else {}
             else:
@@ -1874,7 +1920,16 @@ def _populate_single_person_day(
     # Wages and, without a rates map, the profile come from whoever holds the
     # position that day: the holder's user id need not equal the position.
     _wage_uid, _holder_profile = ctx.holder(person_id, current_day) if ctx.holder else (person_id, "ica")
+    # The map holds one rate record for the whole call; the day takes the record in
+    # effect on it, resolved as get_user_rates(holder, current_day) would.
+    _day_rates = ctx.rates_on(_wage_uid, current_day) if _person_rates and ctx.rates_on else None
+    if _day_rates is not None:
+        _person_rates = _resolve_rates(_day_rates, _holder_profile, current_day)
     _profile = _person_rates.get("profile") or _holder_profile
+    # Same for the wage: user_wages is today's snapshot, the day needs its own.
+    _day_wage = ctx.wage_on(_wage_uid, current_day) if ctx.wage_on else None
+    if _day_wage is not None:
+        user_wages = {_wage_uid: _day_wage}
     combined_ob_rules = rules_for_profile(combined_ob_rules, _profile)
     # Set before any early return: the month summary reads both to decide which
     # calendar day a Nexer hour counts on, and whether a previous day is this user's.
@@ -1928,26 +1983,42 @@ def _populate_single_person_day(
     # Kolla frånvaro först (högsta prioritet) - använd batch-hämtad data
     absence = _lookup_for_day(absence_map, person_id, current_day)
 
-    if absence and _populate_absence_day(
+    handled = bool(absence) and _populate_absence_day(
         day_info, absence, current_day, person_id, person_name, combined_ob_rules, vacation_shift, shift_types
-    ):
+    )
+    # A part-day absence leaves a worked portion, and overtime or extra time around
+    # it is still worked: only a full-day absence ends the day here.
+    partial = handled and "partial_absence" in day_info
+    if handled and not partial:
         return
 
     # Kolla föräldraledighet (veckobaserad + dagsnivå via parental_dates)
-    if _populate_parental_day(day_info, current_day, person_id, person_name, parental_dates, shift_types):
+    if not partial and _populate_parental_day(
+        day_info, current_day, person_id, person_name, parental_dates, shift_types
+    ):
         return
 
-    # Kolla semester / override / byte / normalt skift (i prioritetsordning)
-    shift, rotation_week, segments, ob = _resolve_effective_shift(
-        current_day,
-        person_id,
-        vacation_shift,
-        vacation_dates,
-        shift_override_map,
-        swap_map,
-        shift_types,
-        combined_ob_rules,
-    )
+    if partial:
+        # The worked portion becomes the day's segment, so the overlays below add to
+        # it and never to the absent part of the shift.
+        shift, rotation_week, ob = day_info["shift"], day_info["rotation_week"], day_info["ob"]
+        segments = (
+            [DaySegment(day_info["start"], day_info["end"], day_info["hours"], ob_eligible=shift.code != "OC")]
+            if day_info["start"] is not None
+            else []
+        )
+    else:
+        # Kolla semester / override / byte / normalt skift (i prioritetsordning)
+        shift, rotation_week, segments, ob = _resolve_effective_shift(
+            current_day,
+            person_id,
+            vacation_shift,
+            vacation_dates,
+            shift_override_map,
+            swap_map,
+            shift_types,
+            combined_ob_rules,
+        )
 
     # Week-based vacation outranks the overtime overlay below. Absence and parental
     # leave get that priority by returning early; vacation resolves to a shift like
@@ -1961,7 +2032,9 @@ def _populate_single_person_day(
     original_shift = _rot[0] if _rot else shift
 
     # Kolla oncall override - hämta från batch eller databas
-    oncall_override = _lookup_for_day(oncall_override_map, person_id, current_day)
+    # A part-day absence pays no on-call, as before: what an absence inside the
+    # on-call window is worth is not modelled.
+    oncall_override = None if partial else _lookup_for_day(oncall_override_map, person_id, current_day)
 
     shift, segments, ob = _apply_oncall_override(oncall_override, shift, segments, ob, shift_types)
 
@@ -1970,7 +2043,7 @@ def _populate_single_person_day(
     _oc_rates = day_oncall_rates({**_person_rates, "profile": _profile}, current_day)
     oncall_pay, oncall_details = (
         _compute_oncall_pay(shift, current_day, _wage_uid, user_wages, settings, _oc_rates, oncall_override, _rule_set)
-        if settings is not None
+        if settings is not None and not partial
         else (0.0, {})
     )
 
@@ -1990,7 +2063,7 @@ def _populate_single_person_day(
         ob = segment_ob(segments, combined_ob_rules)
 
     # Om beredskap + övertid (samma dag ELLER föregående dag över midnatt), räkna om beredskap
-    if settings is not None and shift and shift.code == "OC" and oncall_ot_rows:
+    if settings is not None and not partial and shift and shift.code == "OC" and oncall_ot_rows:
         oncall_pay, oncall_details = _recalculate_oncall_before_ot(
             current_day,
             oncall_ot_rows,
@@ -2061,6 +2134,9 @@ def _populate_single_person_day(
             "rotation_length": get_rotation_length_for_date(current_day),
         }
     )
+    if _day_rates is not None:
+        # The OB rates of the day, for summary.py, which prices OB itself.
+        day_info["ob_rate_overrides"] = _person_rates["ob"]
 
 
 def _recalculate_oncall_before_ot(

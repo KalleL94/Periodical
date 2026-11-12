@@ -70,16 +70,21 @@ def _leave_dates_by_position(year: int, session, *, week_attr: str, absence_type
     # Week-based leave: expand each ISO week to its days and attribute per day.
     for user in users:
         by_year = getattr(user, week_attr, None) or {}
-        weeks_for_year = by_year.get(str(year), []) or []
-        for week in weeks_for_year:
-            for day in range(1, 8):
-                try:
-                    d = datetime.date.fromisocalendar(year, week, day)
-                except ValueError:
-                    continue
-                pos = resolve_pos(user.id, d)
-                if pos in per_person:
-                    per_person[pos].add(d)
+        # Weeks are stored per ISO year, which differs from the calendar year
+        # around New Year (ISO week 1 can start in December), so expand the
+        # neighbouring ISO years too and keep only dates inside the year.
+        for iso_year in (year - 1, year, year + 1):
+            for week in by_year.get(str(iso_year), []) or []:
+                for day in range(1, 8):
+                    try:
+                        d = datetime.date.fromisocalendar(iso_year, week, day)
+                    except ValueError:
+                        continue
+                    if not (year_start <= d <= year_end):
+                        continue
+                    pos = resolve_pos(user.id, d)
+                    if pos in per_person:
+                        per_person[pos].add(d)
 
     # Day-level leave from the Absence table, attributed to the row's own date.
     day_absences = (

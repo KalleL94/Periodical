@@ -998,6 +998,9 @@ def _process_day_for_summary(
             day, combined_rules, int(substitute_wage * _MONTHLY_HOURS), None
         )
     else:
+        # A day built with a rates map carries the OB rates in effect on it, which
+        # beat the single set the caller resolved for the whole month.
+        ob_rate_overrides = day.get("ob_rate_overrides", ob_rate_overrides)
         ob_hours, ob_pay, ob_hours_by_day = compute_day_ob_pay(day, combined_rules, base_salary, ob_rate_overrides)
 
     # Base pay for a worked substitute shift: hours x hourly wage, on top of the
