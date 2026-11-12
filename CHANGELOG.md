@@ -22,6 +22,24 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [1.14.3] - 2026-11-12
+
+### Fixed
+- On-call is priced with the wage in effect on the day, not today's wage. `_build_pay_history_resolver` in `app/core/schedule/period.py` preloads `WageHistory` and `RateHistory` once per `generate_period_data` call, so there is no query per day.
+- Overtime, on-call and OB use the rate record in effect on each day. A rate change in the middle of a month used to take effect the month after, because the month-start record priced every day. API v1 `_day_ob_pay` resolves the day's rates the same way.
+- A partial-day absence no longer drops overtime and extra time on the same day.
+- Partial absence on an overnight shift: `left_at` and `arrived_at` go through one helper, `clock_in_shift` in `app/core/schedule/wages.py`, which places the clock time on the right date. A 22:00-06:30 shift left at 23:00 gave 0 absent hours.
+- `add_new_rates` and `add_new_wage` handle a backdated or in-between record: only the nearest earlier record is closed, the new record ends where the next begins, and a record with an existing start date is updated in place. A backdated rate used to close the newest record against an earlier date.
+- Week-based leave is stored per ISO year and is now expanded from the neighbouring ISO years and filtered to the calendar year (`_leave_dates_by_position`). ISO week 1 of 2025 starts on 2024-12-30, which was missing from the 2024 schedule and wrongly present in 2025.
+
+### Security
+- Stored XSS in the admin user list and the end-employment form: the user's name was interpolated into an inline `confirm('...')`. The message now sits in a `data-confirm` attribute.
+
+### Changed
+- `scripts/deploy.sh` takes the pre-deploy database backup with the SQLite online backup instead of `cp`, which missed writes still in the WAL file, and aborts the deploy when the backup fails.
+- `scripts/restore_database.sh` takes its safety backup the same way and removes stale `-wal` and `-shm` files before restoring, so old frames are not replayed onto the restored database.
+- `migrations/migrate_to_db.py` refuses to run when the database file exists. It used to delete it without asking.
+
 ## [1.14.2] - 2026-11-01
 
 ### Changed
