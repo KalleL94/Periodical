@@ -66,8 +66,14 @@ if [ -f "$DB_PATH" ]; then
     # Skapa backup-katalog om den inte finns
     mkdir -p "$BACKUP_DIR"
     
-    # Kopiera databas
-    if cp "$DB_PATH" "$BACKUP_FILE"; then
+    # Konsistent online-backup (databasen kör i WAL-läge, en vanlig cp missar -wal)
+    if command -v sqlite3 >/dev/null 2>&1; then
+        sqlite3 "$DB_PATH" ".backup '$BACKUP_FILE'"
+    else
+        python3 -c 'import sqlite3, sys; sqlite3.connect(sys.argv[1]).backup(sqlite3.connect(sys.argv[2]))' "$DB_PATH" "$BACKUP_FILE"
+    fi
+    BACKUP_RC=$?
+    if [ "$BACKUP_RC" -eq 0 ] && [ -s "$BACKUP_FILE" ]; then
         log "✅ Backup skapad: $BACKUP_FILE"
         
         # Behåll endast de 10 senaste backuperna

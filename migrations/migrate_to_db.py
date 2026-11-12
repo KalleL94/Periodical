@@ -2,9 +2,9 @@
 """
 Seed a fresh database with one account per rotation position, plus an admin.
 
-For a new installation only. It DELETES the configured database first, so it is
-not a migration in the sense migrate_schema.py is: run that one against a
-database with data in it.
+For a new installation only. It refuses to run when the configured database file
+already exists. It is not a migration in the sense migrate_schema.py is: run
+that one against a database with data in it.
 
 Every account is created with must_change_password=1, so the shared initial
 password below is usable exactly once each.
@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.auth.auth import get_password_hash
 from app.core.constants import MAX_PERSONS
-from app.database.database import DATABASE_URL, Base, SessionLocal, User, UserRole, engine
+from app.database.database import Base, SessionLocal, User, UserRole, engine
 
 #: Starting wage for a seeded account, in SEK per month. Every account gets the
 #: same one; real wages are set per user afterwards, and the wage history takes
@@ -56,24 +56,17 @@ DEFAULT_PASSWORD = secrets.token_urlsafe(12)
 ADMIN_PASSWORD = secrets.token_urlsafe(12)
 
 
-def delete_existing_db():
-    """Delete the configured SQLite database file, if there is one.
+def existing_db_path():
+    """Return the configured SQLite file if it already exists, else None.
 
     Reads the path off the engine rather than hardcoding
-    app/database/schedule.db: the app honours DATABASE_URL, and a seeder that
-    deleted a different file than the one it then writes to would wipe the
-    wrong database.
+    app/database/schedule.db: the app honours DATABASE_URL, and checking a
+    different file than the one the seeder then writes to would miss the data.
     """
     if engine.url.get_backend_name() != "sqlite" or not engine.url.database:
-        print(f" Not a SQLite file database, nothing to delete: {DATABASE_URL}")
-        return
-
+        return None
     db_path = Path(engine.url.database)
-    if db_path.exists():
-        db_path.unlink()
-        print(f" Deleted existing database: {db_path}")
-    else:
-        print(" No existing database to delete")
+    return db_path if db_path.exists() else None
 
 
 def create_tables():
@@ -88,7 +81,11 @@ def migrate():
     print("MIGRATION: seed accounts -> SQLite")
     print("=" * 50 + "\n")
 
-    delete_existing_db()
+    db_path = existing_db_path()
+    if db_path:
+        print(f"[ERROR] Database already exists: {db_path}")
+        print("        Refusing to seed over existing data. Back it up and remove it first.")
+        return False
 
     # Create tables
     print("\n1. Creating database tables...")
@@ -99,18 +96,6 @@ def migrate():
     db = SessionLocal()
 
     try:
-        # Check if users already exist
-        existing_count = db.query(User).count()
-        if existing_count > 0:
-            print(f"\n   [WARNING] Database already has {existing_count} users.")
-            response = input("   Delete existing users and re-import? (y/N): ")
-            if response.lower() != "y":
-                print("   Migration cancelled.")
-                return False
-            db.query(User).delete()
-            db.commit()
-            print("   [OK] Existing users deleted")
-
         # Import persons
         print("\n3. Importing users...")
 
