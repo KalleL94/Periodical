@@ -248,6 +248,31 @@ class TestWageHistoryCrud:
         test_db.refresh(user)
         assert user.wage == 42000
 
+    def test_a_wage_inserted_between_two_rows_closes_the_earlier_one(self, test_db):
+        # The earlier row is already closed, so it is not the "open" row, but it still
+        # overlaps the inserted one unless its end date moves.
+        user = _make_user(test_db, wage=30000)
+        add_new_wage(test_db, user.id, 30000, datetime.date(2024, 1, 1))
+        add_new_wage(test_db, user.id, 40000, datetime.date(2026, 1, 1))
+        add_new_wage(test_db, user.id, 35000, datetime.date(2025, 1, 1))
+
+        history = sorted(get_wage_history(test_db, user.id), key=lambda h: h["effective_from"])
+        assert [(h["wage"], h["effective_to"]) for h in history] == [
+            (30000, datetime.date(2024, 12, 31)),
+            (35000, datetime.date(2025, 12, 31)),
+            (40000, None),
+        ]
+
+    def test_same_effective_from_replaces_the_existing_row(self, test_db):
+        user = _make_user(test_db, wage=30000)
+        add_new_wage(test_db, user.id, 31000, datetime.date(2024, 1, 1))
+        add_new_wage(test_db, user.id, 32000, datetime.date(2024, 1, 1))
+
+        history = get_wage_history(test_db, user.id)
+        assert [(h["wage"], h["effective_to"]) for h in history] == [(32000, None)]
+        test_db.refresh(user)
+        assert user.wage == 32000
+
     def test_get_current_wage_record(self, test_db):
         user = _make_user(test_db, wage=30000)
         add_new_wage(test_db, user.id, 30000, datetime.date(2024, 1, 1))

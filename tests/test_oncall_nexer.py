@@ -230,3 +230,21 @@ def test_nexer_overtime_and_hour_override_use_nexer_rules(oc_env):
     assert {c: b["hours"] for c, b in friday.items()} == {"NX_WEEKDAY": 14, "NX_NIGHT": 6}
     saturday = _day(days, OC_SATURDAY)
     assert saturday["oncall_pay"] == round(2 * SALARY / 350, 2)
+
+
+def test_oncall_before_a_raise_is_priced_with_the_wage_of_that_day(oc_env):
+    """The day builder priced on-call from a snapshot of today's wages, so a day
+    before a raise paid the new salary. 24 weekday hours at 30,000 / 1400."""
+    from app.database.database import WageHistory
+
+    session, user = oc_env
+    user.employer_profile = "nexer"
+    user.wage = 40000
+    monday = date(2026, 5, 11)
+    session.add(OnCallOverride(user_id=1, date=monday, override_type=OnCallOverrideType.ADD))
+    session.add(WageHistory(user_id=1, wage=30000, effective_from=date(2026, 1, 1), effective_to=date(2026, 9, 30)))
+    session.add(WageHistory(user_id=1, wage=40000, effective_from=date(2026, 10, 1), effective_to=None))
+    session.commit()
+
+    days = generate_period_data(monday, monday, person_id=1, session=session)
+    assert _day(days, monday)["oncall_pay"] == 514.29

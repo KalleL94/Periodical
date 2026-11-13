@@ -154,25 +154,45 @@ def add_new_rates(session, user_id: int, rates: dict, effective_from: datetime.d
             session.add(seed)
             session.flush()
 
-    # Close previous rate history
-    previous = (
-        session.query(RateHistory).filter(RateHistory.user_id == user_id, RateHistory.effective_to.is_(None)).first()
+    # Same layout as add_new_wage(): a back-dated record slots in between its
+    # neighbours instead of closing whichever record happens to be open.
+    new_record = (
+        session.query(RateHistory)
+        .filter(RateHistory.user_id == user_id, RateHistory.effective_from == effective_from)
+        .first()
     )
-    if previous:
-        previous.effective_to = effective_from - datetime.timedelta(days=1)
+    if new_record:
+        # Same start date: the new rates replace the record's values, dates untouched.
+        new_record.rates = rates
+        flag_modified(new_record, "rates")
+    else:
+        next_record = (
+            session.query(RateHistory)
+            .filter(RateHistory.user_id == user_id, RateHistory.effective_from > effective_from)
+            .order_by(RateHistory.effective_from.asc())
+            .first()
+        )
+        previous = (
+            session.query(RateHistory)
+            .filter(RateHistory.user_id == user_id, RateHistory.effective_from < effective_from)
+            .order_by(RateHistory.effective_from.desc())
+            .first()
+        )
+        if previous and (previous.effective_to is None or previous.effective_to >= effective_from):
+            previous.effective_to = effective_from - datetime.timedelta(days=1)
 
-    # Create new entry
-    new_record = RateHistory(
-        user_id=user_id,
-        rates=rates,
-        effective_from=effective_from,
-        effective_to=None,
-        created_by=created_by,
-    )
-    session.add(new_record)
+        new_record = RateHistory(
+            user_id=user_id,
+            rates=rates,
+            effective_from=effective_from,
+            effective_to=next_record.effective_from - datetime.timedelta(days=1) if next_record else None,
+            created_by=created_by,
+        )
+        session.add(new_record)
 
-    # Update User.custom_rates if effective_from <= today
-    if effective_from <= get_today():
+    # Sync User.custom_rates only when the new record is the one in effect today.
+    today = get_today()
+    if effective_from <= today and (new_record.effective_to is None or new_record.effective_to >= today):
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             user.custom_rates = rates

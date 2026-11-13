@@ -1,5 +1,31 @@
 [
   {
+    "version": "1.14.3",
+    "date": "2026-11-12",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Beredskap, övertid och OB räknas nu med den lön och de ersättningsnivåer som gällde den aktuella dagen. Tidigare användes dagens lön för äldre beredskap, och en ändrad nivå mitt i månaden slog igenom först månaden efter.",
+        "en": "On-call, overtime and OB are now priced with the wage and rates that applied on the day itself. Before, older on-call used today's wage, and a rate changed mid-month only took effect the month after."
+      },
+      {
+        "type": "fix",
+        "sv": "Övertid på en dag med delvis frånvaro räknas nu med. Delvis frånvaro på nattpass ger rätt antal timmar.",
+        "en": "Overtime on a day with a partial absence is now counted. A partial absence on a night shift gives the right number of hours."
+      },
+      {
+        "type": "fix",
+        "sv": "En semestervecka som går över årsskiftet visas nu i schemat för båda åren.",
+        "en": "A vacation week that crosses the new year now shows in the schedule for both years."
+      },
+      {
+        "type": "fix",
+        "sv": "En ersättningsnivå eller lön som läggs in med ett tidigare startdatum hamnar nu rätt i historiken.",
+        "en": "A rate or wage entered with an earlier start date now lands correctly in the history."
+      }
+    ]
+  },
+  {
     "version": "1.14.2",
     "date": "2026-11-01",
     "entries": [

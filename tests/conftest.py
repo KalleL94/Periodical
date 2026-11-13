@@ -33,6 +33,18 @@ from app.core.schedule import clear_schedule_cache
 from app.database.database import Base, RotationEra, User, UserRole, WageType, get_db
 from app.main import app
 
+
+def pytest_configure(config):
+    """Create the app database once, before xdist starts its workers.
+
+    Every worker runs the app startup, and two of them creating the tables of a
+    missing database at the same moment fail with "table already exists". Only
+    the controller has no workerinput; it runs this before any worker spawns.
+    """
+    if not hasattr(config, "workerinput"):
+        db_module.create_tables()
+
+
 # A 10-week rotation pattern containing OFF, work (N1/N2/N3) and OC days, mirroring the
 # characterization tests. Used by the rotation_session fixture so schedule lookups resolve.
 _ROTATION_ERA_PATTERN = {

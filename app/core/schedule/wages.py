@@ -339,6 +339,22 @@ def get_shift_times_for_date(
     return 8.5, None, None
 
 
+def clock_in_shift(clock: str, shift_start: datetime.datetime, shift_end: datetime.datetime) -> datetime.datetime:
+    """Map an "HH:MM" clock time onto the shift interval, clamped to it.
+
+    The time belongs to the shift's start date, or to the next day when that is
+    where it falls inside an overnight shift: 02:00 on a 22:00-06:30 shift is the
+    morning after, 23:00 is the same evening. A time outside the shift goes to
+    the nearer end: 07:00 on that shift is just after the end, 21:00 just before
+    the start.
+    """
+    moment = datetime.datetime.combine(shift_start.date(), datetime.datetime.strptime(clock, "%H:%M").time())
+    next_day = moment + timedelta(days=1)
+    if moment < shift_start and (next_day <= shift_end or next_day - shift_end < shift_start - moment):
+        moment = next_day
+    return min(max(moment, shift_start), shift_end)
+
+
 def get_absent_hours_for_absence(
     absence,
     shift_start_dt: datetime.datetime | None,
@@ -358,22 +374,18 @@ def get_absent_hours_for_absence(
     total = 0.0
 
     # Hours missed at end of shift (left early)
-    if left_at and shift_end_dt is not None:
+    if left_at and shift_start_dt is not None and shift_end_dt is not None:
         try:
-            left_time = datetime.datetime.strptime(left_at, "%H:%M").time()
-            left_dt = datetime.datetime.combine(shift_end_dt.date(), left_time)
-            if left_dt < shift_end_dt:
-                total += (shift_end_dt - left_dt).total_seconds() / 3600.0
+            total += (shift_end_dt - clock_in_shift(left_at, shift_start_dt, shift_end_dt)).total_seconds() / 3600.0
         except ValueError:
             total += shift_hours
 
     # Hours missed at start of shift (arrived late)
-    if arrived_at and shift_start_dt is not None:
+    if arrived_at and shift_start_dt is not None and shift_end_dt is not None:
         try:
-            arrived_time = datetime.datetime.strptime(arrived_at, "%H:%M").time()
-            arrived_dt = datetime.datetime.combine(shift_start_dt.date(), arrived_time)
-            if arrived_dt > shift_start_dt:
-                total += (arrived_dt - shift_start_dt).total_seconds() / 3600.0
+            total += (
+                clock_in_shift(arrived_at, shift_start_dt, shift_end_dt) - shift_start_dt
+            ).total_seconds() / 3600.0
         except ValueError:
             total += shift_hours
 
@@ -621,50 +633,52 @@ def add_new_wage(session: Session, user_id: int, new_wage: int, effective_from: 
 
     from app.database.database import User, WageHistory
 
-    # The row the new one is inserted in front of, if any. Back-dating a wage is a
-    # normal correction (an employment start moved, a raise recorded late), and it used
-    # to close whichever row was open against the new, earlier date: a row ending a year
-    # before it begins. get_user_wage filters on effective_from <= date <= effective_to,
-    # so such a row matches nothing at all and the wage it holds silently disappears.
-    next_wage = (
+    # Same start date: the new figure replaces the row's wage, dates untouched.
+    new_wage_history = (
         session.query(WageHistory)
-        .filter(WageHistory.user_id == user_id, WageHistory.effective_from > effective_from)
-        .order_by(WageHistory.effective_from.asc())
+        .filter(WageHistory.user_id == user_id, WageHistory.effective_from == effective_from)
         .first()
     )
-
-    # Close the row the new one takes over from: the open one, unless it starts later,
-    # in which case the new row belongs behind it and closes against it instead.
-    previous_wage = (
-        session.query(WageHistory)
-        .filter(
-            WageHistory.user_id == user_id,
-            WageHistory.effective_to.is_(None),
-            WageHistory.effective_from < effective_from,
+    if new_wage_history:
+        new_wage_history.wage = new_wage
+    else:
+        # The row the new one is inserted in front of, if any. Back-dating a wage is a
+        # normal correction (an employment start moved, a raise recorded late), and it
+        # used to close whichever row was open against the new, earlier date: a row
+        # ending a year before it begins, which get_user_wage then never matches.
+        next_wage = (
+            session.query(WageHistory)
+            .filter(WageHistory.user_id == user_id, WageHistory.effective_from > effective_from)
+            .order_by(WageHistory.effective_from.asc())
+            .first()
         )
-        .first()
-    )
 
-    if previous_wage:
-        # Set end date to day before new wage starts
-        previous_wage.effective_to = effective_from - timedelta(days=1)
+        # The row the new one takes over from is the latest one starting earlier,
+        # open or not: a closed row that runs past the new start would overlap it.
+        previous_wage = (
+            session.query(WageHistory)
+            .filter(WageHistory.user_id == user_id, WageHistory.effective_from < effective_from)
+            .order_by(WageHistory.effective_from.desc())
+            .first()
+        )
+        if previous_wage and (previous_wage.effective_to is None or previous_wage.effective_to >= effective_from):
+            previous_wage.effective_to = effective_from - timedelta(days=1)
 
-    # Create new wage history entry
-    new_wage_history = WageHistory(
-        user_id=user_id,
-        wage=new_wage,
-        effective_from=effective_from,
-        # NULL = current/future wage, unless a later row already covers what follows
-        effective_to=next_wage.effective_from - timedelta(days=1) if next_wage else None,
-        created_by=created_by,
-    )
-
-    session.add(new_wage_history)
+        new_wage_history = WageHistory(
+            user_id=user_id,
+            wage=new_wage,
+            effective_from=effective_from,
+            # NULL = current/future wage, unless a later row already covers what follows
+            effective_to=next_wage.effective_from - timedelta(days=1) if next_wage else None,
+            created_by=created_by,
+        )
+        session.add(new_wage_history)
 
     # Update User.wage for current wage (for backwards compatibility and performance).
     # A back-dated row that a later one supersedes is not today's wage, so the snapshot
     # keeps whatever still is.
-    if effective_from <= get_today() and (next_wage is None or next_wage.effective_from > get_today()):
+    today = get_today()
+    if effective_from <= today and (new_wage_history.effective_to is None or new_wage_history.effective_to >= today):
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             user.wage = new_wage

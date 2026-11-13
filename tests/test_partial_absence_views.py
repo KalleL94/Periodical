@@ -178,3 +178,78 @@ def test_a_late_arrival_is_named_as_such(env, view):
 
     cell = _cell(client.get(VIEWS[view]).text)
     assert "LATE_PAID" in cell or "Late" in cell or "Sen" in cell
+
+
+# --- Overtime on a part-day absence, and overnight clock times ---------------------
+
+N1_DAY = datetime.date(2026, 3, 25)  # 06:00-14:30 for person 1 under conftest's pattern
+N3_DAY = datetime.date(2026, 3, 18)  # 22:00-06:30
+
+
+def _core_day(session, day):
+    from app.core.schedule import generate_period_data
+
+    clear_schedule_cache()
+    return generate_period_data(day, day, 1, session=session, user_rates_map={1: {"ot": 100}})[0]
+
+
+def test_overtime_is_kept_on_a_part_day_absence(rotation_session):
+    from app.database.database import OvertimeShift
+
+    session = rotation_session
+    session.add(Absence(user_id=1, date=N1_DAY, absence_type=AbsenceType.SICK, arrived_at="09:00"))
+    session.add(
+        OvertimeShift(
+            user_id=1,
+            date=N1_DAY,
+            start_time=datetime.time(14, 30),
+            end_time=datetime.time(16, 30),
+            hours=2.0,
+            ot_pay=0.0,
+            kind="ot",
+            side="after",
+        )
+    )
+    session.commit()
+
+    day = _core_day(session, N1_DAY)
+    assert day["partial_absence"] is not None
+    assert (day["hours"], day["ot_hours"], day["ot_pay"]) == (5.5, 2.0, 200)
+
+
+def test_leaving_after_midnight_on_a_night_shift_counts_the_worked_hours(rotation_session):
+    session = rotation_session
+    session.add(Absence(user_id=1, date=N3_DAY, absence_type=AbsenceType.SICK, left_at="02:00"))
+    session.commit()
+
+    day = _core_day(session, N3_DAY)
+    assert day["end"] == datetime.datetime(2026, 3, 19, 2, 0)
+    assert day["hours"] == 4.0
+
+
+@pytest.mark.parametrize(
+    "left_at, arrived_at, absent",
+    [("23:00", None, 7.5), ("02:00", None, 4.5), (None, "02:00", 4.0), (None, "23:00", 1.0)],
+)
+def test_absent_hours_on_a_night_shift(left_at, arrived_at, absent):
+    from types import SimpleNamespace
+
+    from app.core.schedule.wages import get_absent_hours_for_absence
+
+    start = datetime.datetime(2026, 3, 18, 22, 0)
+    end = datetime.datetime(2026, 3, 19, 6, 30)
+    absence = SimpleNamespace(left_at=left_at, arrived_at=arrived_at)
+    assert get_absent_hours_for_absence(absence, start, end, 8.5) == absent
+
+
+def test_clock_in_shift_outside_an_overnight_shift_goes_to_the_nearer_end():
+    import datetime
+
+    from app.core.schedule.wages import clock_in_shift
+
+    start = datetime.datetime(2026, 3, 2, 22, 0)
+    end = datetime.datetime(2026, 3, 3, 6, 30)
+    assert clock_in_shift("23:00", start, end) == datetime.datetime(2026, 3, 2, 23, 0)
+    assert clock_in_shift("02:00", start, end) == datetime.datetime(2026, 3, 3, 2, 0)
+    assert clock_in_shift("07:00", start, end) == end
+    assert clock_in_shift("21:00", start, end) == start

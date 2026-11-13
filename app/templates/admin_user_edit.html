@@ -314,7 +314,7 @@
 
         {% for record in person_history %}
             {% if record.is_current %}
-                <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" onsubmit="return confirm('{% if t.html_lang == "en" %}Are you sure you want to end {{ edit_user.name }}\'s employment at position {{ record.person_id }}?{% else %}Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?{% endif %}');">
+                <form method="POST" action="/admin/users/{{ edit_user.id }}/end-employment" data-confirm="{% if t.html_lang == "en" %}Are you sure you want to end {{ edit_user.name }}'s employment at position {{ record.person_id }}?{% else %}Är du säker på att du vill avsluta {{ edit_user.name }}s anställning på position {{ record.person_id }}?{% endif %}" onsubmit="return confirm(this.dataset.confirm);">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="person_id" value="{{ record.person_id }}">
                     <div class="form-group">

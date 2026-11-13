@@ -170,6 +170,52 @@ class TestAddNewRates:
         test_db.refresh(user)
         assert user.custom_rates == {"ot": 100}
 
+    def test_a_back_dated_rate_slots_in_behind_the_later_one(self, test_db):
+        """Back-dating used to close the open record against the earlier date, so the
+        later record ended before it began and every later date fell back to the
+        back-dated rate."""
+        user = _make_user(test_db)
+        add_new_rates(test_db, user.id, {"ot": 200}, datetime.date(2026, 10, 1))
+        add_new_rates(test_db, user.id, {"ot": 100}, datetime.date(2025, 10, 1))
+
+        rows = test_db.query(RateHistory).filter(RateHistory.user_id == user.id).order_by(RateHistory.effective_from)
+        assert [(r.rates["ot"], r.effective_from, r.effective_to) for r in rows] == [
+            (100, datetime.date(2025, 10, 1), datetime.date(2026, 9, 30)),
+            (200, datetime.date(2026, 10, 1), None),
+        ]
+        assert get_user_rates(user, session=test_db, effective_date=datetime.date(2026, 9, 30))["ot"] == 100
+        assert get_user_rates(user, session=test_db, effective_date=datetime.date(2027, 6, 1))["ot"] == 200
+
+    def test_a_rate_inserted_between_two_records_closes_the_earlier_one(self, test_db):
+        user = _make_user(test_db)
+        add_new_rates(test_db, user.id, {"ot": 100}, datetime.date(2024, 1, 1))
+        add_new_rates(test_db, user.id, {"ot": 300}, datetime.date(2026, 1, 1))
+        add_new_rates(test_db, user.id, {"ot": 200}, datetime.date(2025, 1, 1))
+
+        rows = test_db.query(RateHistory).filter(RateHistory.user_id == user.id).order_by(RateHistory.effective_from)
+        assert [(r.rates["ot"], r.effective_to) for r in rows] == [
+            (100, datetime.date(2024, 12, 31)),
+            (200, datetime.date(2025, 12, 31)),
+            (300, None),
+        ]
+
+    def test_a_back_dated_rate_does_not_become_todays_snapshot(self, test_db):
+        user = _make_user(test_db, custom_rates={"ot": 40})
+        add_new_rates(test_db, user.id, {"ot": 200}, get_today() - datetime.timedelta(days=1))
+        add_new_rates(test_db, user.id, {"ot": 100}, datetime.date(2021, 1, 1))
+        test_db.refresh(user)
+        assert user.custom_rates == {"ot": 200}
+
+    def test_same_effective_from_replaces_the_existing_record(self, test_db):
+        user = _make_user(test_db)
+        add_new_rates(test_db, user.id, {"ot": 100}, datetime.date(2024, 1, 1))
+        add_new_rates(test_db, user.id, {"ot": 150}, datetime.date(2024, 1, 1))
+
+        rows = test_db.query(RateHistory).filter(RateHistory.user_id == user.id).all()
+        assert [(r.rates, r.effective_to) for r in rows] == [({"ot": 150}, None)]
+        test_db.refresh(user)
+        assert user.custom_rates == {"ot": 150}
+
 
 class TestGetRateHistory:
     def test_status_classification(self, test_db):
@@ -392,3 +438,63 @@ def test_oncall_group_map_keeps_ica_grouping():
     assert ONCALL_GROUP_BY_CODE["OC_NATIONALDAGEN"] == "oc_helgdag"
     assert ONCALL_GROUP_BY_CODE["OC_WEEKEND_MON"] == "oc_helg"
     assert set(ONCALL_GROUP_BY_CODE.values()) == {"oc_vardag", "oc_helg", "oc_helgdag", "oc_storhelg"}
+
+
+def test_each_day_uses_the_rates_in_effect_that_day(rotation_session):
+    """Callers resolve one rate record at the start of the month and pass it in
+    user_rates_map. A rate change on the 15th must still price the 20th."""
+    from app.core.schedule import generate_period_data
+    from app.database.database import OvertimeShift
+
+    session = rotation_session
+    user = session.get(User, 1)
+    session.add(
+        RateHistory(
+            user_id=1,
+            rates={"ot": 100},
+            effective_from=datetime.date(2026, 1, 1),
+            effective_to=datetime.date(2026, 4, 14),
+        )
+    )
+    session.add(RateHistory(user_id=1, rates={"ot": 200}, effective_from=datetime.date(2026, 4, 15)))
+    day = datetime.date(2026, 4, 20)
+    session.add(
+        OvertimeShift(
+            user_id=1,
+            date=day,
+            start_time=datetime.time(18, 0),
+            end_time=datetime.time(20, 0),
+            hours=2.0,
+            ot_pay=0.0,
+            kind="ot",
+            side="after",
+        )
+    )
+    session.commit()
+
+    month_rates = get_user_rates(user, session=session, effective_date=datetime.date(2026, 4, 1))
+    days = generate_period_data(
+        datetime.date(2026, 4, 1), datetime.date(2026, 4, 30), 1, session=session, user_rates_map={1: month_rates}
+    )
+    assert next(d for d in days if d["date"] == day)["ot_pay"] == 400
+
+
+def test_month_summary_prices_ob_with_the_rates_of_each_day(rotation_session):
+    """OB is priced in summary.py from the rates resolved at the month start. A
+    record starting mid-month must price the days after it."""
+    from app.core.schedule import summarize_month_for_person
+
+    session = rotation_session
+    session.add(
+        RateHistory(
+            user_id=1, rates={}, effective_from=datetime.date(2026, 1, 1), effective_to=datetime.date(2026, 3, 14)
+        )
+    )
+    session.add(RateHistory(user_id=1, rates={"ob": {"OB2": 500}}, effective_from=datetime.date(2026, 3, 15)))
+    session.commit()
+
+    days = summarize_month_for_person(2026, 3, 1, session=session, fetch_tax_table=False)["days"]
+    # 2026-03-18 is an N3 night with 6.5 OB2 hours: they earn the new rate.
+    night = next(d for d in days if d["date"] == datetime.date(2026, 3, 18))
+    assert night["ob_hours"]["OB2"] == 6.5
+    assert night["ob_pay"]["OB2"] == 6.5 * 500

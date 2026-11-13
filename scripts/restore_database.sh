@@ -64,7 +64,8 @@ fi
 if [ -f "$DB_PATH" ]; then
     SAFETY_BACKUP="${DB_PATH}.before_restore_$(date +%Y%m%d_%H%M%S)"
     log "Creating safety backup of current database..."
-    cp "$DB_PATH" "$SAFETY_BACKUP"
+    # Online backup: the live database runs in WAL mode, plain cp would miss -wal
+    sqlite3 "$DB_PATH" ".backup '$SAFETY_BACKUP'"
     log "Safety backup created: $SAFETY_BACKUP"
 fi
 
@@ -102,6 +103,8 @@ fi
 
 # Restore database
 log "Restoring database..."
+# Stale WAL/SHM frames would be replayed onto the restored file
+rm -f "$DB_PATH-wal" "$DB_PATH-shm"
 cp "$TEMP_BACKUP" "$DB_PATH"
 log "Database restored successfully"
 
