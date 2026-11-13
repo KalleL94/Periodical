@@ -37,7 +37,7 @@ from .core import (
     weekday_names,
 )
 from .ob import calculate_ob_hours, get_combined_rules_for_year, rules_for_profile
-from .person_history import get_current_person_for_position, get_person_for_date, get_position_vacancy
+from .person_history import PositionHistoryIndex
 from .segments import DaySegment, extra_segments, segment_bounds, segment_hours, segment_ob
 from .vacation import get_parental_dates_for_year, get_vacation_dates_for_year
 from .wages import _MONTHLY_HOURS, clock_in_shift, get_all_user_wages
@@ -76,6 +76,9 @@ class DayLookupContext:
     # is resolved once per call, so neither can price a day before a change.
     wage_on: Callable[[int, datetime.date], int | None] | None = None
     rates_on: Callable[[int, datetime.date], dict | None] | None = None
+    # PersonHistory of the call's positions, preloaded so naming the day's holder
+    # costs no query per day. None without a session.
+    people: PositionHistoryIndex | None = None
 
 
 def build_week_data(
@@ -317,6 +320,7 @@ def generate_period_data(
         linked_sub_absence_map=linked_sub_absence_map,
         linked_sub_ot_map=linked_sub_ot_map,
         holder=_build_holder_resolver(session, person_ids) if with_pay else None,
+        people=PositionHistoryIndex(session, person_ids) if session else None,
     )
     if with_pay:
         ctx.wage_on, ctx.rates_on = _build_pay_history_resolver(session, effective_start, end_date)
@@ -1406,7 +1410,7 @@ def _person_day(date: datetime.date, person_id: int, ctx: DayLookupContext, sess
 
 
 def _resolve_day_person(
-    session,
+    people: PositionHistoryIndex | None,
     person_id: int,
     current_day: datetime.date,
     employment_start: datetime.date | None,
@@ -1419,20 +1423,20 @@ def _resolve_day_person(
     person_name = placeholder_person_name(person_id)  # Default fallback
     show_off_before_employment = False
 
-    if session:
+    if people:
         # Position vacated with no successor: render OFF after the last employment ended
-        vacancy = get_position_vacancy(session, person_id, current_day)
+        vacancy = people.vacancy(person_id, current_day)
         if vacancy:
             return vacancy.name, True
 
         # First check who held this position on this specific date
-        date_person = get_person_for_date(session, person_id, current_day)
+        date_person = people.person_for_date(person_id, current_day)
         if date_person:
             # Someone held this position on this date - use their name, no OFF
             person_name = date_person["name"]
         else:
             # No one held the position on this date - check if there's a future person
-            current_person = get_current_person_for_position(session, person_id)
+            current_person = people.current_person(person_id)
             if current_person:
                 person_name = current_person["name"]
                 # Only show OFF if date is before the current person's employment started
@@ -1442,8 +1446,8 @@ def _resolve_day_person(
     # Override: if the viewing user hasn't started yet, show before_employment
     # regardless of who held the position historically (e.g., their predecessor)
     if employment_start and current_day < employment_start and not show_off_before_employment:
-        if session:
-            current_person = get_current_person_for_position(session, person_id)
+        if people:
+            current_person = people.current_person(person_id)
             if current_person:
                 person_name = current_person["name"]
         show_off_before_employment = True
@@ -1937,7 +1941,7 @@ def _populate_single_person_day(
     day_info["holder_user_id"] = _wage_uid
 
     # Get person name via PersonHistory (shows correct person for this specific date)
-    person_name, show_off_before_employment = _resolve_day_person(session, person_id, current_day, employment_start)
+    person_name, show_off_before_employment = _resolve_day_person(ctx.people, person_id, current_day, employment_start)
 
     # If date is before current person's employment, show OFF - unless a linked
     # substitute has activity on the date (issue #290), in which case the

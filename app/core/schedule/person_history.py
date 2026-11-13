@@ -9,6 +9,7 @@ This module handles employment periods, allowing:
 - New employees to only see data from their start date
 """
 
+from collections import defaultdict
 from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
@@ -730,6 +731,9 @@ def get_current_person_for_position(session: Session, person_id: int) -> dict | 
             PersonHistory.person_id == person_id,
             PersonHistory.effective_to.is_(None),
         )
+        # Deterministic if a position ever has two open records; PositionHistoryIndex
+        # picks the same one.
+        .order_by(PersonHistory.id)
         .first()
     )
 
@@ -900,3 +904,58 @@ def position_segments_for_window(session: Session, user, start_date: date, end_d
 def has_position_history(session: Session, person_id: int) -> bool:
     """Check whether a position has any PersonHistory records at all."""
     return session.query(PersonHistory.id).filter(PersonHistory.person_id == person_id).first() is not None
+
+
+class PositionHistoryIndex:
+    """In-memory get_position_vacancy, get_person_for_date and get_current_person_for_position.
+
+    Built from one PersonHistory query and one User query for a fixed set of
+    positions, so a schedule generate call resolves every (position, day) pair
+    without a query per day. Each method returns what its query-backed namesake
+    returns for a position in the set. Build one per call and drop it: admin routes
+    edit person history, so an index kept across requests would go stale.
+    """
+
+    def __init__(self, session: Session, positions):
+        # Newest effective_from first, the order the single-date lookups query in.
+        self._history: dict[int, list[PersonHistory]] = defaultdict(list)
+        for r in (
+            session.query(PersonHistory)
+            .filter(PersonHistory.person_id.in_(positions))
+            .order_by(PersonHistory.effective_from.desc())
+        ):
+            self._history[r.person_id].append(r)
+        self._users = {u.id: u for u in session.query(User).filter(User.id.in_(positions))}
+
+    def vacancy(self, person_id: int, check_date: date) -> PersonHistory | None:
+        """get_position_vacancy without the query."""
+        recs = self._history.get(person_id)
+        if not recs or recs[0].effective_to is None:
+            return None
+        return recs[0] if check_date > recs[0].effective_to else None
+
+    def person_for_date(self, person_id: int, effective_date: date) -> dict | None:
+        """get_person_for_date without the queries."""
+        recs = self._history.get(person_id)
+        for r in recs or ():
+            # effective_to is an inclusive last valid day.
+            if r.effective_from <= effective_date and (r.effective_to is None or r.effective_to >= effective_date):
+                return {"name": r.name, "username": r.username, "is_active": r.is_active, "user_id": r.user_id}
+        if recs:
+            return None  # history exists but none covers the date: unstaffed
+        user = self._users.get(person_id)
+        if user:
+            return {"name": user.name, "username": user.username, "is_active": user.is_active, "user_id": user.id}
+        return None
+
+    def current_person(self, person_id: int) -> dict | None:
+        """get_current_person_for_position without the queries."""
+        # Lowest id among the open records, the order that query sorts by.
+        open_recs = [r for r in self._history.get(person_id, ()) if r.effective_to is None]
+        if open_recs:
+            r = min(open_recs, key=lambda rec: rec.id)
+            return {"user_id": r.user_id, "name": r.name, "username": r.username, "effective_from": r.effective_from}
+        user = self._users.get(person_id)
+        if user:
+            return {"user_id": user.id, "name": user.name, "username": user.username, "effective_from": None}
+        return None
