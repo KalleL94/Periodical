@@ -30,6 +30,7 @@ something to tell users about, whose pull request renames the heading.
 - `CSRFMiddleware` caps the request body at 3 MiB (`MAX_BODY_BYTES`) and answers 413. It buffered every non-GET body in memory before authentication with no limit. The cap also applies to requests exempt from the token check.
 
 ### Changed
+- The schedule views no longer query `person_history` once per position per day. `PositionHistoryIndex` in `app/core/schedule/person_history.py` preloads the history of a `generate_period_data` call with two queries and answers `_resolve_day_person` from memory. On a copy of the development database the year view went from 7,735 queries to 405 and from 5.3 s to 0.9 s. Nothing is kept across requests.
 - `scripts/deploy.sh` installs with `pip install --upgrade --upgrade-strategy eager .`. Without it pip kept any installed version that still satisfied the `>=` ranges, so production could run older dependencies than the ones CI resolved and audited.
 - Seven `except Exception` blocks in `summary.py`, `vacation.py` and `transition.py` that fell back to a default wage or skipped a month now log the exception with the user id and date.
 
