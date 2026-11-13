@@ -35,6 +35,11 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # cross-site form submission carrying our cookie.
 EXEMPT_PATH_PREFIXES = ("/api/v1", "/static")
 
+# Request bodies are buffered in memory before authentication, so they are capped.
+# The largest legitimate upload is a payslip PDF (2 MB limit in routes/payslip.py);
+# 1 MB on top covers multipart framing and the other form fields.
+MAX_BODY_BYTES = 3 * 1024 * 1024
+
 _FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
 _MULTIPART_CONTENT_TYPE = "multipart/form-data"
 
@@ -57,12 +62,23 @@ class CSRFMiddleware:
             await self._handle_safe_request(scope, receive, send, cookie_token)
             return
 
-        if self._is_exempt(scope, headers):
-            await self.app(scope, receive, send)
+        # The cap comes before the exemption: an exempt request skips the token
+        # check, not the size limit, or any Authorization header would lift it.
+        too_large = PlainTextResponse("Request body too large.", status_code=413)
+        declared = headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+            await too_large(scope, receive, send)
             return
 
         body = await _read_body(receive)
         if body is None:  # client disconnected mid-request
+            return
+        if len(body) > MAX_BODY_BYTES:
+            await too_large(scope, receive, send)
+            return
+
+        if self._is_exempt(scope, headers):
+            await self.app(scope, _replay(body), send)
             return
 
         # JSON fetch() calls carry the token in a header; the check is the same,
@@ -168,13 +184,19 @@ def _multipart_token(content_type: str, body: bytes) -> str | None:
 
 
 async def _read_body(receive: Receive) -> bytes | None:
-    """Drain the receive channel, returning None if the client disconnected."""
+    """Drain the receive channel, returning None if the client disconnected.
+
+    Stops reading once the cap is passed and returns the partial body, which the
+    caller rejects by length, so an oversized body is never buffered in full.
+    """
     body = b""
     while True:
         message = await receive()
         if message["type"] == "http.disconnect":
             return None
         body += message.get("body", b"")
+        if len(body) > MAX_BODY_BYTES:
+            return body
         if not message.get("more_body", False):
             return body
 

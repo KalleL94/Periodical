@@ -120,7 +120,7 @@ def test_an_admin_reset_sets_the_stamp(test_client, test_db, admin_user, test_us
 
     resp = test_client.post(f"/admin/users/{test_user.id}/reset-password", follow_redirects=False)
 
-    assert resp.status_code == 302
+    assert resp.status_code == 200
     test_db.expire_all()
     assert test_db.query(User).filter(User.id == test_user.id).one().password_changed_at is not None
 

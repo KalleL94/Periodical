@@ -409,7 +409,7 @@ def test_admin_password_reset_revokes_the_users_passkeys(test_client, test_db, a
 
     response = test_client.post(f"/admin/users/{test_user.id}/reset-password", follow_redirects=False)
 
-    assert response.status_code == 302
+    assert response.status_code == 200
     assert test_db.query(Passkey).filter(Passkey.user_id == test_user.id).count() == 0
 
 

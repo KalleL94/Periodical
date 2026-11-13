@@ -79,3 +79,20 @@ def test_non_api_request_stays_out_of_the_api_log(logged_client, caplog):
     with caplog.at_level(logging.INFO):
         logged_client.get("/login")
     assert _api_records(caplog) == []
+
+
+def test_url_secrets_are_redacted_from_the_request_log(logged_client, caplog):
+    with caplog.at_level(logging.INFO):
+        logged_client.get("/calendar/feed/feedsecret123/schema.ics")
+        logged_client.get("/admin/report?year=2026&token=reportsecret456&month=3")
+        logged_client.get("/admin/report?%74oken=encodedsecret789")
+
+    # The test client's own httpx logger prints the raw URL; only the app's records count.
+    app_records = [r for r in caplog.records if r.name.startswith("app")]
+    assert "feedsecret123" not in "".join(r.getMessage() for r in app_records)
+    logged_fields = str([getattr(r, "extra_fields", {}) for r in app_records])
+    assert "reportsecret456" not in logged_fields
+    assert "encodedsecret789" not in logged_fields
+    fields = [r.extra_fields for r in caplog.records if hasattr(r, "extra_fields")]
+    assert any(f.get("query") == "year=2026&token=[redacted]&month=3" for f in fields)
+    assert any(f["path"] == "/calendar/feed/[redacted]/schema.ics" for f in fields)

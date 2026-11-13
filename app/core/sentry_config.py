@@ -68,6 +68,9 @@ def init_sentry() -> bool:
             attach_stacktrace=True,  # Include stack traces
             # Before send hook - filter sensitive data
             before_send=before_send_hook,
+            before_send_transaction=before_send_hook,
+            # Frame locals can hold a temporary password or a wage.
+            include_local_variables=False,
         )
 
         env = os.getenv("SENTRY_ENVIRONMENT", "production")
@@ -100,6 +103,12 @@ def before_send_hook(event, hint):
             for header in sensitive_headers:
                 if header in event["request"]["headers"]:
                     event["request"]["headers"][header] = "[Filtered]"
+
+    # The calendar feed carries its token in the path
+    if "request" in event and event["request"].get("url"):
+        from app.core.request_logging import redact_path
+
+        event["request"]["url"] = redact_path(event["request"]["url"])
 
     # Remove sensitive query parameters
     if "request" in event and "query_string" in event["request"]:

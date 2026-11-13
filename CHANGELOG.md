@@ -22,6 +22,17 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
+## [Unreleased]
+
+### Security
+- An admin password reset no longer puts the temporary password in a redirect URL, where it reached the request log, the proxy access log and the browser history. The user list is rendered in the response to the POST with `Cache-Control: no-store`.
+- The request log redacts the `token` query parameter and the token segment of `/calendar/feed/<token>/` (`redact_path` in `app/core/request_logging.py`). The Sentry hook redacts the same path, runs on transactions too, and no longer sends frame locals. The systemd unit starts uvicorn with `--no-access-log`, since uvicorn's own access line carried the raw URL.
+- `CSRFMiddleware` caps the request body at 3 MiB (`MAX_BODY_BYTES`) and answers 413. It buffered every non-GET body in memory before authentication with no limit. The cap also applies to requests exempt from the token check.
+
+### Changed
+- `scripts/deploy.sh` installs with `pip install --upgrade --upgrade-strategy eager .`. Without it pip kept any installed version that still satisfied the `>=` ranges, so production could run older dependencies than the ones CI resolved and audited.
+- Seven `except Exception` blocks in `summary.py`, `vacation.py` and `transition.py` that fell back to a default wage or skipped a month now log the exception with the user id and date.
+
 ## [1.14.3] - 2026-11-12
 
 ### Fixed

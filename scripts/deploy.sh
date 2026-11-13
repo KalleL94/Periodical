@@ -125,7 +125,7 @@ fi
 
 # 3. Pip Install
 log "📦 Installerar/uppdaterar dependencies..."
-if ! pip install .; then
+if ! pip install --upgrade --upgrade-strategy eager .; then
     error_exit "Pip install misslyckades."
 fi
 

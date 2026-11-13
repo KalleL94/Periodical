@@ -714,6 +714,7 @@ def calculate_vacation_pay(
     try:
         monthly_salary = get_effective_monthly_wage(db, user.id, 0, effective_date=wage_date)
     except Exception:
+        logger.exception("Wage lookup failed for user %s on %s; using user.wage", user.id, wage_date)
         monthly_salary = user.wage if hasattr(user, "wage") else 0
     if monthly_salary == 0:
         monthly_salary = user.wage if hasattr(user, "wage") else 0
@@ -730,6 +731,7 @@ def calculate_vacation_pay(
         try:
             vacation_rates = get_user_rates(user, session=db, effective_date=wage_date).get("vacation")
         except Exception:
+            logger.exception("Vacation rate lookup failed for user %s on %s; using defaults", user.id, wage_date)
             vacation_rates = None
         vacation_rates = vacation_rates or DEFAULT_VACATION_RATES
 
