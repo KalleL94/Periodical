@@ -11,6 +11,7 @@ So the property worth pinning is that two resets never produce the same
 password, which a reintroduced constant would fail immediately.
 """
 
+import html
 import re
 
 from app.auth.auth import verify_password
@@ -24,10 +25,11 @@ def _login(client, username, password):
 def _reset(client, user_id):
     """Reset the user's password and return the one the response reveals."""
     resp = client.post(f"/admin/users/{user_id}/reset-password", follow_redirects=False)
-    assert resp.status_code == 302
-    match = re.search(r"terst%C3%A4llts%20till%20(\S+)$", resp.headers["location"])
-    assert match, f"password not found in redirect: {resp.headers['location']}"
-    return match.group(1)
+    assert resp.status_code == 200
+    assert "location" not in resp.headers
+    match = re.search(r"data-temp-password>([^<]+)<", resp.text)
+    assert match, "password not shown in the response body"
+    return html.unescape(match.group(1))
 
 
 def test_each_reset_generates_a_different_password(test_client, test_db, admin_user, test_user):
@@ -50,3 +52,15 @@ def test_the_revealed_password_is_the_one_that_was_stored(test_client, test_db, 
     reset_user = test_db.query(User).filter(User.id == test_user.id).one()
     assert verify_password(password, reset_user.password_hash)
     assert reset_user.must_change_password == 1
+
+
+def test_the_password_never_reaches_a_url_or_the_log(test_client, test_db, admin_user, test_user, caplog):
+    _login(test_client, "admin", "adminpass123")
+
+    with caplog.at_level("DEBUG"):
+        resp = test_client.post(f"/admin/users/{test_user.id}/reset-password", follow_redirects=False)
+    password = re.search(r"data-temp-password>([^<]+)<", resp.text).group(1)
+
+    assert password not in str(resp.headers)
+    assert password not in caplog.text
+    assert resp.headers["cache-control"] == "no-store"

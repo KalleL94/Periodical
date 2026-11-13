@@ -4,9 +4,11 @@ Request logging middleware for tracking all HTTP requests.
 """
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable
+from urllib.parse import unquote_plus
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -16,6 +18,24 @@ logger = logging.getLogger(__name__)
 # API traffic gets its own logger so it lands in logs/api.log as well, where a
 # misbehaving client can be traced without digging through the whole app log.
 api_logger = logging.getLogger("app.api")
+
+# Secrets that travel in the URL: the report access `token` query parameter and
+# the calendar feed token in the path. Redacted before anything is logged.
+_SECRET_PATH = re.compile(r"(/calendar/feed/)[^/]+")
+
+
+def redact_path(path: str) -> str:
+    return _SECRET_PATH.sub(r"\1[redacted]", path)
+
+
+def _redact_query(query: str) -> str:
+    # Decoded keys: the app decodes %74oken to token, so the logger must too.
+    # Everything else is logged as it was sent.
+    parts = []
+    for part in query.split("&"):
+        key = part.split("=", 1)[0]
+        parts.append(f"{key}=[redacted]" if unquote_plus(key).lower() == "token" else part)
+    return "&".join(parts)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -53,11 +73,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 user_id = request.state.user.id
                 username = request.state.user.username
 
+            path = redact_path(request.url.path)
+
             # Log request
             log_data = {
                 "request_id": request_id,
                 "method": request.method,
-                "path": request.url.path,
+                "path": path,
                 "status_code": status_code,
                 "duration": duration_ms,
             }
@@ -72,7 +94,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # which integration asked.
             is_api = request.url.path.startswith("/api/")
             if request.url.query:
-                log_data["query"] = request.url.query
+                log_data["query"] = _redact_query(request.url.query)
             if is_api:
                 log_data["user_agent"] = request.headers.get("user-agent")
 
@@ -83,30 +105,30 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Log level based on status code
             if error:
                 log.error(
-                    f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms) - ERROR: {error}",
+                    f"{request.method} {path} - {status_code} ({duration_ms:.2f}ms) - ERROR: {error}",
                     extra=extra,
                     exc_info=True,
                 )
             elif status_code >= 500:
                 log.error(
-                    f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
+                    f"{request.method} {path} - {status_code} ({duration_ms:.2f}ms)",
                     extra=extra,
                 )
             elif status_code >= 400:
                 log.warning(
-                    f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
+                    f"{request.method} {path} - {status_code} ({duration_ms:.2f}ms)",
                     extra=extra,
                 )
             else:
                 # Don't log health checks at INFO level (reduces noise)
                 if request.url.path == "/health":
                     log.debug(
-                        f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
+                        f"{request.method} {path} - {status_code} ({duration_ms:.2f}ms)",
                         extra=extra,
                     )
                 else:
                     log.info(
-                        f"{request.method} {request.url.path} - {status_code} ({duration_ms:.2f}ms)",
+                        f"{request.method} {path} - {status_code} ({duration_ms:.2f}ms)",
                         extra=extra,
                     )
 

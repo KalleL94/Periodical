@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.csrf_middleware import CSRFMiddleware
 from app.core.logging_config import setup_logging
 from app.core.news import get_latest_version
-from app.core.request_logging import RequestLoggingMiddleware
+from app.core.request_logging import RequestLoggingMiddleware, redact_path
 from app.core.security_headers import DOC_PATHS, USER_DOC_PATHS, SecurityHeadersMiddleware
 from app.core.sentry_config import init_sentry
 from app.database.database import create_tables, get_db
@@ -287,7 +287,9 @@ async def password_change_required_handler(request: Request, exc: PasswordChange
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code >= 400:
-        logger.warning("HTTP %s on %s %s: %s", exc.status_code, request.method, request.url.path, exc.detail)
+        logger.warning(
+            "HTTP %s on %s %s: %s", exc.status_code, request.method, redact_path(request.url.path), exc.detail
+        )
 
     if _wants_json(request):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

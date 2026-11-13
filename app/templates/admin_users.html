@@ -7,7 +7,7 @@
 
 {% if success %}
 <div class="alert alert--success">
-    {{ success }}
+    {{ success }}{% if temp_password %} <code data-temp-password>{{ temp_password }}</code>{% endif %}
 </div>
 {% endif %}
 

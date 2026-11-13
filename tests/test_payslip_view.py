@@ -397,3 +397,16 @@ def test_upload_without_a_csrf_token_is_rejected(raw_client, monthly_user):
     )
 
     assert response.status_code == 403
+
+
+def test_upload_just_under_the_limit_passes_the_body_cap(test_client, monthly_user):
+    """The middleware cap must leave room for the largest allowed upload."""
+    _login(test_client, monthly_user)
+
+    response = test_client.post(
+        "/month/5/payslip/compare",
+        data={"year": 2026, "month": 6},
+        files={"file": ("big.pdf", b"%PDF" + b"0" * (2 * 1024 * 1024 - 4), "application/pdf")},
+    )
+
+    assert response.status_code == 200

@@ -367,6 +367,7 @@ def _resolve_month_wage_context(
                 session, uid_for_wages, settings.monthly_salary, effective_date=month_start_date
             )
         except Exception:
+            logger.exception("Wage lookup failed for user %s, month %s; using default", uid_for_wages, month_start_date)
             base_salary = settings.monthly_salary
 
     tax_table = None

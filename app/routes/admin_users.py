@@ -271,10 +271,21 @@ async def admin_reset_password(
         },
     )
 
-    from urllib.parse import quote
-
-    success_msg = f"Lösenordet för {reset_user.name} har återställts till {default_password}"
-    return RedirectResponse(url=f"/admin/users?success={quote(success_msg)}", status_code=302)
+    # Rendered in the POST response instead of redirecting with the password in
+    # the query string, which would reach access logs and browser history.
+    users = db.query(User).order_by(User.id).all()
+    success_msg = f"Lösenordet för {reset_user.name} har återställts till"
+    return render(
+        "admin_users.html",
+        {
+            "request": request,
+            "user": current_user,
+            "users": users,
+            "success": success_msg,
+            "temp_password": default_password,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/admin/users/{user_id}/set-wage-type", name="admin_set_wage_type")

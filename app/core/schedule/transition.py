@@ -17,11 +17,14 @@ depends on the consultant employer's agreement:
 """
 
 import datetime
+import logging
 import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.database.database import EmploymentTransition, User
+
+logger = logging.getLogger(__name__)
 
 SAME_PAY_RULE = "sammalone"
 PERCENTAGE_RULE = "procent"
@@ -309,6 +312,7 @@ def _pay_for_window(user: "User", session, start: datetime.date, end: datetime.d
                 wage_user_id=user.id,
             )
         except Exception:
+            logger.exception("Month summary failed for user %s, %s-%02d; skipping month", user.id, year, month)
             continue
 
         days_in_month = calendar.monthrange(year, month)[1]
@@ -368,6 +372,9 @@ def calculate_variable_avg_daily(
             session=session,
         )
     except Exception:
+        logger.exception(
+            "Period data failed for user %s, %s to %s; no daily variable average", user.id, earning_start, earning_end
+        )
         return None
 
     working_days = 0
@@ -675,7 +682,12 @@ def calculate_transition_month_summary(
                     "ot": ot_pay,
                 }
             except Exception:
-                pass
+                logger.exception(
+                    "Trailing variable summary failed for user %s, %s-%02d",
+                    user.id,
+                    last_consultant_day.year,
+                    last_consultant_day.month,
+                )
 
     consultant_total = round(
         (trailing_base or 0.0) + (trailing_variable or 0.0) + vacation_payout["total"],

@@ -259,3 +259,32 @@ def test_authenticated_page_forms_contain_csrf_field(raw_client, test_user):
     response = raw_client.get("/profile")
 
     assert f'name="{CSRF_FIELD_NAME}"' in response.text
+
+
+def test_oversized_body_is_rejected_with_413_before_auth(raw_client):
+    from app.core.csrf_middleware import MAX_BODY_BYTES
+
+    # Declared length over the cap: rejected without reading the body.
+    resp = raw_client.post("/login", content=b"x", headers={"content-length": str(MAX_BODY_BYTES + 1)})
+    assert resp.status_code == 413
+
+    # An Authorization header skips the token check, not the cap.
+    resp = raw_client.post(
+        "/login",
+        content=b"x",
+        headers={"content-length": str(MAX_BODY_BYTES + 1), "authorization": "Bearer junk"},
+    )
+    assert resp.status_code == 413
+
+    # Real body over the cap (chunked, so there is no Content-Length to trust).
+    def chunks():
+        yield b"a" * (MAX_BODY_BYTES // 2 + 1)
+        yield b"a" * (MAX_BODY_BYTES // 2 + 1)
+
+    resp = raw_client.post("/login", content=chunks(), headers={"content-type": "application/x-www-form-urlencoded"})
+    assert resp.status_code == 413
+
+
+def test_normal_login_still_passes_the_body_cap(test_client, admin_user):
+    resp = test_client.post("/login", data={"username": "admin", "password": "adminpass123"}, follow_redirects=False)
+    assert resp.status_code in (302, 303)
