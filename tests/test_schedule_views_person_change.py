@@ -1826,6 +1826,36 @@ def test_excel_export_resolves_position_by_exported_month(month_env):
     assert probe_rows[0][2] == expected
 
 
+def test_excel_export_follows_user_across_midmonth_position_swap(month_env):
+    """The personal Excel export includes shifts from the post-swap position."""
+    import io
+
+    import openpyxl
+
+    from app.core.schedule import determine_shift_for_date
+
+    client, session = month_env
+    admin = _make_user(session, 2, "admin1", "Admin", role=UserRole.ADMIN)
+    okan = _make_user(session, 8, "okan1", "Okan")
+    rickard = _make_user(session, 11, "rickard1", "Rickard")
+    start_employment(session, okan.id, 8, "Okan", "okan1", datetime.date(2026, 1, 2), created_by=admin.id)
+    start_employment(session, rickard.id, 3, "Rickard", "rickard1", datetime.date(2026, 1, 2), created_by=admin.id)
+    swap_positions(session, 8, 3, datetime.date(2026, 10, 26), created_by=admin.id)
+
+    probe, _ = _first_working_day([datetime.date(2026, 10, day) for day in range(26, 32)], start_week=3)
+    assert probe is not None
+    expected_shift, _ = determine_shift_for_date(probe, start_week=3)
+
+    client.cookies.set("access_token", f"Bearer {create_access_token(data={'sub': str(admin.id)})}")
+    response = client.get(f"/month/{okan.id}/export-excel?year=2026&month=10")
+
+    assert response.status_code == 200
+    sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
+    row = next(row for row in sheet.iter_rows(values_only=True) if row[0] == probe.isoformat())
+    assert row[2] == expected_shift.label
+    assert row[2] != "Ledig"
+
+
 def test_excel_export_uses_own_wage_not_position_number_collision(month_env, monkeypatch):
     """The Excel export's wage/pay figures must use the VIEWED user's own wage,
     not whichever unrelated user happens to share User.id == rotation_position.

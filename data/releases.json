@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.14.4",
+    "date": "2026-11-19",
+    "entries": [
+      {
+        "type": "fix",
+        "sv": "Excel-exporten för en månad där du bytt position mitt i månaden visar nu dina pass även efter bytet. Tidigare stod dagarna efter bytet som lediga.",
+        "en": "The Excel export for a month where you changed position mid-month now shows your shifts after the change too. Before, the days after the change showed as off."
+      }
+    ]
+  },
+  {
     "version": "1.14.3",
     "date": "2026-11-12",
     "entries": [

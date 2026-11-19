@@ -1001,40 +1001,49 @@ async def export_month_excel(
     # since taking over the position) so the export never contains another
     # holder's real hours/pay under this user's file.
     if target_user is not None:
+        import calendar as _calendar
         from datetime import date as _date
 
         from app.core.rates import get_user_rates
         from app.core.schedule import generate_month_data
         from app.core.schedule.period import mask_days_to_employment
-
-        emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
-
-        # Resolve rates for the actual USER whose month this is, not whoever
-        # happens to hold the rotation position, exactly as
-        # build_calendar_grid_for_month does for the month view - without
-        # this, per-day OT pay silently falls back to the generic formula
-        # instead of a custom stored OT rate.
-        _month_rates_map = None
-        _rate_user = target_user
-        if _rate_user is not None:
-            _month_rates = get_user_rates(_rate_user, session=db, effective_date=date(year, month, 1))
-            if _month_rates:
-                _month_rates_map = {rotation_position: _month_rates}
-
-        # employment_start threading + keep_substitute_days: the export must
-        # include a linked substitute's pre-employment days (issue #290), same
-        # as build_calendar_grid_for_month.
-        month_days = generate_month_data(
-            year,
-            month,
-            rotation_position,
-            session=db,
-            user_rates_map=_month_rates_map,
-            employment_start=emp_start,
+        from app.core.schedule.person_history import get_user_history
+        from app.core.schedule.summary import (
+            _record_window,
+            _records_overlapping_work_month,
+            _stitch_user_month_days,
         )
-        month_days = mask_days_to_employment(
-            month_days, emp_start or _date.min, emp_end or _date.max, keep_substitute_days=True
-        )
+
+        # A move landing mid-month (swap or succession) spans more than one
+        # position: build the month per segment, exactly as the month view does,
+        # instead of masking every day after the change to OFF.
+        month_start = _date(year, month, 1)
+        month_end = _date(year, month, _calendar.monthrange(year, month)[1])
+        _records = sorted(get_user_history(db, target_user.id), key=lambda r: r["effective_from"])
+        _segments = _records_overlapping_work_month(_records, month_start, month_end)
+        _month_rates = get_user_rates(target_user, session=db, effective_date=month_start)
+
+        if len(_segments) > 1:
+            emp_start, emp_end = _record_window(_segments[0][0])
+            month_days = _stitch_user_month_days(db, year, month, _segments, None, _month_rates)
+        else:
+            emp_start, emp_end = get_employment_period(db, target_user.id, rotation_position)
+            _month_rates_map = {rotation_position: _month_rates} if _month_rates else None
+            # employment_start threading + keep_substitute_days: the export must
+            # include a linked substitute's pre-employment days (issue #290), same
+            # as build_calendar_grid_for_month.
+            month_days = generate_month_data(
+                year,
+                month,
+                rotation_position,
+                session=db,
+                user_rates_map=_month_rates_map,
+                employment_start=emp_start,
+            )
+            month_days = mask_days_to_employment(
+                month_days, emp_start or _date.min, emp_end or _date.max, keep_substitute_days=True
+            )
+
         days_in_month = summarize_month_for_person(
             year,
             month,

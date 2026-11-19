@@ -22,7 +22,10 @@ a change with no user-facing behaviour does not get one. Those land under
 `./scripts/release.sh --notag` or alongside the next version that does have
 something to tell users about, whose pull request renames the heading.
 
-## [Unreleased]
+## [1.14.4] - 2026-11-19
+
+### Fixed
+- The personal Excel export (`/month/{id}/export-excel`) follows a user across a position change landing mid-month. It resolved one position for the whole month and masked every day after the change to OFF. It now builds the month per segment with `_stitch_user_month_days`, the same path as the month view.
 
 ### Security
 - An admin password reset no longer puts the temporary password in a redirect URL, where it reached the request log, the proxy access log and the browser history. The user list is rendered in the response to the POST with `Cache-Control: no-store`.
